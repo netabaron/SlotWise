@@ -1,0 +1,116 @@
+# ==========================================================================
+#  סודות וסשנים — לעולם לא לוועד. SECRETS AND SESSIONS — NEVER COMMIT.
+# ==========================================================================
+# פרופיל הדפדפן של Playwright. מכיל את עוגיות ההתחברות החיות של שער ה-Citrix
+# של המכללה (NSC_AAAC וחברותיה), היסטוריה, וקאש. מי שמשיג את התיקייה הזאת
+# יכול להתחבר לידיעון בתור הסטודנט/ית. 29MB של דבר שאסור שיצא מהמחשב הזה.
+# The Playwright browser profile holds LIVE Citrix session cookies. Anyone with
+# this directory can log into the yedion as the student. Never publish it.
+data/.browser_profile/
+**/.browser_profile/
+*.browser_profile/
+
+# עוגיות / טוקנים / אישורים בכל צורה שהיא
+cookies.txt
+*cookies*
+*.cookie
+*.cookies
+storage_state.json
+auth.json
+.netrc
+_netrc
+*.pem
+*.key
+*.pfx
+*.p12
+*.keystore
+.env
+.env.*
+!.env.example
+# מכוון: תבניות *מדויקות* ולא גלובים רחבים כמו *secret* / *token* / *credential*.
+# גלוב רחב היה מתעלם בשקט גם מקבצי מקור לגיטימיים (tokenizer.py, credentials.py),
+# והתקלה הזאת מתגלה רק חודשים אחר כך כשקובץ פשוט "נעלם" מהריפו.
+# Deliberately precise: broad globs would silently ignore real source files.
+secrets.json
+.secrets
+*.secret
+*.secrets
+credentials.json
+.credentials
+*.token
+.htpasswd
+
+# ==========================================================================
+#  נתונים שנשלפו מהידיעון — לא לפרסום
+# ==========================================================================
+# דפי HTML גולמיים מתוך סשן מחובר. הם תוכן של המכללה, ועשויים להכיל פרטים
+# מזהים מתוך הכותרת של המשתמש/ת המחובר/ת. נשמרים מקומית לצורך דיבוג הפרסר
+# (ראו reparse.py) — לא נכנסים לגיט.
+# Raw pages fetched from inside an authenticated session.
+data/raw/
+
+# מסד הנתונים הנגזר. כולו ניתן לשחזור: refresh.py (עם התחברות) או
+# reparse.py (מהדמפים המקומיים). תוכן של המכללה — לא מפרסמים.
+data/db/
+
+# ==========================================================================
+#  תוצרי ריצה
+# ==========================================================================
+schedule.html
+schedule_demo.html
+*.schedule.html
+data/sections.json
+data/sections.meta.json
+
+# ==========================================================================
+#  Python
+# ==========================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.venv/
+venv/
+env/
+ENV/
+
+# ==========================================================================
+#  עורכים ומערכת הפעלה
+# ==========================================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ==========================================================================
+#  קבצי עבודה זמניים
+# ==========================================================================
+_dump.txt
+_extract.py
+_probe.txt
+*_probe.txt
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+scratch/
+tmp/

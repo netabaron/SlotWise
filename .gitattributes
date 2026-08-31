@@ -1,0 +1,15 @@
+# נרמול סופי שורות: במאגר תמיד LF, בעבודה לפי מערכת ההפעלה.
+# בלי זה כל קובץ שנערך ב-Windows מייצר diff מלא של שינויי CRLF בלבד.
+* text=auto eol=lf
+
+# בינאריים — לא לגעת
+*.png binary
+*.jpg binary
+*.pdf binary
+*.ico binary
+*.woff  binary
+*.woff2 binary
+
+# הפיקסצ'רים הם דפי ידיעון אמיתיים שנשמרו כלשונם.
+# לסמן כטקסט כדי ש-diff יהיה קריא, אבל בלי לשנות תוכן.
+tests/fixtures/real_yedion/*.html text eol=lf

@@ -1,0 +1,598 @@
+{
+  "11069": {
+    "code": "11069",
+    "name": "אנגלית טכנית יישומית – תוכנה",
+    "credits": 1.0,
+    "tied_with": [],
+    "groups": [
+      {
+        "course_code": "11069",
+        "group_id": "11",
+        "kind": "תרגול",
+        "lecturer": "גב' קרמר ילנה",
+        "meetings": [
+          {
+            "day": 3,
+            "start": 510,
+            "end": 615,
+            "room": "214",
+            "building": "מבנה 6"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "11069",
+        "group_id": "12",
+        "kind": "תרגול",
+        "lecturer": "ד\"ר קורנבלט קטרינה",
+        "meetings": [
+          {
+            "day": 1,
+            "start": 960,
+            "end": 1065,
+            "room": "216",
+            "building": "מבנה 6"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "11069",
+        "group_id": "13",
+        "kind": "תרגול",
+        "lecturer": "גב' קרמר ילנה",
+        "meetings": [
+          {
+            "day": 5,
+            "start": 615,
+            "end": 720,
+            "room": "214",
+            "building": "מבנה 6"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "11069",
+        "group_id": "14",
+        "kind": "תרגול",
+        "lecturer": "ד\"ר קורנבלט קטרינה",
+        "meetings": [
+          {
+            "day": 6,
+            "start": 510,
+            "end": 615,
+            "room": "216",
+            "building": "מבנה 6"
+          }
+        ],
+        "linked_to": [],
+        "note": "מתקיים ביום שישי בבוקר"
+      }
+    ]
+  },
+  "61753": {
+    "code": "61753",
+    "name": "אלגוריתמים",
+    "credits": 5.0,
+    "tied_with": [],
+    "groups": [
+      {
+        "course_code": "61753",
+        "group_id": "21",
+        "kind": "הרצאה",
+        "lecturer": "פרופ' וולקוביץ' זאב",
+        "meetings": [
+          {
+            "day": 2,
+            "start": 510,
+            "end": 615,
+            "room": "301",
+            "building": "מבנה 8"
+          },
+          {
+            "day": 4,
+            "start": 510,
+            "end": 615,
+            "room": "301",
+            "building": "מבנה 8"
+          }
+        ],
+        "linked_to": [],
+        "note": "הרצאה מפוצלת לשני מפגשים שבועיים"
+      },
+      {
+        "course_code": "61753",
+        "group_id": "22",
+        "kind": "הרצאה",
+        "lecturer": "ד\"ר רווה אלנה",
+        "meetings": [
+          {
+            "day": 1,
+            "start": 615,
+            "end": 720,
+            "room": "302",
+            "building": "מבנה 8"
+          },
+          {
+            "day": 3,
+            "start": 615,
+            "end": 720,
+            "room": "302",
+            "building": "מבנה 8"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61753",
+        "group_id": "23",
+        "kind": "הרצאה",
+        "lecturer": "ד\"ר גולני מתתיהו",
+        "meetings": [
+          {
+            "day": 1,
+            "start": 720,
+            "end": 825,
+            "room": "303",
+            "building": "מבנה 8"
+          },
+          {
+            "day": 5,
+            "start": 510,
+            "end": 615,
+            "room": "303",
+            "building": "מבנה 8"
+          }
+        ],
+        "linked_to": [
+          "26"
+        ],
+        "note": "חייבת להילקח עם תרגול קבוצה 26"
+      },
+      {
+        "course_code": "61753",
+        "group_id": "24",
+        "kind": "תרגול",
+        "lecturer": "מר גל תומר",
+        "meetings": [
+          {
+            "day": 2,
+            "start": 615,
+            "end": 720,
+            "room": "121",
+            "building": "מבנה 3"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61753",
+        "group_id": "25",
+        "kind": "תרגול",
+        "lecturer": "מר גל תומר",
+        "meetings": [
+          {
+            "day": 3,
+            "start": 720,
+            "end": 825,
+            "room": "121",
+            "building": "מבנה 3"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61753",
+        "group_id": "26",
+        "kind": "תרגול",
+        "lecturer": "גב' קרמר ילנה",
+        "meetings": [
+          {
+            "day": 5,
+            "start": 615,
+            "end": 720,
+            "room": "122",
+            "building": "מבנה 3"
+          }
+        ],
+        "linked_to": [
+          "23"
+        ],
+        "note": "צמודה להרצאה קבוצה 23"
+      },
+      {
+        "course_code": "61753",
+        "group_id": "27",
+        "kind": "תרגול",
+        "lecturer": "גב' קרמר ילנה",
+        "meetings": [
+          {
+            "day": 4,
+            "start": 960,
+            "end": 1065,
+            "room": "122",
+            "building": "מבנה 3"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      }
+    ]
+  },
+  "61756": {
+    "code": "61756",
+    "name": "שיטות הנדסיות לפיתוח מערכות תוכנה",
+    "credits": 5.0,
+    "tied_with": [
+      "61757",
+      "62027"
+    ],
+    "groups": [
+      {
+        "course_code": "61756",
+        "group_id": "31",
+        "kind": "הרצאה",
+        "lecturer": "ד\"ר לוי נטלי",
+        "meetings": [
+          {
+            "day": 4,
+            "start": 615,
+            "end": 720,
+            "room": "401",
+            "building": "מבנה 9"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61756",
+        "group_id": "32",
+        "kind": "הרצאה",
+        "lecturer": "ד\"ר מילר אורנה",
+        "meetings": [
+          {
+            "day": 2,
+            "start": 720,
+            "end": 825,
+            "room": "401",
+            "building": "מבנה 9"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61756",
+        "group_id": "33",
+        "kind": "תרגול",
+        "lecturer": "ד\"ר לוי נטלי",
+        "meetings": [
+          {
+            "day": 3,
+            "start": 720,
+            "end": 870,
+            "room": "402",
+            "building": "מבנה 9"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61756",
+        "group_id": "34",
+        "kind": "תרגול",
+        "lecturer": "ד\"ר מילר אורנה",
+        "meetings": [
+          {
+            "day": 5,
+            "start": 720,
+            "end": 870,
+            "room": "402",
+            "building": "מבנה 9"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61756",
+        "group_id": "35",
+        "kind": "פרויקט",
+        "lecturer": "ד\"ר לוי נטלי",
+        "meetings": [
+          {
+            "day": 4,
+            "start": 720,
+            "end": 870,
+            "room": "מעבדת תוכנה",
+            "building": "מבנה 9"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61756",
+        "group_id": "36",
+        "kind": "פרויקט",
+        "lecturer": "ד\"ר מילר אורנה",
+        "meetings": [
+          {
+            "day": 2,
+            "start": 840,
+            "end": 990,
+            "room": "מעבדת תוכנה",
+            "building": "מבנה 9"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      }
+    ]
+  },
+  "61757": {
+    "code": "61757",
+    "name": "מבוא לבדיקות תוכנה",
+    "credits": 2.0,
+    "tied_with": [
+      "61756",
+      "62027"
+    ],
+    "groups": [
+      {
+        "course_code": "61757",
+        "group_id": "41",
+        "kind": "הרצאה",
+        "lecturer": "ד\"ר מילר אורנה",
+        "meetings": [
+          {
+            "day": 2,
+            "start": 720,
+            "end": 765,
+            "room": "403",
+            "building": "מבנה 9"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61757",
+        "group_id": "42",
+        "kind": "הרצאה",
+        "lecturer": "ד\"ר גולני מתתיהו",
+        "meetings": [
+          {
+            "day": 4,
+            "start": 510,
+            "end": 555,
+            "room": "403",
+            "building": "מבנה 9"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61757",
+        "group_id": "43",
+        "kind": "מעבדה",
+        "lecturer": "ד\"ר מילר אורנה",
+        "meetings": [
+          {
+            "day": 3,
+            "start": 615,
+            "end": 720,
+            "room": "מעבדת בדיקות",
+            "building": "מבנה 9"
+          }
+        ],
+        "linked_to": [
+          "41"
+        ],
+        "note": "מעבדה צמודה להרצאה קבוצה 41"
+      },
+      {
+        "course_code": "61757",
+        "group_id": "44",
+        "kind": "מעבדה",
+        "lecturer": "ד\"ר גולני מתתיהו",
+        "meetings": [
+          {
+            "day": 1,
+            "start": 840,
+            "end": 945,
+            "room": "מעבדת בדיקות",
+            "building": "מבנה 9"
+          }
+        ],
+        "linked_to": [
+          "42"
+        ],
+        "note": "מעבדה צמודה להרצאה קבוצה 42"
+      }
+    ]
+  },
+  "61832": {
+    "code": "61832",
+    "name": "מבוא להסתברות וסטטיסטיקה",
+    "credits": 4.0,
+    "tied_with": [],
+    "groups": [
+      {
+        "course_code": "61832",
+        "group_id": "51",
+        "kind": "הרצאה",
+        "lecturer": "ד\"ר יהלום אורלי",
+        "meetings": [
+          {
+            "day": 1,
+            "start": 720,
+            "end": 870,
+            "room": "201",
+            "building": "מבנה 4"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61832",
+        "group_id": "52",
+        "kind": "הרצאה",
+        "lecturer": "פרופ' וולקוביץ' זאב",
+        "meetings": [
+          {
+            "day": 3,
+            "start": 840,
+            "end": 990,
+            "room": "201",
+            "building": "מבנה 4"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61832",
+        "group_id": "53",
+        "kind": "הרצאה",
+        "lecturer": "ד\"ר רווה אלנה",
+        "meetings": [
+          {
+            "day": 2,
+            "start": 960,
+            "end": 1110,
+            "room": "202",
+            "building": "מבנה 4"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61832",
+        "group_id": "54",
+        "kind": "תרגול",
+        "lecturer": "ד\"ר יהלום אורלי",
+        "meetings": [
+          {
+            "day": 1,
+            "start": 615,
+            "end": 720,
+            "room": "203",
+            "building": "מבנה 4"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61832",
+        "group_id": "55",
+        "kind": "תרגול",
+        "lecturer": "ד\"ר יהלום אורלי",
+        "meetings": [
+          {
+            "day": 4,
+            "start": 840,
+            "end": 945,
+            "room": "203",
+            "building": "מבנה 4"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61832",
+        "group_id": "56",
+        "kind": "תרגול",
+        "lecturer": "פרופ' וולקוביץ' זאב",
+        "meetings": [
+          {
+            "day": 3,
+            "start": 510,
+            "end": 615,
+            "room": "204",
+            "building": "מבנה 4"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "61832",
+        "group_id": "57",
+        "kind": "תרגול",
+        "lecturer": "ד\"ר רווה אלנה",
+        "meetings": [
+          {
+            "day": 5,
+            "start": 840,
+            "end": 945,
+            "room": "204",
+            "building": "מבנה 4"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      }
+    ]
+  },
+  "62027": {
+    "code": "62027",
+    "name": "אינטראקציית אדם מחשב (HCI)",
+    "credits": 2.0,
+    "tied_with": [
+      "61756",
+      "61757"
+    ],
+    "groups": [
+      {
+        "course_code": "62027",
+        "group_id": "61",
+        "kind": "הרצאה",
+        "lecturer": "ד\"ר שיידין ג'וליה",
+        "meetings": [
+          {
+            "day": 1,
+            "start": 510,
+            "end": 615,
+            "room": "305",
+            "building": "מבנה 8"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      },
+      {
+        "course_code": "62027",
+        "group_id": "62",
+        "kind": "הרצאה",
+        "lecturer": "ד\"ר לוי נטלי",
+        "meetings": [
+          {
+            "day": 3,
+            "start": 960,
+            "end": 1065,
+            "room": "305",
+            "building": "מבנה 8"
+          }
+        ],
+        "linked_to": [],
+        "note": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+ 
+<head>
+	<meta charset="utf-8">	  
+	<title>מערכת מידע-נט  המכללה האקדמית תל-אביב יפו חיפוש קורסים במערכת</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">	
+	<meta name="description" content="תחנת מידע ורישום לאינטרנט עבור מוסדות אקדמיים">
+	<meta name="author" content="yftach carmi Yedion Ltd">	
+	<meta property="og:title" content="תחנת מידע במוסד האקדמי לסטודנט ולמרצה">
+	<meta property="og:image" content="/info/images/CollegeLogo.png">		
+	<meta property="og:locale" content="he_IL">
+	<meta property="og:description" content="תחנת מידע ורישום לאינטרנט עבור מוסדות אקדמיים">
+	<meta property="og:type" content="website">
+		
+	<link rel="icon" type="image/svg+xml" href="/info/sort/images/favicon.svg">
+	
+	<link rel="stylesheet" href="/info/Sort/yedionBase/css/rubik.css">
+	
+	<link href="/info/sort/yedionBase/css/bundle2026.css?v=13" rel="stylesheet" >
+	<link href="/info/sort/yedionBase/css/Local_Yedion2026b.css?v=14" rel="stylesheet" >
+	<link href="/info/Local.css?v=7" rel="stylesheet" >	
+    	
+</head>
+
+<body id="kt_body" style="background-image: url('/info/sort/header/header-bg.jpg')" class="header-fixed header-tablet-and-mobile-fixed toolbar-enabled AllowSelectTom WithBackground  Heb">
+	<!-- הודעת שגיאה -->
+	<div id="sr-live" class="sr-only" aria-live="assertive"></div> 
+	
+	<div class="modal alertModal AllowClose" tabindex="-1" role="alertdialog" aria-labelledby="title" aria-describedby="desc" aria-modal="true">
+		<div class="alertBox">
+			<div class="alertHeader">
+				<button type="button" class="alertClose closefirstmodal" aria-label="סגירת חלונית אזהרה"> <span aria-hidden="true">✕</span>	</button>
+			</div>
+			<h2 id="title" class="alertTitle">הודעה מהמערכת</h2>			
+			<div id="desc" class="alertBody"></div>			
+			<div class="alertFooter">
+				<button type="button" class="btn btn-secondary rounded closefirstmodal"> סגור </button>
+			</div>
+		</div>
+	</div>
+
+	<!-- הודעת אישור / Ok-Cancel -->
+	<div class="modal confirmmodal AllowClose" tabindex="-1" role="dialog" aria-labelledby="confirmTitle" aria-describedby="desc2" aria-modal="true">
+			<div class="modal-dialog">
+				<div class="modal-content">
+					<div class="modal-header">
+						<h2 id="confirmTitle" class="modal-title"> הודעה מהמערכת </h2>
+						<button type="button" class="close" aria-label="סגירת חלונית אישור פעולה"> <span aria-hidden="true">✕</span> </button>
+					</div>
+					<div class="modal-body">
+						<div class="modal-desc" id="desc2"></div>
+					</div>
+					<div class="modal-footer">
+						<button type="button" class="btn btn-primary rounded g-mb-12" id="modalProcessAction">אישור פעולה</button>
+						<button type="button" class="btn btn-secondary rounded closefirstmodal">ביטול</button>
+					</div>
+				</div>
+			</div>
+		</div>
+						
+	<a class="sr-only sr-only-focusable skip-link btn btn-primary rounded g-mb-12" href="#main-content">דילוג לתוכן ראשי</a>
+		
+	<script src="/info/sort/yedionBase/js/jQuery.js"></script>
+	<script src="/info/sort/yedionBase/js/yedion2026h.js?v=10"></script>
+
+	<header class="header1">
+		<div class="container-xxl d-flex align-items-center">
+			<!-- No Banner -->
+			<div class="header-logo me-5 me-md-10 flex-grow-1 flex-lg-grow-0 site-logo">
+										
+											<picture class="site-logo">
+							<source srcset="/info/images/CollegeLogoMobile.png" media="(max-width: 768px)">
+							<img src="/info/images/CollegeLogo.png" alt="לוגו של המוסד האקדמי" class="Logo">
+						</picture>				
+											
+							</div>
+			
+			<div class="d-flex align-items-stretch justify-content-between flex-lg-grow-1">
+							</div>	
+			
+			
+<div  class="menu-item menu-lg-down-accordion me-lg-1" id="TMenu99999">
+    <button type="button" class="ButtonH BN menu-link py-3" data-OpenMenuItem="99999" aria-label="נגישות" aria-haspopup="true" aria-expanded="false" aria-controls="accessibility-submenu-content">
+        <span class="menu-title C99999">
+            <svg class="accessibility-icon" aria-hidden="true" focusable="false">
+                <use href="/info/sort/images/BaseIcons/icons.svg?v=1#icon-Accessibility"></use>
+            </svg>
+        </span>
+    </button>
+
+
+    <section id="accessibility-submenu-content" class="menu-sub menu-sub-lg-down-accordion menu-sub-lg-dropdown menu-rounded-0 py-lg-4 MenuOpenLocation" aria-labelledby="accessibilityTitle">
+        <h2 id="accessibilityTitle" class="sr-only">כלי נגישות</h2>
+        <div class="menu-item px-3">
+            <button type="button" class="BN SmallPadding" id="bigger1" data-tooltip="הגדלת פונט" aria-label="הגדלת פונט">
+                <span class="fa fa-search-plus" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="BN" id="Zero1" data-tooltip="פונט גודל ברירת מחדל" aria-label="פונט גודל ברירת מחדל">
+                <span class="fa fa-search" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="BN SmallPadding" id="smaller1" data-tooltip="הקטנת פונט" aria-label="הקטנת פונט">
+                <span class="fa fa-search-minus" aria-hidden="true"></span>
+            </button>
+            <div class="separator my-2" aria-hidden="true"></div>
+            <button type="button" class="BN SmallPadding" id="contrastPlus1" data-tooltip="לחיזוק הקונטרסט" aria-label="לחיזוק הקונטרסט">
+                <span class="fa fa-plus" aria-hidden="true"></span>
+            </button>
+            <span class="fa fa-adjust mx-2" aria-hidden="true"></span>
+            <button type="button" class="BN SmallPadding" id="contrastMinus1" data-tooltip="להחלשת הקונטרסט" aria-label="להחלשת הקונטרסט">
+                <span class="fa fa-minus" aria-hidden="true"></span>
+            </button>
+            <output class="CurrentSize" aria-live="polite">
+            </output>
+        </div>
+    </section>
+</div>
+			
+						<nav class="header-menu-left">	
+				
+	<section class="menu-item-left menu-lg-down-accordion me-lg-1" id="TMenu99990">
+		<h2 id="MyTitle1" class="sr-only">תפריט אישי</h2>
+		<button type="button" class="ButtonH BN menu-link py-3" data-OpenMenuItem="99990" aria-label="פתיחת תפריט החשבון האישי" aria-haspopup="true" aria-expanded="false" aria-controls="account-submenu-content" id="account-button">
+			
+									<span class="user-icon-container">
+						<svg aria-hidden="true" focusable="false" class="user-icon-svg">
+						<use href="/info/sort/images/BaseIcons/icons.svg?v=1#icon-User"></use>
+						</svg>
+					</span>
+						</button>
+
+		<section id="account-submenu-content" class="menu-sub menu-sub-lg-down-accordion menu-sub-lg-dropdown menu-rounded-0 py-lg-4 w-lg-225px FromLeft HideMe">
+			<h2 id="MyTitle2" class="sr-only">תמונת ושם המשתמש</h2>
+			<div class="menu-item px-3" role="group">
+				<article class="menu-content d-flex align-items-center px-3">
+					<h2 id="MyTitle3" class="sr-only">שאילתות בתפריט האישי</h2>
+											<span class="user-icon-container-big">
+						  <svg aria-hidden="true" focusable="false" class="user-icon-svg">
+							<use href="/info/sort/images/BaseIcons/icons.svg?v=1#icon-User"></use>
+						  </svg>
+						</span>
+										<div class="d-flex flex-column AddPadding">
+						<div class="fw-bolder d-flex align-items-center fs-5">
+												
+						<span class="badge badge-light-success fw-bolder fs-8 px-2 py-1 ms-2">
+							כללי
+						</span></div>
+					</div>
+				</article>
+			</div>
+							
+				<ul class="list-unstyled m-0 p-0 menu-list-divided">
+															
+					
+															
+										
+																						
+									</ul>
+		</section>	
+	</section>	
+</nav>
+		</div>		
+	</header>		
+
+	
+		 
+ <script>
+	var progName = 'Enter_Search';
+	function showAlertModal(message) {
+		const modal = document.querySelector('.alertModal');
+		if (!modal) return;
+		const desc = modal.querySelector('#desc');
+		if (desc) desc.innerHTML = message;
+		$('.alertModal').modal('show');
+	}
+
+	
+	
+	document.addEventListener('DOMContentLoaded', function () {
+
+		document.querySelectorAll('.ButtonMenuImage').forEach(function (img) {
+
+			const specificClass = Array.from(img.classList)
+				.find(c => c !== 'ButtonMenuImage');
+
+			if (specificClass && typeof window[specificClass] === 'function') {
+				try {
+					img.src = window[specificClass]();
+				} catch (e) {
+					console.error('Error loading image for ' + specificClass, e);
+				}
+			}
+		});
+	});
+</script>
+<noscript>
+	<div class="alert alert-danger" role="alert">עימכם הסליחה אבל אתר זה לא יכול לעבוד במצב של נטרול פעולות JavaScript. נא לשנות הגדרות דפדפן או לגלוש מדפדפן אחר</div>
+</noscript> 
+
+ <main id="main-content" class="main-content content-body" tabindex="-1">
+ 
+   <article dir="rtl" lang="he" class="page-content">   
+		<header class="toolbar py-1 py-lg-2" id="kt_toolbar">
+			<div id="kt_toolbar_container" class="container-xxl d-flex flex-stack flex-wrap">
+									<div class="page-title d-flex flex-column me-3">
+						<h1 class="LocalColor q_title d-flex text-Bread fw-bolder my-1 fs-1">חיפוש קורסים במערכת</h1>	
+						<nav aria-label="ניווט מיקום">
+							<ol class="LocalColor breadcrumb fw-bold fs-5 my-1 d-print-none">
+								<li class="LocalColor bcc text-Bread First">
+									דף הבית
+								</li>
+								<li class="LocalColor bcc text-Bread Last" aria-current="page">חיפוש קורסים במערכת</li>
+							</ol>
+						</nav>
+											</div>
+								<div class="buttons_panel">					
+																			</div>
+			</div>
+		</header>
+												
+	<!--FileName : Header_Of_HTML_Type_7.HTM קראתי את ההצהרה ואני מאשר/ת את תוכנה ואת נכונותה -->
+<script>
+	document.addEventListener('DOMContentLoaded', function () {
+		document.addEventListener('keydown', function (e) {
+			const target = e.target;
+
+			// אם זה כפתור submit/button → לא חוסמים
+			if (target && (target.type === 'button' || target.type === 'submit')) {
+				return;
+			}
+
+			// אם לוחצים Enter בתוך form → חוסמים
+			if (e.key === 'Enter') {
+				const form = target.closest('form');
+				if (form && form.name === 'form') {
+					e.preventDefault();
+					return false;
+				}
+			}
+		});
+	});
+</script>
+
+	<form name="form" action="fireflyweb.aspx" method="post">
+	
+	<input type="hidden" name="PRGNAME">
+	<input type="hidden" name="ARGUMENTS">
+
+			 <label for="R1C19">
+				ניתן לסנן סמסטר בודד במערכת זו על ידי בחירת סמסטר:  </label>
+				<select name="R1C19" id="R1C19">
+					<option value="" disabled hidden> בחירת סמסטר </option><option selected value="0">כל הסמסטרים</option><option  value="1">א</option><option  value="2">ב</option><option  value="3">קיץ</option>
+				</select>&nbsp;&nbsp;
+				<button type="button" class="btn btn-primary rounded g-mb-12" data-progname="Enter_Search" data-arguments="-A,R1C19,-AT"><span class="fas fa-sync-alt"> </span> סינון סמסטר</button>
+				<br>
+						
+							<label for="ChangeYear">
+						ניתן לעבור לשנת קורסים אחרת על ידי בחירת שנה:  </label>
+			
+							<select name="ChangeYear" id="ChangeYear">
+								<option value="" disabled hidden > בחירת שנה </option>
+<option selected value="2027">2027 - תשפ"ז</option>
+<option  value="2026">2026 - תשפ"ו</option>
+<option  value="2025">2025 - תשפ"ה</option>
+<option  value="2024">2024 - תשפ"ד</option>
+<option  value="2023">2023 - תשפ"ג</option>
+<option  value="2022">2022 - תשפ"ב</option>
+<option  value="2021">2021 - תשפ"א</option>
+<option  value="2020">2020 - תש"ף</option>
+<option  value="2019">2019 - תשע"ט</option>
+<option  value="2018">2018 - תשע"ח</option>
+<option  value="2017">2017 - תשע"ז</option>
+<option  value="2016">2016 - תשע"ו</option>
+<option  value="2015">2015 - תשע"ה</option>
+<option  value="2014">2014 - תשע"ד</option>
+							</select>&nbsp;&nbsp;
+					<button type="button" class="btn btn-primary rounded g-mb-12" data-progname="Enter_Search" data-arguments="-A,,-A,ChangeYear"><span class="fas fa-sync-alt"> </span> מעבר שנה</button>
+					<br>
+					
+		
+			
+<div class="card g-brd-primary rounded-0">			<h2 class="card-header-H2"> חיפוש קורסים במערכת תשפ"ז  </h2>
+	<div class="Box_ph_wrap col-md-12 row NoPadding">
+			
+			<div class="col-md-4 col-xl-3 Father" id="MyFather1" role="region" aria-label="חיפוש לפי קוד קורס">
+					<div class="Box_ph card">					
+						<div>
+							<h2 class="pagetitle InRange">חיפוש לפי קוד קורס</h2>
+							<label for="SubjectCode">
+								נא להקליד קוד קורס:
+							</label>
+							
+							<input type="text" name="SubjectCode" id="SubjectCode" size=7 maxlength=7> </span> 
+							<br>
+							<span id="subject_name"></span>
+							<br>
+					 
+							<button type="button" name="B2" class="go btn btn-primary rounded g-mb-12 g-mb-12" data-progname="S_LOOK_FOR_NOSE" data-arguments="SubjectCode">חיפוש קורס לפי קוד</button>
+						</div>
+					</div>
+			</div>
+			
+			
+			<div class="col-md-4 col-xl-3 Father" id="MyFather2" role="region" aria-label="חיפוש לפי אות ראשונה של שם קורס">
+					<div class="Box_ph card">		
+						<div>
+							<h2 class="pagetitle InRange">חיפוש לפי אות ראשונה של שם קורס</h2>
+							<label for="R1C2">
+								נא לבחור אות ראשונה של שם הקורס:
+							</label>
+							
+							<select name="R1C2" id="R1C2">
+								<option aria-label="אות ראשונה של  שם קורס" disabled>אות ראשונה של  שם קורס</option>
+									  <optgroup label="אות ראשונה בעברית">
+									 <option value="א">א</option>
+									 <option value="ב">ב</option>
+									 <option value="ג">ג</option>
+									 <option value="ד">ד</option>
+									 <option value="ה">ה</option>
+									 <option value="ו">ו</option>
+									 <option value="ז">ז</option>
+									 <option value="ח">ח</option>
+									 <option value="ט">ט</option>
+									 <option value="י">י</option>
+									 <option value="כ">כ</option>
+									 <option value="ל">ל</option>
+									 <option value="מ">מ</option>
+									 <option value="נ">נ</option>
+									 <option value="ס">ס</option>
+									 <option value="ע">ע</option>
+									 <option value="פ">פ</option>
+									 <option value="צ">צ</option>
+									 <option value="ק">ק</option>
+									 <option value="ר">ר</option>
+									 <option value="ש">ש</option>
+									 <option value="ת">ת</option>
+									 </optgroup>
+									 <optgroup label="אות ראשונה באנגלית">
+									 <option value="A">A</option>
+									 <option value="B">B</option>
+									 <option value="C">C</option>
+									 <option value="D">D</option>
+									 <option value="E">E</option>
+									 <option value="F">F</option>
+									 <option value="G">G</option>
+									 <option value="H">H</option>
+									 <option value="I">I</option>
+									 <option value="J">J</option>
+									 <option value="K">K</option>
+									 <option value="L">L</option>
+									 <option value="M">M</option>
+									 <option value="N">N</option>
+									 <option value="O">O</option>
+									 <option value="P">P</option>
+									 <option value="Q">Q</option>
+									 <option value="R">R</option>
+									 <option value="S">S</option>
+									 <option value="T">T</option>
+									 <option value="U">U</option>
+									 <option value="V">V</option>
+									 <option value="W">W</option>
+									 <option value="X">X</option>
+									 <option value="Y">Y</option>
+									 <option value="Z">Z</option>
+									 </optgroup>
+						</select>
+							<br>
+					 
+							<button type="button" name="B3" class="go btn btn-primary rounded g-mb-12" data-progname="S_LOOK_FOR_NOSE_AB" data-arguments="R1C2">חיפוש קורס לפי שם קורס</button>
+						</div>
+					</div>
+			</div>
+			
+			
+			
+			<div class="col-md-4 col-xl-3 Father" id="MyFather3" role="region" aria-label="חיפוש לפי ימים ושעות">
+					<div class="Box_ph card">			
+						<div>
+							<h2 class="pagetitle InRange">חיפוש לפי ימים ושעות</h2>
+							<label for="R1C5">
+								נא לבחור יום רצוי:
+							</label>
+							
+							<select name="R1C5" id="R1C5">
+								<option aria-label="יום רצוי" disabled>יום רצוי</option>
+								 <option selected value="1">א</option>
+								 <option value="2">ב</option>
+								 <option value="3">ג</option>
+								 <option value="4">ד</option>
+								 <option value="5">ה</option>
+								 <option value="6">ו</option>
+								 <option value="7">כל הימים והשעות</option>
+							</select>
+							<br>
+							<label for="R1C6">
+								נא לבחור שעה רצויה:
+							</label>
+							 <select name="R1C6" id="R1C6">
+								<option aria-label="שעה רצויה" disabled>שעה רצויה</option>
+																	<option value="1">08:15-09:00</option>
+																	<option value="2">09:00-09:45</option>
+																	<option value="3">10:15-11:00</option>
+																	<option value="4">11:00-11:45</option>
+																	<option value="5">12:15-13:00</option>
+																	<option value="6">13:00-13:45</option>
+																	<option value="7">14:15-15:00</option>
+																	<option value="8">15:00-15:45</option>
+																	<option value="9">16:15-17:00</option>
+																	<option value="10">17:00-17:45</option>
+																	<option value="11">18:15-19:00</option>
+																	<option value="12">19:00-19:45</option>
+																	<option value="13">20:15-21:00</option>
+																	<option value="14">21:00-21:45</option>
+															</select>
+							<br>
+							
+							<label for="R1C7">
+								נא לבחור סמסטר רצוי:
+							</label>	
+							<select name="R1C7" id="R1C7">
+								<option aria-label="סמסטר רצוי" disabled>סמסטר רצוי</option>
+									 <option value="1">סמסטר א </option>
+									 <option value="2">סמסטר ב </option>
+								 								 								 							</select>
+							<br>
+							<button type="button" name="B3" class="go btn btn-primary rounded g-mb-12" data-progname="S_YFineDate" data-arguments="R1C7,R1C5,R1C6">חיפוש קורס לפי יום ושעה</button>
+						</div>
+					</div>
+			</div>
+			
+			
+				
+		
+			<div class="col-md-4 col-xl-3 Father" id="MyFather5" role="region" aria-label="חיפוש לפי מסגרת">
+					<div class="Box_ph card">					
+						<div>
+							<h2 class="pagetitle InRange">חיפוש לפי מסגרת</h2>
+							<label for="R1C9">
+								בחר את מסגרת ההרצוי:
+							</label>
+							
+							<select name="R1C9" id="R1C9">
+								<option aria-label="מסגרת" disabled>מסגרת</option>
+								 										<option value="73">יישום מדעי הנתונים ובינה מלאכותית</option>
+																			<option value="29">יעוץ ופיתוח ארגוני תואר שני</option>
+																			<option value="21">כלכלה וניהול תואר ראשון</option>
+																			<option value="42">לימודי משפחה תואר שני</option>
+																			<option value="11">מדעי המחשב תואר ראשון</option>
+																			<option value="12">מדעי המחשב תואר שני</option>
+																			<option value="61">מדעי הסיעוד תואר ראשון</option>
+																			<option value="31">מדעי התנהגות תואר ראשון</option>
+																			<option value="41">ממשל וחברה תואר ראשון</option>
+																			<option value="22">מנהל עסקים תואר שני</option>
+																			<option value="27">מערכות מידע תואר ראשון</option>
+																			<option value="51">סוציולוגיה</option>
+																			<option value="43">פילוסופיה כלכלה ומדע המדינה תואר ראשון</option>
+																			<option value="32">פסיכולוגיה תואר שני</option>
+																			<option value="8">חוג כללי</option>
+																 </select> 
+							<br>
+					 
+							 <button type="button" name="B14" class="go btn btn-primary rounded g-mb-12" data-progname="S_MASLUL" data-arguments="R1C9">הצגת קורסים במסגרת</button>
+						</div>
+					</div>
+			</div>	
+			
+			
+			
+				
+		
+		
+		
+			
+				
+		
+		
+			<div class="col-md-4 col-xl-3 Father" id="MyFather8"  role="region" aria-label="חיפוש לפי אות ראשונה של מרצה">
+					<div class="Box_ph card">					
+						<div>
+							<h2 class="pagetitle InRange">	חיפוש לפי אות ראשונה של מרצה</h2>
+							
+							<label>
+								יש ללחוץ על הקישור כדי לקבל את כל המרצים באותה האות
+							</label>
+							<br>
+					 
+								<a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nא" class="btn btn-primary rounded g-mb-12">
+								א
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nב" class="btn btn-primary rounded g-mb-12">
+								ב
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nג" class="btn btn-primary rounded g-mb-12">
+								ג
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nד" class="btn btn-primary rounded g-mb-12">
+								ד
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nה" class="btn btn-primary rounded g-mb-12">
+								ה
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nו" class="btn btn-primary rounded g-mb-12">
+								ו
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nז" class="btn btn-primary rounded g-mb-12">
+								ז
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nח" class="btn btn-primary rounded g-mb-12">
+								ח
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nט" class="btn btn-primary rounded g-mb-12">
+								ט
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nי" class="btn btn-primary rounded g-mb-12">
+								י
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nכ" class="btn btn-primary rounded g-mb-12">
+								כ
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nל" class="btn btn-primary rounded g-mb-12">
+								ל
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nמ" class="btn btn-primary rounded g-mb-12">
+								מ
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nנ" class="btn btn-primary rounded g-mb-12">
+								נ
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nס" class="btn btn-primary rounded g-mb-12">
+								ס
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nע" class="btn btn-primary rounded g-mb-12">
+								ע
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nפ" class="btn btn-primary rounded g-mb-12">
+								פ
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nצ" class="btn btn-primary rounded g-mb-12">
+								צ
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nק" class="btn btn-primary rounded g-mb-12">
+								ק
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nר" class="btn btn-primary rounded g-mb-12">
+								ר
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nש" class="btn btn-primary rounded g-mb-12">
+								ש
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-Nת" class="btn btn-primary rounded g-mb-12">
+								ת
+								</a>
+						</div>
+					</div>
+			</div>	
+		
+		
+		
+		
+			<div class="col-md-4 col-xl-3 Father" id="MyFather9"  role="region" aria-label="חיפוש לפי אות ראשונה של מרצה באנגלית">
+					<div class="Box_ph card">					
+						<div>
+							<h2 class="pagetitle InRange">	חיפוש לפי אות ראשונה של מרצה באנגלית</h2>
+							
+							<label>
+								First letter of lecturer's last name:
+							</label>
+							<br>
+					 
+								<a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NA&Lang=E" class="btn btn-primary rounded g-mb-12">
+								A
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NB&Lang=E" class="btn btn-primary rounded g-mb-12">
+								B
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NC&Lang=E" class="btn btn-primary rounded g-mb-12">
+								C
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-ND&Lang=E" class="btn btn-primary rounded g-mb-12">
+								D
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NE&Lang=E" class="btn btn-primary rounded g-mb-12">
+								E
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NF&Lang=E" class="btn btn-primary rounded g-mb-12">
+								F
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NG&Lang=E" class="btn btn-primary rounded g-mb-12">
+								G
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NH&Lang=E" class="btn btn-primary rounded g-mb-12">
+								H
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NI&Lang=E" class="btn btn-primary rounded g-mb-12">
+								I
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NJ&Lang=E" class="btn btn-primary rounded g-mb-12">
+								J
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NK&Lang=E" class="btn btn-primary rounded g-mb-12">
+								K
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NL&Lang=E" class="btn btn-primary rounded g-mb-12">
+								L
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NM&Lang=E" class="btn btn-primary rounded g-mb-12">
+								M
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NN&Lang=E" class="btn btn-primary rounded g-mb-12">
+								N
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NO&Lang=E" class="btn btn-primary rounded g-mb-12">
+								O
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NP&Lang=E" class="btn btn-primary rounded g-mb-12">
+								P
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NQ&Lang=E" class="btn btn-primary rounded g-mb-12">
+								Q
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NR&Lang=E" class="btn btn-primary rounded g-mb-12">
+								R
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NS&Lang=E" class="btn btn-primary rounded g-mb-12">
+								S
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NT&Lang=E" class="btn btn-primary rounded g-mb-12">
+								T
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NU&Lang=E" class="btn btn-primary rounded g-mb-12">
+								U
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NV&Lang=E" class="btn btn-primary rounded g-mb-12">
+								V
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NW&Lang=E" class="btn btn-primary rounded g-mb-12">
+								W
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NX&Lang=E" class="btn btn-primary rounded g-mb-12">
+								X
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NY&Lang=E" class="btn btn-primary rounded g-mb-12">
+								Y
+								</a> , <a href="fireflyweb.aspx?prgname=S_LOOK_FOR_TEACHER_AB&amp;arguments=-NZ&Lang=E" class="btn btn-primary rounded g-mb-12">
+								Z
+								</a>
+						</div>
+					</div>
+			</div>	
+	</div>
+		
+
+		
+</div>
+<br>
+
+<div class="card g-brd-primary rounded-0">			<h2 class="card-header-H2"> חיפוש בחינות  במערכת (לוח זמנים לבחינות) תשפ"ז  </h2>
+	
+	<div class="Box_ph_wrap col-md-12 row NoPadding">
+			
+			<div class="col-md-12 col-xl-12 Father" id="MyFather10" role="region" aria-label="איתור הבחינה הרצויה">
+					<div class="Box_ph card">					
+						<div>
+							<h2 class="pagetitle InRange">איתור הבחינה הרצויה</h2>
+															<label for="R1C39">מעבר שנה </label>
+								
+								<select name="R1C39" id="R1C39">
+									<option value="" disabled hidden > בחירת שנה </option>
+<option selected value="2027">2027 - תשפ"ז</option>
+<option  value="2026">2026 - תשפ"ו</option>
+<option  value="2025">2025 - תשפ"ה</option>
+<option  value="2024">2024 - תשפ"ד</option>
+<option  value="2023">2023 - תשפ"ג</option>
+<option  value="2022">2022 - תשפ"ב</option>
+<option  value="2021">2021 - תשפ"א</option>
+<option  value="2020">2020 - תש"ף</option>
+<option  value="2019">2019 - תשע"ט</option>
+<option  value="2018">2018 - תשע"ח</option>
+<option  value="2017">2017 - תשע"ז</option>
+<option  value="2016">2016 - תשע"ו</option>
+<option  value="2015">2015 - תשע"ה</option>
+<option  value="2014">2014 - תשע"ד</option>
+								</select>						 
+								<button type="button" class="btn btn-primary rounded g-mb-12" data-progname="Enter_Search" data-arguments="-A,,-A,R1C39" ><span class="fas fa-sync-alt"> </span> מעבר שנה</button>
+								<br>
+														
+							<label for="R1C28">
+								בחר את החוג הרצוי
+							</label>
+							<select name="R1C28" id="R1C28">
+								<option aria-label="בחר את החוג הרצוי" disabled>בחר את החוג הרצוי</option>
+								 										<option value="73">יישום מדעי הנתונים ובינה מלאכותית</option>
+																		<option value="29">יעוץ ופיתוח ארגוני תואר שני</option>
+																		<option value="21">כלכלה וניהול תואר ראשון</option>
+																		<option value="42">לימודי משפחה תואר שני</option>
+																		<option value="11">מדעי המחשב תואר ראשון</option>
+																		<option value="12">מדעי המחשב תואר שני</option>
+																		<option value="61">מדעי הסיעוד תואר ראשון</option>
+																		<option value="31">מדעי התנהגות תואר ראשון</option>
+																		<option value="41">ממשל וחברה תואר ראשון</option>
+																		<option value="22">מנהל עסקים תואר שני</option>
+																		<option value="27">מערכות מידע תואר ראשון</option>
+																		<option value="51">סוציולוגיה</option>
+																		<option value="43">פילוסופיה כלכלה ומדע המדינה תואר ראשון</option>
+																		<option value="32">פסיכולוגיה תואר שני</option>
+															</select>
+							<br>
+							<label for="R1C29">בחר סמסטר רצוי </label>
+							<select name="R1C29" id="R1C29">
+								<option value="" disabled hidden> בחירת סמסטר </option><option selected value="0">כל הסמסטרים</option><option  value="1">א</option><option  value="2">ב</option><option  value="3">קיץ</option>
+							</select>
+							<br>
+							<label for="R1C30">בחר שנה אקדמית רצויה </label>						
+							<select name="R1C30" id="R1C30">
+								<option aria-label="שנה אקדמית רצויה" disabled>שנה אקדמית רצויה</option>
+								<option value="0" selected>כל השנים האקדמיות</option>
+								<option value="1">שנה א</option>
+								<option value="2">שנה ב</option>
+								<option value="3">שנה ג</option>
+								<option value="4">שנה ד</option>
+															</select>
+							<br>
+							<button type="button" name="B14" class="btn btn-primary rounded g-mb-12" data-progname="S_EXAMS" data-arguments="R1C28,R1C29,R1C30">הצגת בחינות</button>
+						</div>
+					</div>
+			</div>
+	</div>
+
+</div>
+
+<div class="card g-brd-primary rounded-0">			<h2 class="card-header-H2"> מה מתרחש בקמפוס בתחום תאריכים </h2>
+	
+	<div class="Box_ph_wrap col-md-12 row NoPadding">
+			
+			<div class="col-md-12 col-xl-12 Father" id="MyFather11" role="region" aria-label="תיחום זמן רצוי">
+					<div class="Box_ph card">					
+						<div>
+							<h2 class="pagetitle InRange">תיחום זמן רצוי</h2>
+							
+						<label for="R1C20">
+							בחר את החוג הרצוי
+						</label>		
+						 <select name="R1C20" id="R1C20">
+							<option aria-label="חוג הרצוי" disabled>חוג הרצוי</option>
+								<option value="0">-- הכל --</option>
+							 								<option value="73">יישום מדעי הנתונים ובינה מלאכותית</option>
+															<option value="29">יעוץ ופיתוח ארגוני תואר שני</option>
+															<option value="21">כלכלה וניהול תואר ראשון</option>
+															<option value="42">לימודי משפחה תואר שני</option>
+															<option value="11">מדעי המחשב תואר ראשון</option>
+															<option value="12">מדעי המחשב תואר שני</option>
+															<option value="61">מדעי הסיעוד תואר ראשון</option>
+															<option value="31">מדעי התנהגות תואר ראשון</option>
+															<option value="41">ממשל וחברה תואר ראשון</option>
+															<option value="22">מנהל עסקים תואר שני</option>
+															<option value="27">מערכות מידע תואר ראשון</option>
+															<option value="51">סוציולוגיה</option>
+															<option value="43">פילוסופיה כלכלה ומדע המדינה תואר ראשון</option>
+															<option value="32">פסיכולוגיה תואר שני</option>
+													  </select> 
+						 <br>
+		
+													<label for="Location">
+								בחר את הקמפוס הרצוי
+							</label>
+						
+							<select name="Location" id="Location">
+								<option aria-label="חוג הרצוי" disabled>חוג הרצוי</option>
+								<option value="0">-- הכל --</option>
+								<option  value="1">מכללה</option><option  value="4">מבח"ר</option><option  value="5">מקוון</option>
+							</select>&nbsp;&nbsp;
+						<br>
+									
+						
+						<label for="R1C21">מ-תאריך</label>
+						<input type="text" data-select="flatpickr" placeholder="DD/MM/YYYY" autocomplete="off" name="R1C21" id="R1C21" value="30/08/2026">
+						<br>
+						<label for="R1C22">עד-תאריך</label>
+						<input type="text" data-select="flatpickr" placeholder="DD/MM/YYYY" autocomplete="off" name="R1C22" id="R1C22" value="02/09/2026">
+						<br>
+				 <button type="button" name="B14" class="btn btn-primary rounded g-mb-12" data-progname="S_GROUP" data-arguments="R1C20,R1C21,R1C22">ביצוע חיפוש במערכת התאריכית</button>
+			</div>
+		</div>		
+	</div>
+	</div>		
+</div>
+
+</form>
+		  
+ 
+ <!--FileName : search_h\Main_Screen.htm-->
+
+</article></main>
+
+<footer class="footer">  
+	<span id="HowToUseSelect" class="sr-only">כדי לפתוח את התיבה מקלידים בתיבת החיפוש כדי להגיע למלל המתאים ולוחצים על</span>
+	<div class="row footeritems">
+	   <div class="col-md-4 col-6 yedion">
+		   <span class="SpaceLogoRight">&nbsp;</span>
+			<a href="https://www.yedion.co.il/" target="_blank" rel="noopener noreferrer" class="YedionLogoLink ShowWhenFocus">
+				<svg class="icon-logo" aria-hidden="true" focusable="false">
+					<use href="/info/sort/images/BaseIcons/icons.svg?v=1#icon-logo"></use>
+				</svg>				
+				<span class="sr-only">(נפתח בלשונית חדשה בדפדפן)</span>
+			</a>						
+		</div>
+	   <div class="col-md-4 col-6 social-links NoPadding">
+		   <span class="sr-only">(נפתח בלשונית חדשה בדפדפן)</span>
+			<ul class="footer-social"><li><a aria-label="LinkedIn" target="_blank" rel="noopener noreferrer" class="ShowWhenFocus social LinkedIn" href="https://www.linkedin.com/school/the-academic-college-of-tel-aviv-yaffo/">
+   <svg aria-hidden="true" focusable="false" class="social-icon LinkedIn">
+      <use href="/info/sort/images/BaseIcons/icons.svg?v=1#icon-LinkedIn"></use>
+   </svg>
+</a></li>
+<li><a aria-label="FaceBook" target="_blank" rel="noopener noreferrer" class="ShowWhenFocus social FaceBook" href="https://www.facebook.com/AcademitTLV">
+   <svg aria-hidden="true" focusable="false" class="social-icon FaceBook">
+      <use href="/info/sort/images/BaseIcons/icons.svg?v=1#icon-FaceBook"></use>
+   </svg>
+</a></li>
+<li><a aria-label="YouTube" target="_blank" rel="noopener noreferrer" class="ShowWhenFocus social YouTube" href="https://www.youtube.com/user/MtaCollege">
+   <svg aria-hidden="true" focusable="false" class="social-icon YouTube">
+      <use href="/info/sort/images/BaseIcons/icons.svg?v=1#icon-YouTube"></use>
+   </svg>
+</a></li>
+<li><a aria-label="Instagram" target="_blank" rel="noopener noreferrer" class="ShowWhenFocus social Instagram" href="https://www.instagram.com/academit_telaviv/">
+   <svg aria-hidden="true" focusable="false" class="social-icon Instagram">
+      <use href="/info/sort/images/BaseIcons/icons.svg?v=1#icon-Instagram"></use>
+   </svg>
+</a></li>
+</ul>		
+	   </div>	   
+	   <div class="col-md-4 col-12 NoPadding d-print-none">
+			<ul class="terms-links">
+			 <li><a href="https://applicants.mta.ac.il/privacy-policy-2/" target="_blank" rel="noopener noreferrer" class="terms" aria-label="מדיניות הפרטיות (נפתח בלשונית חדשה בדפדפן)">מדיניות הפרטיות</a></li>
+				
+			 <li><a href="https://applicants.mta.ac.il/support-of-students-with-special-needs-accessibility/" target="_blank" rel="noopener noreferrer" class="terms" aria-label="הצהרת נגישות (נפתח בלשונית חדשה בדפדפן)">הצהרת נגישות</a></li>
+			</ul>
+		</div>
+	</div>
+	<button type="button" id="scrollTopBtn" class="scroll-top-btn" aria-label="חזרה לראש הדף" title="חזרה לראש הדף">
+		 <svg class="scroll-top-icon" aria-hidden="true" focusable="false">
+			<use href="/info/sort/images/BaseIcons/icons.svg?v=1#icon-scroll-top"></use>
+		</svg>
+	</button>
+	
+</footer>
+<!--FileName : footer.htm -->
+
+
+<!-- C - Time To Make Page:00:00:00.0653199;Date Create:30/08/2026 15:10:23-->
+</body></html>

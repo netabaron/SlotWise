@@ -1,0 +1,1141 @@
+"""
+מנוע בניית המערכת — Braude Schedule Builder scheduling engine.
+
+זהו הלב של המערכת. התפקיד שלו:
+    1. לעבור על כל הצירופים האפשריים של קבוצות (backtracking עם גיזום מוקדם).
+    2. לתת ניקוד לכל מערכת אפשרית לפי ההעדפות של הסטודנטית.
+    3. להחזיר את ה-top_n הטובות ביותר, או — אם אין אף פתרון — להסביר *למה* בעברית.
+
+מוסכמות (מ-models.py):
+    יום  : 1=ראשון ... 6=שישי
+    שעה  : דקות מחצות (08:30 -> 510)
+    חפיפה: חצי-פתוח [start, end) — שיעור שנגמר ב-10:00 ואחד שמתחיל ב-10:00 *אינם* מתנגשים.
+
+הערה חשובה על "קורסים צמודים" (tied courses):
+    בסמסטר 5 של הנדסת תוכנה בבראודה, הקורסים 61756 + 61757 + 62027 הם חבילה אחת.
+    אי אפשר לקחת אחד בלי השניים האחרים. solve() אוכף את זה לפני שהוא בכלל מתחיל לחפש.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import warnings
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from models import (
+    DAY_NAMES_HE,
+    KIND_ORDER,
+    Course,
+    Group,
+    Meeting,
+    ScoredSchedule,
+    Selection,
+    fmt_time,
+)
+
+# ==========================================================================
+# קבועים
+# ==========================================================================
+
+#: דקות ביממה — ברירת המחדל של prefs.latest.
+MINUTES_IN_DAY: int = 24 * 60
+
+#: יום שישי. forbid_friday חוסם את היום הזה לגמרי.
+FRIDAY: int = 6
+
+#: משקולות ברירת המחדל — "מאוזן" (balanced), בדיוק כמו ב-data/profile.json.
+DEFAULT_WEIGHTS: dict[str, float] = {
+    "lecturer": 10.0,
+    "days": 8.0,
+    "gaps": 4.0,
+    "compactness": 1.0,
+}
+
+#: מכסת הצמתים המינימלית של enumerate_selections (ברירת המחדל של הפרמטר limit).
+DEFAULT_NODE_LIMIT: int = 200_000
+
+#: תקרת המכסה ש-solve() מוכן להקצות לעצמו כשמרחב החיפוש גדול.
+#: מעליה החיפוש עלול לקחת דקות, ולכן עדיף להיעצר ולהזהיר מאשר להיתקע.
+MAX_SOLVE_NODES: int = 5_000_000
+
+#: שמות האילוצים היחידניים (unary) — אילוץ שפוסל קבוצה בפני עצמה, בלי קשר לשאר.
+CONSTRAINT_EARLIEST = "earliest"
+CONSTRAINT_LATEST = "latest"
+CONSTRAINT_BLOCKED = "blocked"
+CONSTRAINT_FRIDAY = "friday"
+
+
+# ==========================================================================
+# חריגות (exceptions)
+# ==========================================================================
+class SearchExhausted(Exception):
+    """
+    נזרקת כאשר החיפוש עבר את מכסת הצמתים שהוקצתה לו (`limit`).
+
+    זו לא שגיאה "אמיתית" — זו בלימת בטיחות שמונעת מהתוכנית להיתקע לנצח
+    על מרחב חיפוש ענק. השדה .visited מחזיק את מספר הצמתים שנבדקו.
+    """
+
+    def __init__(self, visited: int) -> None:
+        self.visited = int(visited)
+        super().__init__(
+            f"החיפוש עבר את מכסת הצמתים ({self.visited:,} צמתים חלקיים) "
+            f"(search node limit exceeded)"
+        )
+
+
+class Infeasible(Exception):
+    """
+    נזרקת מ-solve() כשאין אף מערכת אפשרית.
+
+    השדה .reasons הוא רשימת מחרוזות בעברית שמסבירות בדיוק מה חוסם.
+    לעולם לא מחזירים [] במקום — עדיף הסבר מאשר שקט.
+    """
+
+    def __init__(self, reasons: list[str]) -> None:
+        self.reasons: list[str] = list(reasons)
+        body = "\n".join(f"  • {r}" for r in self.reasons) or "  • (לא נמצא הסבר ספציפי)"
+        super().__init__("לא נמצאה מערכת אפשרית (no feasible schedule found):\n" + body)
+
+
+class TiedCoursesError(ValueError):
+    """
+    נזרקת כשחבילת קורסים צמודים (קורסים תְּמוּדִים / korsim tzmudim) נשברה:
+    קורס אחד מהחבילה נמצא ברשימה אבל שותפיו חסרים.
+    """
+
+    def __init__(self, course_code: str, missing: list[str], partners: list[str]) -> None:
+        self.course_code = course_code
+        self.missing = list(missing)
+        self.partners = list(partners)
+        super().__init__(
+            f"קורסים צמודים: הקורס {course_code} חייב להילקח יחד עם "
+            f"{', '.join(self.partners)}, אך הקורס/ים {', '.join(self.missing)} "
+            f"אינם ברשימת הקורסים שהועברה. או שכולם נכנסים — או שאף אחד. "
+            f"(tied courses must all be present or none)"
+        )
+
+
+# ==========================================================================
+# Preferences — ההעדפות של הסטודנטית
+# ==========================================================================
+@dataclass
+class Preferences:
+    """
+    כל מה שהסטודנטית "רוצה". שים לב להבחנה החשובה:
+
+    אילוצים קשיחים (hard constraints) — פוסלים קבוצה לגמרי:
+        earliest, latest, blocked_windows, forbid_friday
+    העדפות רכות (soft preferences) — רק משפיעות על הניקוד:
+        target_days, preferred_lecturers, weights
+    """
+
+    target_days: int = 4
+    #: {קוד קורס: [שם מרצה מועדף ביותר, שני, שלישי, ...]}
+    preferred_lecturers: dict[str, list[str]] = field(default_factory=dict)
+    #: (יום, התחלה בדקות, סוף בדקות) — חלונות שבהם הסטודנטית לא זמינה
+    blocked_windows: list[tuple[int, int, int]] = field(default_factory=list)
+    #: אף שיעור לא יתחיל לפני השעה הזו (בדקות מחצות)
+    earliest: int = 0
+    #: אף שיעור לא יסתיים אחרי השעה הזו (בדקות מחצות)
+    latest: int = MINUTES_IN_DAY
+    weights: dict[str, float] = field(
+        default_factory=lambda: {
+            "lecturer": 10.0,
+            "days": 8.0,
+            "gaps": 4.0,
+            "compactness": 1.0,
+        }
+    )
+    forbid_friday: bool = False
+
+
+def _weight(prefs: Preferences, key: str) -> float:
+    """משקל בודד, עם נפילה לברירת המחדל אם המפתח חסר במילון של המשתמשת."""
+    try:
+        return float(prefs.weights.get(key, DEFAULT_WEIGHTS[key]))
+    except (AttributeError, TypeError, ValueError):
+        # weights פגום או None — לא מפילים את המנוע בגלל זה.
+        return DEFAULT_WEIGHTS[key]
+
+
+# ==========================================================================
+# עזרי פנים — בדיקת אילוצים יחידניים
+# ==========================================================================
+def _kind_rank(kind: str) -> int:
+    """מיקום סוג הרכיב בסדר התצוגה הקבוע — לצורך מיון דטרמיניסטי."""
+    try:
+        return KIND_ORDER.index(kind)
+    except ValueError:
+        return len(KIND_ORDER)
+
+
+def _group_sort_key(group: Group) -> tuple[int, int, str]:
+    """
+    מיון קבוצות בתוך אותו סלוט. מספרי קבוצה ("11", "21") ממוינים כמספרים,
+    ושאר המזהים לקסיקוגרפית — כדי שהתוצאה תהיה זהה בכל הרצה.
+    """
+    gid = (group.group_id or "").strip()
+    if gid.isdigit():
+        return (0, int(gid), gid)
+    return (1, 0, gid)
+
+
+def _window_overlaps(meeting: Meeting, day: int, start: int, end: int) -> bool:
+    """האם המפגש חופף לחלון (יום, התחלה, סוף) — שוב, חפיפה חצי-פתוחה."""
+    if meeting.day != day:
+        return False
+    return meeting.start < end and start < meeting.end
+
+
+def _unary_violations(group: Group, prefs: Preferences) -> list[tuple[str, str]]:
+    """
+    בודקת קבוצה אחת מול האילוצים ה*יחידניים* — אלה שלא תלויים בשום קבוצה אחרת.
+
+    מחזירה רשימת זוגות (סוג_האילוץ, הסבר_בעברית). רשימה ריקה = הקבוצה עוברת.
+
+    Technical note: this is what lets us pre-filter candidates before the search
+    even starts, which is exactly equivalent to rejecting them inside the loop —
+    only much faster, because a rejected group is never re-tested at every depth.
+    """
+    problems: list[tuple[str, str]] = []
+    for m in group.meetings:
+        if prefs.forbid_friday and m.day == FRIDAY:
+            problems.append(
+                (CONSTRAINT_FRIDAY, f"מתקיים ביום שישי {fmt_time(m.start)}-{fmt_time(m.end)}, ולימודי שישי נאסרו")
+            )
+        if m.start < prefs.earliest:
+            problems.append(
+                (
+                    CONSTRAINT_EARLIEST,
+                    f"מתחיל ב-{fmt_time(m.start)}, לפני השעה המוקדמת ביותר שאושרה {fmt_time(prefs.earliest)}",
+                )
+            )
+        if m.end > prefs.latest:
+            problems.append(
+                (
+                    CONSTRAINT_LATEST,
+                    f"מסתיים ב-{fmt_time(m.end)}, אחרי השעה המאוחרת ביותר שאושרה {fmt_time(prefs.latest)}",
+                )
+            )
+        for day, w_start, w_end in prefs.blocked_windows:
+            if _window_overlaps(m, day, w_start, w_end):
+                problems.append(
+                    (
+                        CONSTRAINT_BLOCKED,
+                        f"חופף לחלון חסום ביום {DAY_NAMES_HE.get(day, day)} "
+                        f"{fmt_time(w_start)}-{fmt_time(w_end)}",
+                    )
+                )
+    return problems
+
+
+def _group_allowed(group: Group, prefs: Preferences) -> bool:
+    """True אם הקבוצה שורדת את כל האילוצים היחידניים."""
+    return not _unary_violations(group, prefs)
+
+
+def _filter_groups(
+    groups: list[Group], prefs: Preferences
+) -> tuple[list[Group], list[tuple[Group, list[tuple[str, str]]]]]:
+    """
+    מחלקת רשימת קבוצות ל: (ששרדו, [(שנפסלה, סיבות), ...]).
+    משמשת גם את החיפוש (לוקח רק את מי ששרד) וגם את האבחון (מסביר את מי שנפסל).
+    """
+    survivors: list[Group] = []
+    eliminated: list[tuple[Group, list[tuple[str, str]]]] = []
+    for g in sorted(groups, key=_group_sort_key):
+        problems = _unary_violations(g, prefs)
+        if problems:
+            eliminated.append((g, problems))
+        else:
+            survivors.append(g)
+    return survivors, eliminated
+
+
+#: מיפוי (קוד קורס, מזהה קבוצה) -> סוג הרכיב. משמש את כלל ה-linked_to.
+_KindIndex = dict[tuple[str, str], str]
+
+
+def _kind_index(courses: "list[Course] | tuple[Course, ...]") -> _KindIndex:
+    """בונה מיפוי (course_code, group_id) -> kind עבור כל הקבוצות שהתקבלו."""
+    index: _KindIndex = {}
+    for course in courses:
+        for g in course.groups:
+            index[(g.course_code, g.group_id)] = g.kind
+    return index
+
+
+def _link_allows(owner: Group, other: Group, kind_of: _KindIndex | None) -> bool:
+    """
+    האם ה-linked_to של `owner` מרשה לצרף דווקא את `other` (מאותו קורס)?
+
+    המשמעות של linked_to לפי ה-SPEC היא *דרישה*: "חייבים לקחת גם את הקבוצות
+    האלה" — ולא רשימת-היתר גורפת. לכן היא מגבילה רק את הרכיבים (kinds)
+    שהיא באמת מזכירה:
+        הרצאה 31 עם linked_to=["33"] כשהקבוצה 33 היא תרגול —
+        מחייבת שהתרגול הנבחר יהיה 33, אך אינה אומרת דבר על הפרויקט.
+    מכיוון שכל kind בקורס הוא סלוט נפרד שממולא בדיוק פעם אחת, הכלל הזוגי
+    הזה מבטיח שכל מזהה שברשימה אכן ייכנס לבחירה הסופית.
+
+    אם סוג הקבוצה המבוקשת אינו ידוע (מזהה שלא קיים בנתונים) — לא פוסלים,
+    כדי שקישור שבור מהפרסר לא ימחק בשקט מערכות תקינות.
+    """
+    if not owner.linked_to:
+        return True
+    if other.group_id in owner.linked_to:
+        return True  # זו בדיוק אחת הקבוצות הנדרשות
+    if not kind_of:
+        return True  # אין לנו מפת סוגים — לא מגבילים באופן שרירותי
+    for gid in owner.linked_to:
+        if kind_of.get((owner.course_code, gid)) == other.kind:
+            # הרשימה דורשת קבוצה *אחרת* מאותו סוג בדיוק — זו כן פסילה.
+            return False
+    return True
+
+
+def _linked_ok(a: Group, b: Group, kind_of: _KindIndex | None = None) -> bool:
+    """
+    כלל ה-linked_to, סימטרי ובשני הכיוונים.
+
+    הכלל חל רק בתוך אותו קורס, ורק על סוגי הרכיבים שהרשימה מזכירה במפורש
+    (ראי _link_allows). הבדיקה נעשית לשני הכיוונים — גם אם רק אחת מהן הצהירה.
+    """
+    if a.course_code != b.course_code:
+        return True  # הכלל חל רק בתוך אותו קורס
+    if not _link_allows(a, b, kind_of):
+        return False
+    if not _link_allows(b, a, kind_of):
+        return False
+    return True
+
+
+def _pair_ok(a: Group, b: Group, kind_of: _KindIndex | None = None) -> bool:
+    """שתי קבוצות יכולות לחיות יחד: לא מתנגשות בזמן ולא שוברות linked_to."""
+    return _linked_ok(a, b, kind_of) and not a.conflicts_with(b)
+
+
+def _first_overlap(a: Group, b: Group) -> tuple[int, int, int] | None:
+    """
+    מחזירה (יום, תחילת החפיפה, סוף החפיפה) של זוג המפגשים החופפים הראשון,
+    או None אם אין חפיפה. משמש להסבר קונקרטי באבחון.
+    """
+    for ma in a.meetings:
+        for mb in b.meetings:
+            if ma.overlaps(mb):
+                return (ma.day, max(ma.start, mb.start), min(ma.end, mb.end))
+    return None
+
+
+def _fmt_overlap(day: int, start: int, end: int) -> str:
+    """'יום שלישי 10:00-12:00'."""
+    return f"יום {DAY_NAMES_HE.get(day, day)} {fmt_time(start)}-{fmt_time(end)}"
+
+
+def _norm_name(name: str) -> str:
+    """נרמול שם מרצה להשוואה: רווחים מיותרים החוצה, אותיות אחידות."""
+    return " ".join((name or "").split()).casefold()
+
+
+# ==========================================================================
+# הסלוטים — (קורס, סוג רכיב) ומועמדיו
+# ==========================================================================
+@dataclass
+class _Slot:
+    """סלוט אחד בחיפוש: 'בקורס 61756 צריך לבחור בדיוק הרצאה אחת'."""
+
+    course: Course
+    kind: str
+    candidates: list[Group]
+
+
+def _build_slots(courses: list[Course], prefs: Preferences) -> list[_Slot]:
+    """
+    בונה את רשימת הסלוטים ומסדרת אותה MOST-CONSTRAINED-FIRST.
+
+    למה הסדר הזה? כי אם לסלוט יש רק שתי אפשרויות ולאחר יש עשרים, כדאי לבחור
+    קודם את הצר — כך ענפים כושלים נחתכים כמעט מיד במקום אחרי עשרים ניסיונות.
+    זהו היוריסטיקת MRV (Minimum Remaining Values) הקלאסית.
+    """
+    slots: list[_Slot] = []
+    for course in courses:
+        kinds = course.kinds()
+        if not kinds:
+            # קורס בלי אף קבוצה במאגר. חייב להיות סלוט *מת* (בלי מועמדים)
+            # ולא "בלי סלוט בכלל" — אחרת החיפוש היה מדלג עליו בשקט ומחזיר
+            # מערכת שחסר בה קורס שלם. עכשיו החיפוש נכשל, ו-solve() מפנה
+            # ל-diagnose_infeasibility שמסביר "אין אף קבוצה במאגר".
+            slots.append(_Slot(course=course, kind="", candidates=[]))
+            continue
+        for kind in kinds:
+            survivors, _ = _filter_groups(course.groups_of(kind), prefs)
+            slots.append(_Slot(course=course, kind=kind, candidates=survivors))
+
+    # מיון: הכי מעט מועמדים קודם. שני שדות נוספים רק כדי שהסדר יהיה יציב.
+    slots.sort(key=lambda s: (len(s.candidates), s.course.code, _kind_rank(s.kind)))
+    return slots
+
+
+def _search_space(slots: list[_Slot], cap: int = MAX_SOLVE_NODES) -> int:
+    """מכפלת מספרי המועמדים — גודל מרחב החיפוש הגולמי, חסום ב-cap."""
+    space = 1
+    for s in slots:
+        space *= max(1, len(s.candidates))
+        if space >= cap:
+            return cap
+    return space
+
+
+def _node_budget(courses: list[Course], prefs: Preferences) -> int:
+    """
+    מכסת צמתים שמתאימה למרחב החיפוש *האמיתי* של הקלט הזה.
+
+    למה בכלל: ברירת המחדל הקבועה של 200,000 צמתים נגמרת כבר בקלט ריאלי
+    (6 קורסים, 11 סלוטים, 4 קבוצות לרכיב). כשהיא נגמרת, ה-DFS מחזיר את
+    מה שהספיק לראות — וזה עלול להיות גרוע מהפתרון האמיתי, בלי שאיש ידע.
+    לכן המכסה גדלה עם המרחב: מכפלת המועמדים כפול מספר הסלוטים (חסם עליון
+    גס למספר הצמתים בעץ), בין DEFAULT_NODE_LIMIT ל-MAX_SOLVE_NODES.
+    """
+    slots = _build_slots(courses, prefs)
+    space = _search_space(slots)
+    tree_bound = space * max(1, len(slots))
+    return max(DEFAULT_NODE_LIMIT, min(MAX_SOLVE_NODES, tree_bound))
+
+
+# ==========================================================================
+# 1. enumerate_selections — החיפוש עצמו
+# ==========================================================================
+def enumerate_selections(
+    courses: list[Course], prefs: Preferences, limit: int = DEFAULT_NODE_LIMIT
+) -> Iterator[Selection]:
+    """
+    מייצרת (yield) כל בחירה שלמה ותקינה: קבוצה אחת לכל (קורס, סוג רכיב).
+
+    האלגוריתם: backtracking על רשימת הסלוטים, כשהסלוטים ממוינים
+    most-constrained-first. לכל סלוט מנסים כל קבוצה מועמדת, ופוסלים מיד אם:
+      - היא מתנגשת בזמן עם קבוצה שכבר נבחרה (Group.conflicts_with)
+      - היא שוברת linked_to מול קבוצה שכבר נבחרה מאותו קורס (בשני הכיוונים)
+    האילוצים היחידניים (earliest / latest / blocked_windows / forbid_friday)
+    כבר סוננו ב-_build_slots — קבוצה שנפסלת מהם לא מגיעה בכלל לרשימת המועמדים.
+
+    Args:
+        courses: הקורסים לשיבוץ. כל אחד תורם סלוט אחד לכל סוג רכיב שיש בו.
+        prefs:   ההעדפות; רק האילוצים הקשיחים משפיעים כאן.
+        limit:   מכסת צמתים חלקיים. חריגה ממנה זורקת SearchExhausted.
+
+    Yields:
+        Selection — אובייקט חדש בכל פעם (העותק מנותק מהמצב הפנימי של החיפוש).
+
+    Raises:
+        SearchExhausted: אם נבדקו יותר מ-`limit` צמתים חלקיים.
+    """
+    slots = _build_slots(courses, prefs)
+    n_slots = len(slots)
+    kind_of = _kind_index(courses)  # (קורס, קבוצה) -> סוג, עבור כלל linked_to
+
+    chosen: list[Group] = []  # המצב החלקי הנוכחי
+    visited = 0  # מונה צמתים — כל ניסיון השמה הוא צומת
+
+    def backtrack(depth: int) -> Iterator[Selection]:
+        nonlocal visited
+
+        if depth == n_slots:
+            # הגענו לעלה: כל הסלוטים מולאו. זו מערכת שלמה ותקינה.
+            yield Selection(list(chosen))
+            return
+
+        slot = slots[depth]
+        for candidate in slot.candidates:
+            visited += 1
+            if visited > limit:
+                raise SearchExhausted(visited)
+
+            # גיזום: האם המועמד סובל את כל מי שכבר בפנים?
+            if any(not _pair_ok(already, candidate, kind_of) for already in chosen):
+                continue
+
+            chosen.append(candidate)
+            yield from backtrack(depth + 1)
+            chosen.pop()
+
+    yield from backtrack(0)
+
+
+# ==========================================================================
+# 2. score — ניקוד מערכת בודדת
+# ==========================================================================
+def _lecturer_component(
+    sel: Selection, prefs: Preferences
+) -> tuple[float, int, int]:
+    """
+    רכיב המרצים. מחזירה (L, פגיעות_במקום_ראשון, מספר_הקורסים_המדורגים).
+
+    כלל הניקוד: לכל קורס שיש לו דירוג מרצים, מסתכלים על הקבוצות שנבחרו בו
+    ולוקחים את הדירוג ה*טוב ביותר* שהושג. דירוג 0 (המרצה המועדף) שווה 1.0,
+    דירוג i שווה 1/(i+1): 1.0, 0.5, 0.333... מרצה שלא ברשימה — 0.0.
+    """
+    present_codes = sel.course_codes()
+
+    total = 0.0
+    hits = 0
+    ranked_courses = 0
+
+    for code, ranking in (prefs.preferred_lecturers or {}).items():
+        if not ranking:
+            continue  # רשימה ריקה = "אין לי העדפה" — לא נספר כקורס מדורג
+        if code not in present_codes:
+            continue  # דירוג לקורס שלא במערכת הזו — לא רלוונטי ולא מעוות את היחס
+
+        ranked_courses += 1
+
+        # מיפוי שם מרצה מנורמל -> הדירוג הטוב ביותר שלו ברשימה
+        rank_of: dict[str, int] = {}
+        for i, name in enumerate(ranking):
+            key = _norm_name(name)
+            if key and key not in rank_of:
+                rank_of[key] = i
+
+        best_rank: int | None = None
+        for g in sel.groups:
+            if g.course_code != code:
+                continue
+            r = rank_of.get(_norm_name(g.lecturer))
+            if r is not None and (best_rank is None or r < best_rank):
+                best_rank = r
+
+        if best_rank is not None:
+            total += 1.0 / (best_rank + 1)
+            if best_rank == 0:
+                hits += 1
+        # אחרת: 0.0 — אף אחת מהקבוצות שנבחרו אינה של מרצה מהרשימה.
+
+    return total, hits, ranked_courses
+
+
+def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
+    """
+    נותנת ניקוד למערכת אחת. ניקוד גבוה = מערכת טובה יותר.
+
+    הנוסחה (בדיוק כמו ב-SPEC.md):
+        score = w_lecturer * L  -  w_days * D  -  w_gaps * (G/60)  -  w_compactness * (S/60)
+
+    כאשר:
+        L = סכום ציוני המרצים (1.0 למרצה המועדף, 1/(i+1) לדירוג i, 0 ללא-מדורג)
+        D = max(0, מספר ימי הלימוד - target_days)      ← קנס על יום עודף
+        G = סך דקות ה"חורים" בין שיעורים באותו יום     ← models.Selection.gap_minutes()
+        S = סך "אורך היום" (מהשיעור הראשון לאחרון)     ← models.Selection.span_minutes()
+
+    G ו-S מחולקים ב-60 כדי שהמשקולות ידברו בשעות, לא בדקות.
+    """
+    w_lect = _weight(prefs, "lecturer")
+    w_days = _weight(prefs, "days")
+    w_gaps = _weight(prefs, "gaps")
+    w_comp = _weight(prefs, "compactness")
+
+    lecturer_sum, lecturer_hits, lecturer_total = _lecturer_component(sel, prefs)
+
+    days_used = sel.days_used()
+    days_penalty = max(0, len(days_used) - prefs.target_days)
+
+    gap_min = sel.gap_minutes()  # מ-models — לא ממציאים מחדש
+    span_min = sel.span_minutes()  # מ-models — לא ממציאים מחדש
+
+    # כל רכיב כבר מוכפל במשקל וחתום (+ לטובה, - לרעה).
+    breakdown = {
+        "lecturer": w_lect * lecturer_sum,
+        "days": -w_days * days_penalty,
+        "gaps": -w_gaps * (gap_min / 60.0),
+        "compactness": -w_comp * (span_min / 60.0),
+    }
+    total = sum(breakdown.values())
+
+    return ScoredSchedule(
+        selection=sel,
+        score=total,
+        breakdown=breakdown,
+        days_count=len(days_used),
+        gap_minutes=gap_min,
+        lecturer_hits=lecturer_hits,
+        lecturer_total=lecturer_total,
+    )
+
+
+# ==========================================================================
+# 3. מיון דטרמיניסטי
+# ==========================================================================
+#: דיוק ההשוואה של הניקוד. שני ניקודים שנבדלים בפחות מזה נחשבים שווים,
+#: ואז שוברים את השוויון לפי הקריטריונים הבאים. אף פעם לא משווים floats ב-==.
+_SCORE_PRECISION = 6
+
+
+def _stable_key(sel: Selection) -> str:
+    """מפתח טקסטואלי יציב למערכת — הקלף האחרון בשבירת שוויון."""
+    return "|".join(
+        sorted(f"{g.course_code}~{g.kind}~{g.group_id}" for g in sel.groups)
+    )
+
+
+def _sort_key(sched: ScoredSchedule) -> tuple[float, int, int, int, str]:
+    """
+    סדר העדיפויות: ניקוד גבוה, ואז פחות ימים, ואז פחות חורים,
+    ואז יום קצר יותר, ואז מפתח טקסטואלי יציב. (הכל 'קטן יותר = טוב יותר').
+    """
+    return (
+        -round(sched.score, _SCORE_PRECISION),
+        sched.days_count,
+        sched.gap_minutes,
+        sched.selection.span_minutes(),
+        _stable_key(sched.selection),
+    )
+
+
+# ==========================================================================
+# 4. solve — הפונקציה הראשית
+# ==========================================================================
+def _validate_tied(courses: list[Course]) -> None:
+    """
+    אוכפת את חוק הקורסים הצמודים: אם קורס מצהיר tied_with, כל שותפיו
+    חייבים להיות ברשימה. הכל או כלום.
+
+    Raises:
+        TiedCoursesError: עם שם הקורס והקודים החסרים, בעברית.
+    """
+    present = {c.code for c in courses}
+    for course in courses:
+        if not course.tied_with:
+            continue
+        missing = [code for code in course.tied_with if code not in present]
+        if missing:
+            raise TiedCoursesError(course.code, missing, list(course.tied_with))
+
+
+def solve(
+    courses: list[Course],
+    prefs: Preferences,
+    top_n: int = 5,
+    *,
+    limit: int | None = None,
+) -> list[ScoredSchedule]:
+    """
+    מוצאת את המערכות הטובות ביותר.
+
+    השלבים:
+        1. בדיקת קורסים צמודים (61756/61757/62027 — הכל או כלום).
+        2. מנייה של כל הצירופים התקינים (enumerate_selections).
+        3. ניקוד לכל אחד (score) ושמירת ה-top_n.
+        4. אם אין אף פתרון — אבחון והרמת Infeasible. לעולם לא מחזירים [].
+
+    Args:
+        courses: הקורסים לשיבוץ.
+        prefs:   העדפות הסטודנטית.
+        top_n:   כמה מערכות להחזיר (לפחות 1).
+        limit:   מכסת צמתים לחיפוש. None (ברירת המחדל) = מכסה שמחושבת לפי
+                 גודל מרחב החיפוש בפועל (_node_budget), כדי שקלט ריאלי
+                 ייסרק *במלואו* ולא ייקטע באמצע.
+
+    Returns:
+        רשימה ממוינת מהטובה לפחות טובה, באורך top_n לכל היותר.
+        לכל מערכת מוצמדת התכונה .truncated — True רק אם החיפוש נקטע במכסת
+        הצמתים, כלומר ייתכן שקיימת מערכת טובה יותר שלא נבדקה.
+
+    Raises:
+        TiedCoursesError: חבילת קורסים צמודים שבורה.
+        Infeasible:       אין אף מערכת אפשרית; .reasons מכיל את ההסבר.
+    """
+    _validate_tied(courses)
+
+    keep = max(1, int(top_n))
+    # מגזמים את הרשימה מדי פעם כדי לא לאגור עשרות אלפי אובייקטים בזיכרון.
+    prune_at = max(200, keep * 20)
+
+    budget = _node_budget(courses, prefs) if limit is None else max(1, int(limit))
+
+    kept: list[ScoredSchedule] = []
+    feasible_count = 0
+    hit_limit = False
+
+    try:
+        for sel in enumerate_selections(courses, prefs, limit=budget):
+            feasible_count += 1
+            kept.append(score(sel, prefs))
+            if len(kept) >= prune_at:
+                kept.sort(key=_sort_key)
+                del kept[keep:]
+    except SearchExhausted as exc:
+        # לא מוותרים על מה שכבר נמצא — פשוט מסמנים שהחיפוש נקטע.
+        hit_limit = True
+        warnings.warn(
+            f"החיפוש נקטע אחרי {exc.visited:,} צמתים (מתוך מכסה של {budget:,}); "
+            f"המערכות שיוחזרו הן הטובות ביותר *מבין אלה שנבדקו* בלבד, וייתכן "
+            f"שקיימת מערכת טובה יותר. אפשר להעלות את הפרמטר limit של solve() "
+            f"(search truncated at the node limit; the result is best-so-far, "
+            f"not proven best — raise solve(..., limit=...) to search further)",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    if not kept:
+        reasons = diagnose_infeasibility(courses, prefs)
+        if hit_limit:
+            reasons.append(
+                "החיפוש נעצר במכסת הצמתים לפני שנמצא פתרון — כדאי להעלות את "
+                "פרמטר limit או להקטין את מרחב החיפוש (search node limit reached)."
+            )
+        raise Infeasible(reasons)
+
+    kept.sort(key=_sort_key)
+    best = kept[:keep]
+    # מסמנים במפורש אם התוצאה חלקית — אזהרת RuntimeWarning לבדה נבלעת בקלות,
+    # והקוראת חייבת דרך לדעת שהמערכת הזו היא "הטובה שנמצאה" ולא "הטובה ביותר".
+    for sched in best:
+        sched.truncated = hit_limit  # type: ignore[attr-defined]
+    return best
+
+
+# ==========================================================================
+# 5. diagnose_infeasibility — למה אין פתרון
+# ==========================================================================
+def diagnose_infeasibility(courses: list[Course], prefs: Preferences) -> list[str]:
+    """
+    מסבירה בעברית *קונקרטית* למה אי אפשר לבנות מערכת. לא זורקת חריגות.
+
+    שלוש שכבות בדיקה, לפי הסדר:
+        1. אילוץ יחידני שמוחק סוג רכיב שלם — למשל: כל הרצאות 61753 מתחילות
+           לפני 10:00, ולכן הכלל "לא לפני 10:00" חוסם את הקורס כולו.
+        2. זוג סלוטים שכל צירוף ביניהם מתנגש — עם דוגמה קונקרטית
+           (שני מספרי קבוצה, היום, ושעות החפיפה).
+        3. אם אף אחד מהשניים לא תפס — החיפוש נכשל קומבינטורית (שילוב של
+           כמה אילוצים חלשים שביחד לא משאירים כלום).
+
+    Returns:
+        רשימת מחרוזות. אף פעם לא זורקת.
+    """
+    reasons: list[str] = []
+
+    # --- שלב 0: קורס בלי שום קבוצה --------------------------------------
+    for course in courses:
+        if not course.groups:
+            reasons.append(
+                f"לקורס {course.code} ({course.name}) אין אף קבוצה במאגר — "
+                f"ייתכן שהקורס לא נפתח בסמסטר הזה "
+                f"(no groups found; the course may not be offered)."
+            )
+
+    # --- שלב 1: אילוץ יחידני שמוחק סוג רכיב שלם -------------------------
+    live_slots: list[_Slot] = []
+    for course in courses:
+        for kind in course.kinds():
+            all_groups = course.groups_of(kind)
+            survivors, eliminated = _filter_groups(all_groups, prefs)
+            if survivors:
+                live_slots.append(_Slot(course=course, kind=kind, candidates=survivors))
+                continue
+
+            # כל הקבוצות מהסוג הזה נפסלו. מי האשם?
+            kinds_hit = {ctype for _g, probs in eliminated for ctype, _txt in probs}
+            head = (
+                f"כל קבוצות ה{kind} בקורס {course.code} ({course.name}) נפסלו "
+                f"({len(eliminated)} קבוצות)"
+            )
+
+            if len(kinds_hit) == 1:
+                # כל הקבוצות נפלו מאותו אילוץ — אפשר לנסח משפט אחד וברור.
+                only = next(iter(kinds_hit))
+                reasons.append(f"{head} — {_constraint_sentence(only, prefs)}.")
+            else:
+                # תערובת אילוצים — מפרטים לכל היותר שלוש דוגמאות.
+                sample = "; ".join(
+                    f"קב' {g.group_id} {probs[0][1]}" for g, probs in eliminated[:3]
+                )
+                more = "" if len(eliminated) <= 3 else f"; ועוד {len(eliminated) - 3}"
+                reasons.append(f"{head}: {sample}{more}.")
+
+    # --- שלב 2: זוג סלוטים שכל הצירופים ביניהם נפסלים -------------------
+    for i, slot_a in enumerate(live_slots):
+        for slot_b in live_slots[i + 1 :]:
+            example = _all_pairs_blocked_example(slot_a, slot_b)
+            if example is not None:
+                reasons.append(example)
+
+    # --- שלב 3: לא נמצאה סיבה נקודתית -----------------------------------
+    if not reasons:
+        total_space = 1
+        for s in live_slots:
+            total_space *= max(1, len(s.candidates))
+        reasons.append(
+            f"אף אילוץ בודד ואף זוג קורסים אינם חוסמים לבדם, אבל שום צירוף מלא "
+            f"מתוך {total_space:,} האפשרויות אינו עומד בכל האילוצים יחד. "
+            f"אפשר לוותר על קורס אחד, להרחיב את חלון השעות, או לבטל חלון חסום "
+            f"(combinatorial exhaustion — no single pair is at fault)."
+        )
+
+    return reasons
+
+
+def _constraint_sentence(constraint: str, prefs: Preferences) -> str:
+    """משפט הסבר לאילוץ יחידני שמחק סוג רכיב שלם."""
+    if constraint == CONSTRAINT_EARLIEST:
+        return (
+            f"כולן מתחילות לפני {fmt_time(prefs.earliest)}, והכלל "
+            f"'אין שיעור לפני {fmt_time(prefs.earliest)}' חוסם את כולן"
+        )
+    if constraint == CONSTRAINT_LATEST:
+        return (
+            f"כולן מסתיימות אחרי {fmt_time(prefs.latest)}, והכלל "
+            f"'אין שיעור אחרי {fmt_time(prefs.latest)}' חוסם את כולן"
+        )
+    if constraint == CONSTRAINT_FRIDAY:
+        return "כולן מתקיימות ביום שישי, ולימודי שישי נאסרו"
+    if constraint == CONSTRAINT_BLOCKED:
+        windows = ", ".join(
+            f"יום {DAY_NAMES_HE.get(d, d)} {fmt_time(s)}-{fmt_time(e)}"
+            for d, s, e in prefs.blocked_windows
+        )
+        return f"כולן חופפות לחלונות החסומים ({windows})"
+    return "אילוץ אישי חוסם את כולן"
+
+
+def _all_pairs_blocked_example(slot_a: _Slot, slot_b: _Slot) -> str | None:
+    """
+    בודקת אם *כל* צירוף קבוצות בין שני סלוטים נפסל. אם כן — מחזירה משפט
+    הסבר עם דוגמה קונקרטית; אחרת None.
+    """
+    if not slot_a.candidates or not slot_b.candidates:
+        return None
+
+    kind_of = _kind_index([slot_a.course, slot_b.course])
+
+    example: str | None = None
+    for a in slot_a.candidates:
+        for b in slot_b.candidates:
+            if _pair_ok(a, b, kind_of):
+                return None  # נמצא צירוף חוקי אחד — הזוג הזה לא אשם
+
+            if example is None:
+                overlap = _first_overlap(a, b)
+                if overlap is not None:
+                    day, ov_s, ov_e = overlap
+                    example = (
+                        f"קורס {a.course_code} קבוצה {a.group_id} ({a.kind}) מתנגש עם "
+                        f"{b.course_code} קבוצה {b.group_id} ({b.kind}) — "
+                        f"{_fmt_overlap(day, ov_s, ov_e)}"
+                    )
+                else:
+                    # לא התנגשות זמנים אלא הפרת linked_to.
+                    example = (
+                        f"קורס {a.course_code} קבוצה {a.group_id} ({a.kind}) אינה מותרת "
+                        f"יחד עם קבוצה {b.group_id} ({b.kind}) לפי כלל הקבוצות הצמודות "
+                        f"(linked_to)"
+                    )
+
+    same = slot_a.course.code == slot_b.course.code
+    scope = (
+        f"בתוך קורס {slot_a.course.code}: כל שילוב של {slot_a.kind} עם {slot_b.kind} נפסל"
+        if same
+        else (
+            f"בין {slot_a.course.code} ({slot_a.kind}) לבין "
+            f"{slot_b.course.code} ({slot_b.kind}): כל צירוף אפשרי של קבוצות נפסל"
+        )
+    )
+    return f"{scope}. לדוגמה: {example} (every group pair is blocked)."
+
+
+# ==========================================================================
+# 6. relax_suggestions — מה לעשות עכשיו
+# ==========================================================================
+def relax_suggestions(courses: list[Course], prefs: Preferences) -> list[str]:
+    """
+    צעדים מעשיים בעברית להרפיית האילוצים, כשאין פתרון (או שהפתרון גרוע).
+
+    מציעה, לפי סדר "כמה זה כואב":
+        1. להעלות את יעד הימים (הכי זול — זו העדפה רכה בלבד).
+        2. להרחיב את חלון השעות בדיוק עד מה שהנתונים דורשים.
+        3. לבטל חלון חסום שמוחק הרבה קבוצות.
+        4. לאפשר יום שישי.
+        5. לוותר על קורס — כולל אזהרה שקורס צמוד גורר את כל החבילה.
+    """
+    tips: list[str] = []
+
+    # --- 1. יעד ימים -----------------------------------------------------
+    if prefs.target_days < 6:
+        tips.append(
+            f"העלי את target_days מ-{prefs.target_days} ל-{prefs.target_days + 1} "
+            f"(ואם צריך עד 5): יעד הימים הוא העדפה רכה — הוא רק מוריד ניקוד ואינו "
+            f"פוסל מערכות, אבל הוא עלול לדחוק מערכות טובות למטה ברשימה "
+            f"(raise target_days to {prefs.target_days + 1})."
+        )
+
+    # --- 2. חלון השעות ---------------------------------------------------
+    all_meetings = [m for c in courses for g in c.groups for m in g.meetings]
+    if all_meetings:
+        min_start = min(m.start for m in all_meetings)
+        max_end = max(m.end for m in all_meetings)
+        if prefs.earliest > min_start:
+            tips.append(
+                f"הקדימי את earliest מ-{fmt_time(prefs.earliest)} ל-{fmt_time(min_start)} — "
+                f"יש שיעורים שמתחילים בשעה הזו ואין דרך לעקוף אותם "
+                f"(widen the window: earliest -> {fmt_time(min_start)})."
+            )
+        if prefs.latest < max_end:
+            tips.append(
+                f"אחרי את latest מ-{fmt_time(prefs.latest)} ל-{fmt_time(max_end)} "
+                f"(widen the window: latest -> {fmt_time(max_end)})."
+            )
+
+    # --- 3. חלונות חסומים ------------------------------------------------
+    for day, w_start, w_end in prefs.blocked_windows:
+        blocked_count = sum(
+            1
+            for c in courses
+            for g in c.groups
+            if any(_window_overlaps(m, day, w_start, w_end) for m in g.meetings)
+        )
+        if blocked_count:
+            tips.append(
+                f"בטלי או כווצי את החלון החסום ביום {DAY_NAMES_HE.get(day, day)} "
+                f"{fmt_time(w_start)}-{fmt_time(w_end)} — הוא מוחק {blocked_count} קבוצות "
+                f"(drop this blocked window)."
+            )
+
+    # --- 4. יום שישי -----------------------------------------------------
+    if prefs.forbid_friday:
+        friday_groups = sum(
+            1 for c in courses for g in c.groups if FRIDAY in g.days()
+        )
+        if friday_groups:
+            tips.append(
+                f"אפשרי לימודים ביום שישי (forbid_friday=False) — {friday_groups} קבוצות "
+                f"נחסמות כרגע בגללו (allow Friday)."
+            )
+
+    # --- 5. ויתור על קורס ------------------------------------------------
+    for course in _most_problematic_courses(courses, prefs)[:2]:
+        if course.tied_with:
+            block = ", ".join([course.code, *course.tied_with])
+            tips.append(
+                f"ויתור על {course.code} ({course.name}) מחייב ויתור על כל החבילה "
+                f"הצמודה [{block}] — זו החלטה כבדה, שקלי אותה אחרונה "
+                f"(dropping a tied course drops the whole block)."
+            )
+        else:
+            tips.append(
+                f"שקלי לוותר על {course.code} ({course.name}) ולדחות אותו לסמסטר הבא — "
+                f"זה הקורס הכי בעייתי לשיבוץ כרגע (drop course {course.code})."
+            )
+
+    if not tips:
+        tips.append(
+            "כל האילוצים כבר רפויים; הבעיה היא שילוב הקורסים עצמו. "
+            "הדרך היחידה היא לוותר על קורס (only dropping a course will help)."
+        )
+    return tips
+
+
+def _most_problematic_courses(courses: list[Course], prefs: Preferences) -> list[Course]:
+    """
+    מדרגת קורסים לפי "כמה הם מפריעים": סלוטים שנמחקו לגמרי + מספר הזוגות
+    שבהם כל הצירופים חסומים. משמש רק להצעות — לא משפיע על החיפוש.
+    """
+    trouble: dict[str, int] = {c.code: 0 for c in courses}
+
+    live_slots: list[_Slot] = []
+    for course in courses:
+        if not course.groups:
+            trouble[course.code] += 10
+        for kind in course.kinds():
+            survivors, _ = _filter_groups(course.groups_of(kind), prefs)
+            if survivors:
+                live_slots.append(_Slot(course, kind, survivors))
+            else:
+                trouble[course.code] += 5
+
+    for i, a in enumerate(live_slots):
+        for b in live_slots[i + 1 :]:
+            if _all_pairs_blocked_example(a, b) is not None:
+                trouble[a.course.code] += 1
+                trouble[b.course.code] += 1
+
+    ranked = sorted(
+        courses,
+        key=lambda c: (-trouble[c.code], len(c.tied_with), c.code),
+    )
+    # מחזירים רק קורסים שבאמת בעייתיים; אם אף אחד לא — הראשון ברשימה עדיין שימושי.
+    problematic = [c for c in ranked if trouble[c.code] > 0]
+    if problematic:
+        return problematic
+    return ranked[:1]
+
+
+# ==========================================================================
+# 7. בדיקת עשן (smoke test) — רק כשמריצים את הקובץ ישירות
+# ==========================================================================
+def _to_minutes(value: object) -> int:
+    """מקבלת 510 או '08:30' ומחזירה דקות מחצות."""
+    if isinstance(value, bool):
+        raise ValueError("boolean is not a time")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    text = str(value).strip()
+    if ":" in text:
+        hh, mm = text.split(":", 1)
+        return int(hh) * 60 + int(mm)
+    return int(text)
+
+
+def _courses_from_json(raw: object) -> list[Course]:
+    """
+    קורא מבנה JSON סלחני והופך אותו ל-Course objects.
+
+    Technical note: the canonical loader is parser.load_sections(); this local
+    reader exists only so the smoke test can run before parser.py is finished.
+    It accepts {"courses": {...}}, {code: {...}} and a bare list of dicts.
+    """
+    data: object = raw
+    if isinstance(data, dict) and "courses" in data:
+        data = data["courses"]
+
+    if isinstance(data, dict):
+        items = list(data.values())
+    elif isinstance(data, list):
+        items = list(data)
+    else:
+        return []
+
+    courses: list[Course] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("code", "")).strip()
+        groups: list[Group] = []
+        for gd in item.get("groups", []) or []:
+            meetings = [
+                Meeting(
+                    day=int(md.get("day", 0)),
+                    start=_to_minutes(md.get("start", 0)),
+                    end=_to_minutes(md.get("end", 0)),
+                    room=str(md.get("room", "")),
+                    building=str(md.get("building", "")),
+                )
+                for md in (gd.get("meetings", []) or [])
+            ]
+            groups.append(
+                Group(
+                    course_code=str(gd.get("course_code", code)),
+                    group_id=str(gd.get("group_id", gd.get("group", gd.get("id", "")))),
+                    kind=str(gd.get("kind", gd.get("type", ""))),
+                    lecturer=str(gd.get("lecturer", "")),
+                    meetings=meetings,
+                    linked_to=[str(x) for x in (gd.get("linked_to") or [])],
+                    note=str(gd.get("note", "")),
+                )
+            )
+        courses.append(
+            Course(
+                code=code,
+                name=str(item.get("name", "")),
+                credits=float(item.get("credits", 0) or 0),
+                groups=groups,
+                tied_with=[str(x) for x in (item.get("tied_with") or [])],
+            )
+        )
+    return courses
+
+
+def _load_fixture(path: Path) -> list[Course]:
+    """טוען את קובץ הדוגמה. מנסה קודם את parser.load_sections אם הוא כבר קיים."""
+    try:
+        from parser import load_sections  # type: ignore[attr-defined]
+
+        loaded = load_sections(str(path))
+        if isinstance(loaded, dict) and loaded:
+            return list(loaded.values())
+    except Exception:
+        # parser.py עדיין לא נכתב / לא תואם — נופלים לקורא המקומי.
+        pass
+
+    with open(path, encoding="utf-8") as fh:
+        return _courses_from_json(json.load(fh))
+
+
+def _demo_courses() -> list[Course]:
+    """מערך זעיר מובנה, לשימוש כשקובץ ה-fixture עדיין לא קיים."""
+    return [
+        Course(
+            code="11069",
+            name="אנגלית טכנית יישומית",
+            credits=1.0,
+            groups=[
+                Group("11069", "11", "הרצאה", "כהן", [Meeting(1, 480, 600)]),
+                Group("11069", "12", "הרצאה", "לוי", [Meeting(3, 600, 720)]),
+            ],
+        ),
+        Course(
+            code="61832",
+            name="מבוא להסתברות וסטטיסטיקה",
+            credits=4.0,
+            groups=[
+                Group("61832", "11", "הרצאה", "לוי", [Meeting(1, 600, 720)]),
+                Group("61832", "21", "תרגול", "כהן", [Meeting(1, 720, 840)]),
+                Group("61832", "22", "תרגול", "כהן", [Meeting(3, 480, 600)]),
+            ],
+        ),
+    ]
+
+
+def _smoke_test() -> int:
+    """הרצה ידנית: python src/scheduler.py"""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+        except (AttributeError, ValueError, OSError):
+            pass  # זרם שלא ניתן לשינוי (pipe/pytest capture) — ממשיכים בלי
+
+    root = Path(__file__).resolve().parents[1]
+    fixture = root / "tests" / "fixtures" / "sample_sections.json"
+
+    if fixture.exists():
+        print(f"טוען fixture: {fixture}")
+        courses = _load_fixture(fixture)
+    else:
+        print(f"אין fixture ב-{fixture} — מריץ דוגמה מובנית קטנה במקום.")
+        courses = _demo_courses()
+
+    print(f"נטענו {len(courses)} קורסים: {', '.join(c.code for c in courses)}")
+
+    prefs = Preferences(
+        target_days=4,
+        weights=dict(DEFAULT_WEIGHTS),
+    )
+
+    try:
+        best = solve(courses, prefs, top_n=3)
+    except TiedCoursesError as exc:
+        print(f"שגיאת קורסים צמודים: {exc}")
+        return 2
+    except Infeasible as exc:
+        print("אין מערכת אפשרית. סיבות:")
+        for reason in exc.reasons:
+            print(f"  • {reason}")
+        print("הצעות להרפיה:")
+        for tip in relax_suggestions(courses, prefs):
+            print(f"  → {tip}")
+        return 1
+
+    print(f"\nנמצאו {len(best)} מערכות מובילות:\n")
+    for i, sched in enumerate(best, start=1):
+        print(f"[{i}] {sched.summary()}")
+        for key in ("lecturer", "days", "gaps", "compactness"):
+            print(f"      {key:<12} {sched.breakdown[key]:+8.2f}")
+        for g in sorted(sched.selection.groups, key=lambda g: (g.course_code, g.kind)):
+            print(f"      {g}")
+        print()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_smoke_test())
