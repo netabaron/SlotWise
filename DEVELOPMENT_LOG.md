@@ -156,8 +156,12 @@ Established by exhaustive enumeration, not estimation:
 
 - **Only 16 feasible combinations exist, and every one needs 5 days (א–ה).** The 4-day target is
   unreachable with these six courses. Friday is always free.
-- **8 of the 27 groups are dead ends** — picking one leaves no valid schedule at all. Nearly a
-  third. This is why the web app pre-computes viability instead of letting a click strand the user.
+- **9 of the 27 groups are dead ends** — picking one leaves no valid schedule at all. A third of
+  them. This is why the web app pre-computes viability instead of letting a click strand the user.
+  (First measured as 8. The verification script pinned a group by *deleting* its siblings, which
+  also drops them from the scheduler's kind index and silently disables `linked_to` enforcement —
+  the same bug the review caught in `api.py`. The missed case was 62027's tutorial `271060310/1`,
+  excluded by the lecture group's link to `271070310/1`.)
 - **Dropping 11069 (1 נ"ז) reaches 4 days** while keeping 18.0 of 19.0 credits. Caveat: 11069 is a
   prerequisite for פרויקט מסכם and every seminar.
 - 61753 אלגוריתמים **is** open in סמסטר א' — the original open question.

@@ -33,12 +33,50 @@ is a thin translation between HTTP/JSON and the functions above.
 
 ## VERIFIED facts you must build on
 
-1. **Pinning needs no scheduler change.** To force a specific group, filter the course's groups
-   before calling `solve`:
+1. **Pinning needs no scheduler change — but it must be a FILTER, never a DELETION.**
+
+   Force a group by rejecting the selections that do not use it, as a predicate over the
+   enumerated stream:
+
    ```python
-   course.groups = [g for g in course.groups if g.kind != kind or g.group_id == pinned_id]
+   def pins_satisfied(selection, applied) -> bool:
+       for code, by_kind in applied.items():
+           for kind, group_id in by_kind.items():
+               group = selection.group_for(code, kind)
+               if group is None or group.group_id != group_id:
+                   return False
+       return True
+
+   for sel in scheduler.enumerate_selections(courses, prefs):
+       if pins_satisfied(sel, applied):
+           ...
    ```
-   Proven working: pinning 61753's lecture to `271070330` was correctly honoured.
+
+   > ### ⚠️ Do NOT implement a pin by deleting the course's other groups
+   >
+   > An earlier draft of this spec said to do exactly that:
+   > `course.groups = [g for g in course.groups if g.kind != kind or g.group_id == pinned_id]`
+   > **That is wrong and it was shipped once before being caught in review.**
+   >
+   > Deleting the sibling groups also removes them from `scheduler._kind_index`. `_link_allows`
+   > then sees a `linked_to` id it cannot resolve and **stops enforcing the link entirely**.
+   > The result is a schedule that pairs a lecture with a tutorial the yedion will not let you
+   > register for — silently, with no error.
+   >
+   > The tell is unmistakable and worth remembering: **adding a pin made `feasible_count` go
+   > *up*** (16 → 38) and `min_days` drop from 5 to 4. A constraint that increases the number of
+   > solutions is not a constraint.
+   >
+   > The same bug was independently reproduced in a hand-written verification script, which
+   > under-counted the dead-end groups as 8 when the true figure is 9. The missed case:
+   > 62027's only lecture group declares `linked_to = ['271070310/1']`, so pinning the *other*
+   > tutorial (`271060310/1`) is impossible — but deletion-based pinning reported it as viable.
+
+   Group deletion is acceptable in exactly one place: building a narrowed copy to hand to
+   `diagnose_infeasibility` / `relax_suggestions`, which only *explain* an empty result and never
+   count or construct schedules. See `_pin_filtered` in `src/web/api.py`, and keep that
+   restriction commented at the call site.
+
    Always `copy.deepcopy` the courses first — the Store hands back live objects.
 2. **A solve takes ~1 ms** for this student's 6 courses / 27 groups / 16 feasible combinations.
    So the server may re-solve on *every* interaction. No caching gymnastics needed.
