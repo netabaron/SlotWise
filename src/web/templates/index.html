@@ -1,0 +1,298 @@
+<!doctype html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+<title>בונה המערכת — מערכת שעות בראודה</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!--
+  ==========================================================================
+  חוזה ה-DOM עבור static/app.js  ·  DOM contract for static/app.js
+  ==========================================================================
+  אין כאן שום לוגיקה: אין onclick, אין קוד מוטבע. כל ההתנהגות נמצאת ב-app.js.
+  There is no logic in this file: no inline handlers, no inline code.
+
+  מזהים יציבים (stable ids) — app.js may rely on all of these:
+
+  כותרת / header
+    #busy-bar            סרגל טעינה דק בראש העמוד. hidden כברירת מחדל.
+    #freshness           אזור טריות הנתונים (role=status)
+    #freshness-dot       נקודת מצב. data-state = "fresh" | "stale" | "empty" | "unknown"
+    #freshness-text      "הנתונים נמשכו לפני 3 שעות"
+    #freshness-meta      "6 קורסים · 27 קבוצות · קטלוג: 1412"
+    #btn-refresh         "רענון מהידיעון"  ->  POST /api/scrape/start
+    #btn-reparse         "בנייה מחדש ללא רשת"  ->  POST /api/reparse
+    #btn-log-toggle      מציג/מסתיר את #scrape-log (יש לעדכן aria-expanded)
+
+  הודעות / messages
+    #banners             באנרים מתמשכים (נתונים ישנים, יעד ימים בלתי אפשרי)
+    #toasts              הודעות חולפות
+    tpl-banner / tpl-toast   שלד מוכן לשכפול (בתחתית העמוד)
+      המחלקה על השורש קובעת גוון:
+      banner--info | banner--warn | banner--error | banner--ok
+
+  יומן משיכה / scrape log
+    #scrape-log          מוסתר כברירת מחדל — יש להשתמש ב-el.hidden, לא ב-style.display
+    #scrape-phase        טקסט השלב הנוכחי
+    #scrape-log-lines    שורות היומן
+    #btn-log-close       סגירה
+
+  חמשת השלבים / the five steps
+    #step-year #step-courses #step-days #step-lecturers #step-schedule
+    לכל section.step יש data-step="1".."5", והמספר מוצג אוטומטית ב-CSS.
+    מצבים: class "is-active" (השלב הנוכחי) · "is-complete" (הושלם) ·
+           "is-locked" (עדיין לא זמין — רצוי גם aria-disabled="true").
+    #step-year-state #step-courses-state #step-days-state
+    #step-lecturers-state #step-schedule-state   שורת מצב קצרה בכל שלב (aria-live)
+
+  1 שנה וסמסטר   #select-year #select-term #semester-summary #year-note
+  2 קורסים        #course-search #course-search-results #course-list
+                  #credits-total #courses-note
+  3 ימי לימוד     #days-buttons (כפתורים עם data-days="2".."6")
+                  #days-target-label #min-days-label #feasible-count-label
+                  #days-warning (hidden) #input-earliest #input-latest
+                  #chk-forbid-friday #blocked-list
+  4 מרצים         #lecturer-courses  #btn-clear-ranking
+                  מחלקות לשורת טבלה: "is-ranked" (עם span.rank-badge) ·
+                  "is-pinned" · "is-dead" (מבוי סתום: aria-disabled="true"
+                  ותכונת title עם הסיבה). כפתור הנעיצה: class "pin-btn".
+  5 המערכת        #schedule-tabs #schedule-summary #schedule-legend
+                  #grid-scroll > #schedule-grid
+                  #schedule-empty (hidden) > #infeasible-reasons #infeasible-suggestions
+                  #btn-print #schedule-note
+
+  הרשת השבועית / the weekly grid  (#schedule-grid)
+    עמודה 1 = עמודת השעות, ויושבת מימין בזכות dir=rtl.
+    ימים א..ו = עמודות 2..7, כלומר grid-column = day + 1
+    (day: 1=ראשון .. 6=שישי) — בדיוק כמו המוסכמה ב-src/render.py.
+    שורה 1 = כותרות הימים. כל משבצת = 15 דקות. מיקום מפגש:
+      grid-row: (floor(start,15) - grid_start)/15 + 2 / (ceil(end,15) - grid_start)/15 + 2
+    מחלקות: .hd כותרת · .tl תווית שעה (.tl.hour לשעה עגולה) ·
+            .slot משבצת רקע · .ev בלוק מפגש + מחלקת צבע .c0 .. .c9
+            (אותו מיפוי צבעים כמו render.py)
+  ==========================================================================
+-->
+
+<div class="busy-bar" id="busy-bar" hidden aria-hidden="true"><span></span></div>
+
+<header class="app-header" id="app-header">
+  <div class="brand">
+    <h1 class="brand-title">בונה המערכת</h1>
+    <p class="brand-sub">מערכת שעות בראודה · רץ במחשב הזה בלבד, בלי לשלוח שום דבר החוצה</p>
+  </div>
+
+  <div class="header-side">
+    <div class="freshness" id="freshness" role="status" aria-live="polite">
+      <span class="fresh-dot" id="freshness-dot" data-state="unknown" aria-hidden="true"></span>
+      <span class="fresh-lines">
+        <span class="fresh-text" id="freshness-text">בטעינת נתונים…</span>
+        <span class="fresh-meta" id="freshness-meta"></span>
+      </span>
+    </div>
+    <div class="header-actions">
+      <button type="button" class="btn btn-primary" id="btn-refresh">רענון מהידיעון</button>
+      <button type="button" class="btn btn-ghost" id="btn-reparse">בנייה מחדש ללא רשת</button>
+      <button type="button" class="btn btn-ghost" id="btn-log-toggle" aria-expanded="false" aria-controls="scrape-log">יומן</button>
+    </div>
+  </div>
+</header>
+
+<div class="banners" id="banners" role="region" aria-label="הודעות" aria-live="polite"></div>
+
+<section class="panel log-panel" id="scrape-log" hidden aria-labelledby="scrape-log-title">
+  <div class="log-head">
+    <h2 class="log-title" id="scrape-log-title">יומן משיכת נתונים מהידיעון</h2>
+    <span class="log-phase" id="scrape-phase">ממתין</span>
+    <button type="button" class="btn btn-ghost btn-sm" id="btn-log-close">סגירה</button>
+  </div>
+  <p class="log-note">
+    ההתחברות מתבצעת בחלון דפדפן נפרד שנפתח על המסך, ושם יש להקליד את פרטי ההתחברות ידנית.
+    העמוד הזה לא מבקש, לא מציג ולא שומר סיסמאות — הוא רק מפעיל את החלון ועוקב אחרי ההתקדמות.
+  </p>
+  <pre class="log-lines" id="scrape-log-lines" tabindex="0" aria-live="polite"></pre>
+</section>
+
+<main class="steps" id="steps">
+
+  <!-- ===================== 1. שנה וסמסטר ===================== -->
+  <section class="step" id="step-year" data-step="1" aria-labelledby="step-year-title">
+    <div class="step-head">
+      <h2 class="step-title" id="step-year-title">שנה וסמסטר</h2>
+      <p class="step-hint">יש לבחור את שנת הלימודים ואת הסמסטר. הבחירה קובעת אילו קורסים מוצעים מתוך תוכנית הלימודים.</p>
+      <p class="step-state" id="step-year-state" aria-live="polite"></p>
+    </div>
+    <div class="step-body">
+      <div class="field-row">
+        <div class="field">
+          <label class="label" for="select-year">שנת לימודים</label>
+          <select class="input" id="select-year"></select>
+        </div>
+        <div class="field">
+          <label class="label" for="select-term">סמסטר</label>
+          <select class="input" id="select-term"></select>
+        </div>
+      </div>
+      <p class="resolved" id="semester-summary" role="status" aria-live="polite"></p>
+      <p class="note" id="year-note"></p>
+    </div>
+  </section>
+
+  <!-- ===================== 2. קורסים ===================== -->
+  <section class="step" id="step-courses" data-step="2" aria-labelledby="step-courses-title">
+    <div class="step-head">
+      <h2 class="step-title" id="step-courses-title">קורסים</h2>
+      <p class="step-hint">יש לסמן את הקורסים ללמידה בסמסטר הזה. קורסים כבולים זה לזה מסומנים יחד, וניתן להוסיף כל קורס אחר מהידיעון — כולל חזרה על קורס מסמסטר קודם.</p>
+      <p class="step-state" id="step-courses-state" aria-live="polite"></p>
+    </div>
+    <div class="step-body">
+      <div class="courses-toolbar">
+        <div class="field field-grow">
+          <label class="label" for="course-search">הוספת קורס מהידיעון</label>
+          <input type="search" class="input" id="course-search" autocomplete="off" spellcheck="false"
+                 role="combobox" aria-expanded="false" aria-autocomplete="list"
+                 aria-controls="course-search-results"
+                 placeholder="קוד או שם קורס — למשל 61753 או אלגוריתמים">
+        </div>
+        <div class="credits" id="credits-box">
+          <span class="credits-label">סך נקודות זכות</span>
+          <strong class="credits-value" id="credits-total">0</strong>
+        </div>
+      </div>
+      <ul class="search-results" id="course-search-results" role="listbox" aria-label="תוצאות חיפוש" hidden></ul>
+      <div class="course-list" id="course-list"></div>
+      <p class="note" id="courses-note"></p>
+    </div>
+  </section>
+
+  <!-- ===================== 3. ימי לימוד ===================== -->
+  <section class="step" id="step-days" data-step="3" aria-labelledby="step-days-title">
+    <div class="step-head">
+      <h2 class="step-title" id="step-days-title">ימי לימוד</h2>
+      <p class="step-hint">יש לבחור כמה ימים בשבוע להגיע לקמפוס. זהו יעד — לצידו מוצג המינימום שאפשר להשיג בפועל עם הקורסים שנבחרו.</p>
+      <p class="step-state" id="step-days-state" aria-live="polite"></p>
+    </div>
+    <div class="step-body">
+      <div class="field">
+        <span class="label" id="days-buttons-label">יעד ימי לימוד</span>
+        <div class="days-row" id="days-buttons" role="radiogroup" aria-labelledby="days-buttons-label">
+          <button type="button" class="day-btn" data-days="2" role="radio" aria-checked="false">2</button>
+          <button type="button" class="day-btn" data-days="3" role="radio" aria-checked="false">3</button>
+          <button type="button" class="day-btn" data-days="4" role="radio" aria-checked="false">4</button>
+          <button type="button" class="day-btn" data-days="5" role="radio" aria-checked="false">5</button>
+          <button type="button" class="day-btn" data-days="6" role="radio" aria-checked="false">6</button>
+        </div>
+      </div>
+
+      <div class="facts" id="days-facts">
+        <span class="fact"><span class="fact-label">יעד</span><strong class="fact-value" id="days-target-label">—</strong></span>
+        <span class="fact"><span class="fact-label">מינימום אפשרי</span><strong class="fact-value" id="min-days-label">—</strong></span>
+        <span class="fact"><span class="fact-label">מערכות אפשריות</span><strong class="fact-value" id="feasible-count-label">—</strong></span>
+      </div>
+
+      <p class="inline-warn" id="days-warning" role="status" aria-live="polite" hidden></p>
+
+      <details class="advanced" id="advanced-prefs">
+        <summary class="advanced-summary">העדפות נוספות</summary>
+        <div class="advanced-body">
+          <div class="field-row">
+            <div class="field">
+              <label class="label" for="input-earliest">לא להתחיל לפני</label>
+              <input type="time" class="input" id="input-earliest" step="900">
+            </div>
+            <div class="field">
+              <label class="label" for="input-latest">לא לסיים אחרי</label>
+              <input type="time" class="input" id="input-latest" step="900">
+            </div>
+            <div class="field field-check">
+              <input type="checkbox" id="chk-forbid-friday">
+              <label for="chk-forbid-friday">בלי יום שישי</label>
+            </div>
+          </div>
+          <div class="blocked" id="blocked-list"></div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ===================== 4. מרצים ===================== -->
+  <section class="step" id="step-lecturers" data-step="4" aria-labelledby="step-lecturers-title">
+    <div class="step-head">
+      <h2 class="step-title" id="step-lecturers-title">מרצים</h2>
+      <p class="step-hint">לחיצה על שורה מוסיפה את המרצה לדירוג ההעדפות של אותו קורס — הלחיצה הראשונה היא ההעדפה הראשונה, ולחיצה נוספת מסירה. נעיצה מקבעת קבוצה מסוימת. שורה מעומעמת היא בחירה שמשאירה את הסמסטר בלי שום פתרון, ולכן היא חסומה.</p>
+      <p class="step-state" id="step-lecturers-state" aria-live="polite"></p>
+    </div>
+    <div class="step-body">
+      <div class="lect-toolbar">
+        <p class="legend-inline">
+          <span class="legend-item"><span class="rank-badge">1</span> העדפה ראשונה</span>
+          <span class="legend-item"><span class="legend-swatch legend-swatch--pin"></span> קבוצה נעוצה</span>
+          <span class="legend-item"><span class="legend-swatch legend-swatch--dead"></span> בחירה שמשאירה בלי פתרון</span>
+        </p>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-ranking">איפוס הדירוג והנעיצות</button>
+      </div>
+      <div class="lect-courses" id="lecturer-courses"></div>
+      <p class="note" id="lecturers-note"></p>
+    </div>
+  </section>
+
+  <!-- ===================== 5. המערכת ===================== -->
+  <section class="step" id="step-schedule" data-step="5" aria-labelledby="step-schedule-title">
+    <div class="step-head">
+      <h2 class="step-title" id="step-schedule-title">המערכת</h2>
+      <p class="step-hint">המערכות המובילות לפי ההעדפות שנבחרו. כל שינוי בשלבים הקודמים מעדכן את הרשת מיד, בלי לטעון מחדש את העמוד.</p>
+      <p class="step-state" id="step-schedule-state" aria-live="polite"></p>
+    </div>
+    <div class="step-body">
+      <div class="sched-toolbar">
+        <div class="tabs" id="schedule-tabs" role="tablist" aria-label="מערכות מוצעות"></div>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-print">הדפסה</button>
+      </div>
+
+      <div class="facts" id="schedule-summary"></div>
+      <div class="legend" id="schedule-legend"></div>
+
+      <div class="grid-scroll" id="grid-scroll" tabindex="0" role="group" aria-label="מערכת שבועית">
+        <div class="grid" id="schedule-grid"></div>
+      </div>
+
+      <div class="empty" id="schedule-empty" hidden>
+        <h3 class="empty-title">אין מערכת אפשרית עם הבחירות האלה</h3>
+        <p class="empty-sub">להלן מה שחוסם, ומה אפשר לשחרר כדי לפתוח פתרון:</p>
+        <ul class="reasons" id="infeasible-reasons"></ul>
+        <ul class="suggestions" id="infeasible-suggestions"></ul>
+      </div>
+
+      <p class="note" id="schedule-note"></p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="app-footer">
+  <p>בונה המערכת · שרת מקומי על 127.0.0.1 בלבד · הנתונים נשמרים במחשב הזה ואינם נשלחים לשום מקום.</p>
+</footer>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<template id="tpl-banner">
+  <div class="banner banner--info" role="note">
+    <span class="banner-icon" aria-hidden="true"></span>
+    <span class="banner-text"></span>
+    <button type="button" class="banner-close" aria-label="סגירת ההודעה">×</button>
+  </div>
+</template>
+
+<template id="tpl-toast">
+  <div class="toast toast--info">
+    <span class="toast-text"></span>
+  </div>
+</template>
+
+<script src="/static/app.js" defer></script>
+</body>
+</html>
