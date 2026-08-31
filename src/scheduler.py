@@ -14,18 +14,33 @@
 הערה חשובה על "קורסים צמודים" (tied courses):
     בסמסטר 5 של הנדסת תוכנה בבראודה, הקורסים 61756 + 61757 + 62027 הם חבילה אחת.
     אי אפשר לקחת אחד בלי השניים האחרים. solve() אוכף את זה לפני שהוא בכלל מתחיל לחפש.
+
+הערה חשובה על חובת נוכחות (attendance) — SPEC_V2 §2:
+    בבראודה יש רכיבים — בעיקר הרצאות, ובמיוחד בקורס חוזר — שאין בהם חובת נוכחות.
+    סטודנט יכול לבחור *ביודעין* להירשם לשני רכיבים שחופפים בזמן וללכת רק לאחד,
+    אם בזכות זה השבוע שלו נגמר מוקדם יותר. לכן חפיפה בזמן אינה עוד וטו מוחלט:
+
+        חפיפה **קשיחה** (hard) — שני הצדדים דורשים נוכחות → נפסלת, כמו תמיד.
+        חפיפה **רכה**   (soft) — לפחות צד אחד אינו דורש נוכחות → מותרת, אך
+                                 נספרת, מקבלת קנס ניקוד, ו*מדווחת בקול*.
+
+    ברירת המחדל לא השתנתה בכהוא זה: ``Preferences()`` בלי ``attendance`` ובלי
+    ``allow_soft_conflicts`` מתנהגת בדיוק כמו קודם — כל חפיפה נפסלת. הסטודנט
+    מוותר על נוכחות במפורש, לעולם לא בטעות.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import sys
 import warnings
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from models import (
+    DAY_LETTERS_HE,
     DAY_NAMES_HE,
     KIND_ORDER,
     Course,
@@ -46,13 +61,45 @@ MINUTES_IN_DAY: int = 24 * 60
 #: יום שישי. forbid_friday חוסם את היום הזה לגמרי.
 FRIDAY: int = 6
 
+#: מפתח המשקל של חפיפה מכוונת (soft conflict).
+WEIGHT_SOFT_CONFLICT: str = "soft_conflict"
+
 #: משקולות ברירת המחדל — "מאוזן" (balanced), בדיוק כמו ב-data/profile.json.
+#:
+#: ``soft_conflict`` הוא קנס: 6.0 נקודות לכל חפיפה מכוונת. הוא לא נועד לחסום
+#: אלא לתמחר — ויתור על הרצאה הוא מחיר אמיתי, ולכן המנוע ייקח חפיפה כזו רק
+#: כשהיא באמת קונה שבוע קצר יותר (יום שלם שווה 8.0, שעת חור שווה 4.0).
+#: הוא נכנס ל-breakdown *רק* כשיש חפיפה בפועל — ראי score().
 DEFAULT_WEIGHTS: dict[str, float] = {
     "lecturer": 10.0,
     "days": 8.0,
     "gaps": 4.0,
     "compactness": 1.0,
+    WEIGHT_SOFT_CONFLICT: 6.0,
 }
+
+#: ארבעת רכיבי הניקוד הקבועים, שתמיד מופיעים ב-``ScoredSchedule.breakdown``.
+#: ‏``soft_conflict`` הוא רכיב חמישי **מותנה** — הוא מצטרף רק כשיש חפיפה
+#: מכוונת בפועל. מי שמציג את הפירוק (render / web) חייב לסבול מפתח נוסף.
+CORE_BREAKDOWN_KEYS: tuple[str, ...] = ("lecturer", "days", "gaps", "compactness")
+
+# --------------------------------------------------------------------------
+# חובת נוכחות (attendance)
+# --------------------------------------------------------------------------
+#: מקור ברירת המחדל של חובת הנוכחות ברכיב.
+ATTENDANCE_SOURCE_YEDION = "yedion"  # הידיעון אמר את זה במפורש בהערת הקבוצה
+ATTENDANCE_SOURCE_DEFAULT = "default"  # לא נאמר דבר — ברירת המחדל היא "חובה"
+
+#: ניסוחים בידיעון שמשמעותם "יש חובת נוכחות".
+#: 11069 (אנגלית טכנית) נושא בדיוק הערה כזו: "חובת הנוכחות בקורס היא מרגע
+#: הרישום לקורס" — שימי לב ל-ה' הידיעה ב"הנוכחות", ולכן היא אופציונלית בתבנית.
+ATTENDANCE_NOTE_PATTERNS: tuple[str, ...] = (
+    r"חוב[הת]\s+ה?נוכחות",  # "חובת נוכחות" / "חובת הנוכחות" / "חובה נוכחות"
+    r"נוכחות\s+ה?חובה",  # "נוכחות חובה" — אותו משפט, סדר הפוך
+    r"חובה\s+להשתתף",  # "חובה להשתתף בכל המפגשים"
+)
+
+_ATTENDANCE_NOTE_RE = re.compile("|".join(ATTENDANCE_NOTE_PATTERNS))
 
 #: מכסת הצמתים המינימלית של enumerate_selections (ברירת המחדל של הפרמטר limit).
 DEFAULT_NODE_LIMIT: int = 200_000
@@ -131,6 +178,8 @@ class Preferences:
         earliest, latest, blocked_windows, forbid_friday
     העדפות רכות (soft preferences) — רק משפיעות על הניקוד:
         target_days, preferred_lecturers, weights
+    ויתור מודע (deliberate trade-off) — הופך אילוץ קשיח לרך:
+        attendance, allow_soft_conflicts
     """
 
     target_days: int = 4
@@ -142,15 +191,34 @@ class Preferences:
     earliest: int = 0
     #: אף שיעור לא יסתיים אחרי השעה הזו (בדקות מחצות)
     latest: int = MINUTES_IN_DAY
+    #: ‏``soft_conflict`` נמצא כאן כדי שהמשקל יהיה *גלוי וניתן לכוונון* גם
+    #: כשלא נגעו בו — אבל הוא מוכפל ב-0 בכל מערכת בלי חפיפה מכוונת, ולכן
+    #: אינו משנה אף ניקוד קיים.
     weights: dict[str, float] = field(
         default_factory=lambda: {
             "lecturer": 10.0,
             "days": 8.0,
             "gaps": 4.0,
             "compactness": 1.0,
+            WEIGHT_SOFT_CONFLICT: 6.0,
         }
     )
     forbid_friday: bool = False
+
+    #: ‏{קוד קורס: {סוג רכיב: האם נדרשת נוכחות}}. **מפתח חסר פירושו True.**
+    #:
+    #: ‏``{"61753": {"הרצאה": False}}`` = "בהרצאה של 61753 אין חובת נוכחות,
+    #: ולכן מותר לי לשבץ אותה על גבי משהו אחר". כל רכיב שלא הוזכר כאן נשאר
+    #: חובה — הסטודנט מוותר על נוכחות במפורש, לעולם לא בהיסח הדעת.
+    #: אפשר לאתחל את המילון מ-``seed_attendance_from_notes(courses)`` (ראי בהמשך).
+    attendance: dict[str, dict[str, bool]] = field(default_factory=dict)
+
+    #: ‏False = ההתנהגות של היום, בדיוק: כל חפיפה בזמן נפסלת.
+    #: ‏True  = חפיפה מותרת כשלפחות צד אחד אינו דורש נוכחות. היא עדיין נספרת,
+    #: מקבלת קנס ניקוד, ומדווחת ב-``describe_soft_conflicts``.
+    #: המתג הזה לבדו לא מספיק: בלי ``attendance`` שמסמן משהו כלא-חובה,
+    #: כל הרכיבים עדיין חובה ולכן כל חפיפה עדיין קשיחה.
+    allow_soft_conflicts: bool = False
 
 
 def _weight(prefs: Preferences, key: str) -> float:
@@ -160,6 +228,166 @@ def _weight(prefs: Preferences, key: str) -> float:
     except (AttributeError, TypeError, ValueError):
         # weights פגום או None — לא מפילים את המנוע בגלל זה.
         return DEFAULT_WEIGHTS[key]
+
+
+# ==========================================================================
+# חובת נוכחות — מי חייב להיות בכיתה, ומי לא (SPEC_V2 §2)
+# ==========================================================================
+def note_requires_attendance(note: str) -> bool:
+    """האם הערת הידיעון אומרת במפורש שיש חובת נוכחות ברכיב הזה?
+
+    זו קריאה ב*ניסוח של הידיעון עצמו*, לא ניחוש. הידיעון לא תמיד אומר,
+    ולכן ``False`` כאן פירושו "הידיעון שתק" — ולא "אין חובת נוכחות".
+    ברירת המחדל כשהידיעון שותק היא עדיין **חובה**.
+
+    Examples:
+        >>> note_requires_attendance("חובת הנוכחות בקורס היא מרגע הרישום לקורס")
+        True
+        >>> note_requires_attendance("קורס זה הינו קורס צמוד לקורסים: 61756")
+        False
+    """
+    text = " ".join((note or "").split())
+    if not text:
+        return False
+    return bool(_ATTENDANCE_NOTE_RE.search(text))
+
+
+def attendance_required(prefs: Preferences, group: Group) -> bool:
+    """האם הרכיב שהקבוצה הזו שייכת אליו דורש נוכחות?
+
+    **מפתח חסר פירושו True.** זה הכלל היחיד כאן, והוא הכלל שמגן על הסטודנט:
+    ‏``attendance`` ריק (ברירת המחדל) → הכול חובה → כל חפיפה קשיחה → בדיוק
+    ההתנהגות שהייתה לפני SPEC_V2.
+
+    ההחלטה נקראת מ-``prefs`` בלבד ולא מהערת הידיעון, כי ההערה כבר עשתה את
+    שלה: היא זרעה את ברירת המחדל דרך ``seed_attendance_from_notes``. אחרי שהסטודנט
+    בחר במפורש — הבחירה שלו היא הקובעת.
+    """
+    table = getattr(prefs, "attendance", None)
+    if not isinstance(table, dict):
+        return True
+    per_course = table.get(group.course_code)
+    if not isinstance(per_course, dict):
+        return True
+    value = per_course.get(group.kind)
+    if value is None:
+        return True  # לא נאמר דבר על הרכיב הזה — חובה.
+    return bool(value)
+
+
+@dataclass(frozen=True)
+class AttendanceDefault:
+    """ברירת המחדל של חובת נוכחות לרכיב אחד, ומאיפה היא הגיעה.
+
+    ``source`` מאפשר לממשק לומר "כך כתוב בידיעון" במקום "כך הנחנו" —
+    ההבדל הזה חשוב לסטודנט שמחליט אם לוותר על נוכחות.
+    """
+
+    course_code: str
+    kind: str
+    required: bool
+    source: str  # ATTENDANCE_SOURCE_YEDION / ATTENDANCE_SOURCE_DEFAULT
+    evidence: str = ""  # הערת הידיעון שממנה זה נקרא, אם הייתה
+
+    @property
+    def from_yedion(self) -> bool:
+        return self.source == ATTENDANCE_SOURCE_YEDION
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "code": self.course_code,
+            "kind": self.kind,
+            "required": self.required,
+            "source": self.source,
+            "from_yedion": self.from_yedion,
+            "evidence": self.evidence,
+        }
+
+
+def seed_attendance_defaults(
+    courses: "list[Course] | tuple[Course, ...]",
+) -> dict[str, dict[str, AttendanceDefault]]:
+    """זורעת ברירות מחדל של חובת נוכחות מהניסוח של הידיעון עצמו.
+
+    לכל (קורס, סוג רכיב) מוחזר ``AttendanceDefault``:
+      * ‏``required=True`` תמיד — הסטודנט מוותר על נוכחות במפורש, לא בטעות;
+      * ‏``source="yedion"`` כשהערת אחת הקבוצות ברכיב אומרת זאת במפורש
+        (למשל 11069 שו"ת, שהערתו "חובת הנוכחות בקורס היא מרגע הרישום לקורס");
+      * ‏``source="default"`` כשהידיעון שתק.
+
+    Returns:
+        ‏{קוד קורס: {סוג רכיב: AttendanceDefault}}.
+    """
+    seeded: dict[str, dict[str, AttendanceDefault]] = {}
+    for course in courses or []:
+        for group in course.groups:
+            slot = seeded.setdefault(course.code, {})
+            existing = slot.get(group.kind)
+            if existing is not None and existing.from_yedion:
+                continue  # כבר מצאנו ראיה מפורשת לרכיב הזה
+            if note_requires_attendance(group.note):
+                slot[group.kind] = AttendanceDefault(
+                    course_code=course.code,
+                    kind=group.kind,
+                    required=True,
+                    source=ATTENDANCE_SOURCE_YEDION,
+                    evidence=" ".join((group.note or "").split()),
+                )
+            elif existing is None:
+                slot[group.kind] = AttendanceDefault(
+                    course_code=course.code,
+                    kind=group.kind,
+                    required=True,
+                    source=ATTENDANCE_SOURCE_DEFAULT,
+                )
+    return seeded
+
+
+def seed_attendance_from_notes(
+    courses: "list[Course] | tuple[Course, ...]",
+    overrides: dict[str, dict[str, bool]] | None = None,
+) -> dict[str, dict[str, bool]]:
+    """מילון מוכן להצבה ב-``Preferences.attendance``.
+
+    מתחילה מברירות המחדל של הידיעון (הכול חובה) ומחילה מעליהן את הוויתורים
+    המפורשים של הסטודנט. רכיב שאינו קיים בנתונים *כן* נכנס אם הסטודנט ביקש —
+    כדי שוויתור לא ייעלם בשקט רק בגלל שהקורס טרם נשאב.
+
+    Args:
+        courses:   הקורסים שמהם נזרעות ברירות המחדל.
+        overrides: ‏{קוד: {סוג: bool}} — הבחירות המפורשות של הסטודנט.
+    """
+    table: dict[str, dict[str, bool]] = {
+        code: {kind: default.required for kind, default in kinds.items()}
+        for code, kinds in seed_attendance_defaults(courses).items()
+    }
+    for code, kinds in (overrides or {}).items():
+        if not isinstance(kinds, dict):
+            continue
+        slot = table.setdefault(str(code), {})
+        for kind, required in kinds.items():
+            slot[str(kind)] = bool(required)
+    return table
+
+
+#: שם קצר לאותה פונקציה, לקוראים שרוצים "תני לי את הטבלה" ולא "זרעי".
+attendance_table = seed_attendance_from_notes
+
+
+def conflict_is_hard(a: Group, b: Group, prefs: Preferences) -> bool:
+    """האם החפיפה בין שתי הקבוצות היא חפיפה **קשיחה** — כזו שפוסלת?
+
+    שלושת המקרים, בסדר הזה בדיוק (SPEC_V2 §2):
+        1. אין חפיפה בכלל                       → False (אין מה לפסול).
+        2. ‏``allow_soft_conflicts=False``       → True  (ההתנהגות של היום).
+        3. אחרת                                  → קשיחה רק אם *שני* הצדדים
+           דורשים נוכחות. די בצד אחד שאינו דורש כדי שהחפיפה תהיה רכה.
+    """
+    if not a.conflicts_with(b):
+        return False
+    if not getattr(prefs, "allow_soft_conflicts", False):
+        return True
+    return attendance_required(prefs, a) and attendance_required(prefs, b)
 
 
 # ==========================================================================
@@ -313,9 +541,22 @@ def _linked_ok(a: Group, b: Group, kind_of: _KindIndex | None = None) -> bool:
     return True
 
 
-def _pair_ok(a: Group, b: Group, kind_of: _KindIndex | None = None) -> bool:
-    """שתי קבוצות יכולות לחיות יחד: לא מתנגשות בזמן ולא שוברות linked_to."""
-    return _linked_ok(a, b, kind_of) and not a.conflicts_with(b)
+def _pair_ok(
+    a: Group, b: Group, kind_of: _KindIndex | None = None, prefs: Preferences | None = None
+) -> bool:
+    """שתי קבוצות יכולות לחיות יחד: לא מתנגשות בזמן ולא שוברות linked_to.
+
+    ‏``prefs=None`` (ברירת המחדל) = הכלל המחמיר הישן: כל חפיפה פוסלת.
+    עם ``prefs`` הפסילה עוברת דרך ``conflict_is_hard``, כלומר חפיפה רכה
+    (רכיב בלי חובת נוכחות) *אינה* פוסלת. שימי לב: כש-
+    ‏``allow_soft_conflicts=False`` שני המסלולים זהים בתוצאה, כי אז
+    ‏``conflict_is_hard`` מחזיר בדיוק ``a.conflicts_with(b)``.
+    """
+    if not _linked_ok(a, b, kind_of):
+        return False
+    if prefs is None:
+        return not a.conflicts_with(b)
+    return not conflict_is_hard(a, b, prefs)
 
 
 def _first_overlap(a: Group, b: Group) -> tuple[int, int, int] | None:
@@ -328,6 +569,24 @@ def _first_overlap(a: Group, b: Group) -> tuple[int, int, int] | None:
             if ma.overlaps(mb):
                 return (ma.day, max(ma.start, mb.start), min(ma.end, mb.end))
     return None
+
+
+def _overlap_windows(a: Group, b: Group) -> list[tuple[int, int, int, Meeting, Meeting]]:
+    """כל חלונות החפיפה בין שתי קבוצות, ממוינים לפי יום ושעה.
+
+    לכל חלון: ``(יום, תחילת החפיפה, סוף החפיפה, המפגש של a, המפגש של b)``.
+    ‏``_first_overlap`` מספיק לאבחון; כאן צריך את *הכול*, כי דיווח על חפיפה
+    מכוונת חייב להראות לסטודנט כל דקה שהוא מוותר עליה.
+    """
+    windows: list[tuple[int, int, int, Meeting, Meeting]] = []
+    for ma in a.meetings:
+        for mb in b.meetings:
+            if ma.overlaps(mb):
+                windows.append(
+                    (ma.day, max(ma.start, mb.start), min(ma.end, mb.end), ma, mb)
+                )
+    windows.sort(key=lambda w: (w[0], w[1], w[2]))
+    return windows
 
 
 def _fmt_overlap(day: int, start: int, end: int) -> str:
@@ -416,14 +675,22 @@ def enumerate_selections(
 
     האלגוריתם: backtracking על רשימת הסלוטים, כשהסלוטים ממוינים
     most-constrained-first. לכל סלוט מנסים כל קבוצה מועמדת, ופוסלים מיד אם:
-      - היא מתנגשת בזמן עם קבוצה שכבר נבחרה (Group.conflicts_with)
+      - החפיפה שלה עם קבוצה שכבר נבחרה היא חפיפה *קשיחה* (conflict_is_hard)
       - היא שוברת linked_to מול קבוצה שכבר נבחרה מאותו קורס (בשני הכיוונים)
     האילוצים היחידניים (earliest / latest / blocked_windows / forbid_friday)
     כבר סוננו ב-_build_slots — קבוצה שנפסלת מהם לא מגיעה בכלל לרשימת המועמדים.
 
+    חפיפה קשיחה מול רכה (SPEC_V2 §2): כברירת מחדל
+    ‏``prefs.allow_soft_conflicts=False``, ואז ``conflict_is_hard`` שקול מילה
+    במילה ל-``Group.conflicts_with`` — כל חפיפה פוסלת, בדיוק כמו קודם.
+    רק כשהסטודנט מדליק את המתג *וגם* מסמן רכיב כלא-מחייב-נוכחות,
+    בחירות עם חפיפה מכוונת מתחילות לצאת מכאן. הן חוקיות, אך אינן
+    ‏``Selection.is_feasible()`` — זו בדיוק הנקודה, ולכן הניקוד מקנס אותן
+    ו-``describe_soft_conflicts`` מדווח עליהן.
+
     Args:
         courses: הקורסים לשיבוץ. כל אחד תורם סלוט אחד לכל סוג רכיב שיש בו.
-        prefs:   ההעדפות; רק האילוצים הקשיחים משפיעים כאן.
+        prefs:   ההעדפות; רק האילוצים הקשיחים (וכללי הנוכחות) משפיעים כאן.
         limit:   מכסת צמתים חלקיים. חריגה ממנה זורקת SearchExhausted.
 
     Yields:
@@ -454,7 +721,7 @@ def enumerate_selections(
                 raise SearchExhausted(visited)
 
             # גיזום: האם המועמד סובל את כל מי שכבר בפנים?
-            if any(not _pair_ok(already, candidate, kind_of) for already in chosen):
+            if any(not _pair_ok(already, candidate, kind_of, prefs) for already in chosen):
                 continue
 
             chosen.append(candidate)
@@ -462,6 +729,173 @@ def enumerate_selections(
             chosen.pop()
 
     yield from backtrack(0)
+
+
+# ==========================================================================
+# 1ב. חפיפות מכוונות — מה נבחר ביודעין, ואיך אומרים את זה בקול
+# ==========================================================================
+#: התחילית של דיווח חפיפה מכוונת. שורות ההמשך מיושרות מתחתיה.
+_SOFT_PREFIX = "חפיפה מכוונת: "
+_SOFT_INDENT = " " * len(_SOFT_PREFIX)
+
+
+def _component_label(group: Group) -> str:
+    """'61753 הרצאה' — הרכיב, בלי מספר הקבוצה."""
+    return f"{group.course_code} {group.kind}"
+
+
+def _day_time(day: int, start: int, end: int) -> str:
+    """'יום ד 08:30-10:30'."""
+    return f"יום {DAY_LETTERS_HE.get(day, day)} {fmt_time(start)}-{fmt_time(end)}"
+
+
+def _side_label(group: Group, meeting: Meeting) -> str:
+    """'61753 הרצאה קב' 271060330 (יום ד 08:30-10:30)' — צד אחד של החפיפה."""
+    when = _day_time(meeting.day, meeting.start, meeting.end)
+    return f"{_component_label(group)} קב' {group.group_id} ({when})"
+
+
+@dataclass(frozen=True)
+class SoftConflict:
+    """חפיפה אחת שאושרה ביודעין, על כל פרטיה.
+
+    זהו הפירוט המובנה שמאחורי המשפט העברי — כדי שה-API והממשק לא יצטרכו
+    לנתח מחרוזות כדי לדעת מה חופף למה.
+    """
+
+    a: Group
+    b: Group
+    #: כל חלונות החפיפה: ‏(יום, התחלה, סוף) בדקות מחצות.
+    windows: tuple[tuple[int, int, int], ...]
+    #: סך דקות החפיפה — כמה זמן לימוד בפועל נזנח.
+    minutes: int
+    #: הרכיבים שהונח לגביהם שאין חובת נוכחות ('61753 הרצאה'), אחד או שניים.
+    optional_components: tuple[str, ...]
+    #: המשפט בעברית, מוכן להצגה. ראי describe_soft_conflicts.
+    text: str
+
+    @property
+    def day(self) -> int:
+        """היום של חלון החפיפה הראשון."""
+        return self.windows[0][0] if self.windows else 0
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "a": {
+                "code": self.a.course_code,
+                "kind": self.a.kind,
+                "group_id": self.a.group_id,
+            },
+            "b": {
+                "code": self.b.course_code,
+                "kind": self.b.kind,
+                "group_id": self.b.group_id,
+            },
+            "windows": [
+                {"day": d, "start": s, "end": e} for d, s, e in self.windows
+            ],
+            "minutes": self.minutes,
+            "optional_components": list(self.optional_components),
+            "text": self.text,
+        }
+
+
+def soft_conflicts_in(sel: Selection, prefs: Preferences) -> list[SoftConflict]:
+    """כל החפיפות ה*רכות* בבחירה — מפורטות, לא רק נספרות.
+
+    חפיפה רכה קיימת רק כשהסטודנט הדליק את ``allow_soft_conflicts`` *וגם*
+    סימן לפחות אחד הצדדים כרכיב בלי חובת נוכחות. כש-``allow_soft_conflicts``
+    כבוי, כל חפיפה היא לפי הגדרה קשיחה, ולכן הרשימה ריקה תמיד — וזו הסיבה
+    שהניקוד של ברירת המחדל לא זז אף לא בנקודה אחת.
+
+    חפיפה *קשיחה* שנמצאה בבחירה (מצב שהמנוע לעולם לא מייצר, אבל בחירה
+    שנבנתה ביד כן יכולה) אינה מוחזרת כאן — היא אינה "מכוונת", היא פשוט
+    פסולה. ``Selection.overlapping_pairs()`` מראה את הכול.
+
+    Returns:
+        רשימה, אחת לכל *זוג קבוצות* חופף (לא לכל מפגש), בסדר יציב.
+    """
+    if not getattr(prefs, "allow_soft_conflicts", False):
+        return []
+
+    found: list[SoftConflict] = []
+    for a, b in sel.overlapping_pairs():
+        if conflict_is_hard(a, b, prefs):
+            continue
+
+        raw = _overlap_windows(a, b)
+        if not raw:
+            continue  # לא אמור לקרות — overlapping_pairs כבר ווידא חפיפה
+        windows = tuple((day, start, end) for day, start, end, _ma, _mb in raw)
+        minutes = sum(max(0, end - start) for _day, start, end in windows)
+
+        optional = tuple(
+            _component_label(g) for g in (a, b) if not attendance_required(prefs, g)
+        )
+        if len(optional) == 2:
+            assumption = (
+                f"נבחר בהנחה שאין חובת נוכחות ב-{optional[0]} ואף לא ב-{optional[1]}"
+            )
+        elif optional:
+            assumption = f"נבחר בהנחה שאין חובת נוכחות ב-{optional[0]}"
+        else:
+            # בלתי אפשרי לפי conflict_is_hard (חפיפה רכה מחייבת צד אחד פטור),
+            # אבל דוח שחייב לא לשתוק לעולם — לא ייפול על IndexError.
+            assumption = "החפיפה אושרה, אך לא ברור איזה רכיב פטור מנוכחות"
+
+        overlap_text = ", ".join(_day_time(d, s, e) for d, s, e in windows)
+        meeting_a, meeting_b = raw[0][3], raw[0][4]
+        text = (
+            f"{_SOFT_PREFIX}{_side_label(a, meeting_a)}\n"
+            f"{_SOFT_INDENT}מול {_side_label(b, meeting_b)}\n"
+            f"{_SOFT_INDENT}— חופפים ב{overlap_text} ({minutes} דקות); {assumption}."
+        )
+        found.append(
+            SoftConflict(
+                a=a,
+                b=b,
+                windows=windows,
+                minutes=minutes,
+                optional_components=optional,
+                text=text,
+            )
+        )
+
+    found.sort(key=lambda c: (c.windows[0], c.a.course_code, c.a.kind, c.b.course_code, c.b.kind))
+    return found
+
+
+def describe_soft_conflicts(sel: Selection, prefs: Preferences) -> list[str]:
+    """דוח עברי על כל חפיפה מכוונת בבחירה. רשימה ריקה = אין חפיפות.
+
+    כל פריט הוא בלוק של שלוש שורות שמזהה את שני הצדדים, את היום ואת שעות
+    החפיפה, ואת הרכיב שלגביו הונח שאין בו חובת נוכחות::
+
+        חפיפה מכוונת: 61753 הרצאה קב' 271060330 (יום ד 08:30-10:30)
+                      מול 61756 תרגול קב' 271060310/3 (יום ד 08:30-11:30)
+                      — חופפים ביום ד 08:30-10:30 (120 דקות); נבחר בהנחה
+                        שאין חובת נוכחות ב-61753 הרצאה.
+
+    זה לא קישוט. הסטודנט מחליף נוכחות בזמן, והוא חייב לראות בדיוק במה הוא
+    מחליף — חפיפה מכוונת לעולם לא עוברת בשקט.
+    """
+    return [conflict.text for conflict in soft_conflicts_in(sel, prefs)]
+
+
+def soft_conflicts_of(sched: ScoredSchedule) -> int:
+    """מספר החפיפות המכוונות במערכת מנוקדת, גם אם הופקה בגרסה ישנה."""
+    try:
+        return int(getattr(sched, "soft_conflicts", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def soft_conflict_minutes_of(sched: ScoredSchedule) -> int:
+    """סך דקות החפיפה המכוונת במערכת מנוקדת, גם אם הופקה בגרסה ישנה."""
+    try:
+        return int(getattr(sched, "soft_conflict_minutes", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 # ==========================================================================
@@ -519,16 +953,25 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
     """
     נותנת ניקוד למערכת אחת. ניקוד גבוה = מערכת טובה יותר.
 
-    הנוסחה (בדיוק כמו ב-SPEC.md):
-        score = w_lecturer * L  -  w_days * D  -  w_gaps * (G/60)  -  w_compactness * (S/60)
+    הנוסחה (בדיוק כמו ב-SPEC.md, בתוספת הרכיב החמישי של SPEC_V2 §2):
+        score = w_lecturer * L  -  w_days * D  -  w_gaps * (G/60)
+                                -  w_compactness * (S/60)  -  w_soft_conflict * C
 
     כאשר:
         L = סכום ציוני המרצים (1.0 למרצה המועדף, 1/(i+1) לדירוג i, 0 ללא-מדורג)
         D = max(0, מספר ימי הלימוד - target_days)      ← קנס על יום עודף
         G = סך דקות ה"חורים" בין שיעורים באותו יום     ← models.Selection.gap_minutes()
         S = סך "אורך היום" (מהשיעור הראשון לאחרון)     ← models.Selection.span_minutes()
+        C = מספר החפיפות המכוונות (זוגות קבוצות)       ← soft_conflicts_in()
 
     G ו-S מחולקים ב-60 כדי שהמשקולות ידברו בשעות, לא בדקות.
+
+    על הרכיב החמישי:
+        C הוא 0 בכל מצב שאינו ``allow_soft_conflicts=True`` — כלומר בכל
+        השימושים הקיימים. לכן ``breakdown`` ממשיך להכיל **בדיוק** את ארבעת
+        המפתחות הוותיקים, וה-``soft_conflict`` מצטרף אליהם רק כשהוא באמת
+        פועל. זה לא קישוט: ``breakdown`` הוא חוזה שמוצג לסטודנט, ואסור
+        שיצוץ בו רכיב "0.00" על ויתור שמעולם לא נעשה.
     """
     w_lect = _weight(prefs, "lecturer")
     w_days = _weight(prefs, "days")
@@ -543,6 +986,10 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
     gap_min = sel.gap_minutes()  # מ-models — לא ממציאים מחדש
     span_min = sel.span_minutes()  # מ-models — לא ממציאים מחדש
 
+    conflicts = soft_conflicts_in(sel, prefs)  # ריק כברירת מחדל — ראי למעלה
+    soft_count = len(conflicts)
+    soft_minutes = sum(c.minutes for c in conflicts)
+
     # כל רכיב כבר מוכפל במשקל וחתום (+ לטובה, - לרעה).
     breakdown = {
         "lecturer": w_lect * lecturer_sum,
@@ -550,9 +997,11 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
         "gaps": -w_gaps * (gap_min / 60.0),
         "compactness": -w_comp * (span_min / 60.0),
     }
+    if soft_count:
+        breakdown[WEIGHT_SOFT_CONFLICT] = -_weight(prefs, WEIGHT_SOFT_CONFLICT) * soft_count
     total = sum(breakdown.values())
 
-    return ScoredSchedule(
+    sched = ScoredSchedule(
         selection=sel,
         score=total,
         breakdown=breakdown,
@@ -561,6 +1010,13 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
         lecturer_hits=lecturer_hits,
         lecturer_total=lecturer_total,
     )
+    # שני השדות האלה נצמדים למופע ולא לחוזה של models.ScoredSchedule, בדיוק
+    # כמו ``.truncated`` ש-solve() מצמיד — כדי שמודל הנתונים המשותף יישאר
+    # כפי שהוא. הקוראים שאינם בטוחים ישתמשו ב-soft_conflicts_of() /
+    # soft_conflict_minutes_of(), שאף פעם לא נופלים.
+    sched.soft_conflicts = soft_count  # type: ignore[attr-defined]
+    sched.soft_conflict_minutes = soft_minutes  # type: ignore[attr-defined]
+    return sched
 
 
 # ==========================================================================
@@ -578,13 +1034,20 @@ def _stable_key(sel: Selection) -> str:
     )
 
 
-def _sort_key(sched: ScoredSchedule) -> tuple[float, int, int, int, str]:
+def _sort_key(sched: ScoredSchedule) -> tuple[float, int, int, int, int, str]:
     """
-    סדר העדיפויות: ניקוד גבוה, ואז פחות ימים, ואז פחות חורים,
-    ואז יום קצר יותר, ואז מפתח טקסטואלי יציב. (הכל 'קטן יותר = טוב יותר').
+    סדר העדיפויות: ניקוד גבוה, ואז פחות חפיפות מכוונות, ואז פחות ימים,
+    ואז פחות חורים, ואז יום קצר יותר, ואז מפתח טקסטואלי יציב.
+    (הכל 'קטן יותר = טוב יותר').
+
+    החפיפות המכוונות נכנסות מיד אחרי הניקוד: הקנס כבר תומחר בניקוד עצמו,
+    אבל אם שתי מערכות יצאו שוות בדיוק — עדיף להציע לסטודנט את זו שלא דורשת
+    ממנו לוותר על שיעור. בברירת המחדל הערך הזה הוא 0 בכל המערכות, ולכן
+    הסדר זהה לחלוטין לסדר שהיה לפני SPEC_V2.
     """
     return (
         -round(sched.score, _SCORE_PRECISION),
+        soft_conflicts_of(sched),
         sched.days_count,
         sched.gap_minutes,
         sched.selection.span_minutes(),
@@ -754,9 +1217,11 @@ def diagnose_infeasibility(courses: list[Course], prefs: Preferences) -> list[st
                 reasons.append(f"{head}: {sample}{more}.")
 
     # --- שלב 2: זוג סלוטים שכל הצירופים ביניהם נפסלים -------------------
+    # prefs עובר פנימה כדי שהאבחון ידבר על אותם כללים שהחיפוש עבד לפיהם:
+    # אם חפיפות מכוונות מותרות, זוג שחופף אינו "חסום" ואסור להאשים אותו.
     for i, slot_a in enumerate(live_slots):
         for slot_b in live_slots[i + 1 :]:
-            example = _all_pairs_blocked_example(slot_a, slot_b)
+            example = _all_pairs_blocked_example(slot_a, slot_b, prefs)
             if example is not None:
                 reasons.append(example)
 
@@ -798,10 +1263,15 @@ def _constraint_sentence(constraint: str, prefs: Preferences) -> str:
     return "אילוץ אישי חוסם את כולן"
 
 
-def _all_pairs_blocked_example(slot_a: _Slot, slot_b: _Slot) -> str | None:
+def _all_pairs_blocked_example(
+    slot_a: _Slot, slot_b: _Slot, prefs: Preferences | None = None
+) -> str | None:
     """
     בודקת אם *כל* צירוף קבוצות בין שני סלוטים נפסל. אם כן — מחזירה משפט
     הסבר עם דוגמה קונקרטית; אחרת None.
+
+    ‏``prefs=None`` = הכלל המחמיר (כל חפיפה פוסלת). כשמעבירים ``prefs``,
+    הבדיקה משתמשת באותם כללי נוכחות שהחיפוש עצמו עבד לפיהם.
     """
     if not slot_a.candidates or not slot_b.candidates:
         return None
@@ -811,7 +1281,7 @@ def _all_pairs_blocked_example(slot_a: _Slot, slot_b: _Slot) -> str | None:
     example: str | None = None
     for a in slot_a.candidates:
         for b in slot_b.candidates:
-            if _pair_ok(a, b, kind_of):
+            if _pair_ok(a, b, kind_of, prefs):
                 return None  # נמצא צירוף חוקי אחד — הזוג הזה לא אשם
 
             if example is None:
@@ -855,7 +1325,9 @@ def relax_suggestions(courses: list[Course], prefs: Preferences) -> list[str]:
         2. להרחיב את חלון השעות בדיוק עד מה שהנתונים דורשים.
         3. לבטל חלון חסום שמוחק הרבה קבוצות.
         4. לאפשר יום שישי.
-        5. לוותר על קורס — כולל אזהרה שקורס צמוד גורר את כל החבילה.
+        5. לאפשר חפיפה מכוונת ברכיב שאין בו חובת נוכחות (SPEC_V2 §2) —
+           מוצע רק כשזה באמת פותח זוג קורסים שחסום כרגע.
+        6. לוותר על קורס — כולל אזהרה שקורס צמוד גורר את כל החבילה.
     """
     tips: list[str] = []
 
@@ -911,7 +1383,18 @@ def relax_suggestions(courses: list[Course], prefs: Preferences) -> list[str]:
                 f"נחסמות כרגע בגללו (allow Friday)."
             )
 
-    # --- 5. ויתור על קורס ------------------------------------------------
+    # --- 5. חפיפה מכוונת ברכיב בלי חובת נוכחות ---------------------------
+    for slot_a, slot_b in _soft_conflict_opportunities(courses, prefs)[:2]:
+        tips.append(
+            f"‏{slot_a.course.code} ({slot_a.kind}) ו-{slot_b.course.code} "
+            f"({slot_b.kind}) חוסמים זה את זה רק בגלל חפיפה בשעות. אם באחד מהם "
+            f"אין חובת נוכחות — אפשר לסמן אותו ככזה ולאפשר חפיפות מכוונות "
+            f"(allow_soft_conflicts), ואז המערכת תיבנה עם החפיפה הזו, תדווח "
+            f"עליה במפורש, ותקבל קנס ניקוד "
+            f"(mark a component attendance-optional and allow soft conflicts)."
+        )
+
+    # --- 6. ויתור על קורס ------------------------------------------------
     for course in _most_problematic_courses(courses, prefs)[:2]:
         if course.tied_with:
             block = ", ".join([course.code, *course.tied_with])
@@ -934,6 +1417,43 @@ def relax_suggestions(courses: list[Course], prefs: Preferences) -> list[str]:
     return tips
 
 
+def _soft_conflict_opportunities(
+    courses: list[Course], prefs: Preferences
+) -> list[tuple[_Slot, _Slot]]:
+    """זוגות סלוטים שחסומים היום, ושחפיפה מכוונת הייתה פותחת.
+
+    התשובה חייבת להיות מדויקת: אין טעם להציע לסטודנט לוותר על נוכחות אם
+    החסימה בכלל נובעת מ-``linked_to`` ולא משעות. לכן הבדיקה היא השוואה בין
+    שני עולמות — העולם הנוכחי, ועולם היפותטי שבו *כל* הרכיבים פטורים
+    מנוכחות. זוג שחסום בראשון ופתוח בשני נחסם בזמנים בלבד.
+
+    מחזירה [] כשהמתג כבר דלוק — אין מה להציע.
+    """
+    if getattr(prefs, "allow_soft_conflicts", False):
+        return []
+
+    all_optional = {
+        course.code: {kind: False for kind in course.kinds()} for course in courses
+    }
+    relaxed = replace(prefs, allow_soft_conflicts=True, attendance=all_optional)
+
+    live_slots: list[_Slot] = []
+    for course in courses:
+        for kind in course.kinds():
+            survivors, _ = _filter_groups(course.groups_of(kind), prefs)
+            if survivors:
+                live_slots.append(_Slot(course, kind, survivors))
+
+    opportunities: list[tuple[_Slot, _Slot]] = []
+    for i, slot_a in enumerate(live_slots):
+        for slot_b in live_slots[i + 1 :]:
+            if _all_pairs_blocked_example(slot_a, slot_b, prefs) is None:
+                continue  # לא חסום היום — אין מה לפתוח
+            if _all_pairs_blocked_example(slot_a, slot_b, relaxed) is None:
+                opportunities.append((slot_a, slot_b))
+    return opportunities
+
+
 def _most_problematic_courses(courses: list[Course], prefs: Preferences) -> list[Course]:
     """
     מדרגת קורסים לפי "כמה הם מפריעים": סלוטים שנמחקו לגמרי + מספר הזוגות
@@ -954,7 +1474,7 @@ def _most_problematic_courses(courses: list[Course], prefs: Preferences) -> list
 
     for i, a in enumerate(live_slots):
         for b in live_slots[i + 1 :]:
-            if _all_pairs_blocked_example(a, b) is not None:
+            if _all_pairs_blocked_example(a, b, prefs) is not None:
                 trouble[a.course.code] += 1
                 trouble[b.course.code] += 1
 
@@ -1129,10 +1649,13 @@ def _smoke_test() -> int:
     print(f"\nנמצאו {len(best)} מערכות מובילות:\n")
     for i, sched in enumerate(best, start=1):
         print(f"[{i}] {sched.summary()}")
-        for key in ("lecturer", "days", "gaps", "compactness"):
-            print(f"      {key:<12} {sched.breakdown[key]:+8.2f}")
+        for key, value in sched.breakdown.items():
+            print(f"      {key:<14} {value:+8.2f}")
         for g in sorted(sched.selection.groups, key=lambda g: (g.course_code, g.kind)):
             print(f"      {g}")
+        # חפיפה מכוונת לעולם לא עוברת בשקט — גם לא בבדיקת העשן.
+        for line in describe_soft_conflicts(sched.selection, prefs):
+            print(f"      {line}")
         print()
     return 0
 

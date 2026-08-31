@@ -37,7 +37,10 @@
       banner--info | banner--warn | banner--error | banner--ok
 
   יומן משיכה / scrape log
-    #scrape-log          מוסתר כברירת מחדל — יש להשתמש ב-el.hidden, לא ב-style.display
+    #refresh-summary     שורת סיכום אחת ("מרענן 6 קורסים…" / "עודכנו 6 קורסים, 0 שינויים").
+                         זה מה שמופיע על המסך; שורות היומן הגולמיות נשארות מקופלות.
+    #scrape-log          מוסתר כברירת מחדל, וגם בזמן רענון — נפתח רק בלחיצה על "יומן".
+                         יש להשתמש ב-el.hidden, לא ב-style.display
     #scrape-phase        טקסט השלב הנוכחי
     #scrape-log-lines    שורות היומן
     #btn-log-close       סגירה
@@ -58,10 +61,14 @@
                   #days-warning (hidden) #input-earliest #input-latest
                   #chk-forbid-friday #blocked-list
   4 מרצים         #lecturer-courses  #btn-clear-ranking
+                  #chk-allow-soft-conflicts  ·  #attendance-note
+                  (מתגי "חובת נוכחות" לכל קורס ולכל סוג רכיב נבנים ב-app.js
+                  בתוך .lect-course, מעל טבלת הקבוצות)
                   מחלקות לשורת טבלה: "is-ranked" (עם span.rank-badge) ·
                   "is-pinned" · "is-dead" (מבוי סתום: aria-disabled="true"
                   ותכונת title עם הסיבה). כפתור הנעיצה: class "pin-btn".
-  5 המערכת        #schedule-tabs #schedule-summary #schedule-legend
+  5 המערכת        #soft-conflicts (hidden) > #soft-conflicts-sub #soft-conflicts-list
+                  #schedule-tabs #schedule-summary #schedule-legend
                   #grid-scroll > #schedule-grid
                   #schedule-empty (hidden) > #infeasible-reasons #infeasible-suggestions
                   #btn-print #schedule-note
@@ -75,6 +82,9 @@
     מחלקות: .hd כותרת · .tl תווית שעה (.tl.hour לשעה עגולה) ·
             .slot משבצת רקע · .ev בלוק מפגש + מחלקת צבע .c0 .. .c9
             (אותו מיפוי צבעים כמו render.py)
+    בלוק שמשתתף בחפיפה מכוונת מקבל גם .is-soft, מסגרת מקווקוות בסגנון מוטבע
+    ותווית "חפיפה מכוונת" בתוכו. מפגשים חופפים מתחלקים ברוחב העמודה בעזרת
+    margin מוטבע — אחרת ה-grid היה מצייר אותם אחד על גבי השני.
   ==========================================================================
 -->
 
@@ -99,6 +109,7 @@
       <button type="button" class="btn btn-ghost" id="btn-reparse">בנייה מחדש ללא רשת</button>
       <button type="button" class="btn btn-ghost" id="btn-log-toggle" aria-expanded="false" aria-controls="scrape-log">יומן</button>
     </div>
+    <p class="fresh-meta" id="refresh-summary" role="status" aria-live="polite" hidden></p>
   </div>
 </header>
 
@@ -111,8 +122,9 @@
     <button type="button" class="btn btn-ghost btn-sm" id="btn-log-close">סגירה</button>
   </div>
   <p class="log-note">
-    ההתחברות מתבצעת בחלון דפדפן נפרד שנפתח על המסך, ושם יש להקליד את פרטי ההתחברות ידנית.
-    העמוד הזה לא מבקש, לא מציג ולא שומר סיסמאות — הוא רק מפעיל את החלון ועוקב אחרי ההתקדמות.
+    משיכת הנתונים מהידיעון פועלת בלי התחברות ובלי חלון דפדפן — אין בה שלב של הזדהות,
+    והעמוד הזה לא מבקש, לא מציג ולא שומר סיסמאות. השורות שלמטה הן פירוט טכני של
+    ההתקדמות, והן נפתחות רק לפי בקשה; הסיכום הקצר מוצג בכותרת העמוד.
   </p>
   <pre class="log-lines" id="scrape-log-lines" tabindex="0" aria-live="polite"></pre>
 </section>
@@ -233,8 +245,17 @@
           <span class="legend-item"><span class="legend-swatch legend-swatch--pin"></span> קבוצה נעוצה</span>
           <span class="legend-item"><span class="legend-swatch legend-swatch--dead"></span> בחירה שמשאירה בלי פתרון</span>
         </p>
+        <label class="field field-check" title="חפיפה תותר רק כאשר לפחות אחד משני הרכיבים מסומן כרכיב ללא חובת נוכחות.">
+          <input type="checkbox" id="chk-allow-soft-conflicts">
+          <span>לאפשר חפיפות בקורסים ללא חובת נוכחות</span>
+        </label>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-ranking">איפוס הדירוג והנעיצות</button>
       </div>
+      <p class="note" id="attendance-note">
+        כברירת מחדל כל רכיב נחשב לרכיב עם חובת נוכחות. כיבוי החובה ברכיב מסוים, יחד עם הדלקת המתג
+        הכללי, מאפשר למנוע לשבץ אותו במקביל לרכיב אחר — כלומר לוותר על הנוכחות בו — ורק אם זה באמת
+        מקצר את השבוע. כל חפיפה כזו מוצגת במפורש מעל המערכת בשלב 5.
+      </p>
       <div class="lect-courses" id="lecturer-courses"></div>
       <p class="note" id="lecturers-note"></p>
     </div>
@@ -252,6 +273,13 @@
         <div class="tabs" id="schedule-tabs" role="tablist" aria-label="מערכות מוצעות"></div>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-print">הדפסה</button>
       </div>
+
+      <section class="empty" id="soft-conflicts" hidden role="status" aria-live="polite"
+               aria-labelledby="soft-conflicts-title">
+        <h3 class="empty-title" id="soft-conflicts-title">חפיפות מכוונות במערכת הזו</h3>
+        <p class="empty-sub" id="soft-conflicts-sub"></p>
+        <ul class="reasons" id="soft-conflicts-list"></ul>
+      </section>
 
       <div class="facts" id="schedule-summary"></div>
       <div class="legend" id="schedule-legend"></div>

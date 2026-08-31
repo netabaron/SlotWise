@@ -198,12 +198,35 @@ class Selection:
         return {g.course_code for g in self.groups}
 
     def is_feasible(self) -> bool:
-        """אין שתי קבוצות שמתנגשות בזמן."""
+        """אין שתי קבוצות שמתנגשות בזמן.
+
+        המשמעות כאן היא **מחמירה ובלתי משתנה**: כל חפיפה, מכל סוג, פוסלת.
+        הבחירה אם חפיפה מסוימת *מותרת* (למשל כשאין חובת נוכחות בהרצאה) אינה
+        שייכת למודל הנתונים אלא למנוע — ראי ``scheduler.conflict_is_hard``.
+        """
         for i, a in enumerate(self.groups):
             for b in self.groups[i + 1 :]:
                 if a.conflicts_with(b):
                     return False
         return True
+
+    def overlapping_pairs(self) -> list[tuple[Group, Group]]:
+        """כל זוגות הקבוצות שחופפות בזמן, בסדר יציב.
+
+        ``is_feasible`` עונה "כן/לא"; הפונקציה הזו עונה "מה בדיוק חופף" — כדי
+        שהממשק יוכל *להראות* לסטודנט מה הוא מוותר עליו כשהוא בוחר מערכת עם
+        חפיפה מכוונת (חפיפה שאושרה כי באחד הרכיבים אין חובת נוכחות).
+
+        Returns:
+            רשימת זוגות ``(a, b)`` שבהם ``a`` מופיע לפני ``b`` ב-``groups``.
+            רשימה ריקה פירושה בדיוק ``is_feasible() is True``.
+        """
+        pairs: list[tuple[Group, Group]] = []
+        for i, a in enumerate(self.groups):
+            for b in self.groups[i + 1 :]:
+                if a.conflicts_with(b):
+                    pairs.append((a, b))
+        return pairs
 
     def gap_minutes(self) -> int:
         """סך 'החורים' — דקות פנויות בין מפגשים רצופים באותו יום בלבד."""

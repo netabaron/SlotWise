@@ -65,6 +65,13 @@
    */
   var TIED_FALLBACK = [["61756", "61757", "62027"]];
 
+  /**
+   * סימן בהערת הידיעון שקובע את ברירת המחדל של חובת נוכחות.
+   * ‏SPEC_V2 §2: הערה כזו רק *מסמנת מקור* — ברירת המחדל היא חובה בכל מקרה,
+   * והוויתור עליה הוא תמיד בחירה מפורשת של הסטודנט/ית.
+   */
+  var ATTENDANCE_NOTE_RE = /חובת\s*ה?נוכחות|חובה\s*להשתתף|נוכחות\s*חובה/;
+
   var PALETTE_SIZE = 10; // ‏c0..c9, בדיוק כמו הפלטה ב-render.py
 
   var BREAKDOWN_HE = {
@@ -75,6 +82,12 @@
   };
 
   var PHASE_HE = {
+    warmup: "פותח סשן מול הידיעון",
+    session: "פותח סשן מול הידיעון",
+    year: "קובע שנת לימודים",
+    verify: "מאמת את השנה שחזרה",
+    store: "שומר למסד",
+    finishing: "מסיים",
     idle: "ממתין",
     starting: "מתחיל",
     login: "ממתין להתחברות ידנית",
@@ -395,6 +408,10 @@
       known: {}, // מטמון שמות/נ"ז: {code: {name, credits, semester}}
       targetDays: 4,
       forbidFriday: false,
+      // {code: {kind: האם יש חובת נוכחות}} — מפתח חסר פירושו חובה, בדיוק כמו בשרת.
+      attendance: {},
+      // מתג כללי: לאפשר חפיפה כשלפחות צד אחד בלי חובת נוכחות. כבוי כברירת מחדל.
+      allowSoftConflicts: false,
       earliest: null, // דקות מחצות, או null
       latest: null,
       blocked: [], // [[יום, התחלה, סוף], ...]
@@ -434,6 +451,13 @@
       needs_login: false,
       message: "",
       error: "",
+      // סיכום השורה האחת שמוצג בכותרת; היומן המלא נשאר מקופל.
+      codes: [],
+      total: null,
+      done: null,
+      updated: null,
+      changed: null,
+      summary: "",
     },
     scrapeError: null,
     logShown: 0,
@@ -441,6 +465,12 @@
     reparseBusy: false,
     colors: Object.create(null),
     dismissed: Object.create(null),
+    // ‏SPEC_V2 §1 — משיכה לפי דרישה: קודים שנמשכים ממש עכשיו, והמקור שחזר לכל קוד.
+    fetching: Object.create(null),
+    sources: Object.create(null),
+    fetchSkipped: [],
+    // ‏attendance_info מהשרת: {קוד: {סוג: {required, from_yedion, note, source, text}}}
+    attendanceInfo: Object.create(null),
   };
 
   function saveState() {
@@ -477,6 +507,8 @@
     if (!base.known || typeof base.known !== "object") base.known = {};
     if (!base.pinned || typeof base.pinned !== "object") base.pinned = {};
     if (!base.ranked || typeof base.ranked !== "object") base.ranked = {};
+    if (!base.attendance || typeof base.attendance !== "object") base.attendance = {};
+    base.allowSoftConflicts = base.allowSoftConflicts === true;
     if (!Array.isArray(base.blocked)) base.blocked = [];
     base.targetDays = clamp(Math.round(num(base.targetDays, 4)), 2, 6);
     base.topN = clamp(Math.round(num(base.topN, 5)), 1, 20);
@@ -751,6 +783,110 @@
     return out;
   }
 
+  /* --- חובת נוכחות (SPEC_V2 §2) ------------------------------------- */
+
+  /** ברירת המחדל היא תמיד "יש חובת נוכחות". הוויתור הוא בחירה מפורשת. */
+  function attendanceRequired(code, kind) {
+    var byCourse = state.attendance[txt(code)];
+    if (!byCourse) return true;
+    var value = byCourse[txt(kind)];
+    if (value === undefined || value === null) return true;
+    return value !== false;
+  }
+
+  /** מפתח חסר = חובה, בדיוק כמו בשרת — ולכן "חובה" נשמר כמחיקה. */
+  function setAttendance(code, kind, required) {
+    var att = deepCopy(state.attendance) || {};
+    var c = txt(code);
+    var k = txt(kind);
+    var byKind = att[c] || {};
+    if (required) delete byKind[k];
+    else byKind[k] = false;
+    if (Object.keys(byKind).length) att[c] = byKind;
+    else delete att[c];
+    setState({ attendance: att, activeSchedule: 0 });
+  }
+
+  /** מה שנשלח ל-/api/solve: רק קורסים שנבחרו, רק ערכים מפורשים. */
+  function attendanceBody() {
+    var out = {};
+    var selected = selectedSet();
+    Object.keys(state.attendance).forEach(function (code) {
+      if (!selected[code]) return;
+      var byKind = state.attendance[code] || {};
+      var copy = {};
+      Object.keys(byKind).forEach(function (kind) {
+        copy[kind] = byKind[kind] !== false;
+      });
+      if (Object.keys(copy).length) out[code] = copy;
+    });
+    return out;
+  }
+
+  /** סוגי הרכיבים שבהם כובתה חובת הנוכחות בקורס אחד. */
+  function optionalKindsOf(code) {
+    var byKind = state.attendance[txt(code)] || {};
+    return Object.keys(byKind).filter(function (kind) {
+      return byKind[kind] === false;
+    });
+  }
+
+  /** סוגי הרכיבים של קורס, בסדר התצוגה של KIND_ORDER. */
+  function kindsOf(course) {
+    var kinds = uniq(
+      (course.groups || []).map(function (g) {
+        return txt(g.kind);
+      })
+    ).filter(Boolean);
+    return kinds.sort(function (a, b) {
+      var ka = KIND_ORDER.indexOf(a);
+      var kb = KIND_ORDER.indexOf(b);
+      if (ka === -1) ka = KIND_ORDER.length;
+      if (kb === -1) kb = KIND_ORDER.length;
+      if (ka !== kb) return ka - kb;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+  }
+
+  /**
+   * האם הידיעון עצמו אמר משהו על נוכחות ברכיב הזה, ומה בדיוק.
+   * מחזירה את נוסח ההערה, או "" אם אין. הערך לא משנה את ברירת המחדל —
+   * הוא רק מאפשר לומר בממשק מאיפה היא הגיעה, ושאפשר לשנות אותה בכל זאת.
+   */
+  /** רשומת ה-attendance_info של השרת לרכיב אחד, אם הגיעה. */
+  function attendanceInfoFor(code, kind) {
+    var byCourse = runtime.attendanceInfo[txt(code)];
+    if (!byCourse) return null;
+    var rec = byCourse[txt(kind)];
+    return rec && typeof rec === "object" ? rec : null;
+  }
+
+  function attendanceNoteFor(course, kind) {
+    var found = "";
+    // השרת הוא המקור הסמכותי; הסריקה של ההערות שמתחת היא רק רשת ביטחון.
+    var info = attendanceInfoFor(course.code, kind);
+    if (info && info.from_yedion === true) {
+      return txt(info.note) || txt(info.text);
+    }
+    (course.groups || []).forEach(function (g) {
+      if (found || txt(g.kind) !== txt(kind)) return;
+      if (txt(g.attendance_source) === "yedion") {
+        found = txt(g.attendance_note) || txt(g.note);
+        return;
+      }
+      if (ATTENDANCE_NOTE_RE.test(txt(g.note))) found = txt(g.note);
+    });
+    if (!found && course.attendance) {
+      var rec = course.attendance[txt(kind)];
+      if (rec && typeof rec === "object") {
+        if (txt(rec.source) === "yedion" || rec.from_yedion === true) {
+          found = txt(rec.note) || txt(rec.text);
+        }
+      }
+    }
+    return txt(found).trim();
+  }
+
   function viabilityOf(code, kind, groupId) {
     var v = runtime.solve && runtime.solve.viability;
     if (!v) return { ok: true, reason: "" };
@@ -1009,21 +1145,36 @@
       runtime.courses = [];
       runtime.notOffered = [];
       runtime.coursesError = null;
+      runtime.fetching = Object.create(null);
+      runtime.sources = Object.create(null);
+      runtime.fetchSkipped = [];
+      runtime.attendanceInfo = Object.create(null);
       refreshColorMap();
       render();
       return Promise.resolve();
     }
     var my = ++seq.courses;
     runtime.coursesBusy = true;
+    // ‏SPEC_V2 §1: כל קוד שאין לו נתונים בזיכרון נמשך עכשיו מהידיעון (בלי התחברות),
+    // ולכן השורה שלו בשלב 2 מציגה "טוען נתונים…" עד שהתשובה חוזרת. משיכה כזו
+    // לוקחת שנייה-שתיים לקורס, ולכן היא נראית — שקט כאן היה נראה כמו תקיעה.
+    var pendingFetch = Object.create(null);
+    state.codes.forEach(function (code) {
+      var c = txt(code);
+      if (c && !courseDataByCode(c)) pendingFetch[c] = true;
+    });
+    runtime.fetching = pendingFetch;
     render();
     return postJSON("/api/courses", {
       codes: state.codes.slice(),
       semester: state.term,
       year: state.academicYear,
+      fetch_missing: true,
     })
       .then(function (data) {
         if (my !== seq.courses) return;
         runtime.coursesBusy = false;
+        runtime.fetching = Object.create(null);
         runtime.courses = pickList(data, ["courses", "items"], "code").map(
           normalizeCourse
         );
@@ -1040,6 +1191,53 @@
           };
         });
         runtime.coursesError = null;
+
+        // מאיפה הגיע כל קורס: "db" (היה שמור), "fetched" (נמשך עכשיו),
+        // "unavailable" (הידיעון לא נתן) או "skipped" (מכסת המשיכות נגמרה).
+        var sources = Object.create(null);
+        // המפה הראשית מגיעה מהשרת (``sources``); הרשימות רק ממלאות סיבות.
+        var serverSources = data && data.sources;
+        if (serverSources && typeof serverSources === "object") {
+          Object.keys(serverSources).forEach(function (code) {
+            sources[txt(code)] = { source: txt(serverSources[code]), reason: "" };
+          });
+        }
+        runtime.courses.forEach(function (c) {
+          sources[c.code] = {
+            source: txt(c.source) || txt(sources[c.code] && sources[c.code].source) || "db",
+            reason: "",
+          };
+        });
+        runtime.notOffered.forEach(function (rec) {
+          sources[rec.code] = {
+            source: txt(rec.source) || "unavailable",
+            reason: txt(rec.reason),
+          };
+        });
+
+        // מכסת המשיכות: הקורסים שנדחו לבקשה הבאה. השרת מדווח עליהם גם
+        // ב-``not_offered``, אבל שם הסיבה נראית ככישלון — וזו רק המתנה.
+        var fetchReport = (data && data.fetch) || {};
+        runtime.fetchSkipped = pickList(
+          fetchReport.skipped !== undefined ? fetchReport : data,
+          ["skipped", "fetch_skipped", "not_fetched"],
+          "code"
+        )
+          .map(function (rec) {
+            return { code: txt(rec.code), reason: txt(rec.reason) };
+          })
+          .filter(function (rec) {
+            return !!rec.code;
+          });
+
+        var attInfo = data && data.attendance;
+        runtime.attendanceInfo =
+          attInfo && typeof attInfo === "object" ? attInfo : Object.create(null);
+        runtime.fetchSkipped.forEach(function (rec) {
+          sources[rec.code] = { source: "skipped", reason: rec.reason };
+        });
+        runtime.sources = sources;
+
         runtime.courses.forEach(function (c) {
           var prev = state.known[c.code] || {};
           state.known[c.code] = {
@@ -1061,6 +1259,7 @@
         // עובד מול אותו מסד בדיוק. כל שינוי הבא ינסה למשוך שוב.
         lastSig.courses = null;
         runtime.coursesBusy = false;
+        runtime.fetching = Object.create(null);
         runtime.courses = [];
         runtime.coursesError = errorText(err);
         render();
@@ -1076,6 +1275,10 @@
       freshness: rec.freshness || rec.meta || null,
       warnings: pickList(rec, ["warnings"], null),
       curriculum_semester: txt(rec.curriculum_semester),
+      // ‏"db" | "fetched" | "unavailable" — מאיפה הגיעו הנתונים בבקשה הזו.
+      source: txt(rec.source),
+      attendance:
+        rec.attendance && typeof rec.attendance === "object" ? rec.attendance : null,
       groups: pickList(rec, ["groups"], "group_id").map(normalizeGroup),
     };
   }
@@ -1087,6 +1290,13 @@
       lecturer: txt(rec.lecturer),
       note: txt(rec.note),
       linked_to: Array.isArray(rec.linked_to) ? rec.linked_to.map(txt) : [],
+      // ברירת המחדל של חובת הנוכחות אינה נקבעת כאן — היא תמיד "חובה".
+      // השדות האלה משמשים רק כדי לומר *מאיפה* הגיעה ברירת המחדל.
+      attendance_source: txt(
+        rec.attendance_source ||
+          (rec.attendance_from_yedion === true ? "yedion" : "")
+      ),
+      attendance_note: txt(rec.attendance_note),
       meetings: pickList(rec, ["meetings"], null).map(normalizeMeeting),
     };
   }
@@ -1138,6 +1348,13 @@
     Object.keys(state.ranked).forEach(function (code) {
       if (!selected[code]) {
         delete state.ranked[code];
+        changed = true;
+      }
+    });
+
+    Object.keys(state.attendance).forEach(function (code) {
+      if (!selected[code]) {
+        delete state.attendance[code];
         changed = true;
       }
     });
@@ -1233,7 +1450,12 @@
       blocked: deepCopy(state.blocked),
       forbid_friday: state.forbidFriday === true,
       top_n: state.topN,
+      // ‏SPEC_V2 §2. שולחים תמיד: false = ההתנהגות הישנה בדיוק, כל חפיפה נפסלת.
+      allow_soft_conflicts: state.allowSoftConflicts === true,
     };
+    var attendance = attendanceBody();
+    // נשלח רק כשיש מה לומר. מפתח חסר = חובת נוכחות, כמו בשרת.
+    if (Object.keys(attendance).length) body.attendance = attendance;
     if (state.earliest !== null && state.earliest !== undefined) {
       body.earliest = state.earliest;
     }
@@ -1333,8 +1555,16 @@
     runtime.logShown = 0;
     runtime.scrape.running = true;
     runtime.scrape.phase = "starting";
-    if (ui.log) setHidden(ui.log, false);
-    if (ui.logToggle) ui.logToggle.setAttribute("aria-expanded", "true");
+    runtime.scrape.exit_code = null;
+    runtime.scrape.summary = "";
+    runtime.scrape.done = null;
+    runtime.scrape.updated = null;
+    runtime.scrape.changed = null;
+    // הערכה זמנית עד שהתשובה הראשונה מ-/api/scrape/status מגיעה, כדי ששורת
+    // הסיכום תגיד "מרענן N קורסים…" כבר מהרגע הראשון.
+    var bootDb = (runtime.bootstrap && runtime.bootstrap.db) || {};
+    runtime.scrape.total = num(bootDb.count, state.codes.length || null);
+    // ‏SPEC_V2 §4: היומן נשאר מקופל. אין פלט טכני על המסך בלי בקשה מפורשת.
     renderHeader();
     postJSON("/api/scrape/start", {})
       .then(function () {
@@ -1383,6 +1613,16 @@
           needs_login: data.needs_login === true,
           message: txt(data.message),
           error: txt(data.error),
+          // שדות שורת הסיכום. כולם אופציונליים — מה שחסר פשוט לא נאמר.
+          codes: pickList(data, ["codes"], null).map(txt).filter(Boolean),
+          total: num(data.total, null),
+          done: num(data.done, null),
+          updated: num(data.updated, null),
+          changed: num(
+            data.changed !== undefined ? data.changed : data.changes,
+            null
+          ),
+          summary: txt(data.summary),
         };
         runtime.scrapeError = null;
         render();
@@ -1413,8 +1653,8 @@
     runtime.reparseBusy = true;
     runtime.logShown = 0;
     runtime.scrape.log = [];
-    setHidden(ui.log, false);
-    if (ui.logToggle) ui.logToggle.setAttribute("aria-expanded", "true");
+    runtime.scrape.summary = "";
+    // גם כאן היומן נשאר מקופל; מה שנראה הוא שורת הסיכום בכותרת.
     render();
     postJSON("/api/reparse", { semester: state.term, year: state.academicYear })
       .then(function (data) {
@@ -1423,6 +1663,8 @@
         runtime.scrape.phase = num(data.exit_code, 1) === 0 ? "done" : "failed";
         runtime.scrape.exit_code = num(data.exit_code, null);
         runtime.scrape.message = txt(data.message);
+        runtime.scrape.summary =
+          txt(data.message) || "הבנייה מחדש מהקבצים השמורים הסתיימה.";
         runtime.logShown = 0;
         toast(txt(data.message) || "הבנייה מחדש הסתיימה.", "ok");
         refreshAllData();
@@ -1433,6 +1675,41 @@
         toast(errorText(err), "error");
         render();
       });
+  }
+
+  /**
+   * שורת הסיכום היחידה שמופיעה על המסך בזמן רענון ואחריו (SPEC_V2 §4).
+   * כל שאר הפירוט נשאר ביומן המקופל.
+   */
+  function refreshSummaryText() {
+    if (runtime.reparseBusy) return "בונה מחדש מהקבצים השמורים…";
+    var sc = runtime.scrape;
+    var codes = pickList(sc, ["codes"], null).map(txt).filter(Boolean);
+    var total = num(sc.total, codes.length || null);
+
+    if (sc.running === true) {
+      var done = num(sc.done, null);
+      if (total !== null) {
+        return (
+          "מרענן " +
+          total +
+          " קורסים…" +
+          (done !== null ? " (" + done + " הושלמו)" : "")
+        );
+      }
+      return "מרענן נתונים מהידיעון…";
+    }
+
+    if (txt(sc.summary)) return txt(sc.summary);
+    if (sc.exit_code === null || sc.exit_code === undefined) return "";
+    if (num(sc.exit_code, 1) === 0) {
+      var updated = num(sc.updated, total);
+      var changed = num(sc.changed, null);
+      var line = updated === null ? "הנתונים עודכנו" : "עודכנו " + updated + " קורסים";
+      if (changed !== null) line += ", " + changed + " שינויים";
+      return line;
+    }
+    return txt(sc.message) || "הרענון הסתיים עם שגיאה — הפירוט ביומן.";
   }
 
   function logLineText(entry) {
@@ -1471,6 +1748,7 @@
     ui.log = byId("scrape-log");
     ui.logPhase = byId("scrape-phase");
     ui.logLines = byId("scrape-log-lines");
+    ui.refreshSummary = byId("refresh-summary");
     ui.banners = byId("banners");
     ui.toasts = byId("toasts");
     ui.tplBanner = byId("tpl-banner");
@@ -1503,6 +1781,12 @@
     ui.lectCourses = byId("lecturer-courses");
     ui.lectNote = byId("lecturers-note");
     ui.btnClearRanking = byId("btn-clear-ranking");
+    ui.chkAllowSoft = byId("chk-allow-soft-conflicts");
+    ui.attendanceNote = byId("attendance-note");
+    // הטקסט הקבוע נשמר פעם אחת, כדי שאפשר יהיה להוסיף לו משפט מצב בלי לאבד אותו.
+    ui.attendanceNoteBase = ui.attendanceNote
+      ? txt(ui.attendanceNote.textContent).replace(/\s+/g, " ").trim()
+      : "";
 
     ui.tabs = byId("schedule-tabs");
     ui.btnPrint = byId("btn-print");
@@ -1514,6 +1798,9 @@
     ui.reasons = byId("infeasible-reasons");
     ui.suggestions = byId("infeasible-suggestions");
     ui.scheduleNote = byId("schedule-note");
+    ui.softBox = byId("soft-conflicts");
+    ui.softSub = byId("soft-conflicts-sub");
+    ui.softList = byId("soft-conflicts-list");
 
     ui.steps = {
       year: byId("step-year"),
@@ -1580,6 +1867,15 @@
       ui.inputLatest.addEventListener("change", function () {
         var v = txt(ui.inputLatest.value);
         setState({ latest: v ? toMinutes(v) : null, activeSchedule: 0 });
+      });
+    }
+
+    if (ui.chkAllowSoft) {
+      ui.chkAllowSoft.addEventListener("change", function () {
+        setState({
+          allowSoftConflicts: ui.chkAllowSoft.checked === true,
+          activeSchedule: 0,
+        });
       });
     }
 
@@ -1692,13 +1988,37 @@
       });
     }
 
-    if (runtime.scrape.needs_login) {
+    // ‏SPEC_V2 §3: משיכת הקורסים מהידיעון אינה דורשת התחברות, ולכן זה כבר לא
+    // המסלול הרגיל. הבאנר נשאר רק למקרה שהרענון רץ במסלול הדפדפן (--browser)
+    // ובכל זאת דיווח שנדרשת הזדהות — שתיקה במצב כזה הייתה משאירה תקוע בלי הסבר.
+    if (runtime.scrape.needs_login === true) {
       wanted.push({
         key: "needs-login",
         kind: "warn",
         text:
-          "נפתח חלון דפדפן נפרד — יש להשלים בו את ההתחברות לידיעון ידנית, ואז הרענון ימשיך. " +
-          "העמוד הזה לא מבקש, לא מציג ולא שומר סיסמאות.",
+          "הרענון מדווח שנדרשת התחברות ידנית. בדרך כלל אין בכך צורך — משיכת הנתונים " +
+          "מהידיעון פועלת בלי התחברות כלל. אם ההודעה חוזרת, אפשר לפתוח את היומן " +
+          "ולראות מה נכשל. העמוד הזה לא מבקש, לא מציג ולא שומר סיסמאות.",
+      });
+    }
+
+    if (runtime.fetchSkipped.length) {
+      var skippedCodes = runtime.fetchSkipped.map(function (rec) {
+        return rec.code;
+      });
+      wanted.push({
+        key: "fetch-skipped-" + skippedCodes.join(","),
+        kind: "info",
+        text:
+          "לא כל הקורסים נמשכו בבקשה הזו, כדי לא להעמיס על שרת המכללה: " +
+          skippedCodes.join(", ") +
+          ". אפשר לבקש את השאר עוד רגע.",
+        action: {
+          label: "משיכת השאר",
+          run: function () {
+            retryAllMissing();
+          },
+        },
       });
     }
 
@@ -1877,6 +2197,11 @@
     }
     if (ui.btnReparse) ui.btnReparse.disabled = runtime.reparseBusy === true;
 
+    // ‏SPEC_V2 §4: על המסך שורה אחת. השורות הגולמיות נשארות ביומן המקופל.
+    var summaryLine = refreshSummaryText();
+    setText(ui.refreshSummary, summaryLine);
+    setHidden(ui.refreshSummary, !summaryLine);
+
     var sc = runtime.scrape;
     var phase = txt(sc.message) || PHASE_HE[txt(sc.phase)] || txt(sc.phase) || "ממתין";
     if (runtime.reparseBusy) phase = "בונה מחדש מהקבצים השמורים";
@@ -1899,10 +2224,8 @@
         ui.logLines.scrollTop = ui.logLines.scrollHeight;
       }
     }
-    if (sc.needs_login && ui.log && ui.log.hidden) {
-      setHidden(ui.log, false);
-      if (ui.logToggle) ui.logToggle.setAttribute("aria-expanded", "true");
-    }
+    // אין כאן פתיחה אוטומטית של היומן: משיכת הנתונים אינה דורשת התחברות,
+    // ולכן אין שום שלב שבו הסטודנט/ית *חייב/ת* לראות פלט טכני על המסך.
   }
 
   /* --- שלב 1: שנה וסמסטר -------------------------------------------- */
@@ -2081,6 +2404,127 @@
     }
   }
 
+  /**
+   * מצב הנתונים של קורס אחד — התשובה לשאלה "למה כתוב שאין נתונים במסד?".
+   * מחזירה {state, tag, tagClass, text, retry}. אף מצב אינו שקט לגמרי:
+   * לכל אחד יש הסבר, ולכל מצב חסום יש כפתור ניסיון חוזר.
+   */
+  function courseStatus(code, selected, hasDataHint) {
+    var c = txt(code);
+    var have = !!courseDataByCode(c);
+    var src = runtime.sources[c] || null;
+    var name = src ? txt(src.source) : "";
+    var reason = src ? txt(src.reason) : "";
+
+    if (!have && (runtime.fetching[c] || (selected && (runtime.coursesBusy || !runtime.ready)))) {
+      return {
+        state: "loading",
+        tag: "טוען נתונים…",
+        tagClass: "",
+        text: "טוען נתונים מהידיעון — זה לוקח שנייה-שתיים ואינו דורש התחברות.",
+        retry: false,
+      };
+    }
+    if (name === "unavailable") {
+      return {
+        state: "unavailable",
+        tag: "אין נתונים",
+        tagClass: "tag--warn",
+        text:
+          (reason ||
+            "הידיעון לא החזיר נתוני קבוצות לקורס הזה — ייתכן שהוא אינו נפתח בסמסטר הזה.") +
+          " אפשר לנסות שוב, או להסיר את הקורס מהבחירה.",
+        retry: true,
+      };
+    }
+    if (name === "skipped") {
+      return {
+        state: "skipped",
+        tag: "נדחה לרגע",
+        tagClass: "tag--warn",
+        text:
+          (reason ||
+            "הקורס לא נמשך בבקשה הזו כדי לא להעמיס על שרת המכללה (עד 12 משיכות בכל פעם).") +
+          " אפשר לנסות שוב עוד רגע.",
+        retry: true,
+      };
+    }
+    if (have) {
+      return name === "fetched"
+        ? {
+            state: "fetched",
+            tag: "נמשך מהידיעון עכשיו",
+            tagClass: "",
+            text: "",
+            retry: false,
+          }
+        : { state: "ready", tag: "", tagClass: "", text: "", retry: false };
+    }
+    if (!selected) {
+      if (hasDataHint) return { state: "ready", tag: "", tagClass: "", text: "", retry: false };
+      return {
+        state: "none",
+        tag: "אין נתונים עדיין",
+        tagClass: "tag--warn",
+        text: "הנתונים של הקורס עדיין לא נמשכו. סימון הקורס ימשוך אותם מהידיעון אוטומטית, בלי התחברות.",
+        retry: false,
+      };
+    }
+    return {
+      state: "pending",
+      tag: "אין נתונים",
+      tagClass: "tag--warn",
+      text: "אין עדיין נתוני קבוצות לקורס הזה. אפשר לבקש משיכה נוספת מהידיעון.",
+      retry: true,
+    };
+  }
+
+  function retryButton(code, label) {
+    return el("button", {
+      class: "btn btn-ghost btn-sm",
+      attrs: { type: "button", title: "ניסיון נוסף למשוך את הקורס מהידיעון" },
+      data: { fk: "retry-" + txt(code) },
+      text: label || "ניסיון חוזר",
+      on: {
+        click: function (ev) {
+          // הכרטיס עצמו הוא <label>; בלי העצירה הזו הלחיצה הייתה גם מבטלת סימון.
+          ev.preventDefault();
+          ev.stopPropagation();
+          retryFetch(code);
+        },
+      },
+    });
+  }
+
+  /** משיכה חוזרת לקורס אחד: מאפסים את החתימה כדי ש-fetchCourses ירוץ שוב. */
+  function retryFetch(code) {
+    var c = txt(code);
+    if (c) {
+      delete runtime.sources[c];
+      runtime.fetching[c] = true;
+    }
+    runtime.fetchSkipped = runtime.fetchSkipped.filter(function (rec) {
+      return rec.code !== c;
+    });
+    lastSig.courses = null;
+    render();
+    fetchCourses();
+  }
+
+  function retryAllMissing() {
+    runtime.fetchSkipped = [];
+    state.codes.forEach(function (code) {
+      var c = txt(code);
+      if (c && !courseDataByCode(c)) {
+        delete runtime.sources[c];
+        runtime.fetching[c] = true;
+      }
+    });
+    lastSig.courses = null;
+    render();
+    fetchCourses();
+  }
+
   function courseItem(rec, checked, isExtra) {
     var code = txt(rec.code);
     var unavailable = rec.offered === false;
@@ -2135,10 +2579,31 @@
     }
     if (unavailable) {
       tags.appendChild(el("span", { class: "tag tag--dead", text: "לא נפתח בסמסטר" }));
-    } else if (rec.has_data === false) {
-      tags.appendChild(el("span", { class: "tag tag--warn", text: "אין נתונים במסד" }));
+    }
+
+    // ‏SPEC_V2 §1: אף קורס לא נשאר עם "אין נתונים" בלי הסבר ובלי דרך קדימה.
+    var status = unavailable
+      ? { state: "ready", tag: "", tagClass: "", text: "", retry: false }
+      : courseStatus(code, checked === true, rec.has_data === true);
+    if (status.tag) {
+      tags.appendChild(
+        el("span", {
+          class: "tag" + (status.tagClass ? " " + status.tagClass : ""),
+          text: status.tag,
+        })
+      );
     }
     if (tags.firstChild) main.appendChild(tags);
+    if (status.text) {
+      main.appendChild(
+        el("span", {
+          class: "course-meta",
+          attrs: { role: status.state === "loading" ? "status" : null },
+          text: status.text,
+        })
+      );
+    }
+    if (status.retry) main.appendChild(retryButton(code));
 
     var cls = "course-item";
     if (checked) cls += " is-selected";
@@ -2377,16 +2842,20 @@
             ]),
           ]);
           missing.forEach(function (rec) {
-            warnBox.appendChild(
-              el("p", {
+            var line = el("div", { class: "field-row" }, [
+              el("span", {
                 class: "note",
                 text:
                   rec.code +
                   " " +
                   (rec.name || nameOf(rec.code)) +
-                  (rec.reason ? " — " + rec.reason : ""),
-              })
-            );
+                  " — " +
+                  (rec.reason ||
+                    "הידיעון לא החזיר נתוני קבוצות לקורס הזה בסמסטר הנוכחי."),
+              }),
+              retryButton(rec.code, "ניסיון חוזר מהידיעון"),
+            ]);
+            warnBox.appendChild(line);
           });
           box.appendChild(warnBox);
         }
@@ -2394,20 +2863,30 @@
         state.codes.forEach(function (code) {
           var course = courseDataByCode(code);
           if (!course) {
-            if (!runtime.coursesBusy && !explained[txt(code)]) {
-              box.appendChild(
-                el("p", {
-                  class: "note",
-                  text: code + " " + nameOf(code) + " — אין עדיין נתוני קבוצות במסד.",
-                })
-              );
-            }
+            if (explained[txt(code)]) return;
+            var st = courseStatus(code, true, false);
+            var wrap = el("div", { class: "field-row" }, [
+              el("span", {
+                class: "note",
+                text:
+                  code +
+                  " " +
+                  nameOf(code) +
+                  " — " +
+                  (st.text || "טוען נתונים מהידיעון…"),
+              }),
+            ]);
+            if (st.retry) wrap.appendChild(retryButton(code, "ניסיון חוזר מהידיעון"));
+            box.appendChild(wrap);
             return;
           }
           box.appendChild(coursePanel(course));
         });
       });
     }
+
+    if (ui.chkAllowSoft) ui.chkAllowSoft.checked = state.allowSoftConflicts === true;
+    renderAttendanceNote();
 
     if (ui.lectNote) {
       var bits = [];
@@ -2420,6 +2899,38 @@
           : "אפשר לדלג על השלב הזה — בלי העדפות המנוע בוחר לפי הימים והחורים בלבד."
       );
     }
+  }
+
+  /**
+   * המשפט שמתחת למתג הכללי. הוא לא מחליף את ההסבר הקבוע שב-index.html אלא
+   * מוסיף לו את המצב הנוכחי — כדי שלא ייווצר מצב שבו מתג דלוק ושום דבר לא קורה.
+   */
+  function renderAttendanceNote() {
+    if (!ui.attendanceNote) return;
+    var off = [];
+    runtime.courses.forEach(function (course) {
+      var kinds = kindsOf(course);
+      optionalKindsOf(course.code).forEach(function (kind) {
+        if (kinds.indexOf(kind) !== -1) off.push(course.code + " " + kind);
+      });
+    });
+
+    var extra = "";
+    if (off.length && !state.allowSoftConflicts) {
+      extra =
+        " כרגע מסומן שאין חובת נוכחות ב-" +
+        off.join(", ") +
+        ", אבל המתג הכללי כבוי — ולכן עדיין לא תותר שום חפיפה.";
+    } else if (off.length) {
+      extra =
+        " כרגע מסומן שאין חובת נוכחות ב-" +
+        off.join(", ") +
+        ", והמנוע רשאי לשבץ אותם במקביל לרכיב אחר.";
+    } else if (state.allowSoftConflicts) {
+      extra =
+        " המתג הכללי דלוק, אבל בכל הרכיבים עדיין מסומנת חובת נוכחות — ולכן לא תיווצר אף חפיפה.";
+    }
+    setText(ui.attendanceNote, txt(ui.attendanceNoteBase) + extra);
   }
 
   function coursePanel(course) {
@@ -2460,6 +2971,8 @@
       panel.appendChild(el("p", { class: "note", text: w }));
     });
 
+    panel.appendChild(attendanceBox(course));
+
     var table = el("table", { class: "lect-table" }, [
       el("thead", {}, [
         el("tr", {}, [
@@ -2480,6 +2993,75 @@
     table.appendChild(tbody);
     panel.appendChild(el("div", { class: "lect-table-wrap" }, [table]));
     return panel;
+  }
+
+  /**
+   * מתג "חובת נוכחות" לכל סוג רכיב בקורס. ברירת המחדל דלוקה תמיד; כיבוי
+   * מאפשר למנוע — יחד עם המתג הכללי — לשבץ את הרכיב במקביל לרכיב אחר.
+   */
+  function attendanceBox(course) {
+    var code = course.code;
+    var box = el("div", { class: "lect-attendance" });
+    var row = el("div", { class: "field-row" });
+    var hints = [];
+
+    kindsOf(course).forEach(function (kind) {
+      var input = el("input", {
+        attrs: { type: "checkbox" },
+        data: { fk: "att-" + code + "-" + kind },
+        on: {
+          change: function (ev) {
+            setAttendance(code, kind, ev.target.checked === true);
+          },
+        },
+      });
+      input.checked = attendanceRequired(code, kind);
+      row.appendChild(
+        el(
+          "label",
+          {
+            class: "field field-check",
+            attrs: {
+              title:
+                "כשאין חובת נוכחות, המנוע רשאי לשבץ את הרכיב הזה במקביל לרכיב אחר — " +
+                "בתנאי שהמתג הכללי למעלה דלוק.",
+            },
+          },
+          [input, el("span", { text: "חובת נוכחות · " + kind })]
+        )
+      );
+
+      var note = attendanceNoteFor(course, kind);
+      if (note) {
+        hints.push(
+          kind + ": הידיעון כותב “" + note + "”. לכן ברירת המחדל כאן היא חובת נוכחות — " +
+            "ועדיין אפשר לשנות אותה ידנית."
+        );
+      }
+    });
+
+    box.appendChild(row);
+    hints.forEach(function (hint) {
+      box.appendChild(el("p", { class: "note", text: hint }));
+    });
+
+    var off = optionalKindsOf(code).filter(function (kind) {
+      return kindsOf(course).indexOf(kind) !== -1;
+    });
+    if (off.length) {
+      box.appendChild(
+        el("p", {
+          class: "note",
+          text:
+            "ללא חובת נוכחות: " +
+            off.join(", ") +
+            (state.allowSoftConflicts
+              ? " — המנוע רשאי לשבץ אותם במקביל לרכיב אחר, וכל חפיפה כזו תוצג בשלב 5."
+              : " — כדי שחפיפה אכן תותר יש להדליק גם את המתג הכללי שלמעלה."),
+        })
+      );
+    }
+    return box;
   }
 
   function groupRow(course, group) {
@@ -2641,6 +3223,10 @@
     }
 
     var sch = activeSchedule();
+    // ‏SPEC_V2 §2: חפיפה מכוונת אף פעם לא עוברת בשקט. היא מדווחת מעל הרשת,
+    // ומסומנת גם בתוך הרשת עצמה.
+    var soft = sch ? softConflictInfo(sch) : null;
+    renderSoftConflicts(soft);
 
     // סיכום
     if (ui.summary) {
@@ -2712,7 +3298,7 @@
     if (ui.grid) {
       rebuild(ui.grid, function (box) {
         if (!sch) return;
-        buildGrid(box, sch);
+        buildGrid(box, sch, soft);
       });
     }
     setHidden(ui.gridScroll, !sch);
@@ -2849,8 +3435,189 @@
    *   עמודה 1 = שעות (יושבת מימין בזכות dir=rtl), ימים א..ו = עמודות day+1,
    *   שורה 1 = כותרות, וכל שורה נוספת = 15 דקות.
    */
-  function buildGrid(root, sch) {
+  /** מפתח יציב למפגש בודד בתוך מערכת אחת. */
+  function meetingKey(m) {
+    return m.code + "|" + m.group_id + "|" + m.day + "|" + m.start + "|" + m.end;
+  }
+
+  function meetingSide(m) {
+    return (
+      m.code +
+      " " +
+      m.kind +
+      " קב' " +
+      m.group_id +
+      " (יום " +
+      dayLetter(m.day) +
+      "׳ " +
+      fmtTime(m.start) +
+      "–" +
+      fmtTime(m.end) +
+      ")"
+    );
+  }
+
+  function meetingShort(m) {
+    return m.code + " " + m.kind + " קב' " + m.group_id;
+  }
+
+  function softConflictLine(a, b) {
+    var optional = [];
+    if (!attendanceRequired(a.code, a.kind)) optional.push(a.code + " " + a.kind);
+    if (!attendanceRequired(b.code, b.kind)) optional.push(b.code + " " + b.kind);
+    var tail = optional.length
+      ? " — נבחר בהנחה שאין חובת נוכחות ב-" + optional.join(" וב-") + "."
+      : " — יש לוודא שאפשר לוותר על הנוכחות באחד מהשניים.";
+    return "חפיפה מכוונת: " + meetingSide(a) + " מול " + meetingSide(b) + tail;
+  }
+
+  /**
+   * החפיפות בתוך מערכת אחת.
+   *
+   * הזיהוי נעשה כאן מהמפגשים עצמם, ולא רק מהשדה שהשרת שולח: בלוק שחופף בפועל
+   * חייב להיראות חופף ברשת, גם אם הדיווח מהשרת חסר או בפורמט אחר. נוסח הדיווח
+   * מגיע מ-``soft_conflict_report`` כשהוא קיים, ואחרת נבנה כאן.
+   */
+  function softConflictInfo(sch) {
     var meetings = scheduleMeetings(sch);
+    var pairs = [];
+    var marks = Object.create(null);
+    var minutes = 0;
+
+    for (var i = 0; i < meetings.length; i++) {
+      for (var j = i + 1; j < meetings.length; j++) {
+        var a = meetings[i];
+        var b = meetings[j];
+        if (a.day !== b.day) continue;
+        if (a.start >= b.end || b.start >= a.end) continue;
+        if (a.code === b.code && a.group_id === b.group_id) continue;
+        pairs.push([a, b]);
+        minutes += Math.min(a.end, b.end) - Math.max(a.start, b.start);
+        var ka = meetingKey(a);
+        var kb = meetingKey(b);
+        marks[ka] = marks[ka] ? marks[ka] + ", " + meetingShort(b) : meetingShort(b);
+        marks[kb] = marks[kb] ? marks[kb] + ", " + meetingShort(a) : meetingShort(a);
+      }
+    }
+
+    var lines = [];
+    var report = sch.soft_conflict_report;
+    if (typeof report === "string") {
+      // הדיווח מהשרת עשוי להימשך על כמה שורות מוזחות; מאחדים אותן לפריט אחד.
+      report.split("\n").forEach(function (raw) {
+        var line = txt(raw);
+        if (!line.trim()) return;
+        if (/^\s/.test(line) && lines.length) {
+          lines[lines.length - 1] += " " + line.trim();
+        } else {
+          lines.push(line.trim());
+        }
+      });
+    } else if (report) {
+      lines = asList(report, null)
+        .map(function (rec) {
+          return txt(
+            rec && typeof rec === "object"
+              ? rec.text || rec.line || rec.message || rec.reason
+              : rec
+          ).trim();
+        })
+        .filter(Boolean);
+    }
+    if (!lines.length) {
+      lines = pairs.map(function (pair) {
+        return softConflictLine(pair[0], pair[1]);
+      });
+    }
+
+    var reported = num(sch.soft_conflicts, null);
+    return {
+      count: reported === null ? pairs.length : Math.max(reported, pairs.length),
+      pairs: pairs,
+      marks: marks,
+      lines: lines,
+      minutes: num(sch.soft_conflict_minutes, minutes),
+    };
+  }
+
+  /** הדיווח מעל הרשת. לעולם לא בפינה, ולעולם לא מקופל. */
+  function renderSoftConflicts(info) {
+    if (!ui.softBox) return;
+    var show = !!info && info.count > 0 && info.lines.length > 0;
+    setHidden(ui.softBox, !show);
+    if (!show) {
+      setText(ui.softSub, "");
+      if (ui.softList) clear(ui.softList);
+      return;
+    }
+    var head =
+      (info.count === 1
+        ? "במערכת הזו יש חפיפה מכוונת אחת"
+        : "במערכת הזו יש " + info.count + " חפיפות מכוונות") +
+      " — שני רכיבים באותו זמן. זה התאפשר רק משום שסומן שאין חובת נוכחות באחד הצדדים, " +
+      "ומשמעותו ויתור בפועל על הנוכחות באחד מהם.";
+    if (info.minutes > 0) {
+      head += " סך זמן החפיפה: " + fmtSpan(info.minutes) + " שעות.";
+    }
+    setText(ui.softSub, head);
+    rebuild(ui.softList, function (box) {
+      info.lines.forEach(function (line) {
+        box.appendChild(el("li", { text: line }));
+      });
+    });
+  }
+
+  /**
+   * חלוקת רוחב למפגשים חופפים באותו יום.
+   * ‏CSS Grid מצייר שני פריטים באותו תא זה על גבי זה, ואז אחד מהם פשוט נעלם —
+   * וזה בדיוק המידע שאסור להסתיר. לכן כל אשכול חופף מתחלק ל"נתיבים".
+   */
+  function assignLanes(meetings) {
+    var out = Object.create(null);
+    var byDay = Object.create(null);
+    meetings.forEach(function (m) {
+      var key = String(m.day);
+      if (!byDay[key]) byDay[key] = [];
+      byDay[key].push(m);
+    });
+
+    Object.keys(byDay).forEach(function (key) {
+      var list = byDay[key].slice().sort(function (a, b) {
+        return a.start - b.start || a.end - b.end;
+      });
+      var cluster = [];
+      var clusterEnd = -1;
+
+      var flush = function () {
+        if (!cluster.length) return;
+        var laneEnds = [];
+        var placed = [];
+        cluster.forEach(function (m) {
+          var lane = 0;
+          while (lane < laneEnds.length && laneEnds[lane] > m.start) lane++;
+          laneEnds[lane] = m.end;
+          placed.push({ m: m, lane: lane });
+        });
+        placed.forEach(function (rec) {
+          out[meetingKey(rec.m)] = { lane: rec.lane, lanes: laneEnds.length };
+        });
+        cluster = [];
+        clusterEnd = -1;
+      };
+
+      list.forEach(function (m) {
+        if (cluster.length && m.start >= clusterEnd) flush();
+        cluster.push(m);
+        clusterEnd = Math.max(clusterEnd, m.end);
+      });
+      flush();
+    });
+    return out;
+  }
+
+  function buildGrid(root, sch, soft) {
+    var meetings = scheduleMeetings(sch);
+    var lanes = assignLanes(meetings);
     var gridStart = GRID_DEFAULT_START;
     var gridEnd = GRID_DEFAULT_END;
     meetings.forEach(function (m) {
@@ -2900,6 +3667,8 @@
       var startSlot = Math.floor((m.start - gridStart) / SLOT_MINUTES);
       var endSlot = Math.ceil((m.end - gridStart) / SLOT_MINUTES);
       if (endSlot <= startSlot) endSlot = startSlot + 1;
+      var key = meetingKey(m);
+      var clash = soft && soft.marks ? txt(soft.marks[key]) : "";
       var summary = [
         m.name,
         "קבוצה " + m.group_id,
@@ -2907,18 +3676,33 @@
         m.lecturer,
         fmtTime(m.start) + "–" + fmtTime(m.end),
         m.room,
+        clash ? "חפיפה מכוונת עם " + clash : "",
       ]
         .filter(Boolean)
         .join(" · ");
 
+      var style = {
+        "grid-row": startSlot + 2 + " / " + (endSlot + 2),
+        "grid-column": String(m.day + 1),
+      };
+      var lane = lanes[key];
+      if (lane && lane.lanes > 1) {
+        // חלוקת רוחב בסגנון מוטבע בלבד — style.css לא משתנה בשלב הזה.
+        style["margin-inline-start"] =
+          ((lane.lane * 100) / lane.lanes).toFixed(2) + "%";
+        style["margin-inline-end"] =
+          (((lane.lanes - lane.lane - 1) * 100) / lane.lanes).toFixed(2) + "%";
+      }
+      if (clash) {
+        style.outline = "2px dashed var(--warn-line, currentColor)";
+        style["outline-offset"] = "-3px";
+      }
+
       var block = el(
         "div",
         {
-          class: "ev c" + colorOf(m.code),
-          style: {
-            "grid-row": startSlot + 2 + " / " + (endSlot + 2),
-            "grid-column": String(m.day + 1),
-          },
+          class: "ev c" + colorOf(m.code) + (clash ? " is-soft" : ""),
+          style: style,
           attrs: { title: summary },
         },
         [
@@ -2929,6 +3713,10 @@
       );
       if (m.lecturer) block.appendChild(el("span", { text: m.lecturer }));
       if (m.room) block.appendChild(el("span", { text: m.room }));
+      if (clash) {
+        // הסימון חייב להיות קריא גם בלי צבע ובלי הדפסה בצבע.
+        block.appendChild(el("span", { text: "חפיפה מכוונת · " + clash }));
+      }
       root.appendChild(block);
     });
   }

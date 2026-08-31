@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import dataclasses
 import importlib
 import json
 import logging
@@ -84,6 +85,7 @@ from werkzeug.exceptions import HTTPException  # noqa: E402
 import curriculum as curriculum_mod  # noqa: E402
 import discovery as discovery_mod  # noqa: E402
 import models  # noqa: E402
+import parser as parser_mod  # noqa: E402
 import scheduler as scheduler_mod  # noqa: E402
 import store as store_mod  # noqa: E402
 
@@ -114,6 +116,24 @@ MINUTES_IN_DAY = 24 * 60
 
 #: הסיבה הסטנדרטית לקבוצה שמובילה למבוי סתום.
 DEAD_END_REASON = "בחירה זו משאירה את המערכת בלי פתרון"
+
+#: כמה שליפות "על-פי-דרישה" מותרות בבקשה אחת ל-/api/courses.
+#: הידיעון פתוח לקריאה בלי התחברות (GROUND_TRUTH §9) — כלומר **שום דבר לא
+#: מווסת אותנו חוץ מאיתנו**. תקרה + השהיה הן הנימוס שלנו כלפי שרת הקולג'.
+MAX_ONDEMAND_FETCHES = 12
+
+#: השהיה בין בקשות רשות עוקבות, בשניות.
+FETCH_DELAY_S = 1.2
+
+#: תקרת זמן לבקשת HTTP אחת.
+FETCH_TIMEOUT_S = 45.0
+
+#: הערת ידיעון שמעידה על חובת נוכחות. ‏11069 כותב "חובת הנוכחות בקורס היא
+#: מרגע הרישום לקורס" — לכן ה"ה" הידיעה חייבת להיות אופציונלית. "חובה לקחת
+#: בצמוד לקורס זה" (61756) הוא **לא** ביטוי של נוכחות ואסור לו להיתפס כאן.
+ATTENDANCE_NOTE_RE = re.compile(
+    r"חוב[הת]\s*ה?נוכחות|נוכחות\s*ה?חובה|חובה\s*להשתתף|חוב[הת]\s*ה?השתתפות"
+)
 
 #: תוויות שנת לימודים (שנה א׳–ד׳) — לשלב 1 בממשק.
 YEAR_LABELS: dict[int, str] = {1: "שנה א׳", 2: "שנה ב׳", 3: "שנה ג׳", 4: "שנה ד׳"}
@@ -294,13 +314,211 @@ def _course_index(courses: Any) -> dict[str, models.Course]:
     return {c.code: c for c in courses}
 
 
+
+# ---------------------------------------------------------------------------
+# 3א. חפיפות מכוונות (soft conflicts) — הצגה בלבד
+#
+# ההחלטה *אם* חפיפה מותרת שייכת למנוע (``scheduler.conflict_is_hard``), ואין
+# מחליטים עליה כאן מחדש. מה שנעשה כאן הוא לתרגם חפיפה שהמנוע כבר אישר לטקסט
+# עברי שאפשר להראות — כי חפיפה שעוברת בשקט היא בדיוק מה שאסור לקרות:
+# מוותרים כאן על נוכחות תמורת זמן, וחייבים לראות בדיוק על מה ויתרו.
+# ---------------------------------------------------------------------------
+def _meeting_text(meeting: models.Meeting) -> str:
+    """'יום ד 08:30-10:30' — בלי חדר, לשורת ההסבר."""
+    letter = models.DAY_LETTERS_HE.get(meeting.day, "?")
+    return f"יום {letter} {models.fmt_time(meeting.start)}-{models.fmt_time(meeting.end)}"
+
+
+def _group_text(group: models.Group) -> str:
+    """הצד של החפיפה כטקסט: קוד, סוג רכיב ומספר קבוצה."""
+    return f"{group.course_code} {group.kind} קב' {group.group_id}"
+
+
+def _overlap_window(
+    a: models.Group, b: models.Group
+) -> tuple[int, int, int, models.Meeting, models.Meeting] | None:
+    """החפיפה המוקדמת ביותר בין שתי קבוצות: ``(יום, התחלה, סוף, מפגש, מפגש)``."""
+    best: tuple[int, int, int, models.Meeting, models.Meeting] | None = None
+    for first in a.meetings:
+        for second in b.meetings:
+            if not first.overlaps(second):
+                continue
+            window = (
+                first.day,
+                max(first.start, second.start),
+                min(first.end, second.end),
+                first,
+                second,
+            )
+            if best is None or window[:2] < best[:2]:
+                best = window
+    return best
+
+
+def _overlapping_pairs(selection: models.Selection) -> list[tuple[models.Group, models.Group]]:
+    """זוגות הקבוצות החופפות בבחירה.
+
+    מעדיף את ``Selection.overlapping_pairs`` (מודל הנתונים), ונופל חזרה לאותה
+    השוואה זוגית ש-``Selection.is_feasible`` עושה — כדי שהדיווח יעבוד גם לפני
+    שהמתודה נוספה למודל, ולא ישתוק בדיוק כשיש מה לומר.
+    """
+    method = getattr(selection, "overlapping_pairs", None)
+    if callable(method):
+        try:
+            return [(a, b) for a, b in (method() or [])]
+        except Exception:  # noqa: BLE001 - דיווח לא מפיל תשובה
+            LOG.exception("Selection.overlapping_pairs נכשל")
+    groups = list(selection.groups)
+    return [
+        (a, b)
+        for i, a in enumerate(groups)
+        for b in groups[i + 1 :]
+        if a.conflicts_with(b)
+    ]
+
+
+def _attendance_required(prefs: Any, group: models.Group) -> bool:
+    """האם הרכיב הזה דורש נוכחות. חסר = **כן** (ברירת המחדל הזהירה)."""
+    helper = getattr(scheduler_mod, "attendance_required", None)
+    if callable(helper):
+        try:
+            return bool(helper(prefs, group))
+        except Exception:  # noqa: BLE001
+            pass
+    table = getattr(prefs, "attendance", None) or {}
+    try:
+        return bool(table.get(group.course_code, {}).get(group.kind, True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _describe_soft_conflicts(sched: models.ScoredSchedule, prefs: Any) -> list[str]:
+    """שורות ההסבר של המנוע, אם הן קיימות. אחרת רשימה ריקה.
+
+    החתימה במנוע היא ``describe_soft_conflicts(selection, prefs)``; שאר הצורות
+    נשארות כרשת ביטחון בלבד. ``TypeError``/``AttributeError`` מהניסיון הראשון
+    פירושם "צורה לא מתאימה" — ממשיכים לצורה הבאה במקום לוותר על הדיווח.
+    """
+    fn = getattr(scheduler_mod, "describe_soft_conflicts", None)
+    if not callable(fn):
+        return []
+    for args in ((sched.selection, prefs), (sched, prefs), (sched.selection,), (sched,)):
+        try:
+            lines = fn(*args)
+        except (TypeError, AttributeError):
+            continue
+        except Exception:  # noqa: BLE001 - דיווח לא מפיל תשובה
+            LOG.exception("describe_soft_conflicts נכשל")
+            return []
+        return [str(line) for line in (lines or [])]
+    return []
+
+
+def _engine_count(name: str, sched: models.ScoredSchedule) -> int | None:
+    """קורא מונה חפיפות מהמנוע (``soft_conflicts_of`` וחברו). ``None`` = אין."""
+    fn = getattr(scheduler_mod, name, None)
+    if callable(fn):
+        try:
+            return int(fn(sched))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _soft_conflict_line(
+    a: models.Group, b: models.Group, window: tuple, prefs: Any
+) -> str:
+    """שורת הסבר עברית לחפיפה אחת — הנוסח מ-SPEC_V2 §2.
+
+    בשימוש רק כשהמנוע לא סיפק ניסוח משלו. זו הצגה, לא לוגיקת שיבוץ.
+    """
+    meeting_a, meeting_b = window[3], window[4]
+    waived = [g for g in (a, b) if not _attendance_required(prefs, g)]
+    if waived:
+        assumption = " ו-".join(f"{g.course_code} {g.kind}" for g in waived)
+        tail = f"— נבחר בהנחה שאין חובת נוכחות ב-{assumption}."
+    else:
+        tail = "— חפיפה שאושרה במפורש בהגדרות הנוכחות."
+    return (
+        f"חפיפה מכוונת: {_group_text(a)} ({_meeting_text(meeting_a)})\n"
+        f"מול {_group_text(b)} ({_meeting_text(meeting_b)})\n"
+        f"{tail}"
+    )
+
+
+def soft_conflicts_to_json(
+    sched: models.ScoredSchedule, prefs: Any = None
+) -> dict[str, Any]:
+    """סיכום החפיפות המכוונות של מערכת אחת: כמה, כמה דקות, ומה בדיוק."""
+    detail: list[dict[str, Any]] = []
+    minutes = 0
+    for a, b in _overlapping_pairs(sched.selection):
+        window = _overlap_window(a, b)
+        if window is None:  # pragma: no cover - דווח כחופף בלי חפיפה בפועל
+            continue
+        day, start, end, meeting_a, meeting_b = window
+        minutes += max(0, end - start)
+        detail.append(
+            {
+                "day": day,
+                "day_letter": models.DAY_LETTERS_HE.get(day, "?"),
+                "start": start,
+                "end": end,
+                "start_text": models.fmt_time(start),
+                "end_text": models.fmt_time(end),
+                "minutes": max(0, end - start),
+                "a": {
+                    "code": a.course_code,
+                    "kind": a.kind,
+                    "group_id": a.group_id,
+                    "lecturer": a.lecturer,
+                    "text": _group_text(a),
+                    "meeting_text": _meeting_text(meeting_a),
+                    "attendance_required": _attendance_required(prefs, a),
+                },
+                "b": {
+                    "code": b.course_code,
+                    "kind": b.kind,
+                    "group_id": b.group_id,
+                    "lecturer": b.lecturer,
+                    "text": _group_text(b),
+                    "meeting_text": _meeting_text(meeting_b),
+                    "attendance_required": _attendance_required(prefs, b),
+                },
+                "text": _soft_conflict_line(a, b, window, prefs),
+            }
+        )
+
+    report = _describe_soft_conflicts(sched, prefs) if detail else []
+    if detail and not report:
+        # המנוע לא ניסח — לא משתיקים. מנסחים כאן, לפי SPEC_V2 §2.
+        report = [item["text"] for item in detail]
+
+    # התשובה של המנוע קודמת לספירה שלנו — הוא זה שהחליט מה נחשב חפיפה רכה.
+    count = _engine_count("soft_conflicts_of", sched)
+    if count is None:
+        count = getattr(sched, "soft_conflicts", None)
+    total_minutes = _engine_count("soft_conflict_minutes_of", sched)
+    if total_minutes is None:
+        total_minutes = getattr(sched, "soft_conflict_minutes", None)
+    return {
+        "soft_conflicts": int(count if count is not None else len(detail)),
+        "soft_conflict_minutes": int(total_minutes if total_minutes is not None else minutes),
+        "soft_conflict_pairs": detail,
+        "soft_conflict_report": report,
+    }
+
+
 def schedule_to_json(
-    sched: models.ScoredSchedule, courses: Any = None
+    sched: models.ScoredSchedule, courses: Any = None, prefs: Any = None
 ) -> dict[str, Any]:
     """מערכת מנוקדת → dict. טהורה.
 
     ``courses`` (רשימה או מילון של ``Course``) משמש רק כדי לצרף שם ונ"ז לכל
     בחירה; בלעדיו השדות האלה יחזרו ריקים, והמבנה נשאר זהה.
+
+    ``prefs`` מוסיף את דיווח החפיפות המכוונות (מי ויתר על נוכחות ולמה); בלעדיו
+    הספירה עדיין נכונה, רק בלי שמות הרכיבים שוויתרו.
     """
     index = _course_index(courses)
     picks: list[dict[str, Any]] = []
@@ -346,6 +564,8 @@ def schedule_to_json(
         "truncated": bool(getattr(sched, "truncated", False)),
         "summary": sched.summary(),
         "picks": picks,
+        # חפיפה מכוונת חייבת להיראות. אף פעם לא בשקט.
+        **soft_conflicts_to_json(sched, prefs),
     }
 
 
@@ -615,6 +835,138 @@ def _clean_weights(value: Any) -> dict[str, float]:
                     f"weights.{key}: {value[key]!r}",
                 ) from exc
     return weights
+
+
+def _clean_attendance(value: Any) -> dict[str, dict[str, bool]]:
+    """‏{קוד: {סוג רכיב: האם נדרשת נוכחות}} — מה שהמשתמש/ת סימנ/ה בפועל.
+
+    מה ש**לא** נשלח פשוט חסר, ומשמעותו "נוכחות חובה" — ברירת המחדל הזהירה
+    שמשאירה את ההתנהגות הקיימת בדיוק כפי שהייתה. ויתור על נוכחות הוא תמיד
+    בחירה מפורשת, אף פעם לא תוצר לוואי.
+    """
+    if value in (None, ""):
+        return {}
+    if not isinstance(value, dict):
+        raise ApiError(
+            400,
+            "הגדרות הנוכחות אינן בפורמט הנכון.",
+            f"attendance: expected an object, got {type(value).__name__}",
+        )
+    out: dict[str, dict[str, bool]] = {}
+    for raw_code, by_kind in value.items():
+        code = clean_code(raw_code, field="attendance")
+        if by_kind in (None, ""):
+            continue
+        if not isinstance(by_kind, dict):
+            raise ApiError(
+                400,
+                "הגדרות הנוכחות של כל קורס צריכות להיות מילון של "
+                "{סוג רכיב: כן/לא}.",
+                f"attendance[{code}]: expected an object, got {type(by_kind).__name__}",
+            )
+        for raw_kind, flag in by_kind.items():
+            kind = str(raw_kind).strip()
+            if not kind:
+                continue
+            if isinstance(flag, (dict, list, tuple)):
+                raise ApiError(
+                    400,
+                    f"הערך של {kind} בקורס {code} צריך להיות כן או לא.",
+                    f"attendance[{code}][{kind}]: {type(flag).__name__}",
+                )
+            out.setdefault(code, {})[kind] = _as_bool(flag, True)
+    return out
+
+
+def _engine_supports(field_name: str) -> bool:
+    """האם ל-``scheduler.Preferences`` יש את השדה הזה בגרסה שמותקנת בפועל."""
+    try:
+        return field_name in {f.name for f in dataclasses.fields(scheduler_mod.Preferences)}
+    except TypeError:  # pragma: no cover - לא dataclass
+        return False
+
+
+def _make_preferences(**kwargs: Any) -> tuple[scheduler_mod.Preferences, list[str]]:
+    """בונה ``Preferences`` ומעביר רק שדות שקיימים בו בפועל.
+
+    ``scheduler.py`` הוא קובץ של סוכן אחר. אם ``attendance`` /
+    ``allow_soft_conflicts`` עדיין לא נוספו שם, עדיף לבנות העדפות תקינות
+    ולדווח ללקוח ש"התכונה אינה זמינה" מאשר להפיל את כל המסך ב-500.
+
+    Returns:
+        ``(prefs, unsupported)`` — ``unsupported`` הם השדות שהושמטו.
+    """
+    try:
+        known = {f.name for f in dataclasses.fields(scheduler_mod.Preferences)}
+    except TypeError:  # pragma: no cover - לא dataclass
+        known = set(kwargs)
+    unsupported = sorted(name for name in kwargs if name not in known)
+    prefs = scheduler_mod.Preferences(
+        **{name: val for name, val in kwargs.items() if name in known}
+    )
+    return prefs, unsupported
+
+
+def _yedion_attendance_note(course: models.Course, kind: str) -> str:
+    """הערת הידיעון שממנה משתמע שיש חובת נוכחות ברכיב הזה, אם יש כזו.
+
+    ‏11069 כותב "חובת הנוכחות בקורס היא מרגע הרישום לקורס" — זה מקור אמיתי,
+    ולכן הממשק צריך לדעת להגיד "כך כתוב בידיעון" ולא רק "ברירת מחדל".
+    """
+    for group in course.groups_of(kind):
+        note = str(group.note or "").strip()
+        if note and ATTENDANCE_NOTE_RE.search(note):
+            return note
+    return ""
+
+
+def attendance_info(
+    courses: list[models.Course], requested: dict[str, dict[str, bool]] | None = None
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """‏{קוד: {סוג רכיב: מצב הנוכחות}} — ברירת המחדל, המקור שלה, והבחירה בפועל.
+
+    לכל (קורס, סוג רכיב):
+        ``default``   — תמיד ``True``. ויתור על נוכחות הוא בחירה, לא ברירת מחדל.
+        ``from_yedion`` — האם הידיעון עצמו כותב שיש חובת נוכחות.
+        ``note``      — הערת הידיעון עצמה, כדי שאפשר יהיה לצטט אותה.
+        ``required``  — מה נשלח למנוע בפועל (הבחירה גוברת על ברירת המחדל).
+        ``source``    — ``"user"`` / ``"yedion"`` / ``"default"``.
+    """
+    picked = requested or {}
+    info: dict[str, dict[str, dict[str, Any]]] = {}
+    for course in courses:
+        for kind in course.kinds():
+            note = _yedion_attendance_note(course, kind)
+            from_yedion = bool(note)
+            chosen = (picked.get(course.code) or {}).get(kind)
+            required = True if chosen is None else bool(chosen)
+            if chosen is not None:
+                source = "user"
+                text = (
+                    "סומן ידנית כחובת נוכחות."
+                    if required
+                    else "סומן ידנית כרכיב ללא חובת נוכחות."
+                )
+            elif from_yedion:
+                source = "yedion"
+                text = f"הידיעון כותב שיש חובת נוכחות: {note}"
+            else:
+                source = "default"
+                text = (
+                    "ברירת מחדל: נוכחות חובה. אפשר לסמן אחרת אם ידוע שאין "
+                    "חובת נוכחות ברכיב הזה."
+                )
+            info.setdefault(course.code, {})[kind] = {
+                "kind": kind,
+                "required": required,
+                "default": True,
+                "from_yedion": from_yedion,
+                "note": note,
+                "source": source,
+                "text": text,
+            }
+    return info
+
 
 
 # ===========================================================================
@@ -1117,6 +1469,503 @@ def compute_viability(
 
 
 # ===========================================================================
+# 6א. שליפה על-פי-דרישה — ידיעון בלי התחברות (GROUND_TRUTH §9)
+#
+# הידיעון עונה על ``S_LOOK_FOR_NOSE`` בלי שום הזדהות, ולכן קורס שאין לו
+# נתונים אינו חייב להישאר "אין נתונים במסד" עד הרענון הבא — אפשר להביא אותו
+# עכשיו. השליפה עצמה שייכת ל-``yedion_http.YedionHTTP``, הפענוח ל-``parser``
+# והשמירה ל-``store``; כאן רק מחברים ביניהם ומתרגמים תקלות לעברית.
+#
+# נימוס: שום דבר לא מווסת אותנו יותר, ולכן אנחנו מווסתים את עצמנו —
+# ``MAX_ONDEMAND_FETCHES`` לבקשה, ``FETCH_DELAY_S`` בין בקשות, ומביאים רק את
+# מה שחסר או מיושן.
+# ===========================================================================
+def _network_allowed() -> bool:
+    """האם מותר לפנות לרשת מתוך בקשת HTTP.
+
+    ההגדרה ``allow_network`` גוברת בשני הכיוונים. ברירת המחדל האוטומטית היא
+    **לא לפנות לרשת בתוך הרצת בדיקות**: חבילת הבדיקות רצה מול ``data/db``
+    האמיתי, ושליפה אמיתית באמצע בדיקה הייתה כותבת לתוכו קורס שאיש לא ביקש —
+    ומשנה את המסד שהבדיקות עצמן מתארות.
+    """
+    flag = _config().get("allow_network")
+    if flag is not None:
+        return bool(flag)
+    return "pytest" not in sys.modules
+
+
+def _yedion_module():
+    """‏``src/yedion_http.py`` — בייבוא עצל. ``None`` אם הוא לא זמין.
+
+    עצל בכוונה: המודול נכתב בקובץ נפרד, והאפליקציה חייבת לעלות (ולהגיש את כל
+    שאר נקודות הקצה) גם אם הוא חסר או שבור.
+    """
+    try:
+        return importlib.import_module("yedion_http")
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("yedion_http אינו זמין: %s: %s", type(exc).__name__, exc)
+        return None
+
+
+class _Pacer:
+    """שומר מרווח מזערי בין בקשות רשת עוקבות.
+
+    מודד את הזמן שכבר עבר מאז הבקשה הקודמת, ולכן אם השולף כבר השהה בעצמו —
+    לא מוסיפים השהיה שנייה מיותרת.
+    """
+
+    def __init__(self, min_gap: float = FETCH_DELAY_S) -> None:
+        self.min_gap = max(0.0, float(min_gap))
+        self._last: float | None = None
+
+    def wait(self) -> None:
+        now = time.monotonic()
+        if self._last is not None and self.min_gap > 0:
+            remaining = self.min_gap - (now - self._last)
+            if remaining > 0:
+                time.sleep(remaining)
+        self._last = time.monotonic()
+
+
+def _course_meta(**values: Any) -> store_mod.CourseMeta:
+    """בונה ``store.CourseMeta`` ומעביר רק שדות שהוא באמת מכריז עליהם.
+
+    ``store.py`` שייך לסוכן אחר; שדה שיתווסף או ייעלם שם לא צריך להפיל שליפה.
+    """
+    try:
+        known = {f.name for f in dataclasses.fields(store_mod.CourseMeta)}
+    except TypeError:  # pragma: no cover - לא dataclass
+        known = set(values)
+    return store_mod.CourseMeta(**{k: v for k, v in values.items() if k in known})
+
+
+def _course_url(fetcher: Any, code: str) -> str:
+    """הכתובת שממנה נשלף הקורס — למטא-דאטה בלבד. ריק אם אי אפשר לדעת."""
+    for owner in (fetcher, _yedion_module()):
+        helper = getattr(owner, "course_url", None)
+        if callable(helper):
+            try:
+                return str(helper(code))
+            except Exception:  # noqa: BLE001
+                continue
+    return ""
+
+
+def _construct(factory: Callable, attempts: list[dict[str, Any]]) -> Any:
+    """מנסה לבנות אובייקט עם כמה צורות של ארגומנטים, מהמפורטת לפשוטה.
+
+    החתימה של ``YedionHTTP`` (ושל שולף מוזרק בבדיקה) נקבעת בקובץ אחר, ולכן
+    עדיף לנסות ולוותר בהדרגה מאשר להניח חתימה אחת ולהיכשל ב-500.
+    """
+    last: Exception | None = None
+    for kwargs in attempts:
+        try:
+            return factory(**kwargs)
+        except TypeError as exc:
+            last = exc
+            continue
+    if last is not None:
+        raise last
+    return factory()
+
+
+def _make_fetcher(
+    *, year_gregorian: str = "", log: Callable[[str], None] | None = None,
+    delay_s: float = FETCH_DELAY_S,
+) -> tuple[Any, str, bool]:
+    """מחזיר ``(שולף, שגיאה בעברית, האם הוזרק)``. השגיאה והשולף לעולם לא יחד.
+
+    נקודת ההזרקה ``course_fetcher`` (בהגדרות המפעל) גוברת — כך אפשר לבדוק את
+    כל הזרימה בלי רשת. אחרת נבנה ``yedion_http.YedionHTTP``: בלי דפדפן, בלי
+    התחברות, ובלי שום נגיעה בפרטי הזדהות — אין כאלה במסלול הזה בכלל.
+    """
+    from flask import current_app
+
+    raw_dir = str(_config().get("raw_dir") or "")
+    injected = current_app.config.get("COURSE_FETCHER")
+    if injected is not None:
+        if hasattr(injected, "fetch_course"):
+            return injected, "", True
+        if callable(injected):
+            try:
+                obj = _construct(
+                    injected,
+                    [
+                        {
+                            "year": year_gregorian,
+                            "delay_s": delay_s,
+                            "timeout_s": FETCH_TIMEOUT_S,
+                            "raw_dir": raw_dir,
+                            "log": log,
+                        },
+                        {"year": year_gregorian, "log": log},
+                        {"log": log},
+                        {},
+                    ],
+                )
+            except Exception as exc:  # noqa: BLE001
+                LOG.exception("בניית השולף המוזרק נכשלה")
+                return None, f"לא ניתן להפעיל את שולף הנתונים ({type(exc).__name__}).", True
+            if hasattr(obj, "fetch_course"):
+                return obj, "", True
+        return None, "שולף הנתונים שהוגדר אינו תומך בשליפת קורס.", True
+
+    module = _yedion_module()
+    cls = getattr(module, "YedionHTTP", None) if module is not None else None
+    if cls is None:
+        return None, (
+            "שליפה ישירה מהידיעון אינה זמינה כרגע (הרכיב yedion_http חסר). "
+            "אפשר להריץ רענון מלא, או לפענח מחדש את הנתונים השמורים."
+        ), False
+    try:
+        obj = _construct(
+            cls,
+            [
+                {
+                    "year": year_gregorian,
+                    "delay_s": delay_s,
+                    "timeout_s": FETCH_TIMEOUT_S,
+                    "raw_dir": raw_dir,
+                    "log": log,
+                },
+                {"year": year_gregorian, "delay_s": delay_s, "log": log},
+                {"year": year_gregorian, "log": log},
+                {},
+            ],
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("בניית YedionHTTP נכשלה")
+        return None, f"לא ניתן להפעיל את שולף הידיעון ({type(exc).__name__}).", False
+    return obj, "", False
+
+
+def _open_fetcher_session(fetcher: Any, year_he: str) -> str:
+    """פותח סשן מול הידיעון. מחזיר שגיאה בעברית, או מחרוזת ריקה.
+
+    ‏GROUND_TRUTH §9: ה-GET לחימום חייב לקדום את ה-POST של החלפת השנה, אחרת
+    השנה חוזרת בשקט לשנה הקודמת. האכיפה עצמה היא בתוך ``open_session``; כאן
+    רק מתרגמים כישלון לעברית — כולל את מקרה השנה השגויה, שהוא בדיוק הכשל
+    שהבדיקה הזו נועדה לתפוס.
+    """
+    opener = getattr(fetcher, "open_session", None)
+    if not callable(opener):
+        return ""
+    try:
+        opener()
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("open_session נכשל")
+        name = type(exc).__name__
+        if "Year" in name:
+            return (
+                f"הידיעון החזיר שנת לימודים שאינה {year_he or 'המבוקשת'}. "
+                "השליפה נעצרה כדי שלא ייכנסו נתונים של שנה אחרת."
+            )
+        return f"לא ניתן להתחבר לידיעון ({name}). כדאי לבדוק את חיבור האינטרנט ולנסות שוב."
+    return ""
+
+
+def _page_year_mismatch(html: str, year_he: str) -> str:
+    """בודק שהדף עצמו מצהיר על השנה המבוקשת. מחזיר הסבר, או מחרוזת ריקה.
+
+    זו הבדיקה שתופסת את הכשל של "חימום שנשכח": ‏200 תקין, נתונים מלאים, שנה
+    שגויה, אפס שגיאות. עדיף לוותר על הקורס מאשר לשמור נתון של שנה אחרת.
+    """
+    if not year_he:
+        return ""
+    try:
+        found = parser_mod.extract_page_year(html)
+    except Exception:  # noqa: BLE001 - אין תווית, אין סתירה
+        return ""
+    if not found or _norm_year(found) == _norm_year(year_he):
+        return ""
+    return (
+        f"הדף שהתקבל מהידיעון הוא לשנת {found} ולא לשנת {year_he}. "
+        "הנתונים לא נשמרו כדי שלא תיכנס שנה שגויה."
+    )
+
+
+def fetch_courses_into_store(
+    codes: Iterable[str],
+    *,
+    semester: str,
+    year_he: str,
+    year_gregorian: str,
+    emit: Callable[[str], None] | None = None,
+    cap: int = MAX_ONDEMAND_FETCHES,
+    delay_s: float = FETCH_DELAY_S,
+    fetcher: Any = None,
+) -> dict[str, Any]:
+    """שולף קורסים מהידיעון, מפענח, ושומר. **לעולם לא זורק על כישלון של קורס.**
+
+    זו המנוע המשותף לשני המסלולים: השליפה על-פי-דרישה של ``/api/courses``
+    והרענון של ``/api/scrape/start``. שניהם צריכים בדיוק את אותו דבר — שולף
+    אחד, נימוס אחד, ותרגום תקלות אחיד לעברית.
+
+    Returns:
+        מילון דוח: ``fetched`` / ``failed`` / ``skipped`` / ``changes`` /
+        ``log`` / ``error``. קורס אחד שנכשל לא מפיל את השאר, ולא את הבקשה.
+    """
+    lines: list[str] = []
+
+    def say(text: str) -> None:
+        lines.append(str(text))
+        if emit is not None:
+            try:
+                emit(str(text))
+            except Exception:  # noqa: BLE001 - יומן לא מפיל שליפה
+                LOG.exception("כתיבה ליומן נכשלה")
+
+    wanted = [str(c) for c in codes]
+    report: dict[str, Any] = {
+        "requested": list(wanted),
+        "fetched": [],
+        "failed": [],
+        "skipped": [],
+        "changes": {},
+        "not_offered": [],
+        "log": lines,
+        "error": "",
+        "cap": int(cap),
+        "delay_s": float(delay_s),
+    }
+    if not wanted:
+        return report
+
+    head, tail = wanted[: max(0, int(cap))], wanted[max(0, int(cap)) :]
+    for code in tail:
+        report["skipped"].append(
+            {
+                "code": code,
+                "reason": (
+                    f"בבקשה אחת נשלפים עד {cap} קורסים כדי לא להעמיס על שרת המכללה. "
+                    f"הקורס {code} יישלף בפעם הבאה."
+                ),
+            }
+        )
+    if not head:
+        return report
+
+    owned = fetcher is None
+    injected = False
+    if owned:
+        fetcher, error, injected = _make_fetcher(
+            year_gregorian=year_gregorian, log=say, delay_s=delay_s
+        )
+        if fetcher is None:
+            report["error"] = error
+            for code in head:
+                report["failed"].append({"code": code, "reason": error})
+            say(error)
+            return report
+        error = _open_fetcher_session(fetcher, year_he)
+        if error:
+            report["error"] = error
+            for code in head:
+                report["failed"].append({"code": code, "reason": error})
+            say(error)
+            return report
+
+    store = _store()
+    curr = _curriculum()
+    # שולף מוזרק (בדיקה/הרחבה) לא נוגע ברשת, ולכן אין את מי לכבד בהשהיה.
+    # שולף שהתקבל מבחוץ — הקורא/ת קבע/ה את הקצב ואנחנו מכבדים את הקביעה.
+    pacer = _Pacer(0.0 if injected else delay_s)
+
+    for code in head:
+        entry = curriculum_mod.find_course(curr, code) or {}
+        fallback_name = str(entry.get("name") or "")
+        fallback_credits = entry.get("credits")
+
+        pacer.wait()
+        say(f"מביא קורס {code} מהידיעון…")
+        try:
+            html = fetcher.fetch_course(code)
+        except Exception as exc:  # noqa: BLE001 - קורס אחד לא מפיל את השאר
+            # תקלת רשת/קורס חסר היא מצב צפוי, לא קריסה: שורת אזהרה בצד השרת
+            # והסבר בעברית ללקוח — בלי traceback שנשפך למסך.
+            LOG.warning("שליפת %s נכשלה: %s: %s", code, type(exc).__name__, exc)
+            name = type(exc).__name__
+            reason = (
+                f"הידיעון החזיר שנה שגויה עבור {code}."
+                if "Year" in name
+                else f"לא ניתן היה לשלוף את הקורס {code} מהידיעון ({name})."
+            )
+            report["failed"].append({"code": code, "reason": reason})
+            say(f"שגיאה בקורס {code}: {reason}")
+            continue
+
+        mismatch = _page_year_mismatch(html, year_he)
+        if mismatch:
+            report["failed"].append({"code": code, "reason": mismatch})
+            say(f"שגיאה בקורס {code}: {mismatch}")
+            continue
+
+        try:
+            parsed = parser_mod.parse_course_page(
+                html, code, fallback_name=fallback_name, semester=semester or None
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOG.exception("פענוח %s נכשל", code)
+            reason = f"לא ניתן היה לפענח את דף הקורס {code} ({type(exc).__name__})."
+            report["failed"].append({"code": code, "reason": reason})
+            say(f"שגיאה בקורס {code}: {reason}")
+            continue
+
+        course = parsed.course
+        warnings = [str(w) for w in (parsed.warnings or [])]
+        if course is None:
+            # GROUND_TRUTH §6: דף תקין בלי קבוצות הוא תשובה ("לא נפתח"), לא תקלה.
+            reason = (
+                f"הידיעון לא מציג קבוצות לקורס {code} בסמסטר "
+                f"{semester or '?'} בשנת {year_he or '?'} — ייתכן שהוא אינו נפתח."
+            )
+            report["not_offered"].append({"code": code, "reason": reason})
+            report["failed"].append({"code": code, "reason": reason})
+            say(reason)
+            continue
+
+        if not getattr(course, "credits", 0) and fallback_credits:
+            course.credits = float(fallback_credits)
+
+        group_count = len(course.groups or [])
+        stamp = _now_iso()
+        meta = _course_meta(
+            fetched_at=stamp,
+            attempted_at=stamp,
+            last_attempt_at=stamp,
+            year=year_he,
+            year_gregorian=year_gregorian,
+            semester=semester,
+            source_url=_course_url(fetcher, code),
+            content_sha1=store_mod.content_sha1(html),
+            group_count=group_count,
+            warnings=warnings,
+            ok=True,
+        )
+        try:
+            changes = store.save_course(course, meta) or []
+        except Exception as exc:  # noqa: BLE001
+            LOG.exception("שמירת %s נכשלה", code)
+            reason = f"לא ניתן היה לשמור את הקורס {code} ({type(exc).__name__})."
+            report["failed"].append({"code": code, "reason": reason})
+            say(f"שגיאה בקורס {code}: {reason}")
+            continue
+
+        report["fetched"].append(code)
+        report["changes"][code] = [str(c) for c in changes]
+        if group_count == 0:
+            report["not_offered"].append(
+                {
+                    "code": code,
+                    "reason": (
+                        f"הידיעון לא מציג אף קבוצה לקורס {code} בסמסטר "
+                        f"{semester or '?'} — ייתכן שהוא אינו נפתח."
+                    ),
+                }
+            )
+        say(f"נשמר {code}: {group_count} קבוצות, {len(changes)} שינויים.")
+
+    return report
+
+
+def fetch_catalog_into_store(
+    *,
+    year_he: str,
+    year_gregorian: str,
+    emit: Callable[[str], None] | None = None,
+    fetcher: Any = None,
+) -> dict[str, Any]:
+    """מביא את הקטלוג המלא בבקשה **אחת** ושומר אותו.
+
+    ‏GROUND_TRUTH §9: ``S_LOOK_FOR_NOSE_AB`` מחזיר את כל הקטלוג בבת אחת. אין
+    לולאה על האלפבית — זו הייתה 22 בקשות במקום אחת.
+    """
+
+    def say(text: str) -> None:
+        if emit is not None:
+            try:
+                emit(str(text))
+            except Exception:  # noqa: BLE001
+                LOG.exception("כתיבה ליומן נכשלה")
+
+    report: dict[str, Any] = {"ok": False, "count": 0, "error": "", "warnings": []}
+    if fetcher is None:
+        fetcher, error, _injected = _make_fetcher(year_gregorian=year_gregorian, log=say)
+        if fetcher is None:
+            report["error"] = error
+            say(error)
+            return report
+        error = _open_fetcher_session(fetcher, year_he)
+        if error:
+            report["error"] = error
+            say(error)
+            return report
+
+    grabber = getattr(fetcher, "fetch_catalog", None)
+    if not callable(grabber):
+        report["error"] = "שליפת הקטלוג אינה נתמכת בשולף הנוכחי."
+        say(report["error"])
+        return report
+
+    say("מביא את קטלוג הקורסים המלא…")
+    try:
+        html = grabber()
+        catalog, warnings = discovery_mod.parse_catalog(html)
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("שליפת הקטלוג נכשלה")
+        report["error"] = f"לא ניתן היה להביא את הקטלוג ({type(exc).__name__})."
+        say(report["error"])
+        return report
+
+    if not catalog:
+        report["error"] = "הקטלוג שהתקבל ריק — הנתונים הקיימים נשמרו כמו שהם."
+        say(report["error"])
+        return report
+
+    try:
+        _store().save_catalog(catalog, year_he, year_gregorian)
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("שמירת הקטלוג נכשלה")
+        report["error"] = f"לא ניתן היה לשמור את הקטלוג ({type(exc).__name__})."
+        say(report["error"])
+        return report
+
+    report.update({"ok": True, "count": len(catalog), "warnings": [str(w) for w in warnings]})
+    say(f"קטלוג: נשמרו {len(catalog)} קורסים.")
+    return report
+
+
+def _stale_or_missing(
+    codes: Iterable[str],
+    problems: list[dict[str, Any]],
+    metas: dict[str, store_mod.CourseMeta],
+    *,
+    year: str,
+    max_age_hours: float,
+) -> list[str]:
+    """אילו מהקודים שווה להביא עכשיו: חסרים, מיושנים, או משנה/סמסטר אחרים.
+
+    זהו גם כלל הנימוס מ-GROUND_TRUTH §9 — מביאים רק מה שבאמת חסר או ישן,
+    ולא מרעננים בכל לחיצה את מה שכבר טרי.
+    """
+    blocked = {
+        p["code"]
+        for p in problems
+        if p.get("kind") in {"missing_data", "semester_mismatch", "no_groups"}
+    }
+    out: list[str] = []
+    for code in codes:
+        meta = metas.get(code)
+        if code in blocked or meta is None:
+            out.append(code)
+            continue
+        if meta.is_stale(max_age_hours) or not _year_matches(year, meta):
+            out.append(code)
+    return out
+
+
+
+# ===========================================================================
 # 7. מצב הגרידה — thread אחד בלבד, יומן חסום בזיכרון
 # ===========================================================================
 _scrape_lock = threading.Lock()
@@ -1138,7 +1987,10 @@ _scrape_state: dict[str, Any] = {
     "running": False,
     "phase": "idle",
     "exit_code": None,
+    # ‏GROUND_TRUTH §9: במסלול ברירת המחדל אין התחברות בכלל, ולכן זה תמיד
+    # ‏False. השדה נשאר קיים בשביל מסלול הדפדפן (``mode == "browser"``).
     "needs_login": False,
+    "mode": "http",
     "started_at": None,
     "finished_at": None,
     "error": "",
@@ -1151,6 +2003,8 @@ _scrape_thread: threading.Thread | None = None
 #: קודי היציאה של refresh.py (מתועדים ב-epilog שלו).
 _EXIT_MESSAGES: dict[int, str] = {
     0: "הרענון הסתיים בהצלחה — הנתונים מעודכנים.",
+    # קוד 2 שייך אך ורק למסלול הדפדפן. במסלול ברירת המחדל אין התחברות,
+    # ולכן כישלון שם מדווח כשגיאה אמיתית ולא כ"צריך להתחבר".
     2: "נדרשת התחברות לידיעון. יש להשלים את ההתחברות בחלון הדפדפן שנפתח, ואז להריץ רענון שוב.",
     3: "הרענון הסתיים חלקית — חלק מהקורסים לא נשלפו. פירוט ביומן שלמטה.",
     1: "הרענון נכשל. פירוט ביומן שלמטה.",
@@ -1333,14 +2187,25 @@ def _thread_stdout(stream: Any):
                 _stdout_proxy = None
 
 
-def _run_root_script(name: str, argv: list[str], emit: Callable[[str], None]) -> int:
+def _run_root_script(
+    name: str,
+    argv: list[str],
+    emit: Callable[[str], None],
+    *,
+    mirror: bool = False,
+) -> int:
     """מריץ ``<name>.main(argv)`` משורש הפרויקט וקולט את הפלט שלו ליומן.
 
-    הקליטה היא **לכל thread בנפרד** (``_thread_stdout``), ומשוקפת תמיד
-    ל-``sys.__stdout__`` כדי שהמסוף ימשיך לעבוד.
+    הקליטה היא **לכל thread בנפרד** (``_thread_stdout``), כך שהדפסות של בקשות
+    אחרות לא נבלעות לכאן.
+
+    ``mirror=False`` (ברירת המחדל) = **שום שורה לא מגיעה למסך**. זו דרישה
+    מפורשת: שורות הריצה שהופיעו על המסך בזמן רענון הן בדיוק מה שביקשו שלא
+    יופיע. ההתקדמות נשמרת ביומן שבזיכרון ומוגשת ב-``/api/scrape/status``,
+    ומה שנשבר באמת נרשם דרך ``LOG`` בצד השרת.
     """
     module = _import_root_module(name)
-    stream = _LogStream(emit, mirror=sys.__stdout__)
+    stream = _LogStream(emit, mirror=sys.__stdout__ if mirror else None)
     with _thread_stdout(stream):
         try:
             return int(module.main(list(argv)))
@@ -1348,13 +2213,126 @@ def _run_root_script(name: str, argv: list[str], emit: Callable[[str], None]) ->
             stream.flush()
 
 
-def _default_refresh_runner(argv: list[str], emit: Callable[[str], None]) -> int:
-    """ברירת המחדל: ``refresh.main`` — שקורא ל-``scraper.BraudeScraper``.
+def _argv_has(argv: list[str], flag: str) -> bool:
+    return flag in list(argv or [])
 
-    הגורד הקיים הוא זה שאוכף שאין כתיבה לדיסק של דף שאינו מ-info.braude.ac.il
-    ושאין נגיעה בסיסמאות. לכן קוראים לו, ולא כותבים גרידה חדשה כאן.
+
+def _argv_value(argv: list[str], flag: str, default: str = "") -> str:
+    """הערך שאחרי ``flag`` ב-argv, או ``flag=value``. חסר → ``default``."""
+    items = [str(a) for a in (argv or [])]
+    for i, item in enumerate(items):
+        if item == flag and i + 1 < len(items):
+            return items[i + 1]
+        if item.startswith(flag + "="):
+            return item.split("=", 1)[1]
+    return default
+
+
+def _http_scrape_runner(argv: list[str], emit: Callable[[str], None]) -> int:
+    """רענון ישיר ב-HTTP בתוך התהליך — בלי דפדפן ובלי התחברות.
+
+    מסלול גיבוי ל-``refresh.main``: אותו שולף (``yedion_http.YedionHTTP``),
+    אותו פענוח ואותה שמירה, דרך ``fetch_courses_into_store``. ה-``log`` של
+    השולף מוזרם ליומן שבזיכרון, ולכן שום שורה לא מגיעה למסך.
+
+    Returns:
+        ‏0 הצלחה, 3 הצלחה חלקית, 1 כישלון. **אף פעם לא 2** — אין כאן התחברות.
     """
-    return _run_root_script("refresh", argv, emit)
+    student = _profile().get("student") or {}
+    year_gregorian = _argv_value(argv, "--year") or _gregorian_for(
+        student.get("academic_year")
+    )
+    year_he = _hebrew_year_for(year_gregorian) or str(student.get("academic_year") or "")
+    semester = _argv_value(argv, "--semester") or str(student.get("term") or "")
+    codes = [c for c in re.split(r"[,\s]+", _argv_value(argv, "--codes")) if c]
+    catalog_only = _argv_has(argv, "--catalog-only")
+    max_age_text = _argv_value(argv, "--max-age")
+
+    fetcher, error, injected = _make_fetcher(
+        year_gregorian=year_gregorian, log=emit, delay_s=FETCH_DELAY_S
+    )
+    if fetcher is None:
+        emit(error)
+        return 1
+    error = _open_fetcher_session(fetcher, year_he)
+    if error:
+        emit(error)
+        return 1
+    delay_s = 0.0 if injected else FETCH_DELAY_S
+
+    if catalog_only:
+        result = fetch_catalog_into_store(
+            year_he=year_he,
+            year_gregorian=year_gregorian,
+            emit=emit,
+            fetcher=fetcher,
+        )
+        return 0 if result.get("ok") else 1
+
+    store = _store()
+    if not codes:
+        codes = store.tracked()
+    if not codes:
+        emit("אין קורסים במעקב, ולכן אין מה לרענן.")
+        return 0
+
+    # נימוס: מרעננים רק מה שבאמת התיישן (GROUND_TRUTH §9).
+    if max_age_text:
+        try:
+            stale = store.stale_codes(codes, float(max_age_text))
+        except (TypeError, ValueError):
+            stale = list(codes)
+        fresh = [c for c in codes if c not in stale]
+        if fresh:
+            emit(f"מדלגים על {len(fresh)} קורסים שהנתונים שלהם עדיין טריים.")
+        codes = stale
+        if not codes:
+            emit("כל הנתונים טריים — אין מה לרענן.")
+            return 0
+
+    emit(f"מרענן {len(codes)} קורסים…")
+    report = fetch_courses_into_store(
+        codes,
+        semester=semester,
+        year_he=year_he,
+        year_gregorian=year_gregorian,
+        emit=emit,
+        cap=len(codes),
+        delay_s=delay_s,
+        fetcher=fetcher,
+    )
+    fetched = list(report.get("fetched") or [])
+    failed = list(report.get("failed") or [])
+    changed = sum(len(v) for v in (report.get("changes") or {}).values())
+    emit(f"עודכנו {len(fetched)} קורסים, {changed} שינויים.")
+    if failed and not fetched:
+        return 1
+    return 3 if failed else 0
+
+
+def _default_scrape_runner(argv: list[str], emit: Callable[[str], None]) -> int:
+    """ברירת המחדל של הרענון: ``refresh.main`` — **בלי דפדפן ובלי התחברות**.
+
+    מאז ‏GROUND_TRUTH §9 חיפוש הקורסים בידיעון פתוח לקריאה, ו-``refresh.py``
+    שולף ב-HTTP ישיר אלא אם התבקש ``--browser`` במפורש. קוראים לו ולא כותבים
+    כאן רענון מקביל, כי הוא זה שמנהל גם את יומן השינויים, את רשימת המעקב ואת
+    דוח הריצה — ורענון "משלנו" היה מאבד את כל אלה בשקט.
+
+    אם ``refresh`` בכלל לא ניתן לטעינה, עוברים לשליפה ישירה בתוך התהליך
+    (``_http_scrape_runner``) במקום להשאיר את הסטודנט/ית בלי רענון.
+    """
+    try:
+        return _run_root_script("refresh", argv, emit)
+    except (ImportError, ModuleNotFoundError) as exc:
+        if _argv_has(argv, "--browser"):
+            raise
+        LOG.warning("refresh.py אינו זמין (%s) — עוברים לשליפה ישירה", exc)
+        emit("רכיב הרענון הראשי אינו זמין — ממשיכים בשליפה ישירה מהידיעון.")
+        return _http_scrape_runner(argv, emit)
+
+
+#: שם היסטורי, נשמר כדי שקוד קיים שמצביע עליו ימשיך לעבוד.
+_default_refresh_runner = _default_scrape_runner
 
 
 def _default_reparse_runner(argv: list[str], emit: Callable[[str], None]) -> int:
@@ -1362,17 +2340,22 @@ def _default_reparse_runner(argv: list[str], emit: Callable[[str], None]) -> int
     return _run_root_script("reparse", argv, emit)
 
 
-def _scrape_worker(runner: Callable[[list[str], Callable[[str], None]], int], argv: list[str]) -> None:
-    """ה-thread של הרענון. אף פעם לא זורק — מסיים תמיד עם exit_code."""
+def _scrape_worker(
+    runner: Callable[[list[str], Callable[[str], None]], int],
+    argv: list[str],
+    intro: Iterable[str] = (),
+) -> None:
+    """ה-thread של הרענון. אף פעם לא זורק — מסיים תמיד עם exit_code.
+
+    ``intro`` הן שורות הפתיחה של היומן, והן תלויות במסלול: ברירת המחדל היא
+    ‏HTTP ישיר בלי דפדפן, ורק ``--browser`` פותח חלון.
+    """
     exit_code = 1
     error = ""
     try:
         _scrape_emit("מתחיל רענון מהידיעון…", internal=True)
-        _scrape_emit(
-            "בעוד רגע ייפתח חלון דפדפן. כל ההזדהות מתבצעת בחלון הזה בלבד — "
-            "האפליקציה אינה מבקשת, אינה רואה ואינה שומרת פרטי התחברות.",
-            internal=True,
-        )
+        for line in intro:
+            _scrape_emit(line, internal=True)
         exit_code = int(runner(argv, _scrape_emit))
     except Exception as exc:  # noqa: BLE001 - thread שנופל בשקט הוא הגרוע מכול
         LOG.exception("הרענון נכשל")
@@ -1405,6 +2388,7 @@ def reset_scrape_state() -> None:
                 "phase": "idle",
                 "exit_code": None,
                 "needs_login": False,
+                "mode": "http",
                 "started_at": None,
                 "finished_at": None,
                 "error": "",
@@ -1439,6 +2423,35 @@ def _semester_label(semester: str, info: dict) -> str:
 def _gregorian_for(year_he: Any) -> str:
     """'תשפ"ז' → '2027'. לא ידוע → מחרוזת ריקה."""
     return HEBREW_YEAR_TO_GREGORIAN.get(str(year_he or "").strip(), "")
+
+
+def _hebrew_year_for(gregorian: Any) -> str:
+    """'2027' → 'תשפ"ז'. לא ידוע → מחרוזת ריקה.
+
+    מחושב מהמפה שכבר קיימת כאן ולא דרך ``scraper`` — הוא מייבא את Playwright
+    בזמן טעינה, ובמסלול הזה אין דפדפן בכלל.
+    """
+    want = str(gregorian or "").strip()
+    for label, greg in HEBREW_YEAR_TO_GREGORIAN.items():
+        if greg == want:
+            return label
+    return ""
+
+
+def _year_pair(value: Any, fallback: Any = "") -> tuple[str, str]:
+    """מקבל שנה בכל אחת משתי הצורות ומחזיר ``(תווית עברית, שנה לועזית)``.
+
+    הלקוח שולח לפעמים ``"2027"`` ולפעמים ``'תשפ"ז'`` — שתיהן לגיטימיות.
+    בלי הנרמול הזה, ``year="2027"`` נקרא כתווית עברית לא מוכרת, ``year_gregorian``
+    יוצא ריק, **החלפת השנה כלל לא מתבצעת**, והידיעון מחזיר בשקט את השנה
+    הקודמת. זה בדיוק הכשל של GROUND_TRUTH §9, רק שהפעם מקורו כאן ולא ברשת.
+    """
+    raw = str(value or "").strip() or str(fallback or "").strip()
+    if not raw:
+        return "", ""
+    if raw.isdigit() and len(raw) == 4:            # לועזית -> עברית
+        return _hebrew_year_for(raw) or "", raw
+    return raw, _gregorian_for(raw) or ""          # עברית -> לועזית
 
 
 def _meta_to_json(meta: store_mod.CourseMeta | None, max_age_hours: float) -> dict[str, Any]:
@@ -1580,6 +2593,9 @@ def bootstrap():
         "forbid_friday": bool(prefs.get("forbid_friday", False)),
         "weights": dict(prefs.get("weights") or scheduler_mod.DEFAULT_WEIGHTS),
         "top_n": DEFAULT_TOP_N,
+        "allow_soft_conflicts": bool(prefs.get("allow_soft_conflicts", False)),
+        "attendance": dict(prefs.get("attendance") or {}),
+        "fetch_missing": True,
     }
 
     return _ok(
@@ -1617,6 +2633,19 @@ def bootstrap():
                 "max_codes": MAX_CODES,
                 "max_top_n": MAX_TOP_N,
                 "max_log_lines": MAX_LOG_LINES,
+                "max_ondemand_fetches": MAX_ONDEMAND_FETCHES,
+                "fetch_delay_s": FETCH_DELAY_S,
+            },
+            "features": {
+                # קורס בלי נתונים כבר לא חייב להישאר כזה — הוא נשלף בלחיצה.
+                "fetch_on_demand": _network_allowed(),
+                "fetch_missing_default": True,
+                # חפיפה מכוונת: תלוי במנוע השיבוץ שמותקן בפועל.
+                "soft_conflicts": _engine_supports("allow_soft_conflicts"),
+                "attendance": _engine_supports("attendance"),
+                # ‏GROUND_TRUTH §9: הרענון הרגיל אינו דורש התחברות.
+                "refresh_needs_login": False,
+                "refresh_mode": "http",
             },
         }
     )
@@ -1757,23 +2786,145 @@ def catalog_search():
 
 
 # ---------------------------------------------------------------- courses
+def _ondemand_fetch(
+    codes: list[str],
+    problems: list[dict[str, Any]],
+    metas: dict[str, store_mod.CourseMeta],
+    *,
+    semester: str,
+    year: str,
+    year_gregorian: str,
+    enabled: bool,
+    max_age_hours: float,
+) -> dict[str, Any]:
+    """מביא עכשיו את מה שחסר או מיושן — או מסביר בעברית למה לא.
+
+    זו התשובה לשאלה "למה יש קורסים שכתוב עליהם שאין נתונים במסד?": מאז
+    ‏GROUND_TRUTH §9 השליפה אינה דורשת התחברות, ולכן "אין נתונים" הפסיק להיות
+    גזר דין. כל מה שכאן הוא **שמירות**: מכסה, השהיה, כותב יחיד, ובלי רשת
+    כשאסור. כישלון של קורס אחד אף פעם לא מפיל את הבקשה.
+    """
+    report: dict[str, Any] = {
+        "enabled": bool(enabled),
+        "requested": [],
+        "fetched": [],
+        "failed": [],
+        "skipped": [],
+        "changes": {},
+        "not_offered": [],
+        "log": [],
+        "error": "",
+        "cap": MAX_ONDEMAND_FETCHES,
+        "delay_s": FETCH_DELAY_S,
+    }
+    wanted = _stale_or_missing(
+        codes, problems, metas, year=year, max_age_hours=max_age_hours
+    )
+    report["requested"] = wanted
+    if not wanted:
+        return report
+
+    def skip_all(reason: str) -> dict[str, Any]:
+        report["skipped"] = [{"code": code, "reason": reason} for code in wanted]
+        return report
+
+    if not enabled:
+        return skip_all(
+            "שליפה מהידיעון לא התבקשה בבקשה הזו (fetch_missing=false). "
+            "הנתונים שמוצגים הם מה ששמור במסד."
+        )
+    if not _network_allowed():
+        return skip_all(
+            "פנייה לידיעון מושבתת בהרצה הזו, ולכן לא נשלפו נתונים חדשים. "
+            "אפשר להריץ רענון מהידיעון כדי להשלים אותם."
+        )
+    with _scrape_lock:
+        if _scrape_state["running"]:
+            return skip_all(
+                "רענון מהידיעון רץ כרגע. הנתונים יושלמו בסיומו — אפשר לעקוב "
+                "אחריו ביומן הרענון."
+            )
+    # כותב יחיד ל-data/db: אותה נעילה שמפרידה בין הרענון לפענוח מחדש.
+    if not _db_write_lock.acquire(blocking=False):
+        return skip_all(
+            "פעולה אחרת כותבת כרגע לנתונים. אפשר לנסות שוב בעוד רגע."
+        )
+    try:
+        result = fetch_courses_into_store(
+            wanted,
+            semester=semester,
+            year_he=year,
+            year_gregorian=year_gregorian,
+            cap=MAX_ONDEMAND_FETCHES,
+            delay_s=FETCH_DELAY_S,
+        )
+    finally:
+        _db_write_lock.release()
+
+    for key in ("fetched", "failed", "skipped", "changes", "not_offered", "log", "error"):
+        report[key] = result.get(key, report[key])
+    return report
+
+
 @bp.post("/courses")
 @_endpoint
 def courses():
-    """נתוני הקבוצות המלאים לקורסים שנבחרו, כולל טריות וקורסים שאינם נפתחים."""
+    """נתוני הקבוצות המלאים לקורסים שנבחרו, כולל טריות וקורסים שאינם נפתחים.
+
+    ``fetch_missing`` (ברירת מחדל ``true``): קוד שאין לו נתונים שמורים, או
+    שהנתונים שלו מיושנים, נשלף מהידיעון עכשיו — בלי התחברות — נשמר, ומוחזר
+    באותה תשובה. לכל קורס מוחזר ``source``: ``"db"`` / ``"fetched"`` /
+    ``"unavailable"``, ולכישלון תמיד יש סיבה בעברית.
+    """
     body = _read_body(required=True)
     codes = _clean_codes(body.get("codes"), field="codes")
     _assert_known_codes(codes)
     profile_student = _profile().get("student") or {}
     semester = str(body.get("semester") or profile_student.get("term") or "")
-    year = str(body.get("year") or profile_student.get("academic_year") or "")
+    year, year_gregorian = _year_pair(
+        body.get("year"), profile_student.get("academic_year")
+    )
+    if body.get("year_gregorian"):
+        year_gregorian = str(body["year_gregorian"]).strip()
+    fetch_missing = _as_bool(body.get("fetch_missing"), True)
+    max_age = float(_config()["max_age_hours"])
 
     built, problems, metas = _build_courses(codes, semester=semester, year=year)
-    max_age = float(_config()["max_age_hours"])
+
+    fetch_report = _ondemand_fetch(
+        codes,
+        problems,
+        metas,
+        semester=semester,
+        year=year,
+        year_gregorian=year_gregorian,
+        enabled=fetch_missing,
+        max_age_hours=max_age,
+    )
+    if fetch_report["fetched"]:
+        # נטענים מחדש מהמסד כדי שכל הקורסים ייבנו בדיוק באותו מסלול אחד.
+        built, problems, metas = _build_courses(codes, semester=semester, year=year)
+
+    fetched_ok = set(fetch_report["fetched"])
+    fetch_reasons: dict[str, str] = {}
+    for item in list(fetch_report["failed"]) + list(fetch_report["skipped"]):
+        fetch_reasons.setdefault(str(item.get("code")), str(item.get("reason") or ""))
+
+    sources: dict[str, str] = {}
+    for problem in problems:
+        code = str(problem.get("code"))
+        problem["source"] = "fetched" if code in fetched_ok else "unavailable"
+        sources[code] = problem["source"]
+        reason = fetch_reasons.get(code)
+        if reason:
+            # הסיבה הקונקרטית ("הידיעון לא מציג קבוצות") עדיפה על הכללית.
+            problem["fetch_reason"] = reason
+            problem["reason"] = reason
 
     payload: list[dict[str, Any]] = []
     credits_total = 0.0
     for course in built:
+        sources[course.code] = "fetched" if course.code in fetched_ok else "db"
         meta = metas.get(course.code)
         warnings: list[str] = []
         if not _year_matches(year, meta):
@@ -1792,6 +2943,7 @@ def courses():
                 course,
                 {
                     "offered": True,
+                    "source": sources.get(course.code, "db"),
                     "freshness": meta_json,
                     "warnings": warnings,
                     "curriculum_semester": (
@@ -1810,6 +2962,11 @@ def courses():
             "not_offered": problems,
             "credits_total": round(credits_total, 2),
             "count": len(payload),
+            "sources": sources,
+            "fetch": fetch_report,
+            "fetch_missing": fetch_missing,
+            # ברירות הנוכחות, כדי שהממשק יוכל להציג "כך כתוב בידיעון".
+            "attendance": attendance_info(built),
         }
     )
 
@@ -1818,7 +2975,17 @@ def courses():
 @bp.post("/solve")
 @_endpoint
 def solve():
-    """הלב: פותר, סופר, ומחשב viability לכל קבוצה של כל קורס נבחר."""
+    """הלב: פותר, סופר, ומחשב viability לכל קבוצה של כל קורס נבחר.
+
+    ‏``attendance`` (‏{קוד: {סוג רכיב: האם נדרשת נוכחות}}) ו-
+    ``allow_soft_conflicts`` מאפשרים חפיפה מכוונת: בבראודה הרצאה רבות אינן
+    מחייבות נוכחות, ובמיוחד בקורס חוזר — ואז שווה לפעמים להירשם לשתי קבוצות
+    שמתנגשות, ללכת לאחת, ולסיים את השבוע מוקדם יותר. חסר = "נוכחות חובה",
+    כלומר בלי לשלוח כלום ההתנהגות זהה לחלוטין לקודמת.
+
+    ‏**חישוב ה-viability משתמש באותן העדפות בדיוק**, ולכן קבוצה שאפשרית רק
+    בזכות חפיפה מכוונת מסומנת כאפשרית כשהחפיפות מאושרות — ורק אז.
+    """
     body = _read_body(required=True)
     codes = _clean_codes(body.get("codes"), field="codes")
     # קוד שאינו קיים בשום מקום נפסל כאן, לפני הכול: מערכת שנבנתה בלי קורס
@@ -1840,7 +3007,9 @@ def solve():
         )
 
     pinned_request = _clean_pinned(body.get("pinned"))
-    prefs = scheduler_mod.Preferences(
+    attendance_request = _clean_attendance(body.get("attendance"))
+    allow_soft_conflicts = _as_bool(body.get("allow_soft_conflicts"), False)
+    prefs, unsupported_prefs = _make_preferences(
         target_days=target_days,
         preferred_lecturers=_clean_ranked(body.get("ranked")),
         blocked_windows=_clean_blocked(body.get("blocked")),
@@ -1848,7 +3017,20 @@ def solve():
         latest=latest,
         weights=_clean_weights(body.get("weights")),
         forbid_friday=_as_bool(body.get("forbid_friday"), False),
+        attendance=attendance_request,
+        allow_soft_conflicts=allow_soft_conflicts,
     )
+    attendance_supported = not unsupported_prefs
+    attendance_note = ""
+    if unsupported_prefs:
+        # לא משתיקים: אם המנוע עוד לא מכיר את החפיפות המכוונות, עדיף לומר את
+        # זה מפורשות מאשר להחזיר מערכת שנראית כאילו ההגדרה נלקחה בחשבון.
+        LOG.warning("scheduler.Preferences אינו תומך ב: %s", ", ".join(unsupported_prefs))
+        attendance_note = (
+            "מנוע השיבוץ בגרסה הזו עדיין אינו תומך בחפיפות מכוונות, ולכן כל "
+            "התנגשות בזמן נחשבה חוסמת."
+        )
+        allow_soft_conflicts = False
 
     # ── 1. הקורסים: deepcopy, tied_with, נ"ז ──
     built, problems, _metas = _build_courses(codes, semester=semester, year=year)
@@ -1867,6 +3049,12 @@ def solve():
         "suggestions": [],
         "credits_total": 0.0,
         "elapsed_ms": 0,
+        "allow_soft_conflicts": bool(allow_soft_conflicts),
+        "attendance_supported": bool(attendance_supported),
+        "attendance_note": attendance_note,
+        # לכל (קורס, סוג רכיב): ברירת המחדל, האם היא מגיעה מהערת הידיעון,
+        # ומה נבחר בפועל.
+        "attendance": attendance_info(built, attendance_request),
     }
 
     if not built:
@@ -1964,6 +3152,9 @@ def solve():
         )
 
     # ── 5. viability — לכל קבוצה, האם היא משאירה פתרון ──
+    #      **אותן ``prefs`` בדיוק** שהפתרון עצמו רץ איתן. אחרת קבוצה שאפשרית
+    #      רק בזכות חפיפה מכוונת הייתה מסומנת כמבוי סתום ולהפך — כלומר
+    #      הממשק היה חוסם בדיוק את האפשרות שהתכונה הזו נועדה לפתוח.
     viability, via_truncated, via_skipped = compute_viability(
         [c.code for c in built], applied_pins, prefs, semester=semester, year=year
     )
@@ -2025,7 +3216,7 @@ def solve():
         base_common["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
         return _ok(base_common)
 
-    base_common["schedules"] = [schedule_to_json(s, built) for s in found]
+    base_common["schedules"] = [schedule_to_json(s, built, prefs) for s in found]
     base_common["top_n"] = top_n
     if not target_reachable:
         base_common["suggestions"] = [
@@ -2042,8 +3233,14 @@ def solve():
 def scrape_start():
     """מתחיל רענון מהידיעון ב-thread רקע. חוזר מיד; ההתקדמות ב-/api/scrape/status.
 
-    ההתחברות מתבצעת בחלון דפדפן אמיתי שנפתח על המסך. האפליקציה לא מבקשת,
-    לא רואה ולא שומרת פרטי התחברות — ואין בה שדה כזה בכלל.
+    ‏**ברירת המחדל אינה דורשת התחברות ואינה פותחת דפדפן.** חיפוש הקורסים
+    בידיעון פתוח לקריאה (GROUND_TRUTH §9), ולכן הרענון רץ בשקט ברקע ואפשר
+    להריץ אותו גם כמשימה יומית. ההתקדמות נכתבת ליומן שבזיכרון בלבד —
+    אף שורה לא מגיעה למסך.
+
+    ``browser: true`` בוחר את מסלול הגיבוי דרך Playwright, שבו יש חלון
+    התחברות ידני. גם שם האפליקציה אינה מבקשת, אינה רואה ואינה שומרת פרטי
+    התחברות — אין בה שדה כזה בכלל.
     """
     global _scrape_thread
 
@@ -2059,8 +3256,11 @@ def scrape_start():
     year_greg = str(body.get("year_gregorian") or "") or _gregorian_for(year_he)
     catalog_only = _as_bool(body.get("catalog_only"), False)
     max_age = body.get("max_age")
+    # מסלול הדפדפן נבחר רק כשמבקשים אותו במפורש. ברירת המחדל: HTTP ישיר.
+    browser = _as_bool(body.get("browser"), False)
+    mode = "browser" if browser else "http"
 
-    argv: list[str] = ["--headful"]
+    argv: list[str] = ["--browser", "--headful"] if browser else []
     if codes and not catalog_only:
         argv += ["--codes", ",".join(codes)]
     if catalog_only:
@@ -2074,7 +3274,22 @@ def scrape_start():
 
     from flask import current_app
 
-    runner = current_app.config.get("SCRAPE_RUNNER") or _default_refresh_runner
+    runner = current_app.config.get("SCRAPE_RUNNER") or _default_scrape_runner
+    # ה-thread צריך את ההגדרות, את ה-Store ואת הפרופיל — כולם נקראים דרך
+    # ``current_app``. לוכדים את האובייקט עכשיו ודוחפים לו הקשר שם.
+    app_object = current_app._get_current_object()  # noqa: SLF001
+
+    intro = (
+        (
+            "בעוד רגע ייפתח חלון דפדפן. יש להשלים בו את ההתחברות לידיעון — "
+            "האפליקציה אינה מבקשת, אינה רואה ואינה שומרת פרטי התחברות.",
+        )
+        if browser
+        else (
+            "הרענון רץ ברקע בלי דפדפן ובלי הזדהות — חיפוש הקורסים בידיעון "
+            "פתוח לקריאה.",
+        )
+    )
 
     with _scrape_lock:
         if _scrape_state["running"]:
@@ -2099,11 +3314,16 @@ def scrape_start():
                 "phase": "starting",
                 "exit_code": None,
                 "needs_login": False,
+                "mode": mode,
                 "started_at": _now_iso(),
                 "finished_at": None,
                 "error": "",
                 "codes": codes,
-                "message": "הרענון התחיל. ייפתח חלון דפדפן להתחברות ידנית.",
+                "message": (
+                    "הרענון התחיל. ייפתח חלון דפדפן להתחברות ידנית."
+                    if browser
+                    else "הרענון התחיל ורץ ברקע — בלי דפדפן ובלי התחברות."
+                ),
                 "dropped_lines": 0,
             }
         )
@@ -2116,7 +3336,8 @@ def scrape_start():
         כפתור הרענון ואת ``/api/reparse`` נעולים עד סוף חיי התהליך.
         """
         try:
-            _scrape_worker(runner, argv)
+            with app_object.app_context():
+                _scrape_worker(runner, argv, intro)
         finally:
             with _scrape_lock:
                 if _scrape_state["running"]:
@@ -2150,9 +3371,12 @@ def scrape_start():
             "started": True,
             "argv": argv,
             "codes": codes,
+            "mode": mode,
             "note": (
                 "ייפתח חלון דפדפן. יש להשלים בו את ההתחברות ידנית — "
                 "האפליקציה אינה מבקשת ואינה שומרת פרטי התחברות."
+                if browser
+                else "הרענון רץ ברקע. אין צורך להתחבר ואין חלון שנפתח."
             ),
             "scrape": _scrape_snapshot(),
         },
@@ -2275,8 +3499,10 @@ def create_app(
     Args:
         config: דריסות לנתיבים ולהגדרות. מפתחות מוכרים: ``db_root``,
             ``curriculum_path``, ``profile_path``, ``raw_dir``,
-            ``browser_profile_dir``, ``max_age_hours``, ``scrape_runner``,
-            ``reparse_runner`` (הזרקה לבדיקות — כדי שלא ייפתח דפדפן).
+            ``browser_profile_dir``, ``max_age_hours``, ``allow_network``
+            (‏``None`` = אוטומטי: אין רשת בתוך בדיקות), ``scrape_runner``,
+            ``reparse_runner``, ``course_fetcher`` (הזרקות לבדיקות — כדי שלא
+            ייפתח דפדפן ושלא תיפתח פנייה אמיתית לידיעון).
         db_root: קיצור דרך ל-``config["db_root"]``, כדי שאפשר יהיה להריץ
             את האפליקציה מול עותק זמני של המסד בלי לגעת באמיתי.
         serve_ui: האם להגיש גם את ``templates/index.html`` ואת ``static/``.
@@ -2292,10 +3518,13 @@ def create_app(
         "raw_dir": str(PROJECT_ROOT / "data" / "raw"),
         "browser_profile_dir": str(PROJECT_ROOT / "data" / ".browser_profile"),
         "max_age_hours": float(store_mod.DEFAULT_MAX_AGE_HOURS),
+        # ‏None = אוטומטי: פנייה לידיעון מותרת, אבל לא בתוך הרצת בדיקות.
+        "allow_network": None,
     }
     overrides = dict(config or {})
     scrape_runner = overrides.pop("scrape_runner", None)
     reparse_runner = overrides.pop("reparse_runner", None)
+    course_fetcher = overrides.pop("course_fetcher", None)
     settings.update({k: v for k, v in overrides.items() if k in settings})
     if db_root is not None:
         settings["db_root"] = str(db_root)
@@ -2317,6 +3546,7 @@ def create_app(
     app.config["SCHEDULE_BUILDER"] = settings
     app.config["SCRAPE_RUNNER"] = scrape_runner
     app.config["REPARSE_RUNNER"] = reparse_runner
+    app.config["COURSE_FETCHER"] = course_fetcher
     app.config["JSON_SORT_KEYS"] = False
 
     # עברית קריאה ב-JSON (ולא עב...). לא חובה, אבל עוזר בדיבוג.

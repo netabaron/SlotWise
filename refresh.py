@@ -15,38 +15,51 @@ refresh.py — עבודת הריענון המתוזמנת של מסד הנתונ
 
 הרצה
 ----
-    python refresh.py                 # מעבר ריענון אחד, ברקע (headless), עם הסשן השמור
-    python refresh.py --headful       # פותח חלון דפדפן כדי שאפשר יהיה להתחבר ידנית
+    python refresh.py                 # ריענון אחד, ישירות ב-HTTP. בלי דפדפן, בלי התחברות.
+    python refresh.py --browser       # מסלול הגיבוי הישן דרך Playwright (דורש התחברות)
+    python refresh.py --browser --headful   # דפדפן עם חלון גלוי, כדי להתחבר ידנית
     python refresh.py --status        # מצב המסד: טריות, ריצה אחרונה, שינויים. בלי רשת בכלל
     python refresh.py --codes 61753,61756
     python refresh.py --catalog-only  # רק הקטלוג, בלי דפי הקבוצות
     python refresh.py --max-age 12    # לרענן רק מה שישן מ-12 שעות
     python refresh.py --install-task   /  --uninstall-task
 
+שני מסלולי שליפה (two fetch paths)
+-----------------------------------
+**ברירת המחדל: HTTP ישיר.** ``src/yedion_http.py``, ספריית התקן בלבד
+(``urllib.request`` + ``http.cookiejar``). חיפוש הקורסים בידיעון פתוח לקריאה
+לכל אחד: ``S_LOOK_FOR_NOSE`` ו-``S_LOOK_FOR_NOSE_AB`` נענים בלי שום הזדהות.
+רק ``Enter_Search`` חסום מאחורי שער Citrix — ובו אין לנו צורך.
+(GROUND_TRUTH סעיף 9, אומת מול האתר החי: שישה קורסים, התאמה 6/6.)
+לכן הריצה היומית אוטומטית באמת: בלי חלון, בלי סיסמה, בלי שאף אחד יתערב.
+
+**גיבוי: ‎--browser.** המסלול הישן דרך Playwright, נשמר כמו שהוא ליום שבו
+המכללה תסגור גם את נקודות הקצה האלה. **רק הוא** דורש התחברות ידנית, ורק בו
+קיים המצב ``needs_login``. כשהסשן שלו פג (מקרה רגיל, לא באג): לא מנסים
+להתחבר, לא שומרים ולא מצלמים את דף ההתחברות, הנתונים הקיימים לא נגעים,
+ביומן נרשם ``needs_login`` וקוד היציאה הוא 2.
+**לעולם לא מציגים נתונים ישנים כאילו הם עדכניים.**
+
 קודי יציאה (exit codes — המתזמן קורא אותם)
 -------------------------------------------
     0  רוענן בהצלחה, או שהכול היה טרי ולא היה מה לעשות
-    2  הסשן פג ונדרשת התחברות מחדש  (SESSION EXPIRED / NEEDS LOGIN)
+    2  נדרשת התחברות מחדש — **רק במסלול ‎--browser** (NEEDS LOGIN)
     3  ריענון חלקי — חלק מהקורסים נכשלו
     1  תקלה לא צפויה
 
-המגבלה הכנה, שאסור לטשטש אותה
-------------------------------
-הידיעון יושב מאחורי שער Citrix NetScaler. פרופיל דפדפן קבוע שומר את הסשן חי
-לזמן מה, אבל הוא **יפוג**, וההזדהות מחדש היא אינטראקטיבית מעצם טבעה. הכלי הזה
-לא שומר סיסמאות — לעולם — ולכן אי אפשר להבטיח ריצה יומית אוטומטית לנצח.
-
-מה קורה כשהסשן פג (וזה מקרה **רגיל**, לא באג):
-  * לא מנסים להתחבר, לא שומרים ולא מצלמים את דף ההתחברות (כלל ברזל אבטחתי);
-  * הנתונים הקיימים נשארים כמו שהם, בלי שריטה;
-  * ביומן נרשם הסטטוס ``needs_login``;
-  * מודפסת הודעה ברורה שאומרת מאיזה תאריך הנתונים ומה בדיוק צריך להריץ;
-  * קוד היציאה הוא 2.
-**לעולם לא מציגים נתונים ישנים כאילו הם עדכניים.**
+מה נשאר בדיוק כמו שהיה
+-----------------------
+  * שנת הלימודים מאומתת בכל דף. שנה שגויה = עצירה, בלי לכתוב כלום.
+  * שומרים HTML גולמי לפני כל פענוח.
+  * שליפה שנכשלה לא הורסת נתונים קיימים — הישנים נשמרים עם ok=False.
+  * נימוס כלפי השרת: השהיה בין בקשות, מרעננים רק מה שהתיישן, והקטלוג
+    נשלף בבקשה **אחת** ולא אות-אות. עכשיו זה חשוב יותר, לא פחות: אין
+    התחברות שמאטה אותנו, ולכן אנחנו מאטים את עצמנו.
 
 Security note (hard rule): this script never asks for, reads, stores or logs
 credentials, and never writes a non-info.braude.ac.il page or screenshot to
-disk. When the session is gone it stops and says so.
+disk. The default HTTP path has no credentials to touch at all; the --browser
+path stops and says so when its session is gone.
 """
 
 from __future__ import annotations
@@ -63,6 +76,7 @@ import time
 import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 # ---------------------------------------------------------------------------
 # עברית ב-Windows: מכריחים UTF-8 על הפלט. עטוף — יש מסופים/צינורות שאי אפשר
@@ -115,6 +129,15 @@ STATUS_ERROR = "error"
 # ---------------------------------------------------------------------------
 #: השהיה בין שליפת קורס לקורס — נימוס כלפי השרת של המכללה. GROUND_TRUTH/SPEC.
 POLITE_DELAY_S = 1.5
+
+#: השהיה בין בקשה לבקשה במסלול ה-HTTP. מועברת גם ל-YedionHTTP וגם נאכפת כאן.
+#: אם הפצ'ר כבר מאט את עצמו נקבל פער כפול — וזה בסדר גמור: להיות שנייה
+#: איטיים מדי לא עולה כלום, להיות מהירים מדי עולה לשרת של המכללה.
+#: (politeness matters MORE now that no login throttles us — GROUND_TRUTH §9)
+HTTP_DELAY_S = 1.2
+
+#: פסק זמן לבקשת HTTP בודדת, בשניות.
+HTTP_TIMEOUT_S = 45.0
 
 #: סף התיישנות ברירת מחדל, בשעות.
 #: למה 20 ולא 24? כי המשימה היומית רצה בשעה קבועה, ואז גיל הנתונים בכל ריצה
@@ -266,6 +289,70 @@ def truncate(text: str, width: int) -> str:
     return text if len(text) <= width else text[: width - 1] + "…"
 
 
+#: גימטריה לחישוב תווית שנה עברית. מראה של ``scraper.hebrew_year_label``,
+#: מועתק לכאן בכוונה: המסלול הרגיל לא נוגע ב-scraper (ולכן גם לא ב-playwright),
+#: ובכל זאת צריך לדעת שביקשנו תשפ"ז כדי לאמת את הדף שחזר.
+_GEMATRIA: tuple[tuple[int, str], ...] = (
+    (400, "ת"), (300, "ש"), (200, "ר"), (100, "ק"),
+    (90, "צ"), (80, "פ"), (70, "ע"), (60, "ס"), (50, "נ"),
+    (40, "מ"), (30, "ל"), (20, "כ"), (10, "י"),
+    (9, "ט"), (8, "ח"), (7, "ז"), (6, "ו"), (5, "ה"),
+    (4, "ד"), (3, "ג"), (2, "ב"), (1, "א"),
+)
+
+#: הפרש השנים בין הלוח העברי ללועזי, לשנה שמסתיימת באותה שנה לועזית:
+#: תשפ"ז = 5787, ו-5787 - 3760 = 2027.
+_HEBREW_YEAR_OFFSET = 3760
+
+
+def hebrew_year_label(gregorian: str | int) -> str:
+    """‏2027 -> 'תשפ"ז'. מחזיר "" אם הקלט אינו שנה סבירה."""
+    try:
+        number = int(str(gregorian).strip())
+    except (TypeError, ValueError):
+        return ""
+    if not (1900 <= number <= 2200):
+        return ""
+
+    remainder = (number + _HEBREW_YEAR_OFFSET) % 1000  # את ה"ה' אלפים" לא כותבים
+    letters = ""
+    for value, ch in _GEMATRIA:
+        while remainder >= value:
+            letters += ch
+            remainder -= value
+    # 15 ו-16 נכתבים טו/טז ולא יה/יו.
+    letters = letters.replace("יה", "טו").replace("יו", "טז")
+    if len(letters) >= 2:
+        return letters[:-1] + '"' + letters[-1]
+    return letters + "'" if letters else ""
+
+
+def is_year_problem(exc: BaseException) -> bool:
+    """האם התקלה הזאת היא 'הדף חזר עם שנה אחרת'?
+
+    שנה שגויה היא כשל **גלובלי**, לא כשל של קורס בודד: אם הסשן יושב על
+    השנה הלא נכונה, גם כל שאר הדפים יחזרו שגויים. לכן מזהים אותה ועוצרים,
+    במקום לסמן שישה קורסים ככושלים. במסלול ה-HTTP זה כמעט תמיד סימן שבקשת
+    החימום לא תפסה (GROUND_TRUTH סעיף 9).
+    """
+    if type(exc).__name__ in ("YearMismatchError", "YearSwitchError"):
+        return True
+    text = str(exc)
+    return "wrong academic year" in text or "מצהיר על שנת" in text
+
+
+def looks_like_network(exc: BaseException) -> bool:
+    """האם התקלה היא 'לא הצלחנו להגיע לשרת' ולא באג אצלנו?
+
+    ההבחנה חשובה: 'אין אינטרנט' ו'משהו שבור בקוד' דורשים פעולות שונות
+    לגמרי מהסטודנט/ית.
+    """
+    if isinstance(exc, OSError):  # URLError, HTTPError, TimeoutError — כולם יורדים מכאן
+        return True
+    name = type(exc).__name__.lower()
+    return any(marker in name for marker in ("url", "http", "network", "timeout", "socket", "fetch"))
+
+
 # ===========================================================================
 # 1. ייבוא מודולי המסד — עם הודעה ידידותית אם הם עדיין לא קיימים
 # ===========================================================================
@@ -300,17 +387,36 @@ def import_discovery():
 
 
 def import_scraper():
-    """מייבא את src/scraper.py. מיובא **בעצלתיים** בכוונה: הוא מושך את
-    playwright, ו---status חייב לעבוד גם במחשב שאין בו דפדפן מותקן."""
+    """מייבא את src/scraper.py — **רק למסלול ‎--browser**. מיובא בעצלתיים
+    בכוונה: הוא מושך את playwright, והמסלול הרגיל (וגם --status) חייבים
+    לעבוד גם במחשב שאין בו דפדפן מותקן בכלל."""
     try:
         import scraper  # type: ignore
     except ImportError as exc:
         raise MissingModule(
             "לא הצלחתי לטעון את src/scraper.py. אולי playwright לא מותקן?\n"
             "    יש להריץ:  python -m pip install playwright  ואחר כך  python -m playwright install chromium\n"
+            "    (או פשוט להריץ בלי --browser — המסלול הרגיל לא צריך דפדפן בכלל.)\n"
             f"    ({type(exc).__name__}: {exc})"
         ) from exc
     return scraper
+
+
+def import_yedion_http():
+    """מייבא את src/yedion_http.py — השולף הרגיל, ספריית תקן בלבד.
+
+    זה המודול שמאפשר ריענון בלי התחברות ובלי דפדפן (GROUND_TRUTH סעיף 9).
+    """
+    try:
+        import yedion_http  # type: ignore
+    except ImportError as exc:
+        raise MissingModule(
+            "המודול src/yedion_http.py לא נמצא או לא נטען, והוא השולף הרגיל של הכלי.\n"
+            f"    ({type(exc).__name__}: {exc})\n"
+            "    כגיבוי אפשר להריץ דרך הדפדפן:  python refresh.py --browser --headful\n"
+            "    (src/yedion_http.py is missing — the login-free HTTP fetcher)"
+        ) from exc
+    return yedion_http
 
 
 # ===========================================================================
@@ -622,10 +728,14 @@ def cmd_status(args: argparse.Namespace) -> int:
             print(
                 banner(
                     [
-                        "הריצה האחרונה נעצרה כי הסשן פג — נדרשת התחברות.",
-                        "The last run stopped: the session expired and a sign-in is needed.",
+                        "הריצה האחרונה הייתה במסלול --browser, והיא נעצרה כי הסשן פג.",
+                        "The last run used the --browser path; its session expired.",
                         "",
-                        "יש להריץ:   python refresh.py --headful",
+                        "המסלול הרגיל לא דורש התחברות בכלל — אפשר פשוט להריץ:",
+                        "    python refresh.py",
+                        "",
+                        "ואם בכל זאת צריך דווקא את מסלול הדפדפן:",
+                        "    python refresh.py --browser --headful",
                         "ולהתחבר בחלון הדפדפן שנפתח. אין להקליד סיסמאות בשום מקום אחר.",
                     ],
                     ch="!",
@@ -644,13 +754,18 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(
         banner(
             [
-                "מגבלה שחשוב להכיר — AN HONEST LIMITATION",
+                "איך הנתונים מתעדכנים — HOW THE DATA IS REFRESHED",
                 "",
-                "הידיעון מוגן בשער התחברות (Citrix), והסשן השמור פג מדי כמה ימים.",
-                "כשזה קורה, הריצה היומית לא מעדכנת כלום ומסמנת needs_login.",
-                "לכן: התאריך שליד כל שורה כאן הוא התאריך האמיתי של הנתונים —",
+                "ברירת המחדל שולפת מהידיעון ישירות ב-HTTP: חיפוש הקורסים שם פתוח",
+                "לקריאה לכל אחד, בלי הזדהות. לכן הריענון היומי רץ לבד — בלי חלון,",
+                "בלי דפדפן ובלי שאף אחד יתחבר. (unattended: no login, no browser)",
+                "",
+                "המסלול החלופי  --browser  עדיין עובר דרך שער ההתחברות (Citrix),",
+                "והסשן שלו פג מדי כמה ימים. הוא שמור כגיבוי בלבד, ורק הוא דורש",
+                "התחברות ידנית. (only --browser has that limitation)",
+                "",
+                "ובכל מקרה: התאריך שליד כל שורה כאן הוא התאריך האמיתי של הנתונים.",
                 "אין להתייחס אליהם כאל מה שמופיע בידיעון *כרגע*.",
-                "",
                 "The stored data is only as current as the timestamps above.",
                 "Nothing here is ever presented as live data.",
             ],
@@ -757,7 +872,11 @@ def newest_data_stamp(store_obj, codes: list[str]) -> str:
 
 
 def print_needs_login(store_obj, codes: list[str]) -> None:
-    """ההודעה שהסטודנט/ית רואה כשהסשן פג. דו-לשונית, ובלי לטשטש כלום."""
+    """ההודעה שהסטודנט/ית רואה כשהסשן של ‎--browser פג. דו-לשונית, ובלי לטשטש כלום.
+
+    שייכת **אך ורק** למסלול הדפדפן. במסלול הרגיל אין סשן, אין התחברות, ולכן
+    אין מצב כזה בכלל. (SPEC_V2 §3 — exit code 2 is a --browser-only path)
+    """
     stamp = newest_data_stamp(store_obj, codes)
     if stamp:
         when = f"{local_stamp(stamp)} ({human_age(age_hours(stamp))})"
@@ -770,11 +889,14 @@ def print_needs_login(store_obj, codes: list[str]) -> None:
     print(
         banner(
             [
-                "נדרשת התחברות מחדש לידיעון — SIGN-IN NEEDED",
+                "נדרשת התחברות לידיעון במסלול הדפדפן — SIGN-IN NEEDED (--browser)",
                 "",
-                "הסשן השמור פג. זה מצב רגיל: הידיעון מוגן בשער Citrix,",
-                "וההזדהות מחדש היא ידנית מעצם טבעה.",
-                "The saved session expired. This is expected, not a bug.",
+                "ההודעה הזאת שייכת אך ורק למסלול --browser: הסשן השמור שלו פג,",
+                "וההזדהות מחדש היא ידנית מעצם טבעה. זה מצב רגיל, לא באג.",
+                "This applies only to the --browser path; its saved session expired.",
+                "",
+                "**המסלול הרגיל אינו דורש התחברות בכלל.** אפשר פשוט להריץ:",
+                "    python refresh.py",
                 "",
                 "לא בוצע שום עדכון, והנתונים הקיימים לא נגעו בהם.",
                 "Nothing was updated; the existing data was left untouched.",
@@ -782,8 +904,8 @@ def print_needs_login(store_obj, codes: list[str]) -> None:
                 data_line_he,
                 data_line_en,
                 "",
-                "כדי להתחבר מחדש יש להריץ במסוף:",
-                "    python refresh.py --headful",
+                "כדי להמשיך דווקא במסלול הדפדפן יש להריץ במסוף:",
+                "    python refresh.py --browser --headful",
                 "(או  python main.py  — גם הוא פותח חלון התחברות)",
                 "",
                 "ואז להקליד את פרטי ההתחברות **בחלון הדפדפן בלבד**.",
@@ -795,8 +917,8 @@ def print_needs_login(store_obj, codes: list[str]) -> None:
     )
 
 
-def fetch_catalog_html(scraper_obj, scraper_mod, discovery_mod) -> str:
-    """מביא את דף הקטלוג המלא — **בקשה אחת** לכל 1172 הקורסים.
+def browser_fetch_catalog_html(scraper_obj, scraper_mod, discovery_mod) -> str:
+    """מביא את דף הקטלוג המלא דרך הדפדפן — **בקשה אחת** לכל הקורסים.
 
     ``S_LOOK_FOR_NOSE_AB&arguments=-A`` מחזיר את כל הקורסים של השנה שנבחרה
     בסשן; אות החיפוש מתעלמים ממנה (SPEC_AUTOREFRESH, מאומת). לכן גילוי
@@ -863,8 +985,7 @@ def assert_year_on_html(html: str, want_label: str, what: str) -> None:
 
 
 def refresh_one_course(
-    scraper_obj,
-    scraper_mod,
+    backend,
     store_mod,
     store_obj,
     code: str,
@@ -876,6 +997,9 @@ def refresh_one_course(
     fallback_credits: float,
 ) -> dict:
     """מרענן קורס אחד. מחזיר מילון תוצאה, ולא זורק על כשל "רגיל".
+
+    ``backend`` הוא ``HttpBackend`` (ברירת מחדל) או ``BrowserBackend`` — שניהם
+    מציגים את אותן שתי שיטות שצריך כאן: ``fetch_course_html`` ו-``course_url``.
 
     Returns dict with: ok, changes, warnings, group_count, not_offered, error.
     """
@@ -891,7 +1015,7 @@ def refresh_one_course(
         "error": "",
     }
 
-    html = scraper_obj.fetch_course_html(code)  # מאמת בעצמו את שנת הדף
+    html = backend.fetch_course_html(code)  # השולף מאמת בעצמו את שנת הדף
     parsed = parser_mod.parse_course_page(
         html,
         code,
@@ -926,7 +1050,7 @@ def refresh_one_course(
         year=year_label,
         year_gregorian=year_greg,
         semester=semester,
-        source_url=scraper_mod.course_url(code),
+        source_url=backend.course_url(code),
         content_sha1=sha1_of(html),
         group_count=group_count,
         warnings=warnings,
@@ -977,19 +1101,454 @@ def mark_course_failed(store_mod, store_obj, code: str, message: str) -> bool:
         return False
 
 
+# ===========================================================================
+# 5א. שני מסלולי השליפה — HTTP ישיר (ברירת מחדל) ודפדפן (גיבוי)
+# ===========================================================================
+#: תוצאת מעבר שליפה אחד. היא קובעת איזו הודעה מודפסת ומה קוד היציאה.
+PASS_OK = "ok"
+PASS_NEEDS_LOGIN = "needs_login"     # אפשרי אך ורק במסלול --browser
+PASS_YEAR_ERROR = "year_error"
+PASS_NETWORK = "network"
+PASS_CATALOG_ONLY = "catalog_only"
+PASS_ERROR = "error"
+
+
+def fetcher_log(message: str) -> None:
+    """הקולבק היחיד שדרכו ``YedionHTTP`` מדבר.
+
+    למה זה קיים בכלל: כשהריענון מופעל מהאתר, הפלט של הסקריפט נקלט אל יומן
+    הריצה ומוצג בפאנל המתקפל — ולכן שום מודול אסור לו להדפיס בעצמו. הפצ'ר
+    מקבל ``log=fetcher_log`` ולא נוגע ב-``print``; refresh.py הוא הבעלים
+    היחיד של הפלט. (SPEC_V2 סעיף 4)
+    """
+    log(str(message))
+
+
+class HttpBackend:
+    """המסלול הרגיל: ``urllib`` בלבד. בלי דפדפן, בלי חלון, בלי התחברות.
+
+    GROUND_TRUTH סעיף 9: חיפוש הקורסים בידיעון פתוח לקריאה אנונימית —
+    ``S_LOOK_FOR_NOSE`` ו-``S_LOOK_FOR_NOSE_AB``. רק ``Enter_Search`` חסום
+    מאחורי Citrix, ובו אין לנו צורך. אומת מול האתר החי: שישה קורסים,
+    התאמה 6/6 מול הגרידה המחוברת.
+    """
+
+    kind = "http"
+    #: האם המסלול הזה יכול להגיע למצב "נדרשת התחברות"? לא. אף פעם.
+    can_need_login = False
+
+    def __init__(self, year_greg: str) -> None:
+        self.module = import_yedion_http()
+        self.year_gregorian = str(year_greg)
+        self.year_label = hebrew_year_label(year_greg)
+        self.fetcher = self.module.YedionHTTP(
+            year=self.year_gregorian,
+            delay_s=HTTP_DELAY_S,
+            timeout_s=HTTP_TIMEOUT_S,
+            raw_dir=str(RAW_DIR),
+            log=fetcher_log,          # <- כל שורה שלו עוברת דרך היומן, לא דרך המסך
+        )
+
+    def open(self) -> str:
+        """חימום, קביעת שנה, ואימות שהשנה באמת חזרה. זורק אם לא.
+
+        בקשת החימום אינה קישוט: בלעדיה ה-POST של השנה "מצליח" אבל כל דף
+        שיישלף אחריו יחזור בשקט עם השנה הקודמת. האימות הוא מה שתופס את זה.
+        """
+        self.fetcher.open_session()
+        confirmed = str(getattr(self.fetcher, "year_label", "") or "")
+        self.year_label = confirmed or self.year_label
+        return self.year_label
+
+    def close(self) -> None:
+        closer = getattr(self.fetcher, "close", None)
+        if callable(closer):
+            try:
+                closer()
+            except Exception:  # noqa: BLE001 - סגירה היא נוחות בלבד
+                pass
+
+    def fetch_course_html(self, code: str) -> str:
+        return self.fetcher.fetch_course(code)
+
+    def fetch_catalog_html(self) -> str:
+        log("מביא את קטלוג הקורסים המלא (בקשה אחת)… (fetching the whole catalog)")
+        return self.fetcher.fetch_catalog()
+
+    def course_url(self, code: str) -> str:
+        """הכתובת שנשמרת ב-meta.source_url. סלחני: אם המודול חושף בונה
+        כתובות משלו נשתמש בו, אחרת נבנה אותה כאן לפי GROUND_TRUTH סעיף 1."""
+        maker = getattr(self.module, "course_url", None)
+        if callable(maker):
+            try:
+                return str(maker(code))
+            except Exception:  # noqa: BLE001 - נופלים לבנייה המקומית
+                pass
+        base = str(
+            getattr(self.module, "BASE_URL", "")
+            or "https://info.braude.ac.il/yedion/fireflyweb.aspx"
+        )
+        return (
+            f"{base}?prgname=S_LOOK_FOR_NOSE"
+            f"&arguments=-N{quote(str(code).strip(), safe='')}"
+        )
+
+    def session_lost(self) -> bool:
+        """אין סשן שאפשר לאבד — אין התחברות מלכתחילה."""
+        return False
+
+
+class BrowserBackend:
+    """מסלול הגיבוי: Playwright, בדיוק כפי שהיה.
+
+    נשמר שלם ליום שבו המכללה תסגור גם את הקריאה החופשית. **רק כאן** קיים
+    המצב "נדרשת התחברות", ולכן רק כאן אפשר לקבל קוד יציאה 2.
+    """
+
+    kind = "browser"
+    can_need_login = True
+
+    def __init__(self, scraper_obj, scraper_mod, discovery_mod, year_label: str) -> None:
+        self.sc = scraper_obj
+        self.scraper_mod = scraper_mod
+        self.discovery_mod = discovery_mod
+        self.year_label = year_label
+
+    def fetch_course_html(self, code: str) -> str:
+        return self.sc.fetch_course_html(code)
+
+    def fetch_catalog_html(self) -> str:
+        return browser_fetch_catalog_html(self.sc, self.scraper_mod, self.discovery_mod)
+
+    def course_url(self, code: str) -> str:
+        return self.scraper_mod.course_url(code)
+
+    def close(self) -> None:
+        return None
+
+    def session_lost(self) -> bool:
+        """האם הופנינו באמצע הריצה אל שער ההתחברות?"""
+        current = getattr(getattr(self.sc, "page", None), "url", "") or ""
+        return bool(current) and not self.scraper_mod.is_success_url(current)
+
+
+def refresh_courses(
+    backend,
+    store_mod,
+    store_obj,
+    record: dict,
+    targets: list[str],
+    catalog: dict,
+    *,
+    year_label: str,
+    year_greg: str,
+    semester: str,
+    delay_s: float,
+) -> tuple[str, str]:
+    """מרענן את הקורסים ברשימה, אחד-אחד ובנימוס. מחזיר (תוצאה, סיבה)."""
+    names, credits = curriculum_hints(catalog)
+    total = len(targets)
+
+    for index, code in enumerate(targets, start=1):
+        if index > 1 and delay_s > 0:
+            time.sleep(delay_s)  # נימוס כלפי השרת של המכללה
+        record["attempted"].append(code)
+        log(f"({index}/{total}) מרענן קורס {code}…")
+        try:
+            outcome = refresh_one_course(
+                backend,
+                store_mod,
+                store_obj,
+                code,
+                year_label=year_label,
+                year_greg=year_greg,
+                semester=semester,
+                fallback_name=names.get(code, ""),
+                fallback_credits=credits.get(code, 0.0),
+            )
+        except Exception as exc:  # noqa: BLE001 - קורס אחד לא מפיל את הכול
+            message = f"{type(exc).__name__}: {exc}"
+
+            # שנה שגויה היא כשל גלובלי: עוצרים מיד ולא כותבים כלום. הקורס הזה
+            # לא נכתב, וגם לא מסומן ככשל — הבעיה אינה בו.
+            if is_year_problem(exc):
+                record["skipped"].extend(targets[index - 1:])
+                return PASS_YEAR_ERROR, message
+
+            session_gone = backend.session_lost()
+            mark_course_failed(store_mod, store_obj, code, message)
+            record["failed"].append({"code": code, "error": message})
+            log(f"תקלה בקורס {code}: {message}")
+            if session_gone:
+                record["skipped"].extend(targets[index:])
+                return PASS_NEEDS_LOGIN, "session expired mid-run"
+            continue
+
+        if not outcome["ok"]:
+            mark_course_failed(store_mod, store_obj, code, outcome["error"])
+            record["failed"].append({"code": code, "error": outcome["error"]})
+            log(f"תקלה בקורס {code}: {outcome['error']}")
+            continue
+
+        record["refreshed"].append(code)
+        if outcome["not_offered"]:
+            record["not_offered"].append(code)
+        if outcome["changes"]:
+            record["changes"][code] = outcome["changes"]
+            try:
+                store_obj.log_changes(code, outcome["changes"])
+            except Exception as exc:  # noqa: BLE001
+                log(f"אזהרה: כתיבת השינויים של {code} ליומן נכשלה ({exc}).")
+        log(
+            f"קורס {code}: {outcome['group_count']} קבוצות, "
+            f"{len(outcome['changes'])} שינויים."
+        )
+
+    return PASS_OK, ""
+
+
+def run_pass(
+    backend,
+    args: argparse.Namespace,
+    record: dict,
+    store_mod,
+    store_obj,
+    discovery_mod,
+    *,
+    targets: list[str],
+    need_catalog: bool,
+    catalog_age: float | None,
+    year_label: str,
+    year_greg: str,
+    semester: str,
+    delay_s: float,
+) -> tuple[str, str, dict]:
+    """הגוף המשותף לשני המסלולים: קטלוג, תצלום מצב, ואז הקורסים.
+
+    זהה לחלוטין בשניהם — ההבדל היחיד הוא מי מביא את ה-HTML.
+    """
+    catalog: dict[str, dict] = {}
+
+    # ------------------------------------------------------------- הקטלוג
+    if need_catalog:
+        try:
+            html = backend.fetch_catalog_html()
+            assert_year_on_html(html, year_label, "catalog")
+            catalog, cat_warnings = discovery_mod.parse_catalog(html)
+            record["catalog"]["warnings"] = [str(w) for w in (cat_warnings or [])][:20]
+            if catalog:
+                store_obj.save_catalog(catalog, year_label, year_greg)
+                record["catalog"]["refreshed"] = True
+                record["catalog"]["courses"] = len(catalog)
+                log(f"הקטלוג נשמר: {len(catalog)} קורסים.")
+            else:
+                # דף ריק לא דורס קטלוג טוב שכבר קיים.
+                log("אזהרה: הקטלוג חזר ריק — הקטלוג הקודם נשמר כמו שהוא.")
+                record["catalog"]["warnings"].append("empty catalog page; kept previous")
+        except SessionExpired as exc:
+            return PASS_NEEDS_LOGIN, f"session expired during catalog fetch: {exc}", catalog
+        except Exception as exc:  # noqa: BLE001 - קטלוג שנכשל לא עוצר קורסים
+            if is_year_problem(exc) or (
+                isinstance(exc, RuntimeError)
+                and ("שנת" in str(exc) or "year" in str(exc).lower())
+            ):
+                # שנה שגויה בדף הקטלוג = עצירה מלאה. לא כותבים כלום.
+                return PASS_YEAR_ERROR, str(exc), catalog
+            log(f"אזהרה: הקטלוג נכשל ({type(exc).__name__}: {exc}) — ממשיכים לקורסים.")
+            record["catalog"]["warnings"].append(f"{type(exc).__name__}: {exc}")
+    else:
+        log(f"הקטלוג עדיין טרי ({human_age(catalog_age)}) — מדלגים עליו.")
+
+    if not catalog:
+        try:
+            catalog, _ = store_obj.load_catalog()
+        except Exception:  # noqa: BLE001
+            catalog = {}
+
+    if args.catalog_only:
+        return PASS_CATALOG_ONLY, "catalog only", catalog
+
+    # ------------------------------------------------ תצלום מצב לפני הכתיבה
+    # תצלום אחד לפני שמתחילים לדרוס — ככה תמיד יש למה לחזור.
+    try:
+        snap = store_obj.snapshot()
+        if snap:
+            log(f"תצלום מצב נשמר: {snap}")
+    except Exception as exc:  # noqa: BLE001
+        log(f"אזהרה: שמירת תצלום המצב נכשלה ({type(exc).__name__}: {exc}).")
+
+    outcome, reason = refresh_courses(
+        backend,
+        store_mod,
+        store_obj,
+        record,
+        targets,
+        catalog,
+        year_label=year_label,
+        year_greg=year_greg,
+        semester=semester,
+        delay_s=delay_s,
+    )
+    return outcome, reason, catalog
+
+
+def run_http_pass(
+    args: argparse.Namespace,
+    record: dict,
+    store_mod,
+    store_obj,
+    discovery_mod,
+    *,
+    targets: list[str],
+    need_catalog: bool,
+    catalog_age: float | None,
+    year_label: str,
+    year_greg: str,
+    semester: str,
+) -> tuple[str, str, dict]:
+    """המסלול הרגיל: שליפה ישירה ב-HTTP. אין כאן התחברות, ולכן אין needs_login."""
+    backend = HttpBackend(year_greg)          # MissingModule עולה החוצה במכוון
+    log("שולף ישירות מהידיעון ב-HTTP — בלי דפדפן ובלי התחברות. (anonymous fetch)")
+    log("פותח סשן: בקשת חימום, ואז קביעת שנת הלימודים ואימות שלה…")
+    try:
+        confirmed = backend.open()
+    except Exception as exc:  # noqa: BLE001
+        backend.close()
+        if is_year_problem(exc):
+            return PASS_YEAR_ERROR, f"{type(exc).__name__}: {exc}", {}
+        if looks_like_network(exc):
+            return PASS_NETWORK, f"{type(exc).__name__}: {exc}", {}
+        return PASS_ERROR, f"{type(exc).__name__}: {exc}", {}
+
+    year_label = confirmed or year_label
+    record["year"] = year_label
+    log(f"שנת הלימודים אושרה: {year_label} ({year_greg}).")
+
+    try:
+        return run_pass(
+            backend,
+            args,
+            record,
+            store_mod,
+            store_obj,
+            discovery_mod,
+            targets=targets,
+            need_catalog=need_catalog,
+            catalog_age=catalog_age,
+            year_label=year_label,
+            year_greg=year_greg,
+            semester=semester,
+            # ההשהיה נאכפת גם כאן וגם בתוך הפצ'ר. פער כפול עדיף על פער חסר.
+            delay_s=HTTP_DELAY_S,
+        )
+    finally:
+        backend.close()
+
+
+def run_browser_pass(
+    args: argparse.Namespace,
+    record: dict,
+    store_mod,
+    store_obj,
+    discovery_mod,
+    *,
+    targets: list[str],
+    need_catalog: bool,
+    catalog_age: float | None,
+    year_label: str,
+    year_greg: str,
+    semester: str,
+) -> tuple[str, str, dict]:
+    """מסלול הגיבוי דרך Playwright — הזרימה הישנה, ללא שינוי.
+
+    זה המסלול היחיד שבו יש סשן שיכול לפוג, ולכן היחיד שמחזיר needs_login.
+    """
+    scraper_mod = import_scraper()
+    try:
+        scraper_ctx = scraper_mod.BraudeScraper(
+            profile_dir=str(BROWSER_PROFILE_DIR),
+            raw_dir=str(RAW_DIR),
+            headless=not args.headful,
+            year=year_greg,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return PASS_ERROR, f"scraper init failed: {exc}", {}
+
+    with scraper_ctx as sc:
+        # ------------------------------------- הסשן — קיים או פג?
+        state, detail = probe_session(sc, scraper_mod)
+
+        if state == PROBE_NETWORK:
+            log(f"תקלת רשת/דפדפן: {detail}")
+            return PASS_NETWORK, f"network: {detail}", {}
+
+        if state == PROBE_NEEDS_LOGIN:
+            if args.headful:
+                # רק כאן מותר לפתוח התחברות — כי יש בן אדם מול המסך.
+                log("הסשן פג. פותח חלון התחברות ומחכה שההתחברות תתבצע ידנית…")
+                if not sc.open_and_wait_for_login(timeout_s=LOGIN_TIMEOUT_S):
+                    return PASS_NEEDS_LOGIN, "manual login not completed", {}
+            else:
+                # ריצה ללא פיקוח: **לא מנסים להתחבר**, לא שומרים את דף
+                # ההזדהות (הוא עלול להכיל טופס שמולא אוטומטית), ולא נוגעים
+                # בנתונים.
+                log(f"הסשן פג (הופנינו ל-{detail}). לא מנסים להתחבר, לא שומרים את הדף.")
+                return PASS_NEEDS_LOGIN, "session expired", {}
+
+        # ------------------------------------- שנת לימודים — לקבוע ולאמת
+        try:
+            year_label = sc.set_year(year_greg) or year_label
+            log(f"שנת הלימודים אושרה: {year_label} ({year_greg}).")
+            record["year"] = year_label
+        except Exception as exc:  # noqa: BLE001 - כולל YearSwitchError
+            # אולי הסשן פג בדיוק עכשיו? אז זו הודעה אחרת לגמרי.
+            current = getattr(getattr(sc, "page", None), "url", "") or ""
+            if current and not scraper_mod.is_success_url(current):
+                return PASS_NEEDS_LOGIN, "session expired during year switch", {}
+            return PASS_YEAR_ERROR, f"year not verified: {type(exc).__name__}: {exc}", {}
+
+        backend = BrowserBackend(sc, scraper_mod, discovery_mod, year_label)
+        return run_pass(
+            backend,
+            args,
+            record,
+            store_mod,
+            store_obj,
+            discovery_mod,
+            targets=targets,
+            need_catalog=need_catalog,
+            catalog_age=catalog_age,
+            year_label=year_label,
+            year_greg=year_greg,
+            semester=semester,
+            delay_s=POLITE_DELAY_S,
+        )
+
+
 def cmd_refresh(args: argparse.Namespace) -> int:
-    """מעבר ריענון אחד. זו הפונקציה שהמשימה היומית מריצה."""
+    """מעבר ריענון אחד. זו הפונקציה שהמשימה היומית מריצה.
+
+    ברירת המחדל היא המסלול הישיר ב-HTTP: בלי דפדפן, בלי חלון ובלי התחברות.
+    ``--browser`` מחזיר את המסלול הישן דרך Playwright, ורק בו קיים needs_login.
+    """
     store_mod = import_store()
     discovery_mod = import_discovery()
-    scraper_mod = import_scraper()
 
+    use_browser = bool(getattr(args, "browser", False))
     started = now_utc()
     profile = load_profile()
     year_greg = args.year or profile_year(profile)
-    year_label = scraper_mod.hebrew_year_label(year_greg)
+    year_label = hebrew_year_label(year_greg)
     semester = args.semester if args.semester is not None else profile_semester(profile)
     max_age = float(args.max_age)
     store_obj = store_mod.Store(str(DB_ROOT))
+
+    if use_browser:
+        mode = "browser-headful" if args.headful else "browser-headless"
+        mode_he = "דפדפן, חלון גלוי" if args.headful else "דפדפן ברקע (headless)"
+    else:
+        mode = "http"
+        mode_he = "HTTP ישיר — בלי דפדפן ובלי התחברות"
 
     record: dict = {
         "started_at": iso_utc(started),
@@ -998,7 +1557,7 @@ def cmd_refresh(args: argparse.Namespace) -> int:
         "status": STATUS_ERROR,
         "exit_code": EXIT_ERROR,
         "reason": "",
-        "mode": "headful" if args.headful else "headless",
+        "mode": mode,
         "year": year_label,
         "year_gregorian": year_greg,
         "semester": semester,
@@ -1034,12 +1593,18 @@ def cmd_refresh(args: argparse.Namespace) -> int:
                 "ריענון מסד הנתונים מהידיעון — REFRESH RUN",
                 "",
                 f"שנה: {year_label} ({year_greg}) | סמסטר: {semester or 'ללא סינון'}",
-                f"מצב: {'חלון גלוי' if args.headful else 'ברקע (headless)'} | "
-                f"סף התיישנות: {max_age:g} שעות",
+                f"מצב: {mode_he} | סף התיישנות: {max_age:g} שעות",
                 f"מסד: {DB_ROOT}",
             ]
         )
     )
+
+    if args.headful and not use_browser:
+        log(
+            "שימו לב: --headful שייך למסלול הדפדפן בלבד. המסלול הרגיל לא פותח "
+            "דפדפן כלל, ולכן הדגל לא משנה כלום."
+        )
+        log("למסלול הישן:  python refresh.py --browser --headful")
 
     # ------------------------------------------------- 1. מי במעקב, ומה ישן
     explicit = split_codes(args.codes)
@@ -1090,7 +1655,7 @@ def cmd_refresh(args: argparse.Namespace) -> int:
         targets = []
 
     if not need_catalog and not targets:
-        # הכול טרי. לא פותחים בכלל דפדפן — זה גם מנומס וגם מהיר.
+        # הכול טרי. לא נוגעים ברשת בכלל — זה גם מנומס וגם מהיר.
         print(
             banner(
                 [
@@ -1105,197 +1670,24 @@ def cmd_refresh(args: argparse.Namespace) -> int:
 
     log(f"קורסים במעקב: {len(tracked)} | לרענון עכשיו: {len(targets)} | קטלוג: {'כן' if need_catalog else 'לא'}")
 
-    # -------------------------------------------------- 2. פתיחת הדפדפן
+    # -------------------------------------------------- 2. המעבר עצמו
+    kwargs = dict(
+        targets=targets,
+        need_catalog=need_catalog,
+        catalog_age=catalog_age,
+        year_label=year_label,
+        year_greg=year_greg,
+        semester=semester,
+    )
     try:
-        scraper_ctx = scraper_mod.BraudeScraper(
-            profile_dir=str(BROWSER_PROFILE_DIR),
-            raw_dir=str(RAW_DIR),
-            headless=not args.headful,
-            year=year_greg,
-        )
-    except Exception as exc:  # noqa: BLE001
-        return finish(STATUS_ERROR, EXIT_ERROR, f"scraper init failed: {exc}")
-
-    try:
-        with scraper_ctx as sc:
-            # ---------------------------------- 3. הסשן — קיים או פג?
-            state, detail = probe_session(sc, scraper_mod)
-
-            if state == PROBE_NETWORK:
-                log(f"תקלת רשת/דפדפן: {detail}")
-                print(
-                    banner(
-                        [
-                            "לא הצלחתי להגיע לשרת של המכללה. (could not reach the server)",
-                            "",
-                            "זו כנראה תקלת רשת ולא פקיעת סשן — הנתונים הקיימים נשארו כמו שהם.",
-                            "כדאי לבדוק חיבור לאינטרנט ולנסות שוב מאוחר יותר.",
-                        ],
-                        ch="!",
-                    )
-                )
-                return finish(STATUS_ERROR, EXIT_ERROR, f"network: {detail}")
-
-            if state == PROBE_NEEDS_LOGIN:
-                if args.headful:
-                    # רק כאן מותר לפתוח התחברות — כי יש בן אדם מול המסך.
-                    log("הסשן פג. פותח חלון התחברות ומחכה שההתחברות תתבצע ידנית…")
-                    if not sc.open_and_wait_for_login(timeout_s=LOGIN_TIMEOUT_S):
-                        print_needs_login(store_obj, tracked)
-                        return finish(STATUS_NEEDS_LOGIN, EXIT_NEEDS_LOGIN, "manual login not completed")
-                else:
-                    # ריצה יומית ללא פיקוח: **לא מנסים להתחבר**, לא שומרים את
-                    # דף ההזדהות (הוא עלול להכיל טופס עם שם משתמש שמולא
-                    # אוטומטית), ולא נוגעים בנתונים.
-                    log(f"הסשן פג (הופנינו ל-{detail}). לא מנסים להתחבר, לא שומרים את הדף.")
-                    print_needs_login(store_obj, tracked)
-                    return finish(STATUS_NEEDS_LOGIN, EXIT_NEEDS_LOGIN, "session expired")
-
-            # ---------------------------------- 4. שנת לימודים — לקבוע ולאמת
-            try:
-                year_label = sc.set_year(year_greg) or year_label
-                log(f"שנת הלימודים אושרה: {year_label} ({year_greg}).")
-                record["year"] = year_label
-            except Exception as exc:  # noqa: BLE001 - כולל YearSwitchError
-                # אולי הסשן פג בדיוק עכשיו? אז זו הודעה אחרת לגמרי.
-                current = getattr(getattr(sc, "page", None), "url", "") or ""
-                if current and not scraper_mod.is_success_url(current):
-                    print_needs_login(store_obj, tracked)
-                    return finish(STATUS_NEEDS_LOGIN, EXIT_NEEDS_LOGIN, "session expired during year switch")
-                print(
-                    banner(
-                        [
-                            "עצירה: לא אושרה שנת הלימודים — STOPPED: academic year not verified",
-                            "",
-                            f"ביקשנו {year_label or '?'} ({year_greg}) והידיעון לא אישר.",
-                            f"פרטים: {type(exc).__name__}: {exc}",
-                            "",
-                            "**לא נכתב שום נתון למסד.** נתונים של שנה שגויה גרועים",
-                            "בהרבה מהיעדר נתונים — הם נראים אמינים לגמרי.",
-                            "Nothing was written: wrong-year data is worse than no data.",
-                        ],
-                        ch="!",
-                    )
-                )
-                return finish(STATUS_YEAR_ERROR, EXIT_ERROR, f"year not verified: {exc}")
-
-            # ---------------------------------- 5. הקטלוג
-            catalog: dict[str, dict] = {}
-            if need_catalog:
-                try:
-                    html = fetch_catalog_html(sc, scraper_mod, discovery_mod)
-                    assert_year_on_html(html, year_label, "catalog")
-                    catalog, cat_warnings = discovery_mod.parse_catalog(html)
-                    record["catalog"]["warnings"] = [str(w) for w in (cat_warnings or [])][:20]
-                    if catalog:
-                        store_obj.save_catalog(catalog, year_label, year_greg)
-                        record["catalog"]["refreshed"] = True
-                        record["catalog"]["courses"] = len(catalog)
-                        log(f"הקטלוג נשמר: {len(catalog)} קורסים.")
-                    else:
-                        # דף ריק לא דורס קטלוג טוב שכבר קיים.
-                        log("אזהרה: הקטלוג חזר ריק — הקטלוג הקודם נשמר כמו שהוא.")
-                        record["catalog"]["warnings"].append("empty catalog page; kept previous")
-                except SessionExpired:
-                    print_needs_login(store_obj, tracked)
-                    return finish(STATUS_NEEDS_LOGIN, EXIT_NEEDS_LOGIN, "session expired during catalog fetch")
-                except RuntimeError as exc:  # שנה שגויה בדף הקטלוג = עצירה מלאה
-                    if "שנת" in str(exc) or "year" in str(exc).lower():
-                        print(banner([f"עצירה: {exc}"], ch="!"))
-                        return finish(STATUS_YEAR_ERROR, EXIT_ERROR, str(exc))
-                    log(f"אזהרה: הקטלוג נכשל ({type(exc).__name__}: {exc}) — ממשיכים לקורסים.")
-                    record["catalog"]["warnings"].append(str(exc))
-                except Exception as exc:  # noqa: BLE001 - קטלוג שנכשל לא עוצר קורסים
-                    log(f"אזהרה: הקטלוג נכשל ({type(exc).__name__}: {exc}) — ממשיכים לקורסים.")
-                    record["catalog"]["warnings"].append(f"{type(exc).__name__}: {exc}")
-            else:
-                log(f"הקטלוג עדיין טרי ({human_age(catalog_age)}) — מדלגים עליו.")
-
-            if not catalog:
-                try:
-                    catalog, _ = store_obj.load_catalog()
-                except Exception:  # noqa: BLE001
-                    catalog = {}
-
-            if args.catalog_only:
-                print(
-                    banner(
-                        [
-                            "רוענן הקטלוג בלבד. (catalog only)",
-                            f"{record['catalog']['courses'] or len(catalog)} קורסים מוצעים בשנה {year_label}.",
-                        ]
-                    )
-                )
-                return finish(STATUS_OK, EXIT_OK, "catalog only")
-
-            # ---------------------------------- 6. קורסים במעקב, אחד-אחד
-            # תצלום מצב אחד לפני שמתחילים לדרוס — ככה תמיד יש למה לחזור.
-            try:
-                snap = store_obj.snapshot()
-                if snap:
-                    log(f"תצלום מצב נשמר: {snap}")
-            except Exception as exc:  # noqa: BLE001
-                log(f"אזהרה: שמירת תצלום המצב נכשלה ({type(exc).__name__}: {exc}).")
-
-            names, credits = curriculum_hints(catalog)
-            total = len(targets)
-            for index, code in enumerate(targets, start=1):
-                if index > 1:
-                    time.sleep(POLITE_DELAY_S)  # נימוס כלפי השרת של המכללה
-                record["attempted"].append(code)
-                log(f"({index}/{total}) מרענן קורס {code}…")
-                try:
-                    outcome = refresh_one_course(
-                        sc,
-                        scraper_mod,
-                        store_mod,
-                        store_obj,
-                        code,
-                        year_label=year_label,
-                        year_greg=year_greg,
-                        semester=semester,
-                        fallback_name=names.get(code, ""),
-                        fallback_credits=credits.get(code, 0.0),
-                    )
-                except Exception as exc:  # noqa: BLE001 - קורס אחד לא מפיל את הכול
-                    # האם הסשן פג באמצע? זו הודעה אחרת לגמרי מ"הקורס נכשל".
-                    current = getattr(getattr(sc, "page", None), "url", "") or ""
-                    session_gone = bool(current) and not scraper_mod.is_success_url(current)
-                    message = f"{type(exc).__name__}: {exc}"
-                    mark_course_failed(store_mod, store_obj, code, message)
-                    record["failed"].append({"code": code, "error": message})
-                    log(f"תקלה בקורס {code}: {message}")
-                    if session_gone:
-                        remaining = targets[index:]
-                        record["skipped"].extend(remaining)
-                        print_needs_login(store_obj, tracked)
-                        return finish(
-                            STATUS_NEEDS_LOGIN,
-                            EXIT_NEEDS_LOGIN,
-                            "session expired mid-run",
-                        )
-                    continue
-
-                if not outcome["ok"]:
-                    mark_course_failed(store_mod, store_obj, code, outcome["error"])
-                    record["failed"].append({"code": code, "error": outcome["error"]})
-                    log(f"תקלה בקורס {code}: {outcome['error']}")
-                    continue
-
-                record["refreshed"].append(code)
-                if outcome["not_offered"]:
-                    record["not_offered"].append(code)
-                if outcome["changes"]:
-                    record["changes"][code] = outcome["changes"]
-                    try:
-                        store_obj.log_changes(code, outcome["changes"])
-                    except Exception as exc:  # noqa: BLE001
-                        log(f"אזהרה: כתיבת השינויים של {code} ליומן נכשלה ({exc}).")
-                log(
-                    f"קורס {code}: {outcome['group_count']} קבוצות, "
-                    f"{len(outcome['changes'])} שינויים."
-                )
-
+        if use_browser:
+            outcome, reason, catalog = run_browser_pass(
+                args, record, store_mod, store_obj, discovery_mod, **kwargs
+            )
+        else:
+            outcome, reason, catalog = run_http_pass(
+                args, record, store_mod, store_obj, discovery_mod, **kwargs
+            )
     except MissingModule:
         raise
     except KeyboardInterrupt:
@@ -1305,7 +1697,79 @@ def cmd_refresh(args: argparse.Namespace) -> int:
         traceback.print_exc()
         return finish(STATUS_ERROR, EXIT_ERROR, f"{type(exc).__name__}: {exc}")
 
-    # ------------------------------------------------------- 7. סיכום אנושי
+    year_label = record["year"] or year_label
+
+    # -------------------------------------------------- 3. מה יצא מהמעבר
+    if outcome == PASS_NEEDS_LOGIN:
+        if not use_browser:
+            # לא אמור לקרות: במסלול הישיר אין התחברות ואין סשן. אם בכל זאת
+            # הגענו לכאן — זו תקלה רגילה, ולא נשלח את הסטודנט/ית להתחבר לחינם.
+            log("מצב לא צפוי: המסלול הישיר דיווח על צורך בהתחברות. מדווחים כתקלה.")
+            return finish(STATUS_ERROR, EXIT_ERROR, reason or "unexpected needs_login on the http path")
+        print_needs_login(store_obj, tracked)
+        return finish(STATUS_NEEDS_LOGIN, EXIT_NEEDS_LOGIN, reason)
+
+    if outcome == PASS_YEAR_ERROR:
+        wrote_something = bool(record["refreshed"]) or record["catalog"]["refreshed"]
+        lines = [
+            "עצירה: לא אושרה שנת הלימודים — STOPPED: academic year not verified",
+            "",
+            f"ביקשנו {year_label or '?'} ({year_greg}) והידיעון לא אישר.",
+            f"פרטים: {reason}",
+            "",
+        ]
+        if wrote_something:
+            lines += [
+                "הריצה נעצרה באמצע. מה שנכתב עד כה נכתב אחרי אימות שנה תקין;",
+                "הדף שהחזיר שנה שגויה **לא** נכתב, ושאר הרשימה לא נשלפה.",
+            ]
+        else:
+            lines.append("**לא נכתב שום נתון למסד.**")
+        lines += [
+            "נתונים של שנה שגויה גרועים בהרבה מהיעדר נתונים — הם נראים אמינים לגמרי.",
+            "Wrong-year data is worse than no data: it looks perfectly trustworthy.",
+        ]
+        if not use_browser:
+            lines += [
+                "",
+                "במסלול הישיר זה כמעט תמיד אומר שבקשת החימום לא תפסה, ולכן",
+                "קביעת השנה לא נדבקה לסשן. (GROUND_TRUTH סעיף 9)",
+            ]
+        print(banner(lines, ch="!"))
+        return finish(STATUS_YEAR_ERROR, EXIT_ERROR, reason)
+
+    if outcome == PASS_NETWORK:
+        print(
+            banner(
+                [
+                    "לא הצלחתי להגיע לשרת של המכללה. (could not reach the server)",
+                    "",
+                    "זו תקלת רשת ולא בעיית הרשאה — הנתונים הקיימים נשארו כמו שהם.",
+                    "כדאי לבדוק חיבור לאינטרנט ולנסות שוב מאוחר יותר.",
+                    "",
+                    f"פרטים: {reason}",
+                ],
+                ch="!",
+            )
+        )
+        return finish(STATUS_ERROR, EXIT_ERROR, reason)
+
+    if outcome == PASS_ERROR:
+        print(banner(["תקלה בהתחלת השליפה — FETCH DID NOT START", "", str(reason)], ch="!"))
+        return finish(STATUS_ERROR, EXIT_ERROR, reason)
+
+    if outcome == PASS_CATALOG_ONLY:
+        print(
+            banner(
+                [
+                    "רוענן הקטלוג בלבד. (catalog only)",
+                    f"{record['catalog']['courses'] or len(catalog)} קורסים מוצעים בשנה {year_label}.",
+                ]
+            )
+        )
+        return finish(STATUS_OK, EXIT_OK, "catalog only")
+
+    # -------------------------------------------------- 4. סיכום אנושי
     print_summary(record, catalog_age)
 
     failed = record["failed"]
@@ -1494,6 +1958,9 @@ def cmd_install_task(args: argparse.Namespace) -> int:
                 f"מפרש: {python_exe}"
                 + ("   (pythonw = בלי חלון קונסולה)" if python_exe.name.lower() == "pythonw.exe" else ""),
                 f"סקריפט: {script}",
+                "",
+                "המשימה תרוץ במסלול ברירת המחדל: שליפה ישירה ב-HTTP, בלי דפדפן",
+                "ובלי התחברות — כלומר ריצה יומית ללא שום התערבות. (unattended)",
             ]
         )
     )
@@ -1549,6 +2016,11 @@ def cmd_install_task(args: argparse.Namespace) -> int:
                 "",
                 f"תרוץ כל יום ב-{task_time}, כל עוד המחשב דולק ומחובר למשתמש.",
                 "",
+                "הריצה אוטומטית לגמרי: אין חלון, אין דפדפן ואין התחברות.",
+                "השליפה נעשית ישירות ב-HTTP מול הידיעון, שפתוח לקריאה בלי הזדהות,",
+                "ולכן אין סשן שיפוג ואין שום דבר לחדש מדי כמה ימים.",
+                "The daily run is genuinely unattended: no window, no browser, no sign-in.",
+                "",
                 "לבדיקה מפורטת:",
                 f'    schtasks /Query /TN "{TASK_NAME}" /V /FO LIST',
                 "להרצה מיידית לבדיקה:",
@@ -1561,9 +2033,8 @@ def cmd_install_task(args: argparse.Namespace) -> int:
                 "כדי לראות מה קרה בה:",
                 "    python refresh.py --status",
                 "",
-                "וזכרו: אם הסשן של הידיעון פג, הריצה היומית תסמן needs_login",
-                "ולא תעדכן כלום, עד שתתבצע התחברות ידנית עם --headful.",
-                "The daily job cannot sign in by itself — by design.",
+                "ואם יום אחד המכללה תסגור את הקריאה החופשית — יש מסלול גיבוי דרך",
+                "דפדפן:  python refresh.py --browser --headful  — ורק הוא דורש התחברות.",
             ]
         )
     )
@@ -1643,8 +2114,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "(scheduled refresh of the local JSON database from the Braude yedion)"
         ),
         epilog=(
-            "קודי יציאה: 0 = רוענן/טרי, 2 = נדרשת התחברות, 3 = ריענון חלקי, 1 = תקלה. "
-            "(exit codes: 0 ok, 2 needs login, 3 partial, 1 error)"
+            "ברירת המחדל: שליפה ישירה ב-HTTP — בלי דפדפן, בלי חלון ובלי התחברות. "
+            "--browser מפעיל את מסלול הגיבוי דרך Playwright, והוא היחיד שדורש התחברות ידנית. "
+            "קודי יציאה: 0 = רוענן/טרי, 2 = נדרשת התחברות (במסלול --browser בלבד), "
+            "3 = ריענון חלקי, 1 = תקלה. "
+            "(default = login-free HTTP fetch; --browser = the old Playwright path; "
+            "exit codes: 0 ok, 2 needs login [--browser only], 3 partial, 1 error)"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -1665,8 +2140,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--browser", action="store_true",
+        help=(
+            "מסלול גיבוי: שליפה דרך דפדפן Playwright במקום HTTP ישיר. "
+            "רק הוא דורש התחברות ידנית לידיעון (Citrix) ורק בו קיים קוד יציאה 2. "
+            "ברירת המחדל, בלי הדגל הזה, היא שליפה ישירה בלי דפדפן ובלי התחברות."
+        ),
+    )
+    parser.add_argument(
         "--headful", action="store_true",
-        help="פתיחת חלון דפדפן גלוי, כדי שאפשר יהיה להתחבר ידנית.",
+        help=(
+            "רלוונטי רק יחד עם --browser: פתיחת חלון דפדפן גלוי כדי להתחבר ידנית. "
+            "בלי --browser אין דפדפן בכלל, והדגל לא עושה כלום."
+        ),
     )
     parser.add_argument(
         "--codes", default="",
