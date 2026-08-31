@@ -1,0 +1,65 @@
+{
+  "_comment": "תבנית לדוגמה. יש להעתיק ל-data/profile.json ולערוך. הקובץ האמיתי אינו נכנס לגיט — הוא אישי. | Template: copy to data/profile.json and edit. The real file is gitignored because it is personal.",
+
+  "student": {
+    "program": "הנדסת תוכנה",
+    "year_of_study": 1,
+    "year_label": "שנה א'",
+    "academic_year": "תשפ\"ז",
+    "academic_year_gregorian": "2026/27",
+    "term": "א",
+    "term_label": "סמסטר א' (חורף)",
+    "curriculum_semester": "1"
+  },
+
+  "_selected_courses_help": "הקורסים שרוצים לשבץ. code חייב להיות קוד קורס אמיתי מהידיעון. tied_with = קורסים צמודים שחייבים להילקח יחד (הידיעון אוכף את זה). from_semester הוא לתיעוד בלבד — מותר לקחת קורס מכל סמסטר, כולל חזרה על קורס משנה קודמת.",
+  "selected_courses": [
+    {
+      "code": "11004",
+      "name": "חדו\"א 1 מ",
+      "credits": 5.0,
+      "from_semester": "1",
+      "tied_with": []
+    },
+    {
+      "code": "61741",
+      "name": "מבוא למדעי המחשב",
+      "credits": 4.0,
+      "from_semester": "1",
+      "tied_with": []
+    }
+  ],
+
+  "_declined_courses_help": "קורסים שנשקלו ונדחו, עם הסיבה. לתיעוד בלבד — לא משפיע על השיבוץ.",
+  "declined_courses": [],
+
+  "total_credits": 9.0,
+  "total_weekly_hours": 12,
+
+  "preferences": {
+    "_help": "target_days = כמה ימים בקמפוס לכוון אליהם (העדפה רכה, לא אילוץ). earliest/latest = דקות מחצות, או null לבלי הגבלה; 8:30 = 510. weights = משקלי הניקוד: מרצה מועדף מוסיף, ריבוי ימים/חורים/יום ארוך מחסירים.",
+    "target_days": 4,
+    "time_of_day": "no_preference",
+    "earliest": null,
+    "latest": null,
+    "priority": "balanced",
+    "weights": {
+      "lecturer": 10.0,
+      "days": 8.0,
+      "gaps": 4.0,
+      "compactness": 1.0
+    },
+    "extras": "none",
+    "forbid_friday": false
+  },
+
+  "data_access": {
+    "_help": "ההתחברות היא תמיד ידנית בחלון דפדפן אמיתי. אין כאן שם משתמש ואין סיסמה, ולעולם לא יהיו — אין להוסיף כאלה לקובץ הזה. | Login is always manual in a real browser window. No username, no password, ever.",
+    "method": "playwright_manual_login",
+    "login_url": "https://login.braude.ac.il/logon/LogonPoint/tmindex.html",
+    "search_url": "https://info.braude.ac.il/yedion/fireflyweb.aspx?prgname=Enter_Search"
+  },
+
+  "_scrape_codes_help": "קודי הקורסים שיישלפו מהידיעון. בדרך כלל זהה לקודים שב-selected_courses.",
+  "scrape_codes": ["11004", "61741"]
+}

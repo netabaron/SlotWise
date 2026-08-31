@@ -9,7 +9,33 @@
 
 ---
 
-## התקנה (כבר בוצעה במחשב הזה)
+## התקנה מאפס (fresh clone)
+
+שני קבצים **אינם** נמצאים במאגר, בכוונה:
+
+| קובץ | למה הוא לא כאן | מה לעשות |
+| --- | --- | --- |
+| `data/profile.json` | מידע אישי — שנה, סמסטר ורשימת קורסים | `copy data\profile.example.json data\profile.json` ולערוך |
+| `rec.pdf` | פרק השנתון של המחלקה — מסמך של המכללה | להוריד מאתר המכללה. **לא חובה**: `data/curriculum.json` כבר גזור ממנו ונמצא כאן |
+
+```bash
+python -m pip install flask playwright beautifulsoup4 lxml pytest
+python -m playwright install chromium
+
+copy data\profile.example.json data\profile.json    # Windows
+# cp data/profile.example.json data/profile.json      # macOS / Linux
+
+python main.py            # פותח את הממשק בדפדפן
+```
+
+אפשר גם להריץ בלי `profile.json` בכלל — הממשק פשוט ייפתח בלי ערכי ברירת מחדל,
+ובוחרים שנה וסמסטר בשלב 1. הפרופיל רק חוסך את ההקלדה הזאת בכל פעם.
+
+**אין במאגר הזה שום סיסמה, עוגייה או סשן.** ההתחברות לידיעון היא תמיד ידנית
+בחלון דפדפן אמיתי, ותיקיית `data/.browser_profile/` (שמכילה את עוגיות ה-Citrix
+החיות) חסומה ב-`.gitignore` ולעולם לא תעלה לגיט.
+
+## התקנה מקומית (כבר בוצעה במחשב הזה)
 
 ```bash
 python -m pip install playwright beautifulsoup4 lxml pytest
