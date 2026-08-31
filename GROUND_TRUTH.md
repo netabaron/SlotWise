@@ -216,3 +216,65 @@ Do **not** rely on the `R1C19` semester filter control. Every meeting row carrie
 `סמסטר` column (`א` / `ב` / `קיץ`), so filter client-side after parsing. That is both simpler and
 verifiable, and it is how the tool will determine whether **61753 אלגוריתמים** — a curriculum
 semester-4 (spring) course — is actually opened in **סמסטר א'**.
+
+---
+
+## 9. THE COURSE SEARCH NEEDS NO LOGIN AT ALL — verified 2026-08-31
+
+**This supersedes the "Citrix is unavoidable" premise in sections 1 and 8.**
+
+`prgname=Enter_Search` redirects anonymous users to the Citrix gateway, which is what led to the
+original conclusion that everything required a manual login. It is not true of the endpoints that
+actually carry the data. **`S_LOOK_FOR_NOSE` and `S_LOOK_FOR_NOSE_AB` are publicly readable.**
+
+### The working anonymous protocol
+
+```
+0. GET  fireflyweb.aspx?prgname=S_LOOK_FOR_NOSE&arguments=-N<any code>   <- WARM-UP, required
+1. POST fireflyweb.aspx   PRGNAME=Enter_Search
+                          ARGUMENTS=-A,,-A,ChangeYear
+                          ChangeYear=2027
+2. GET  fireflyweb.aspx?prgname=S_LOOK_FOR_NOSE&arguments=-N<code>       <- per course
+   GET  fireflyweb.aspx?prgname=S_LOOK_FOR_NOSE_AB&arguments=-A          <- whole catalog
+```
+
+**Step 0 is not optional.** The year POST only sticks once a session exists. Without the warm-up
+GET the POST returns 200 and the header even shows תשפ"ז, but every later GET silently comes back
+as **תשפ"ו** — the wrong year, with no error. This was observed directly: skipping the warm-up gave
+`11069: 4 groups (תשפ"ו)` where the correct answer is `2 groups (תשפ"ז)`.
+
+Session cookies set: `Yedion.MySession`, `TS0188c6f2`. A plain `http.cookiejar.CookieJar` is enough.
+
+### Verification
+
+With a fresh cookie jar and no credentials of any kind, all six of this student's courses were
+fetched for סמסטר א' תשפ"ז and parsed:
+
+| code | anonymous | logged-in scrape | match |
+| --- | --- | --- | --- |
+| 11069 | 2 groups | 2 | ✓ |
+| 61753 | 4 | 4 | ✓ |
+| 61756 | 7 | 7 | ✓ |
+| 61757 | 6 | 6 | ✓ |
+| 61832 | 5 | 5 | ✓ |
+| 62027 | 3 | 3 | ✓ |
+
+**6/6 identical.** The catalog also parses anonymously (591 courses for תשפ"ו, 571 for תשפ"ז).
+
+### What this changes
+
+- A daily refresh can be **fully unattended**. No Citrix session to expire, no manual sign-in, no
+  `needs_login` exit path in the normal case.
+- No Playwright and no browser window in the refresh path — which also removes the scraper's
+  console output that was leaking onto the screen during a refresh.
+- Nothing here touches credentials, because there are none to touch.
+
+### What to keep anyway
+
+- **Politeness is now more important, not less.** There is no login throttling us, so the client
+  must self-limit: a delay between requests, refresh only what is stale, and one request for the
+  whole catalog.
+- **Keep the Playwright path as a fallback.** If the college gates these endpoints later, the
+  browser route with a manual login still works and should be selectable.
+- The year assertion stays mandatory. The failure mode this protocol has — a silently wrong year
+  when the warm-up is skipped — is exactly the one the assertion catches.
