@@ -167,6 +167,31 @@ def _clean(text: Any) -> str:
     return t.strip()
 
 
+#: הערה שמסמנת קבוצה שנפתחת אבל אין לה מועד קבוע (פרויקט, סמינר בתיאום,
+#: ספורט, קורס כללי). הטקסט הזה הוא גם מה שהממשק מציג לסטודנט/ית, וגם הסימן
+#: שמבדיל בין "אין מועד" ל"לא מתקיים בסמסטר הזה" — שני מצבים שנראים זהים
+#: אחרי סינון הסמסטר, אבל אחד מהם צריך להישאר בר-בחירה והשני לא.
+NO_FIXED_TIME_NOTE = "אין מועד קבוע"
+
+#: הארגומנטים של כפתור "פרטים נוספים":
+#:   -N<קורס>,-N<סמסטר>,-N<סוג>,-N<קבוצה>,-N...
+#: הארגומנט השני הוא **קוד הסמסטר של הקבוצה**, והוא המקור היחיד לכך כשאין
+#: לקבוצה אף שורת מפגש. בלעדיו קבוצה של סמסטר ב' שטרם נקבע לה מועד נראית
+#: זהה לפרויקט גמר של סמסטר א' — שניהם "קבוצה בלי מפגשים".
+_DETAILS_ARGS_RE = re.compile(r"data-arguments\s*=\s*[\"']\s*-N\d+\s*,\s*-N(\d+)")
+
+#: קוד סמסטר בידיעון -> האות שאנחנו עובדים איתה.
+SEMESTER_CODE_TO_LETTER: dict[str, str] = {"1": "א", "2": "ב", "3": "קיץ"}
+
+
+def semester_from_details_args(html_fragment: str) -> str:
+    """הסמסטר של הקבוצה מתוך כפתור "פרטים נוספים". ``""`` אם אין."""
+    if not html_fragment:
+        return ""
+    m = _DETAILS_ARGS_RE.search(str(html_fragment))
+    return SEMESTER_CODE_TO_LETTER.get(m.group(1), "") if m else ""
+
+
 #: תוויות נגישות שהידיעון של בראודה מזריק לתוך *כל* תא:
 #: ``<div class="col InRange"><span class="LabelIn">סמסטר:&nbsp;</span>&nbsp;א</div>``
 #: בלי להסיר אותן, הטקסט של התא הוא "סמסטר: א" במקום "א" — וזה מרעיל את
@@ -1600,6 +1625,11 @@ def _blocks_to_groups(blocks: list[Any], code: str, warnings: list[str]) -> list
             )
         ctx = f"קורס {code} קבוצה {gid}"
 
+        # הסמסטר של הקבוצה לפי הידיעון עצמו. קריטי לקבוצות בלי מועד: הוא
+        # מה שמבדיל בין "פרויקט גמר של סמסטר א' בלי שעות" לבין "קבוצה של
+        # סמסטר ב' שטרם נקבע לה מועד" — שתיהן קבוצות בלי מפגשים.
+        block_semester = semester_from_details_args(str(block))
+
         label = _find_group_label(scope, block)
 
         # --- סוג המפגש: "קורס מסוג ..." ואם אין — התווית הירוקה ---
@@ -1660,11 +1690,20 @@ def _blocks_to_groups(blocks: list[Any], code: str, warnings: list[str]) -> list
                     lecturer = row_lecturer
 
         if not meetings:
+            # קבוצה בלי אף שורת מפגש = קורס שנפתח אבל **אין לו מועד קבוע**:
+            # פרויקט גמר, סמינר בתיאום אישי, ספורט, קורסים כלליים. בבראודה
+            # תשפ"ז אלה 163 קורסים מתוך 571 — 29% מהקטלוג, וביניהם קורסי
+            # החובה "ספורט" ושלושת "הקורסים הכלליים".
+            #
+            # קודם הן נזרקו, ואז הקורס נעלם לגמרי ודווח כ"כשל פענוח". זו
+            # החלטה שגויה עבור בונה מערכת: אי אפשר *לשבץ* קבוצה כזאת, אבל
+            # בהחלט אפשר ורוצים *להירשם* אליה ולספור את הנ"ז שלה. בלי מפגשים
+            # היא ממילא לא מתנגשת עם כלום ולא תופסת שום משבצת ברשת.
+            note = " | ".join(x for x in (note, NO_FIXED_TIME_NOTE) if x)
             warnings.append(
-                f"{ctx}: לא נמצאו מפגשים בבלוק הקבוצה והיא לא נכללה — ייתכן שהמועד "
-                f"טרם נקבע (group block has no meetings)."
+                f"{ctx}: אין מועד קבוע בדף — הקבוצה נשמרת ככזאת ולא תופיע ברשת "
+                f"השעות (no fixed time; kept as unscheduled)."
             )
-            continue
 
         key = (gid, kind)
         if key not in by_key:
@@ -1676,11 +1715,14 @@ def _blocks_to_groups(blocks: list[Any], code: str, warnings: list[str]) -> list
                 meetings=[],
                 linked_to=[],
                 note=note,
+                semester=block_semester,
             )
             seen_meetings[key] = set()
             order.append(key)
 
         group = by_key[key]
+        if not group.semester and block_semester:
+            group.semester = block_semester
         if not group.lecturer and lecturer:
             group.lecturer = lecturer
         if note and note not in group.note:
@@ -1877,6 +1919,22 @@ def _filter_groups_by_semester(
     survivors: list[Group] = []
     known_set = set(KNOWN_SEMESTERS)
     for group in groups:
+        # קבוצה שמלכתחילה לא היו לה מפגשים אינה "נשרה בגלל הסמסטר" — פשוט
+        # אין לה מועד. אסור להחיל עליה את כלל 3, אחרת פרויקט מסכם, ספורט
+        # וקורסים כלליים ייעלמו שוב. ההבחנה נעשית *לפני* הסינון, כי אחריו
+        # שני המצבים נראים זהים: רשימת מפגשים ריקה.
+        if not group.meetings:
+            declared_by_page = normalize_semester(getattr(group, "semester", ""))
+            if declared_by_page and declared_by_page != wanted:
+                warnings.append(
+                    f"קורס {code} קב' {group.group_id}: אין לה מועד קבוע, והידיעון "
+                    f"משייך אותה לסמסטר {declared_by_page} — לכן היא אינה נכללת "
+                    f"בסמסטר {wanted}. (unscheduled, but belongs to another term)"
+                )
+                continue
+            survivors.append(group)
+            continue
+
         # מה הקבוצה עצמה מצהירה? שורה ריקה אינה עדות עצמאית — האחיות
         # שלה באותה טבלת מערכת שעות כבר אומרות באילו סמסטר הקבוצה מתקיימת.
         declared = {normalize_semester(m.semester) for m in group.meetings} & known_set
