@@ -408,13 +408,35 @@ def _solve_body(**overrides) -> dict:
     return body
 
 
-def _courses_body(codes=None) -> dict:
-    return {"codes": list(codes or CODES), "semester": TERM, "year": YEAR}
+def _courses_body(codes=None, **extra) -> dict:
+    # fetch_missing=False במפורש: ברירת המחדל בשרת היא True, ובלי הכיבוי הזה
+    # הבדיקות היו מושכות מהאתר האמיתי של המכללה. אין רשת בבדיקות.
+    body = {"codes": list(codes or CODES), "semester": TERM, "year": YEAR,
+            "fetch_missing": False}
+    body.update(extra)
+    return body
 
 
 # ==========================================================================
 # רשת ביטחון: אף בדיקה לא תפתח דפדפן, לעולם.
 # ==========================================================================
+@pytest.fixture(autouse=True)
+def _never_touch_the_network(monkeypatch):
+    """רשת ביטחון שנייה: אף בדיקה לא פונה לאתר המכללה.
+
+    מאז ש-fetch_missing הוא True כברירת מחדל, בקשה תמימה אחת יכולה לצאת
+    לרשת. עדיף להתפוצץ בבדיקה מאשר להטריח את שרת המכללה.
+    """
+    import yedion_http
+
+    def _refuse(*_a, **_k):  # pragma: no cover - נקרא רק אם משהו השתבש
+        raise RuntimeError("no network in tests")
+
+    monkeypatch.setattr(yedion_http.YedionHTTP, "open_session", _refuse, raising=False)
+    monkeypatch.setattr(yedion_http.YedionHTTP, "fetch_course", _refuse, raising=False)
+    monkeypatch.setattr(yedion_http.YedionHTTP, "fetch_catalog", _refuse, raising=False)
+
+
 @pytest.fixture(autouse=True)
 def _never_open_a_browser(monkeypatch):
     """מחליף את sync_playwright בכל מקום שהוא מיובא אליו."""
@@ -469,8 +491,12 @@ def test_the_real_database_is_the_one_the_tests_assume():
     import store as store_mod
 
     db = store_mod.Store(str(DB_ROOT))
-    courses = db.load_all()
-    assert sorted(courses) == CODES
+    everything = db.load_all()
+    # תת-קבוצה ולא שוויון: הרענון היומי מושך את כל הקורסים שנפתחים, ולכן
+    # המאגר גדל כל הזמן. מה שחייב להתקיים הוא שהקורסים של הסטודנט/ית שם.
+    missing = [c for c in CODES if c not in everything]
+    assert not missing, f"חסרים מהמאגר: {missing}"
+    courses = {c: everything[c] for c in CODES}
     assert sum(len(c.groups) for c in courses.values()) == TOTAL_GROUPS
     semesters = {m.semester for c in courses.values() for g in c.groups for m in g.meetings}
     assert semesters == {TERM}
@@ -582,14 +608,35 @@ def test_semester_courses_carries_the_curriculum_fields(client):
     assert "11060" in entry["prereq"]
 
 
+def _a_code_with_no_data() -> str | None:
+    """קוד קורס שקיים בתוכנית אבל אין לו נתונים במאגר, או ``None``.
+
+    נבחר דינמית ולא מקובע: פעם זה היה 61759, ואז הרענון היומי משך גם אותו
+    והבדיקה נשברה. הרענון מושך היום את כל הקורסים שנפתחים, ולכן ייתכן
+    לגמרי שאין אף קוד כזה — ואז אין מה לבדוק וצריך לדלג.
+    """
+    import curriculum as curriculum_mod
+    import store as store_mod
+
+    stored = set(store_mod.Store(str(DB_ROOT)).load_all())
+    curr = curriculum_mod.load_curriculum(str(CURRICULUM_PATH))
+    for entry in curriculum_mod.semester_courses(curr, CURRICULUM_SEMESTER):
+        code = entry.get("code")
+        if code and code not in stored:
+            return code
+    return None
+
+
 def test_semester_courses_flags_offered_and_has_data(client):
     data = _ok(client.get(f"/api/semester/{CURRICULUM_SEMESTER}/courses"))
     courses = _by_code(data, "courses", "items", "results")
     assert courses["61756"].get("has_data") is True, "61756 נמצא במסד — has_data חייב להיות true"
     assert courses["61756"].get("offered") is True, "61756 מופיע בקטלוג — offered חייב להיות true"
-    # 61759 אוטומטים וחישוביות מופיע בתוכנית ובקטלוג, אבל לא נסרק ואין לו נתונים.
-    assert "61759" in courses
-    assert courses["61759"].get("has_data") is False, "61759 לא נסרק — has_data חייב להיות false"
+    # has_data חייב להיות בוליאני אמיתי לכל קורס — זה מה שהממשק נשען עליו.
+    assert all(isinstance(c.get("has_data"), bool) for c in courses.values())
+    empty = _a_code_with_no_data()
+    if empty and empty in courses:
+        assert courses[empty].get("has_data") is False
 
 
 def test_semester_courses_rejects_an_unknown_semester(client):
@@ -720,11 +767,19 @@ def test_courses_linked_to_survives_for_the_algorithms_lectures(courses_payload)
     for group in lectures:
         linked = group.get("linked_to")
         assert isinstance(linked, list) and linked, f"linked_to אבד בדרך: {group}"
-        assert set(linked) == {f"{GOOD_PIN}/1", f"{DEAD_END_PIN}/1"}
+        # לא שוויון מדויק: רשימת הקבוצות הצמודות היא נתון של המכללה והיא משתנה.
+        # ב-2026-09-01 נוספה שם 271060330/2 — תרגול שטרם פורסם לו מועד, בדיוק
+        # כמו קבוצות סמסטר ב' שראינו קודם. מה שחייב להתקיים הוא שכל התרגולים
+        # שכן קיימים בדף מופיעים ברשימה.
+        assert {f"{GOOD_PIN}/1", f"{DEAD_END_PIN}/1"} <= set(linked)
+        assert all(str(lid).startswith((GOOD_PIN, DEAD_END_PIN)) for lid in linked)
 
 
 def test_courses_reports_a_code_that_has_no_data_without_crashing(client):
-    resp = client.post("/api/courses", json=_courses_body(codes=["61756", "61759"]))
+    empty = _a_code_with_no_data()
+    if empty is None:
+        pytest.skip("כל קורסי הסמסטר כבר במאגר — אין קוד בלי נתונים לבדוק")
+    resp = client.post("/api/courses", json=_courses_body(codes=["61756", empty]))
     assert resp.status_code in (200, 400), resp.get_data(as_text=True)[:300]
     _assert_no_traceback(resp)
     if resp.status_code == 400:
@@ -734,7 +789,7 @@ def test_courses_reports_a_code_that_has_no_data_without_crashing(client):
     not_offered = data.get("not_offered")
     assert not_offered, "קורס בלי נתונים חייב לחזור ב-not_offered"
     blob = json.dumps(not_offered, ensure_ascii=False)
-    assert "61759" in blob
+    assert empty in blob
     assert _hebrew(blob), "חייבת להיות סיבה בעברית"
 
 

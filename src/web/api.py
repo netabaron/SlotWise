@@ -3008,7 +3008,8 @@ def solve():
 
     pinned_request = _clean_pinned(body.get("pinned"))
     attendance_request = _clean_attendance(body.get("attendance"))
-    allow_soft_conflicts = _as_bool(body.get("allow_soft_conflicts"), False)
+    # ברירת מחדל True: הסימון של חובת הנוכחות הוא הפקד היחיד שקובע.
+    allow_soft_conflicts = _as_bool(body.get("allow_soft_conflicts"), True)
     prefs, unsupported_prefs = _make_preferences(
         target_days=target_days,
         preferred_lecturers=_clean_ranked(body.get("ranked")),

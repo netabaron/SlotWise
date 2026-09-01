@@ -411,7 +411,9 @@
       // {code: {kind: האם יש חובת נוכחות}} — מפתח חסר פירושו חובה, בדיוק כמו בשרת.
       attendance: {},
       // מתג כללי: לאפשר חפיפה כשלפחות צד אחד בלי חובת נוכחות. כבוי כברירת מחדל.
-      allowSoftConflicts: false,
+      // תמיד true: סימון חובת הנוכחות הוא הפקד היחיד. אין עוד מתג נפרד
+      // שאפשר לשכוח להדליק, וזו בדיוק התקלה שדווחה.
+      allowSoftConflicts: true,
       earliest: null, // דקות מחצות, או null
       latest: null,
       blocked: [], // [[יום, התחלה, סוף], ...]
@@ -508,7 +510,7 @@
     if (!base.pinned || typeof base.pinned !== "object") base.pinned = {};
     if (!base.ranked || typeof base.ranked !== "object") base.ranked = {};
     if (!base.attendance || typeof base.attendance !== "object") base.attendance = {};
-    base.allowSoftConflicts = base.allowSoftConflicts === true;
+    base.allowSoftConflicts = true;  // גם מצב ישן שנשמר ב-localStorage מיושר
     if (!Array.isArray(base.blocked)) base.blocked = [];
     base.targetDays = clamp(Math.round(num(base.targetDays, 4)), 2, 6);
     base.topN = clamp(Math.round(num(base.topN, 5)), 1, 20);
@@ -1781,7 +1783,6 @@
     ui.lectCourses = byId("lecturer-courses");
     ui.lectNote = byId("lecturers-note");
     ui.btnClearRanking = byId("btn-clear-ranking");
-    ui.chkAllowSoft = byId("chk-allow-soft-conflicts");
     ui.attendanceNote = byId("attendance-note");
     // הטקסט הקבוע נשמר פעם אחת, כדי שאפשר יהיה להוסיף לו משפט מצב בלי לאבד אותו.
     ui.attendanceNoteBase = ui.attendanceNote
@@ -1870,10 +1871,10 @@
       });
     }
 
-    if (ui.chkAllowSoft) {
+    if (false) {
       ui.chkAllowSoft.addEventListener("change", function () {
         setState({
-          allowSoftConflicts: ui.chkAllowSoft.checked === true,
+          allowSoftConflicts: true,
           activeSchedule: 0,
         });
       });
@@ -2885,7 +2886,6 @@
       });
     }
 
-    if (ui.chkAllowSoft) ui.chkAllowSoft.checked = state.allowSoftConflicts === true;
     renderAttendanceNote();
 
     if (ui.lectNote) {
@@ -2916,19 +2916,8 @@
     });
 
     var extra = "";
-    if (off.length && !state.allowSoftConflicts) {
-      extra =
-        " כרגע מסומן שאין חובת נוכחות ב-" +
-        off.join(", ") +
-        ", אבל המתג הכללי כבוי — ולכן עדיין לא תותר שום חפיפה.";
-    } else if (off.length) {
-      extra =
-        " כרגע מסומן שאין חובת נוכחות ב-" +
-        off.join(", ") +
-        ", והמנוע רשאי לשבץ אותם במקביל לרכיב אחר.";
-    } else if (state.allowSoftConflicts) {
-      extra =
-        " המתג הכללי דלוק, אבל בכל הרכיבים עדיין מסומנת חובת נוכחות — ולכן לא תיווצר אף חפיפה.";
+    if (off.length) {
+      extra = " ללא חובת נוכחות: " + off.join(", ") + ".";
     }
     setText(ui.attendanceNote, txt(ui.attendanceNoteBase) + extra);
   }

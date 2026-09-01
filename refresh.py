@@ -1617,6 +1617,24 @@ def cmd_refresh(args: argparse.Namespace) -> int:
         except Exception as exc:  # noqa: BLE001
             log(f"אזהרה: הוספה לרשימת המעקב נכשלה ({type(exc).__name__}: {exc}).")
 
+    if getattr(args, "all", False):
+        # --all: כל קוד שמופיע בקטלוג נכנס למעקב. הקטלוג הוא בקשה אחת שכבר
+        # מחזירה את כל הקורסים שנפתחים השנה, ולכן זה לא עולה שום בקשה נוספת.
+        # אם עדיין אין קטלוג שמור — הריצה הזאת תשלוף אותו, והבאה כבר תכסה הכול.
+        try:
+            catalog, _meta = store_obj.load_catalog()
+        except Exception as exc:  # noqa: BLE001
+            catalog = {}
+            log(f"אזהרה: לא ניתן לקרוא את הקטלוג ({type(exc).__name__}).")
+        if catalog:
+            log(f"--all: מוסיף למעקב את כל {len(catalog)} הקורסים שבקטלוג.")
+            try:
+                store_obj.track(sorted(catalog))
+            except Exception as exc:  # noqa: BLE001
+                log(f"אזהרה: הרחבת רשימת המעקב נכשלה ({exc}).")
+        else:
+            log("--all: אין עדיין קטלוג שמור — הריצה הזאת תשלוף אותו, והבאה תכסה את כל הקורסים.")
+
     tracked = list(store_obj.tracked())
     if not tracked:
         seed = profile_codes(profile)
@@ -1938,7 +1956,10 @@ def cmd_install_task(args: argparse.Namespace) -> int:
 
     # כל נתיב בין מרכאות. היום אין רווחים בנתיב הפרויקט — מחר תיקיית הבית
     # של המשתמש עשויה להכיל רווח, וזה בדיוק המקום שבו זה היה נשבר בשקט.
-    tr_value = f'"{python_exe}" "{script}"'
+    # ‏--all: המשימה היומית מרעננת את *כל* הקורסים שנפתחים, ולא רק את אלה
+    # שנבחרו. זו הדרישה של הסטודנט/ית — שלא יהיה מצב שקורס נבחר בממשק ואין
+    # לו נתונים, ושאף אחד לא יצטרך לדעת מתי המידע נמשך.
+    tr_value = f'"{python_exe}" "{script}" --all'
     argv = [
         "schtasks", "/Create",
         "/TN", TASK_NAME,
@@ -2152,6 +2173,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "רלוונטי רק יחד עם --browser: פתיחת חלון דפדפן גלוי כדי להתחבר ידנית. "
             "בלי --browser אין דפדפן בכלל, והדגל לא עושה כלום."
+        ),
+    )
+    parser.add_argument(
+        "--all", action="store_true",
+        help=(
+            "לרענן את *כל* הקורסים שנפתחים השנה, לא רק את אלה שבמעקב. "
+            "זה מה שהמשימה היומית מריצה, כדי שלעולם לא יהיה קורס בלי נתונים "
+            "(refresh every offered course, not just the tracked ones)"
         ),
     )
     parser.add_argument(

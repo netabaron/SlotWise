@@ -61,7 +61,7 @@
                   #days-warning (hidden) #input-earliest #input-latest
                   #chk-forbid-friday #blocked-list
   4 מרצים         #lecturer-courses  #btn-clear-ranking
-                  #chk-allow-soft-conflicts  ·  #attendance-note
+                  #attendance-note
                   (מתגי "חובת נוכחות" לכל קורס ולכל סוג רכיב נבנים ב-app.js
                   בתוך .lect-course, מעל טבלת הקבוצות)
                   מחלקות לשורת טבלה: "is-ranked" (עם span.rank-badge) ·
@@ -135,7 +135,7 @@
   <section class="step" id="step-year" data-step="1" aria-labelledby="step-year-title">
     <div class="step-head">
       <h2 class="step-title" id="step-year-title">שנה וסמסטר</h2>
-      <p class="step-hint">יש לבחור את שנת הלימודים ואת הסמסטר. הבחירה קובעת אילו קורסים מוצעים מתוך תוכנית הלימודים.</p>
+      <p class="step-hint">שנה וסמסטר — קובעים אילו קורסים יוצעו.</p>
       <p class="step-state" id="step-year-state" aria-live="polite"></p>
     </div>
     <div class="step-body">
@@ -158,7 +158,7 @@
   <section class="step" id="step-courses" data-step="2" aria-labelledby="step-courses-title">
     <div class="step-head">
       <h2 class="step-title" id="step-courses-title">קורסים</h2>
-      <p class="step-hint">יש לסמן את הקורסים ללמידה בסמסטר הזה. קורסים כבולים זה לזה מסומנים יחד, וניתן להוסיף כל קורס אחר מהידיעון — כולל חזרה על קורס מסמסטר קודם.</p>
+      <p class="step-hint">לסמן מה לומדים. קורסים צמודים נבחרים יחד. אפשר להוסיף כל קורס אחר, כולל חזרה על קורס.</p>
       <p class="step-state" id="step-courses-state" aria-live="polite"></p>
     </div>
     <div class="step-body">
@@ -185,7 +185,7 @@
   <section class="step" id="step-days" data-step="3" aria-labelledby="step-days-title">
     <div class="step-head">
       <h2 class="step-title" id="step-days-title">ימי לימוד</h2>
-      <p class="step-hint">יש לבחור כמה ימים בשבוע להגיע לקמפוס. זהו יעד — לצידו מוצג המינימום שאפשר להשיג בפועל עם הקורסים שנבחרו.</p>
+      <p class="step-hint">כמה ימים להגיע לקמפוס. זה יעד — המינימום האפשרי מוצג לצידו.</p>
       <p class="step-state" id="step-days-state" aria-live="polite"></p>
     </div>
     <div class="step-body">
@@ -235,7 +235,7 @@
   <section class="step" id="step-lecturers" data-step="4" aria-labelledby="step-lecturers-title">
     <div class="step-head">
       <h2 class="step-title" id="step-lecturers-title">מרצים</h2>
-      <p class="step-hint">לחיצה על שורה מוסיפה את המרצה לדירוג ההעדפות של אותו קורס — הלחיצה הראשונה היא ההעדפה הראשונה, ולחיצה נוספת מסירה. נעיצה מקבעת קבוצה מסוימת. שורה מעומעמת היא בחירה שמשאירה את הסמסטר בלי שום פתרון, ולכן היא חסומה.</p>
+      <p class="step-hint">לחיצה על שורה מדרגת מרצה. 📌 מקבעת קבוצה. שורה מעומעמת — אין איתה פתרון.</p>
       <p class="step-state" id="step-lecturers-state" aria-live="polite"></p>
     </div>
     <div class="step-body">
@@ -245,16 +245,11 @@
           <span class="legend-item"><span class="legend-swatch legend-swatch--pin"></span> קבוצה נעוצה</span>
           <span class="legend-item"><span class="legend-swatch legend-swatch--dead"></span> בחירה שמשאירה בלי פתרון</span>
         </p>
-        <label class="field field-check" title="חפיפה תותר רק כאשר לפחות אחד משני הרכיבים מסומן כרכיב ללא חובת נוכחות.">
-          <input type="checkbox" id="chk-allow-soft-conflicts">
-          <span>לאפשר חפיפות בקורסים ללא חובת נוכחות</span>
-        </label>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-ranking">איפוס הדירוג והנעיצות</button>
       </div>
       <p class="note" id="attendance-note">
-        כברירת מחדל כל רכיב נחשב לרכיב עם חובת נוכחות. כיבוי החובה ברכיב מסוים, יחד עם הדלקת המתג
-        הכללי, מאפשר למנוע לשבץ אותו במקביל לרכיב אחר — כלומר לוותר על הנוכחות בו — ורק אם זה באמת
-        מקצר את השבוע. כל חפיפה כזו מוצגת במפורש מעל המערכת בשלב 5.
+        כברירת מחדל לכל רכיב יש חובת נוכחות. כיבוי החובה ברכיב מאפשר לשבץ אותו במקביל לרכיב אחר —
+        ויתור על נוכחות בו — אם זה מקצר את השבוע. כל חפיפה כזו תוצג מעל המערכת.
       </p>
       <div class="lect-courses" id="lecturer-courses"></div>
       <p class="note" id="lecturers-note"></p>
@@ -265,7 +260,7 @@
   <section class="step" id="step-schedule" data-step="5" aria-labelledby="step-schedule-title">
     <div class="step-head">
       <h2 class="step-title" id="step-schedule-title">המערכת</h2>
-      <p class="step-hint">המערכות המובילות לפי ההעדפות שנבחרו. כל שינוי בשלבים הקודמים מעדכן את הרשת מיד, בלי לטעון מחדש את העמוד.</p>
+      <p class="step-hint">המערכות הטובות ביותר. כל שינוי מעדכן מיד.</p>
       <p class="step-state" id="step-schedule-state" aria-live="polite"></p>
     </div>
     <div class="step-body">

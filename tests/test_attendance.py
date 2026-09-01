@@ -101,6 +101,11 @@ TODAY_MIN_DAYS = 5
 TODAY_COURSES = 6
 TODAY_GROUPS = 27
 
+#: הקורסים של הסטודנט/ית בסמסטר 5. הבדיקות כאן עוסקות *בהם*, לא בכל מה
+#: שמקרה במאגר: מאז שהרענון היומי מושך את כל הקורסים שנפתחים, המאגר גדל
+#: כל הזמן, וקיבוע "במאגר יש בדיוק 6 קורסים" היה הופך כל רענון לבדיקה אדומה.
+STUDENT_CODES = ["11069", "61753", "61756", "61757", "61832", "62027"]
+
 #: אחרי שמסמנים את הרצאת 61753 כלא-חובה ומאפשרים חפיפות רכות.
 SOFT_FEASIBLE = 160
 SOFT_MIN_DAYS = 4
@@ -118,7 +123,10 @@ def _db_courses() -> dict[str, Course]:
 @pytest.fixture
 def courses(_db_courses: dict[str, Course]) -> list[Course]:
     """עותק עמוק ומסודר של הקורסים. deepcopy כי ה-Store מחזיר אובייקטים חיים."""
-    return [copy.deepcopy(_db_courses[code]) for code in sorted(_db_courses)]
+    missing = [c for c in STUDENT_CODES if c not in _db_courses]
+    if missing:
+        pytest.skip(f"חסרים במאגר קורסים של הסטודנט/ית: {missing}")
+    return [copy.deepcopy(_db_courses[code]) for code in STUDENT_CODES]
 
 
 def find_group(courses: list[Course], code: str, kind: str, group_id: str) -> Group:
@@ -196,14 +204,8 @@ def soft_prefs(**kwargs) -> Preferences:
 # 0. המאגר עצמו — לוודא שהבדיקות מדברות על הנתונים שאנחנו חושבים
 # ==========================================================================
 def test_the_real_database_has_six_courses_and_27_groups(courses):
-    assert [c.code for c in courses] == [
-        "11069",
-        "61753",
-        "61756",
-        "61757",
-        "61832",
-        "62027",
-    ]
+    """הקורסים של הסטודנט/ית — לא כל מה שיש במאגר (הוא גדל עם כל רענון)."""
+    assert [c.code for c in courses] == STUDENT_CODES
     assert len(courses) == TODAY_COURSES
     assert sum(len(c.groups) for c in courses) == TODAY_GROUPS
 
@@ -233,7 +235,10 @@ def test_11069_carries_the_yedion_attendance_note(courses):
 def test_default_preferences_have_no_attendance_overrides():
     prefs = Preferences()
     assert prefs.attendance == {}
-    assert prefs.allow_soft_conflicts is False
+    # allow_soft_conflicts הוא True כברירת מחדל, ובכל זאת ההתנהגות לא משתנה:
+    # attendance ריק = "בכל הקורסים יש חובת נוכחות", ולכן כל חפיפה נשארת קשה.
+    # סימון הנוכחות הוא הפקד היחיד שקובע — ראו הבדיקות שמיד אחרי.
+    assert prefs.allow_soft_conflicts is True
 
 
 def test_default_preferences_reproduce_exactly_sixteen_combinations(courses):
@@ -272,12 +277,17 @@ def test_allowing_soft_conflicts_alone_changes_nothing(courses):
     assert len(list(enumerate_selections(courses, prefs))) == TODAY_FEASIBLE
 
 
-def test_marking_attendance_without_the_flag_changes_nothing(courses):
-    """וגם ההפך: סימון בלי הדגל = ההתנהגות של היום, בדיוק."""
+def test_marking_attendance_is_enough_on_its_own(courses):
+    """סימון הנוכחות לבדו מספיק — אין עוד מתג נפרד שצריך להדליק.
+
+    זו בדיוק התקלה שהסטודנט/ית דיווח/ה עליה: סומן "אין חובת נוכחות בהרצאה
+    של 61753", והמערכת המשיכה לחסום את תרגול 61756 של יום חמישי, כי מתג
+    נפרד וכבוי ביטל את הסימון בשקט. שני פקדים לאותה החלטה; נשאר אחד.
+    """
     prefs = Preferences(attendance=copy.deepcopy(OPTIONAL_LECTURE))
     selections = list(enumerate_selections(courses, prefs))
-    assert len(selections) == TODAY_FEASIBLE
-    assert min(len(sel.days_used()) for sel in selections) == TODAY_MIN_DAYS
+    assert len(selections) == SOFT_FEASIBLE
+    assert min(len(sel.days_used()) for sel in selections) == SOFT_MIN_DAYS
 
 
 # ==========================================================================
@@ -300,10 +310,21 @@ def test_one_optional_side_with_the_flag_makes_the_clash_soft(courses):
     assert conflict_is_hard(a, b, soft_prefs()) is False
 
 
-def test_the_same_pair_stays_hard_without_the_flag(courses):
+def test_the_same_pair_turns_soft_once_attendance_is_waived(courses):
+    """אותו זוג עצמו: מספיק לוותר על חובת הנוכחות באחד הצדדים."""
     a = find_group(courses, *CLASH_A)
     b = find_group(courses, *CLASH_B)
     prefs = Preferences(attendance=copy.deepcopy(OPTIONAL_LECTURE))
+    assert conflict_is_hard(a, b, prefs) is False
+
+
+def test_explicitly_disabling_soft_conflicts_still_forces_hard(courses):
+    """הדגל נשאר בקוד ככיבוי מפורש, גם אם אינו מוצג בממשק."""
+    a = find_group(courses, *CLASH_A)
+    b = find_group(courses, *CLASH_B)
+    prefs = Preferences(
+        attendance=copy.deepcopy(OPTIONAL_LECTURE), allow_soft_conflicts=False
+    )
     assert conflict_is_hard(a, b, prefs) is True
 
 
