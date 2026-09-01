@@ -75,7 +75,20 @@ FIXTURES = ROOT / "tests" / "fixtures" / "real_yedion"
 
 #: ``data/raw`` הוא git-ignored (תוצר גריפה, לא מקור). כשהוא קיים — משתמשים
 #: במארקאפ של בראודה עצמה; כשלא — ב-fixtures של MTA, מאותה משפחת תבניות.
-HAVE_BRAUDE_RAW = (RAW_DIR / "11069_1.html").is_file()
+def _braude_raw_is_usable() -> bool:
+    """האם יש דמפ אמיתי *ותקין* של בראודה. קיום הקובץ לבדו אינו מספיק:
+    דף "השהיית גישה זמנית" נשמר פעם אחת בדיוק בשם הזה ודרס דמפ טוב."""
+    path = RAW_DIR / "11069_1.html"
+    if not path.is_file():
+        return False
+    try:
+        html = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return len(html) > 2000 and "קורס מסוג" in html and 'שנה"ל' in html
+
+
+HAVE_BRAUDE_RAW = _braude_raw_is_usable()
 
 CODES = ("11069", "61753", "61756", "61757", "61832", "62027")
 
@@ -98,11 +111,25 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _looks_like_a_course_page(html: str) -> bool:
+    """האם זה באמת דף קורס, ולא דף שגיאה שנשמר בטעות?
+
+    ‏data/raw/ הוא שטח עבודה משתנה ואינו בגיט: הוא מתמלא בכל ריצת רענון,
+    ועלול להכיל גם דף "השהיית גישה זמנית" של הידיעון (‏200 עם מאה בתים של
+    "יותר מידי שאילתות בשעה"). זה קרה בפועל ודרס שישה דמפים תקינים, ואז
+    תשע בדיקות נפלו על נתונים שאין בהם שנה ואין בהם קבוצות.
+    הבדיקות חייבות להיות עמידות לזה: דמפ שלא נראה כמו דף קורס פשוט לא בשימוש.
+    """
+    return len(html) > 2000 and "קורס מסוג" in html and 'שנה"ל' in html
+
+
 def course_page(code: str) -> str:
-    """דף קורס אמיתי עבור ``code`` (בראודה אם יש, אחרת fixture)."""
+    """דף קורס אמיתי עבור ``code`` — דמפ תקין אם יש, אחרת fixture מהגיט."""
     raw = RAW_DIR / f"{code}_1.html"
     if raw.is_file():
-        return _read(raw)
+        html = _read(raw)
+        if _looks_like_a_course_page(html):
+            return html
     return _read(FIXTURES / _FALLBACK_PAGES.get(code, "single_group.html"))
 
 

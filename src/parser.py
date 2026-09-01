@@ -73,7 +73,9 @@ except ImportError:  # pragma: no cover
 
 __all__ = [
     "ParseResult",
+    "CourseDetails",
     "parse_course_page",
+    "parse_course_details",
     "parse_time_range",
     "parse_day",
     "classify_kind",
@@ -82,6 +84,9 @@ __all__ = [
     "load_sections",
     "save_sections",
     "self_check",
+    "details_self_check",
+    "DETAILS_HOUR_KEYS",
+    "DETAILS_PREREQ_KEYS",
     "SEMESTER_A",
     "SEMESTER_B",
     "SEMESTER_SUMMER",
@@ -2292,6 +2297,812 @@ def load_sections(path: str = "data/sections.json") -> dict[str, Course]:
 
 
 # ==========================================================================
+# ‏8.5 פרטי קורס — פענוח דף ‎S_CourseDetails‎ ("פרטים נוספים על הקורס המבוקש")
+# ==========================================================================
+# למה החלק הזה קיים: ‏493 מתוך 571 קורסי הקטלוג (86%) אינם מופיעים ב-
+# ``data/curriculum.json``, ולכן דיווחו "0.0 נקודות זכות" — מספר שנראה אמיתי
+# ואינו. דף הפרטים של הידיעון קריא לחלוטין בלי התחברות (GROUND_TRUTH §9)
+# ונושא לכל קורס, מכל מחלקה, את הנתון האמיתי: נ"ז, פירוק שעות, שעות
+# סמסטריאליות, שפת הוראה, תיאור ותנאי קדם.
+#
+# **הכלל החשוב ביותר כאן: לעולם לא 0.0 כשלא ידוע.** ``credits=None`` פירושו
+# "לא יודעים", והממשק יציג מקף. סכום נ"ז ששותק על 86% מהקורסים גרוע מסכום
+# שמודה בקול שאינו יודע.
+#
+# העמוד עצמו (נבדק מול שני דפים אמיתיים ב-tests/fixtures/real_yedion/):
+#
+#   <div class="row"><div class="col"><strong>61753 אלגוריתמים</strong></div></div>
+#   <div class="row"><div class="col">נקודות זכות : 5.00</div></div>
+#   <div class="row"><div class="col">שעות סמסטריאליות : 4.00</div></div>
+#   <div class="row"><div class="col">שפת הוראה של הקורס : עברית</div></div>
+#   <details><summary><h3>פרשיית לימוד</h3></summary>
+#     <div>61753  אלגוריתמים <br>4 2 - -  5.0 נ"ז <br>מטרת הקורס היא …</div>
+#   </details><p style="text-align:left"> … אותו בלוק בדיוק, שוב … </p>
+#   <div class="card …"><h2 class="card-header-H2"> תנאי קדם לנושא </h2> …
+#
+# שתי מלכודות אמיתיות שנצפו בקבצים:
+#   1. בלוק "פרשיית לימוד" מודפס **פעמיים** (פעם ב-<details> ופעם ב-<p>).
+#      תיאור כפול הוא באג — ראו ``_details_dedupe_block``.
+#   2. קורס שאינו נפתח (11001) מחזיר דף עם התוויות אבל **בלי ערכים**:
+#      "נקודות זכות : " ריק, ובמקום שורות טבלה יושבים תגי-תבנית
+#      ‎<!$MG_…>‎ שנעלמים בפירסור. זה דף חלקי תקין, לא שגיאה.
+
+
+class CourseDetails(NamedTuple):
+    """פרטי קורס מדף ‎S_CourseDetails‎ — הכול אופציונלי, שום דבר לא זורק.
+
+    Attributes:
+        code:          קוד הקורס (כפי שהתבקש; הדף רק מאמת אותו).
+        name:          שם הקורס, או ``""`` אם לא נמצא.
+        credits:       נקודות זכות, או ``None`` כשלא ידוע. **לעולם לא 0.0**
+                       כמשמעות "לא ידוע" — זו כל מטרת המחלקה הזאת.
+        hours:         פירוק שעות שבועיות ``{"he","te","ma","pr"}`` —
+                       הרצאה / תרגיל / מעבדה / פרויקט. רכיב חסר בשורה מסומן
+                       ``-`` בידיעון והופך כאן ל-``0.0`` (אפס אמיתי: אין
+                       תרגיל). מילון **ריק** = השורה כולה לא נמצאה, כלומר
+                       לא ידוע — וזה שונה מארבעה אפסים.
+        weekly_hours:  "שעות סמסטריאליות", או ``None``.
+        language:      "שפת הוראה של הקורס" (למשל ``"עברית"``), או ``""``.
+        description:   תיאור הקורס בשורה אחת, או ``""``.
+        prerequisites: שורות טבלת "תנאי קדם לנושא". כל שורה היא מילון עם
+                       המפתחות ``code`` / ``name`` / ``relation`` /
+                       ``alternative`` (ומעבר להם גם ``kind``,
+                       ``alternative_name`` ו-``population``; ראו
+                       ``_details_prereq_row``).
+                       **הרשימה אינה רשימת תנאי קדם בלבד.** אותה טבלה
+                       נושאת גם קורסים צמודים וגם תנאים אקסקלוסיביים
+                       (שאומרים את ההפך: אסור להירשם אם כבר למדת), ולכן
+                       כל צרכן חייב לסנן על ``kind == "prereq"`` לפני
+                       שהוא מתייחס לשורה כאל דרישה.
+        warnings:      אזהרות בעברית. שדה חסר תמיד מייצר אזהרה — חוץ
+                       מטבלת תנאי קדם ריקה, שהיא תשובה לגיטימית: יש קורסים
+                       בלי תנאי קדם.
+    """
+
+    code: str
+    name: str
+    credits: "float | None"
+    hours: dict[str, float]
+    weekly_hours: "float | None"
+    language: str
+    description: str
+    prerequisites: list[dict]
+    warnings: list[str]
+
+
+#: מפתחות פירוק השעות, **לפי הסדר שבו הידיעון מדפיס אותם** בשורת
+#: "פרשיית לימוד": הרצאה, תרגיל, מעבדה, פרויקט.
+DETAILS_HOUR_KEYS: tuple[str, ...] = ("he", "te", "ma", "pr")
+
+#: המפתחות שמובטח שיופיעו בכל שורת תנאי-קדם.
+DETAILS_PREREQ_KEYS: tuple[str, ...] = ("code", "name", "relation", "alternative")
+
+#: תוויות "שדה : ערך" בדף. לכל שדה כמה ניסוחים — הידיעון של בראודה ושל
+#: ת"א-יפו לא תמיד מנסחים אותו דבר (ראו GROUND_TRUTH, האזהרה בראש המסמך).
+_DETAILS_CREDIT_LABELS: tuple[str, ...] = ("נקודות זכות", "נקודות הזכות")
+_DETAILS_WEEKLY_LABELS: tuple[str, ...] = (
+    "שעות סמסטריאליות", "שעות סמסטריאליות בשבוע", "שעות שבועיות",
+)
+_DETAILS_LANGUAGE_LABELS: tuple[str, ...] = (
+    "שפת הוראה של הקורס", "שפת ההוראה של הקורס", "שפת הוראה", "שפת הקורס",
+)
+
+#: כותרת בלוק "פרשיית לימוד" (הבלוק שנושא קוד+שם, שורת שעות ותיאור).
+_DETAILS_SYLLABUS_LABEL = "פרשיית לימוד"
+
+#: כותרת הכרטיס של טבלת תנאי הקדם. שימו לב שהיא **אינה** "תנאי קשר לתרגיל",
+#: שהוא כרטיס אחר לגמרי (קבוצות צמודות) שיושב באותו דף.
+_DETAILS_PREREQ_LABEL = "תנאי קדם"
+
+#: שורת "61753  אלגוריתמים" -> ("61753", "אלגוריתמים").
+_DETAILS_CODE_LINE_RE = re.compile(r"^\s*(\d{4,7})\s+(\S.*)$")
+
+#: הסימן נ"ז בשורת השעות — **בכל מקום בשורה**, לא רק בסופה. יש דפים
+#: שמדפיסים אותו לפני השעות (``'2 נ"ז , 1-0-2'``), והוא עדיין הסימן היחיד
+#: שאומר איזה מספר הוא נקודות זכות ואיזה הוא שעות.
+_DETAILS_CREDIT_MARK_RE = re.compile("נ\\s*[\"']?\\s*ז")
+
+#: פיסוק שהידיעון משרבב לשורת השעות ואינו נושא מידע (``'2 נ"ז , 1-0-2'``).
+_DETAILS_HOURS_JUNK_RE = re.compile(r"[,;]+")
+
+#: אסימון מספרי "טהור" בשורת השעות: 4 , 2 , 5.0 , 5.00.
+_DETAILS_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+
+#: כותרות טבלת תנאי הקדם -> שם השדה. הסדר משמעותי: הביטוי הראשון שמוכל
+#: בכותרת מנצח, ולכן "נושא נקשר" חייב להיבדק לפני "נושא".
+_DETAILS_PREREQ_HEADERS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("relation", ("סוג הקשר", "סוג קשר", "סוג הקישור")),
+    ("population", ("אוכלוסייה", "אוכלוסיה")),
+    ("code", ("קוד קורס", "קוד נושא", "קוד מקצוע")),
+    ("name", ("נושא נקשר", "שם קורס", "שם הקורס", "שם נושא", "נושא")),
+    ("alternative", ("חליפי", "חלופי")),
+)
+
+#: כותרת שמציינת את **הנושא שהתנאי שייך לו** — כלומר הקורס המבוקש עצמו,
+#: לעולם לא הקורס הקשור. חייבת להיפסל במפורש: היא מכילה "נושא", ובלעדי
+#: הפסילה היא הייתה נחטפת כעמודת ``name`` והקורס היה הופך לתנאי קדם של
+#: עצמו — תנאי שאי אפשר לעמוד בו לעולם.
+_DETAILS_PREREQ_SUBJECT_LABELS: tuple[str, ...] = ("תנאי קדם לנושא", "תנאי קדם")
+
+#: "סוג הקשר" -> ערך מנורמל. **לא כל שורה בטבלה היא תנאי קדם**: אותה טבלה
+#: נושאת גם קורס צמוד (חייבים להירשם לשניהם) וגם תנאי אקסקלוסיבי, שהוא
+#: ההפך הגמור — מי שלמד/ה את הקורס שמשמאל **אינו/ה** רשאי/ת להירשם.
+#: הסדר משמעותי: "תנאי קדם" הוא תחילית של "תנאי קדם לנושא", ולכן אחרון.
+_DETAILS_PREREQ_KINDS: tuple[tuple[str, str], ...] = (
+    ("תנאי אקסקלוסיבי", "exclusive"),
+    ("תנאי צמוד", "corequisite"),
+    ("תנאי מקביל", "corequisite"),
+    ("תנאי קדם", "prereq"),
+)
+
+#: סדר העמודות כשאין שורת כותרת בכלל — בדיוק כפי שהוא בדפים האמיתיים.
+_DETAILS_PREREQ_FALLBACK_ORDER: tuple[str, ...] = (
+    "relation", "population", "name", "alternative",
+)
+
+
+def _details_number(text: Any) -> "float | None":
+    """המספר שבו **מתחיל** הטקסט, או ``None``. ``"5.00"`` -> ``5.0``.
+
+    למה בתחילת הטקסט ולא בכל מקום בו: הערכים היחידים שמגיעים לכאן הם ערכי
+    "תווית : ערך", ו"המספר הראשון שנמצא" הוא בדיוק הדרך שבה ערך של תווית
+    שכנה באותה שורה מתחזה לערך שלנו. ערך ריק חייב להישאר "לא ידוע".
+    """
+    m = _DETAILS_NUMBER_RE.match(_clean(text))
+    if m is None:
+        return None
+    try:
+        return float(m.group(0))
+    except ValueError:  # pragma: no cover - הרגקס כבר מבטיח מספר
+        return None
+
+
+def _details_hour_pieces(token: str) -> "list[str] | None":
+    """אסימון אחד של שורת השעות -> רכיביו, או ``None`` אם אינו של שורת שעות.
+
+    הידיעון אינו עקבי בצורת ההדפסה, וזה נמדד על דפים אמיתיים:
+    ``'1-1-1'`` (רכיבים מחוברים במקפים), ``'1-'`` (מקף שנדבק למספר),
+    ``'2.0'`` ו-``'-'`` — כולם חוקיים, וכולם מתפרקים כאן לרכיבים בודדים.
+    """
+    if not token:
+        return None
+    if set(token) == {"-"}:
+        return ["-"]
+    pieces: list[str] = []
+    for part in token.split("-"):
+        if part == "":
+            pieces.append("-")          # '1-' -> ['1','-'] ; '-1' -> ['-','1']
+        elif _DETAILS_NUMBER_RE.fullmatch(part):
+            pieces.append(part)
+        else:
+            return None                 # יש כאן טקסט — זו לא שורת שעות
+    return pieces
+
+
+def _details_hour_groups(text: str) -> "list[list[str]] | None":
+    """מפרק קטע לקבוצות רכיבים — קבוצה לכל אסימון שמופרד ברווח."""
+    groups: list[list[str]] = []
+    for token in text.split():
+        pieces = _details_hour_pieces(token)
+        if pieces is None:
+            return None
+        groups.append(pieces)
+    return groups
+
+
+def _details_looks_like_name(line: str) -> bool:
+    """האם השורה יכולה בכלל להיות שם קורס — כלומר יש בה מילה ולא רק מספרים.
+
+    שורה כמו ``'2 נ"ז , 1-0-2'`` היא שורת שעות בכתיב שלא זוהה, לא שם קורס.
+    שם שנלקח ממנה **נראה** תקין ואינו, ולכן עדיף להשאיר את השם ריק ולתת
+    לכותרת המודגשת שבראש הדף לספק אותו.
+    """
+    text = _DETAILS_HOURS_JUNK_RE.sub(" ", _DASH_RE.sub("-", _clean(line)))
+    text = _DETAILS_CREDIT_MARK_RE.sub(" ", text)
+    if not text.strip():
+        return False
+    return any(_details_hour_pieces(tok) is None for tok in text.split())
+
+
+def _details_scope(soup: Any) -> Any:
+    """האזור בדף שבו יושבים הפרטים — בלי הכותרת, התפריט והפוטר של האתר."""
+    for selector in ("div.fcontainer", "main", "form", "body"):
+        try:
+            node = soup.select_one(selector)
+        except Exception:  # noqa: BLE001 - סלקטור לא נתמך אינו סיבה ליפול
+            node = None
+        if node is not None:
+            return node
+    return soup
+
+
+def _details_plain_lines(node: Any) -> list[str]:
+    """שורות הטקסט של אלמנט, בלי סקריפטים וכפתורים. גיבוי לדפים לא צפויים."""
+    if node is None or isinstance(node, str):
+        return _cell_lines(node)
+    clone = node
+    try:
+        clone = _copy.copy(node)
+        for junk in clone.find_all(["script", "style", "noscript", "button"]):
+            junk.decompose()
+    except Exception:  # noqa: BLE001 - טקסט עם רעש עדיף על קריסה
+        clone = node
+    return _cell_lines(clone)
+
+
+def _details_blobs(scope: Any) -> list[str]:
+    """כל קטעי הטקסט של הדף, מהקצר-והממוקד אל הרחב — לחיפוש "תווית : ערך".
+
+    התאים (``div.col``) קודמים, כי שם יושבות התוויות; שורות הטקסט הגולמיות
+    הן גיבוי לדף שנבנה אחרת לגמרי (או ל-HTML מזערי בבדיקות).
+    """
+    blobs: list[str] = []
+    seen: set[str] = set()
+
+    def add(text: Any) -> None:
+        t = _clean(text)
+        if t and t not in seen:
+            seen.add(t)
+            blobs.append(t)
+
+    cells: list[Any] = []
+    if hasattr(scope, "find_all"):
+        cells = [d for d in scope.find_all("div") if _is_div_col(d)]
+
+    # תא "עלה" = תא שאין בתוכו שורות נוספות. אלה התאים של "תווית : ערך".
+    for cell in cells:
+        if not any(_is_div_row(d) for d in cell.find_all("div")):
+            add(_cell_text(cell))
+    for cell in cells:
+        add(_cell_text(cell))
+    for line in _details_plain_lines(scope):
+        add(line)
+    return blobs
+
+
+#: כל התוויות המוכרות בדף. הן אינן משמשות לחיפוש אלא כדי לדעת **איפה
+#: נגמר** הערך של התווית שכן חיפשנו: הידיעון מדפיס שלוש תוויות באותה שורה
+#: ("נקודות זכות : 5.00  שעות סמסטריאליות : 4.00  סוג קורס : הרצאה"), וכשהערך
+#: הראשון ריק — וזה המצב בכל דף שנמדד — ערך השכנה נראה בדיוק כמו ערך שלו.
+_DETAILS_BOUNDARY_LABELS: tuple[str, ...] = (
+    _DETAILS_CREDIT_LABELS + _DETAILS_WEEKLY_LABELS + _DETAILS_LANGUAGE_LABELS + (
+        "סוג קורס", "סוג הקורס", "מרצה הקורס", "מרצה", "קבוצה", "סמסטר",
+        "מחלקה", "שעות תרגיל", "שעות מעבדה", "אשכול",
+    )
+)
+
+
+def _details_cut_at_next_label(value: str, label: str) -> str:
+    """חותך ערך של תווית ברגע שמתחילה בו תווית אחרת.
+
+    בלי זה ``נקודות זכות :`` ריקה בולעת את השורה כולה, ו-4.00 של "שעות
+    סמסטריאליות" חוזר כנ"ז — מספר שנראה אמיתי ואינו. ערך ריק שנשאר ריק
+    נופל בהמשך לשורת פרשיית הלימוד, וזו התשובה הנכונה.
+    """
+    cut = len(value)
+    for other in _DETAILS_BOUNDARY_LABELS:
+        if other == label:
+            continue
+        m = re.search(re.escape(other) + r"\s*:", value)
+        if m is not None:
+            cut = min(cut, m.start())
+    return value[:cut]
+
+
+def _details_label_value(blobs: list[str], labels: "tuple[str, ...]") -> "str | None":
+    """הערך שאחרי ``תווית :``. ``None`` = התווית לא קיימת בדף; ``""`` = ריקה.
+
+    ההבחנה הזאת חשובה: בדף של קורס שאינו נפתח התווית **כן** מופיעה
+    ("נקודות זכות : ") והערך ריק — וזה עדיין "לא ידוע", לא אפס.
+    """
+    patterns = [
+        (label, re.compile(re.escape(label) + r"\s*:\s*(.*)$")) for label in labels
+    ]
+    # מעבר ראשון על קטעים קצרים בלבד: התיאור של הקורס הוא פסקה ארוכה, ואנחנו
+    # לא רוצים שמילה מתוכו תתחזה לערך של שדה.
+    for limit in (160, None):
+        for blob in blobs:
+            if limit is not None and len(blob) > limit:
+                continue
+            for label, pattern in patterns:
+                m = pattern.search(blob)
+                if m is not None:
+                    return _clean(_details_cut_at_next_label(m.group(1), label))
+    return None
+
+
+def _details_parse_hours(line: str) -> "tuple[dict[str, float], float | None] | None":
+    """מפענח שורת שעות: ``'4 2 - -  5.0 נ"ז'`` -> ``({he:4,te:2,ma:0,pr:0}, 5.0)``.
+
+    ``-`` ברכיב שעות פירושו "אין" — כלומר **0.0**, לא "לא ידוע": הידיעון
+    מדפיס מקף כשלקורס אין מעבדה, ואפס הוא התשובה הנכונה. ``-`` במקום הנ"ז
+    לעומת זאת כן מחזיר ``None``, כי אז באמת לא ידוע.
+
+    הכתיבים שנמדדו על דפים אמיתיים — כולם חייבים להתפענח, אחרת נ"ז
+    שמודפסת בדף בבירור מדווחת כ"לא ידועה" או, גרוע מכך, נספרת כשעות::
+
+        '4 2 - -  5.0 נ"ז'  -> he4 te2 ma0 pr0, 5.0   (הכתיב המלא)
+        '2 2 - 3 נ"ז'       -> he2 te2 ma0 pr0, 3.0   (שלושה רכיבים בלבד)
+        '1 1 1-  2.0'       -> he1 te1 ma1 pr0, 2.0   (מקף שנדבק למספר)
+        '1-1-1 2.0'         -> he1 te1 ma1 pr0, 2.0   (רכיבים מחוברים)
+        '2 2 3.0'           -> he2 te2 ma0 pr0, 3.0   (שני רכיבים בלבד)
+        '2 נ"ז , 1-0-2'     -> he1 te0 ma2 pr0, 2.0   (הנ"ז נדפסה ראשונה)
+
+    Returns:
+        ``(hours, credits)`` או ``None`` אם השורה אינה שורת שעות.
+    """
+    text = _DETAILS_HOURS_JUNK_RE.sub(" ", _DASH_RE.sub("-", _clean(line)))
+    if not text.strip():
+        return None
+
+    # הסימן נ"ז הוא **המידע**, לא רעש: המספר שלידו הוא נ"ז ולא שעת פרויקט.
+    # לכן מסמנים איפה הוא ישב, במקום לזרוק אותו לפני הפיצול לאסימונים.
+    mark = _DETAILS_CREDIT_MARK_RE.search(text)
+    head_text, tail_text = (
+        (text, "") if mark is None else (text[:mark.start()], text[mark.end():])
+    )
+
+    head = _details_hour_groups(head_text)
+    tail = _details_hour_groups(tail_text)
+    if head is None or tail is None:
+        return None
+    before = [p for group in head for p in group]
+    after = [p for group in tail for p in group]
+
+    credit_token: "str | None" = None
+    if mark is not None:
+        # ``'2 2 - 3 נ"ז'`` -> הנ"ז לפני הסימן; ``'2 נ"ז , 1-0-2'`` -> אחריו.
+        if before:
+            credit_token, pieces = before[-1], before[:-1] + after
+        elif after:
+            credit_token, pieces = after[0], after[1:]
+        else:
+            return None
+    else:
+        pieces = before
+        if not (2 <= len(pieces) <= len(DETAILS_HOUR_KEYS) + 1):
+            return None
+        glued = any(len(group) > 1 for group in head[:-1])
+        if len(pieces) > len(DETAILS_HOUR_KEYS):
+            credit_token, pieces = pieces[-1], pieces[:-1]
+        elif (glued and len(head[-1]) == 1) or "." in pieces[-1]:
+            # ``'1-1-1 2.0'`` / ``'2 1- 2.5'`` / ``'2 2 3.0'`` — הרכיבים נדבקו
+            # זה לזה או שנדפסו פחות מארבעה, והמספר האחרון הוא נ"ז.
+            credit_token, pieces = pieces[-1], pieces[:-1]
+
+    if len(pieces) > len(DETAILS_HOUR_KEYS):
+        return None  # יותר רכיבים ממה שהידיעון מדפיס — זו לא שורת שעות
+
+    # רכיב שלא נדפס כלל הוא 0.0 בדיוק כמו מקף: הידיעון מפסיק לכתוב אחרי
+    # הרכיב האחרון שיש בו שעות. שורה בלי אף רכיב שעות מחזירה {} — לא ידוע.
+    hours = {
+        key: (0.0 if i >= len(pieces) or pieces[i] == "-" else float(pieces[i]))
+        for i, key in enumerate(DETAILS_HOUR_KEYS)
+    } if pieces else {}
+    credits = (
+        None if credit_token is None or credit_token == "-" else float(credit_token)
+    )
+    return hours, credits
+
+
+def _details_hours_index(lines: list[str]) -> "int | None":
+    """מיקום שורת השעות בתוך בלוק פרשיית הלימוד, או ``None``."""
+    for i, line in enumerate(lines):
+        if _details_parse_hours(line) is not None:
+            return i
+    return None
+
+
+def _details_dedupe_block(lines: list[str]) -> list[str]:
+    """מנקה את בלוק פרשיית הלימוד — ובעיקר: **לא פולט את התיאור פעמיים**.
+
+    הדף מדפיס את הבלוק כולו פעמיים (פעם ב-``<details>`` ופעם ב-``<p>``).
+    כשמגיעים אליו דרך התא העוטף מקבלים רצף כפול מדויק; חוצים אותו.
+    """
+    out = [
+        line for line in (_clean(x) for x in lines)
+        if line and line != _DETAILS_SYLLABUS_LABEL
+    ]
+    half = len(out) // 2
+    if half and len(out) % 2 == 0 and out[:half] == out[half:]:
+        out = out[:half]
+    deduped: list[str] = []
+    for line in out:
+        if not deduped or deduped[-1] != line:
+            deduped.append(line)
+    return deduped
+
+
+def _details_syllabus_lines(scope: Any) -> list[str]:
+    """שורות בלוק "פרשיית לימוד": ``[קוד ושם, שורת שעות, תיאור…]``.
+
+    סדר החיפוש: ה-``<details>`` הייעודי (המקור הנקי), אחר כך ``<p>``, ואחר
+    כך כל תא שמכיל את הכותרת. מועמד "לא-מהימן" מתקבל רק אם שורתו הראשונה
+    נראית כמו ``<קוד> <שם>`` — אחרת כל פסקה בדף הייתה יכולה להתחזות לבלוק.
+    """
+    if not hasattr(scope, "find_all"):
+        return []
+
+    candidates: list[tuple[Any, bool]] = []
+    for det in scope.find_all("details"):
+        summary = det.find("summary")
+        label = _cell_text(summary) if summary is not None else ""
+        if label and _DETAILS_SYLLABUS_LABEL not in label:
+            continue
+        body = next(
+            (c for c in det.find_all(recursive=False)
+             if getattr(c, "name", None) != "summary"),
+            None,
+        )
+        candidates.append((body if body is not None else det, True))
+    candidates.extend((p, False) for p in scope.find_all("p"))
+    candidates.extend(
+        (cell, False)
+        for cell in scope.find_all("div")
+        if _is_div_col(cell) and _DETAILS_SYLLABUS_LABEL in _cell_text(cell)
+    )
+
+    for want_hours in (True, False):
+        for node, trusted in candidates:
+            lines = _details_dedupe_block(_cell_lines(node))
+            if not lines:
+                continue
+            if want_hours and _details_hours_index(lines) is None:
+                continue
+            if not trusted and not _DETAILS_CODE_LINE_RE.match(lines[0]):
+                continue
+            return lines
+    return []
+
+
+def _details_prereq_container(scope: Any) -> Any:
+    """הטבלה שמתחת לכותרת "תנאי קדם לנושא", או ``None``.
+
+    לא לבלבל עם הכרטיס "תנאי קשר לתרגיל(...)" שיושב באותו דף ומתאר קבוצות
+    צמודות — הוא נראה כמו טבלה לכל דבר ואינו תנאי קדם.
+    """
+    if not hasattr(scope, "find_all"):
+        return None
+
+    for card in scope.find_all("div"):
+        if "card" not in _classes(card):
+            continue
+        head = card.find(["h1", "h2", "h3", "h4", "h5"])
+        if head is None or _DETAILS_PREREQ_LABEL not in _cell_text(head):
+            continue
+        inner = next(
+            (d for d in card.find_all("div")
+             if any(c in ("ncontainer", "Table") for c in _classes(d))),
+            None,
+        )
+        return inner if inner is not None else card
+
+    # גיבוי: מיכל שיש בו שורת כותרת עם "סוג הקשר" ו-"נושא נקשר".
+    for row in scope.find_all("div"):
+        if not _is_div_row(row):
+            continue
+        texts = [_cell_text(c) for c in _row_cols(row)]
+        if any("סוג הקשר" in t for t in texts) and any("נושא נקשר" in t for t in texts):
+            return row.parent
+    return None
+
+
+def _details_prereq_kind(relation: str) -> str:
+    """"סוג הקשר" -> ``prereq`` / ``corequisite`` / ``exclusive`` / ``other``.
+
+    הטקסט עצמו נשמר כמו שהוא ב-``relation``; זה רק המפתח שאפשר לסנן לפיו.
+    """
+    text = _clean(relation)
+    if not text:
+        return "other"
+    for marker, kind in _DETAILS_PREREQ_KINDS:
+        if text.startswith(marker):
+            return kind
+    for marker, kind in _DETAILS_PREREQ_KINDS:
+        if marker in text:
+            return kind
+    return "other"
+
+
+def _details_prereq_columns(texts: list[str]) -> dict[str, int]:
+    """ממפה כותרות טבלת תנאי הקדם לשמות שדות. ``{}`` = זו אינה שורת כותרת.
+
+    ההתאמה נעשית **לפי שדה ולא לפי תא**, מהניסוח הספציפי לכללי. ההבדל אינו
+    תיאורטי: בכותרת המלאה ‏"תנאי קדם לנושא | סוג הקשר | אוכלוסייה | נושא נקשר |
+    חליפי" מעבר תא-אחר-תא נותן ל-``name`` את התא הראשון (הוא מכיל "נושא"),
+    ועמודת "נושא נקשר" — הקורס שהוא באמת התנאי — נזרקת. סריקה לפי שדה
+    מבטיחה ש"נושא נקשר" גובר על "נושא" באיזה תא שלא יישבו.
+    """
+    # (דירוג הניסוח, סדר השדה, שדה, עמודה) — ככל שהניסוח ספציפי יותר,
+    # כך הוא נמצא מוקדם יותר ב-_DETAILS_PREREQ_HEADERS ומנצח.
+    candidates: list[tuple[int, int, str, int]] = []
+    for order, (field, labels) in enumerate(_DETAILS_PREREQ_HEADERS):
+        for i, text in enumerate(texts):
+            if not text or any(s in text for s in _DETAILS_PREREQ_SUBJECT_LABELS):
+                continue
+            for rank, label in enumerate(labels):
+                if label in text:
+                    candidates.append((rank, order, field, i))
+                    break
+
+    mapping: dict[str, int] = {}
+    taken: set[int] = set()
+    for _rank, _order, field, column in sorted(candidates):
+        if field in mapping or column in taken:
+            continue
+        mapping[field] = column
+        taken.add(column)
+    return mapping
+
+
+def _details_prereq_row(cells: list[Any], col_map: dict[str, int]) -> "dict | None":
+    """שורת טבלה אחת -> מילון תנאי קדם, או ``None`` אם השורה ריקה.
+
+    שורה ריקה היא מצב **תקין**: בדף של קורס שאינו נפתח שורות הטבלה מכילות
+    תגי-תבנית ‎<!$MG_…>‎ שנעלמים בפירסור. אין תנאי קדם, ואין אזהרה.
+
+    המילון תמיד מכיל את ארבעת המפתחות של המפרט. שלושה מפתחות נוספים
+    נשמרים כי בלעדיהם אי אפשר לאכוף תנאי קדם נכון בין-מחלקתי:
+      * ``kind``             — ``relation`` מנורמל: ``prereq`` (תנאי קדם),
+        ``corequisite`` (תנאי צמוד — נרשמים לשניהם יחד), ``exclusive``
+        (תנאי אקסקלוסיבי — מי שלמד/ה את הקורס שמשמאל **אינו/ה** רשאי/ת
+        להירשם) או ``other``. **חובה לסנן לפיו**: הטבלה מחזירה את שלושת
+        הסוגים באותו מבנה, ומי שיתייחס לכולם כתנאי קדם ידרוש קורס שהדף
+        אומר עליו את ההפך הגמור.
+      * ``alternative_name`` — שם הקורס החליפי (``alternative`` הוא רק "יש/אין").
+      * ``population``       — "מגמה : הנדסת תוכנה". תנאי קדם בידיעון מוגדר
+        **לפי מגמה**, וסטודנט/ית ממחלקה אחרת אינו/ה כפוף/ה לו.
+    """
+
+    def cell(field: str) -> str:
+        idx = col_map.get(field)
+        if idx is None or idx >= len(cells) or cells[idx] is None:
+            return ""
+        return _cell_text(cells[idx])
+
+    code = cell("code")
+    name = cell("name")
+    relation = cell("relation")
+    alternative = cell("alternative")
+    population = cell("population")
+
+    if not any((code, name, relation, alternative, population)):
+        return None
+
+    if not code:
+        m = _DETAILS_CODE_LINE_RE.match(name)
+        if m is not None:
+            code, name = m.group(1), _clean(m.group(2))
+
+    if not (code or name):
+        return None
+
+    return {
+        "code": code,
+        "name": name,
+        "relation": relation,
+        "kind": _details_prereq_kind(relation),
+        "alternative": bool(alternative),
+        "alternative_name": alternative,
+        "population": population,
+    }
+
+
+def _details_prerequisites(scope: Any, warnings: list[str]) -> list[dict]:
+    """טבלת "תנאי קדם לנושא" -> רשימת מילונים. אין תנאי קדם = ``[]`` בלי אזהרה."""
+    container = _details_prereq_container(scope)
+    if container is None:
+        return []
+
+    rows = [
+        r for r in container.find_all("div")
+        if _is_div_row(r) and not any(_is_div_row(d) for d in r.find_all("div"))
+    ]
+    if _is_div_row(container) and not rows:
+        rows = [container]
+
+    # שורה ריקה לגמרי אינה נתון ואינה כותרת — הידיעון מדפיס שורת-מקום כזאת
+    # בראש הטבלה. אסור לה לקבוע את מפת העמודות, אחרת הכותרת האמיתית שאחריה
+    # תפוענח כשורת נתונים ותיפלט כתנאי קדם מדומה בשם "נושא נקשר".
+    body: list[tuple[list, list[str]]] = []
+    for row in rows:
+        cells = _row_cols(row)
+        if not cells:
+            continue
+        texts = [_cell_text(c) for c in cells]
+        if not any(texts):
+            continue
+        body.append((cells, texts))
+    if not body:
+        return []
+
+    # שורת הכותרת היא הראשונה **בכל הטבלה** שמזוהות בה שתי עמודות ומעלה,
+    # ולא בהכרח השורה הראשונה.
+    header_at: "int | None" = None
+    col_map: dict[str, int] = {}
+    for i, (_cells, texts) in enumerate(body):
+        header = _details_prereq_columns(texts)
+        if len(header) >= 2:
+            header_at, col_map = i, header
+            break
+
+    if not col_map:
+        widest = max(len(cells) for cells, _texts in body)
+        col_map = {
+            field: i
+            for i, field in enumerate(_DETAILS_PREREQ_FALLBACK_ORDER)
+            if i < widest
+        }
+        warnings.append(
+            "בטבלת תנאי הקדם לא נמצאה שורת כותרת — העמודות מופו לפי הסדר "
+            "המקובל בידיעון. (prerequisite table without a header row)"
+        )
+
+    out: list[dict] = []
+    for i, (cells, _texts) in enumerate(body):
+        if i == header_at:
+            continue
+        parsed = _details_prereq_row(cells, col_map)
+        if parsed is not None:
+            out.append(parsed)
+    return out
+
+
+def parse_course_details(html: str, code: str) -> CourseDetails:
+    """מפענח דף ‎S_CourseDetails‎ אחד ומחזיר ``CourseDetails``.
+
+    **הפונקציה הזאת לא זורקת.** דף חלקי, דף של קורס שאינו נפתח, ואפילו
+    מחרוזת ריקה — כולם מחזירים ``CourseDetails`` עם ``None``/רשימות ריקות
+    ואזהרה מתאימה. הסיבה פשוטה: הרענון היומי עובר על מאות קורסים, ודף אחד
+    מוזר לא יכול להפיל את כולם.
+
+    Args:
+        html: ה-HTML הגולמי של הדף, כפי שנשמר ב-``data/raw/``.
+        code: קוד הקורס שביקשנו. משמש גם לאימות מול הקוד שמודפס בדף.
+
+    Returns:
+        ``CourseDetails``. ``credits`` הוא ``None`` — ולא ``0.0`` — כשלא ידוע.
+    """
+    warnings: list[str] = []
+    wanted = _clean(code)
+
+    empty = CourseDetails(
+        code=wanted, name="", credits=None, hours={}, weekly_hours=None,
+        language="", description="", prerequisites=[], warnings=warnings,
+    )
+
+    if not str(html or "").strip():
+        warnings.append("דף פרטי הקורס ריק — אין ממה לפענח. (empty details page)")
+        return empty
+
+    try:
+        soup = _make_soup(str(html), warnings)
+        scope = _details_scope(soup)
+        blobs = _details_blobs(scope)
+        lines = _details_syllabus_lines(scope)
+    except Exception as exc:  # noqa: BLE001 - דף חריג אינו סיבה להפיל רענון
+        warnings.append(
+            f"פענוח דף הפרטים נכשל ({type(exc).__name__}: {exc}); "
+            "לא נשלפו פרטים. (details page could not be parsed)"
+        )
+        return empty
+
+    # ----- קוד, שם, שעות ותיאור מתוך בלוק "פרשיית לימוד" -----
+    page_code = ""
+    name = ""
+    hours: dict[str, float] = {}
+    line_credits: "float | None" = None
+    description = ""
+
+    hours_index = _details_hours_index(lines) if lines else None
+    if hours_index is not None:
+        parsed = _details_parse_hours(lines[hours_index])
+        if parsed is not None:
+            hours, line_credits = parsed
+    else:
+        warnings.append(
+            "לא נמצאה שורת פירוק השעות (הרצאה/תרגיל/מעבדה/פרויקט) בדף. "
+            "(no hours breakdown line)"
+        )
+
+    head_name = ""   # שם ודאי: השורה הראשונה באמת הייתה "<קוד> <שם>"
+    if lines:
+        head = lines[0]
+        if hours_index != 0:
+            m = _DETAILS_CODE_LINE_RE.match(head)
+            if m is not None:
+                page_code, head_name = m.group(1), _clean(m.group(2))
+                name = head_name
+            elif _details_looks_like_name(head):
+                # מועמד **חלש**: זה יכול להיות גם המשפט הראשון של התיאור.
+                # הכותרת המודגשת שבראש הדף גוברת עליו אם היא קיימת, והשורה
+                # נשארת בתיאור (start=0) כדי שלא תיעלם ממנו.
+                name = head
+            # שורה שכולה מספרים ומקפים אינה שם בשום מצב — היא שורת שעות
+            # בכתיב שלא זוהה. משאירים את השם ריק, ונותנים לכותרת לספק אותו.
+        start = (hours_index + 1) if hours_index is not None else (1 if head_name else 0)
+        description = _clean(" ".join(lines[start:]))
+
+    # ----- שם: הכותרת המודגשת בראש הדף גוברת על מועמד חלש -----
+    if not head_name:
+        for blob in blobs:
+            if len(blob) > 120:
+                continue
+            m = _DETAILS_CODE_LINE_RE.match(blob)
+            if m is not None and (not wanted or m.group(1) == wanted):
+                page_code, name = m.group(1), _clean(m.group(2))
+                break
+    if not name:
+        warnings.append("לא נמצא שם קורס בדף. (course name not found)")
+
+    if page_code and wanted and page_code != wanted:
+        warnings.append(
+            f"הדף מדבר על קורס {page_code} ולא על {wanted} — הפרטים עלולים "
+            "להיות של קורס אחר. (course code mismatch)"
+        )
+    if not wanted and page_code:
+        wanted = page_code
+
+    if not description:
+        warnings.append("לא נמצא תיאור קורס בדף. (course description not found)")
+
+    # ----- נקודות זכות: "נקודות זכות" קודם, שורת השעות אחריו, ואז None -----
+    raw_credits = _details_label_value(blobs, _DETAILS_CREDIT_LABELS)
+    credits = _details_number(raw_credits) if raw_credits else None
+    if credits is None:
+        if line_credits is not None:
+            credits = line_credits
+            warnings.append(
+                "שורת 'נקודות זכות' חסרה או ריקה — הנ\"ז נלקחו משורת פרשיית "
+                "הלימוד. (credits taken from the study-line)"
+            )
+        else:
+            warnings.append(
+                "לא נמצאו נקודות זכות בדף — credits הוא None ולא 0.0, כדי "
+                "שהסכום לא ישקר. (credits unknown)"
+            )
+    elif line_credits is not None and abs(credits - line_credits) > 0.01:
+        warnings.append(
+            f"אי-התאמה בנ\"ז: 'נקודות זכות' אומר {credits}, שורת פרשיית "
+            f"הלימוד אומרת {line_credits}. נלקח הראשון. (credits disagree)"
+        )
+
+    # ----- שעות סמסטריאליות -----
+    raw_weekly = _details_label_value(blobs, _DETAILS_WEEKLY_LABELS)
+    weekly_hours = _details_number(raw_weekly) if raw_weekly else None
+    if weekly_hours is None:
+        warnings.append("לא נמצאו שעות סמסטריאליות בדף. (weekly hours not found)")
+
+    # ----- שפת הוראה -----
+    raw_language = _details_label_value(blobs, _DETAILS_LANGUAGE_LABELS)
+    language = _clean(raw_language) if raw_language else ""
+    if not language:
+        warnings.append("לא נמצאה שפת הוראה בדף. (teaching language not found)")
+
+    # ----- תנאי קדם -----
+    try:
+        prerequisites = _details_prerequisites(scope, warnings)
+    except Exception as exc:  # noqa: BLE001
+        prerequisites = []
+        warnings.append(
+            f"פענוח טבלת תנאי הקדם נכשל ({type(exc).__name__}: {exc}). "
+            "(prerequisite table could not be parsed)"
+        )
+
+    return CourseDetails(
+        code=wanted,
+        name=name,
+        credits=credits,
+        hours=hours,
+        weekly_hours=weekly_hours,
+        language=language,
+        description=description,
+        prerequisites=prerequisites,
+        warnings=warnings,
+    )
+
+
+# ==========================================================================
 # 9. בדיקה עצמית — רצה כש-parser.py מופעל ישירות (python src/parser.py)
 # ==========================================================================
 #: דוגמת HTML קטנה שמכילה בכוונה את כל המלכודות: טבלת עיצוב מיותרת, rowspan,
@@ -2360,6 +3171,128 @@ def _read_fixture(name: str) -> str | None:
         return None
     with open(path, "r", encoding="utf-8") as fh:
         return fh.read()
+
+
+def details_self_check(verbose: bool = True) -> list[str]:
+    """בדיקה עצמית של ``parse_course_details`` מול שני דפי הידיעון האמיתיים.
+
+    מדפיסה מה נמצא בכל דף — כי הדרך היחידה לדעת שפרסר עובד היא לראות את
+    מה שהוא הוציא, לא להאמין שהוא רץ בלי לזרוק.
+
+    Args:
+        verbose: להדפיס את הממצאים.
+
+    Returns:
+        רשימת בעיות (ריקה = הכול תקין).
+    """
+    problems: list[str] = []
+
+    def check(label: str, got: Any, want: Any) -> None:
+        if got != want:
+            problems.append(f"{label}: קיבלנו {got!r}, ציפינו ל-{want!r}")
+        elif verbose:
+            print(f"  ok  {label} -> {got!r}")
+
+    def show(details: CourseDetails) -> None:
+        if not verbose:
+            return
+        credits = "—" if details.credits is None else f"{details.credits:g}"
+        weekly = "—" if details.weekly_hours is None else f"{details.weekly_hours:g}"
+        hours = (
+            ", ".join(f"{k}={v:g}" for k, v in details.hours.items())
+            if details.hours else "— (לא נמצאה שורת שעות)"
+        )
+        print(f"  קורס {details.code} — {details.name or '(ללא שם)'}")
+        print(f"    נ\"ז: {credits}   שעות סמסטריאליות: {weekly}")
+        print(f"    פירוק שעות: {hours}")
+        print(f"    שפת הוראה: {details.language or '—'}")
+        print(f"    תיאור: {len(details.description)} תווים — {details.description[:70]}…")
+        print(f"    תנאי קדם: {len(details.prerequisites)} שורות")
+        for row in details.prerequisites[:3]:
+            alt = f" (חליפי: {row['alternative_name']})" if row["alternative"] else ""
+            print(f"      · {row['code'] or '—'} {row['name']}{alt} [{row['population']}]")
+        if details.prerequisites[3:]:
+            print(f"      · … ועוד {len(details.prerequisites) - 3}")
+        for warning in details.warnings:
+            print(f"    אזהרה: {warning}")
+
+    # ----- דף אמיתי מלא: 61753 אלגוריתמים -----
+    if verbose:
+        print("== parse_course_details: course_details_61753.html ==")
+    html = _read_fixture("course_details_61753.html")
+    if html is None:
+        if verbose:
+            print("  דילוג: course_details_61753.html לא נמצא")
+    else:
+        got = parse_course_details(html, "61753")
+        show(got)
+        check("61753 code", got.code, "61753")
+        check("61753 name", got.name, "אלגוריתמים")
+        check("61753 credits", got.credits, 5.0)
+        check("61753 hours he", got.hours.get("he"), 4.0)
+        check("61753 hours te", got.hours.get("te"), 2.0)
+        check("61753 hours ma (מקף -> 0.0)", got.hours.get("ma"), 0.0)
+        check("61753 hours pr (מקף -> 0.0)", got.hours.get("pr"), 0.0)
+        check("61753 weekly_hours", got.weekly_hours, 4.0)
+        check("61753 language", got.language, "עברית")
+        check("61753 יש תיאור", bool(got.description), True)
+        check("61753 התיאור לא מוכפל", got.description.count("מטרת הקורס היא"), 1)
+        check("61753 יש תנאי קדם", len(got.prerequisites) > 0, True)
+        check("61753 בלי אזהרות", got.warnings, [])
+        if got.prerequisites:
+            first = got.prerequisites[0]
+            for key in DETAILS_PREREQ_KEYS:
+                if key not in first:
+                    problems.append(f"61753 תנאי קדם: חסר המפתח {key!r}")
+            check("61753 תנאי קדם ראשון — שם", bool(first["name"]), True)
+            check("61753 תנאי קדם ראשון — סוג קשר", bool(first["relation"]), True)
+        if any(row["alternative"] for row in got.prerequisites):
+            if verbose:
+                print("  ok  זוהתה לפחות שורת תנאי-קדם אחת עם קורס חליפי")
+        else:
+            problems.append("61753: לא זוהתה אף שורת תנאי קדם עם חליפי")
+
+    # ----- דף חלקי אמיתי: 11001, קורס שאינו נפתח (תוויות בלי ערכים) -----
+    if verbose:
+        print("== parse_course_details: course_details_11001.html (דף חלקי) ==")
+    html = _read_fixture("course_details_11001.html")
+    if html is None:
+        if verbose:
+            print("  דילוג: course_details_11001.html לא נמצא")
+    else:
+        got = parse_course_details(html, "11001")
+        show(got)
+        check("11001 code", got.code, "11001")
+        check("11001 name", got.name, "אלגברה")
+        # "נקודות זכות :" ריק בדף הזה — הערך נלקח משורת פרשיית הלימוד.
+        check("11001 credits (משורת פרשיית הלימוד)", got.credits, 4.0)
+        check("11001 hours he", got.hours.get("he"), 3.0)
+        check("11001 hours te", got.hours.get("te"), 2.0)
+        check("11001 weekly_hours לא ידוע -> None", got.weekly_hours, None)
+        check("11001 שפת הוראה חסרה -> ''", got.language, "")
+        check("11001 שדה חסר מייצר אזהרה", len(got.warnings) > 0, True)
+        check("11001 בלי תנאי קדם -> רשימה ריקה", got.prerequisites, [])
+
+    # ----- דף ריק / פגום: אסור לזרוק, ואסור להחזיר 0.0 -----
+    if verbose:
+        print("== parse_course_details: דפים פגומים ==")
+    for label, bad in (
+        ("ריק", ""),
+        ("None", None),
+        ("לא HTML", "שלום עולם"),
+        ("HTML בלי פרטים", "<html><body><p>אין כאן כלום</p></body></html>"),
+    ):
+        try:
+            got = parse_course_details(bad, "99999")  # type: ignore[arg-type]
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"דף {label}: parse_course_details זרק {type(exc).__name__}: {exc}")
+            continue
+        check(f"דף {label}: credits הוא None ולא 0.0", got.credits, None)
+        check(f"דף {label}: hours ריק", got.hours, {})
+        check(f"דף {label}: prerequisites ריק", got.prerequisites, [])
+        check(f"דף {label}: יש אזהרה", len(got.warnings) > 0, True)
+
+    return problems
 
 
 def self_check(verbose: bool = True) -> list[str]:
@@ -2674,6 +3607,9 @@ def self_check(verbose: bool = True) -> list[str]:
                 os.remove(out)
             if os.path.isdir(tmpdir2):
                 os.rmdir(tmpdir2)
+
+    # ----- פרטי קורס מדף S_CourseDetails (שני ה-fixtures האמיתיים) -----
+    problems.extend(details_self_check(verbose=verbose))
 
     return problems
 

@@ -28,6 +28,8 @@
 
   var SOLVE_DEBOUNCE_MS = 150;
   var SEARCH_DEBOUNCE_MS = 250;
+  /** כמה שורות קטלוג להביא בכל עיון. מספיק כדי לגלול, מעט מספיק כדי לטעון מיד. */
+  var BROWSE_LIMIT = 60;
   var SCRAPE_POLL_MS = 2000;
   var TOAST_MS = 5000;
 
@@ -438,6 +440,18 @@
     catalogResults: [],
     catalogError: null,
     catalogBusy: false,
+    // ‏SPEC §4 — מצב קטלוג. תוכנית הלימודים היא העשרה, לא תנאי: כשאין ממנה
+    // קורסים, שלב 2 עובר לעיון בקטלוג המלא במקום להישאר מסך ריק בלי הסבר.
+    curriculumAvailable: null, // מ-/api/bootstrap. null = השרת לא אמר
+    semesterCurriculumAvailable: null, // מ-/api/semester/<n>/courses
+    semesterBusy: false,
+    semesterFetched: false, // האם כבר יש תשובה על רשימת הסמסטר
+    browseQuery: "",
+    browseResults: [],
+    browseTotal: null,
+    browseError: null,
+    browseBusy: false,
+    browseLoaded: false,
     courses: [],
     notOffered: [],
     coursesError: null,
@@ -600,7 +614,7 @@
   }
 
   /** מספרים רצים — תשובה שמגיעה אחרי בקשה חדשה יותר נזרקת. */
-  var seq = { semester: 0, courses: 0, solve: 0, catalog: 0 };
+  var seq = { semester: 0, courses: 0, solve: 0, catalog: 0, browse: 0 };
 
   /* =====================================================================
    * 5. נגזרות מהמצב
@@ -622,10 +636,25 @@
         return txt(rec.semester !== undefined ? rec.semester : rec.number);
       }
     }
-    // נפילה-לאחור: 8 סמסטרים, שניים בשנה. לקיץ אין סמסטר בתוכנית.
+    // הרשימה שהשרת שלח היא הקובעת. צירוף שאין לו שורה בה פשוט
+    // אינו סמסטר בתוכנית — תוכנית בת 6 סמסטרים, קיץ, או מחלקה שהתוכנית
+    // שלה איננה טעונה כלל. ניחוש אריתמטי שם היה שולח בקשה לסמסטר
+    // שאינו קיים, מקבל 404, ומציג באנר אדום על בחירה לגיטימית.
+    // ‏SPEC_MULTIFACULTY §5.
+    if (list.length) return "";
+    if (runtime.curriculumAvailable === false) return "";
+    // רק כשהשרת לא אמר כלום (שרת ישן): 8 סמסטרים, שניים בשנה.
     if (term === "א") return String(studyYear * 2 - 1);
     if (term === "ב") return String(studyYear * 2);
     return "";
+  }
+
+  /**
+   * האם מותר לדבר על "סמסטר בתוכנית הלימודים". בלי תוכנית טעונה
+   * המשפט הזה מצהיר על השתייכות שאינה קיימת — SPEC_MULTIFACULTY §5 אוסר.
+   */
+  function curriculumSemesterKnown() {
+    return runtime.curriculumAvailable !== false && !!txt(state.semester);
   }
 
   function semesterInfo(sem) {
@@ -671,6 +700,69 @@
     return out.length ? out : TERMS_FALLBACK;
   }
 
+  /* --- מצב הקטלוג: יש רשימת קורסים מהתוכנית, או בוחרים ישירות? ------- */
+
+  /**
+   * ‏``curriculum_available`` מהשרת. השדה חדש, ושרת שאינו מכיר אותו פשוט
+   * לא שולח אותו — ואז התשובה היא ``null`` ("לא ידוע") והממשק מסיק מהרשימה.
+   */
+  function readCurriculumAvailable(data) {
+    if (!data || typeof data !== "object") return null;
+    if (typeof data.curriculum_available === "boolean") return data.curriculum_available;
+    var holders = [data.curriculum, data.features, data.info];
+    for (var i = 0; i < holders.length; i++) {
+      var h = holders[i];
+      if (!h || typeof h !== "object") continue;
+      if (typeof h.available === "boolean") return h.available;
+      if (typeof h.curriculum_available === "boolean") return h.curriculum_available;
+    }
+    return null;
+  }
+
+  /**
+   * למה שלב 2 עובר לקטלוג. מחרוזת ריקה = לא עובר.
+   * ‏SPEC §4: אסור שסטודנט/ית מחוץ למחלקה יישאר/תישאר מול רשימה ריקה בלי הסבר.
+   */
+  function catalogFallbackReason() {
+    if (!runtime.ready) return "";
+    // בלי שתי השורות האלה מסך הפתיחה היה מהבהב במצב קטלוג לרגע, לפני
+    // שרשימת הסמסטר הספיקה לחזור — ואז נעלם. הבהוב כזה נראה כמו תקלה.
+    if (!runtime.semesterFetched) return "";
+    if (runtime.semesterBusy) return "";
+    if (runtime.semesterCourses.length) return "";
+    if (runtime.curriculumAvailable === false) return "no-curriculum";
+    if (runtime.semesterCurriculumAvailable === false) return "no-curriculum";
+    if (runtime.semesterError) return "no-list";
+    return "empty-semester";
+  }
+
+  function catalogFallbackActive() {
+    return catalogFallbackReason() !== "";
+  }
+
+  /**
+   * ‏/api/catalog/browse לא ענה (שרת ישן, או תקלה).
+   * במצב הזה חוזרים לרשימה הנפתחת של /api/catalog/search — אחרת מצב הקטלוג
+   * היה *מונע* הוספת קורסים במקום לאפשר אותה.
+   */
+  function catalogBrowseBroken() {
+    return !!runtime.browseError && !runtime.browseResults.length;
+  }
+
+  /** האם תיבת החיפוש מזינה כרגע את רשימת הקטלוג (ולא את הרשימה הנפתחת). */
+  function browseDrivesSearchBox() {
+    return catalogFallbackActive() && !catalogBrowseBroken();
+  }
+
+  /** שורה אחת קצרה לכל סיבה. לא באנר, לא פסקה — שורה. */
+  var FALLBACK_NOTE = {
+    "no-curriculum": "תוכנית הלימודים של המחלקה לא טעונה — אפשר לבחור כל קורס מהקטלוג.",
+    "no-list": "רשימת הקורסים של הסמסטר לא נטענה — אפשר לבחור כל קורס מהקטלוג.",
+    "empty-semester": "אין רשימת קורסים לסמסטר הזה — אפשר לבחור כל קורס מהקטלוג.",
+  };
+
+  var BROWSE_PLACEHOLDER = 'שם, קוד או תחילית קוד — למשל 110 או חדו"א';
+
   function semesterCourseByCode(code) {
     for (var i = 0; i < runtime.semesterCourses.length; i++) {
       if (txt(runtime.semesterCourses[i].code) === txt(code)) {
@@ -698,23 +790,94 @@
   }
 
   /**
-   * נ"ז לקורס. תוכנית הלימודים קודמת למאגר — בידיעון יש קורסים שנשמרו עם 0.0
-   * (העמוד לא תמיד מציג נ"ז), ובתוכנית הערך נכון.
+   * ערך נ"ז יחיד, או ``null`` כשאין נתון.
+   * ‏0 שהגיע מהשרת הוא **אפס אמיתי**, לא "לא ידוע": חמישה קורסים
+   * בתוכנית (‏11063 אנגלית בסיסי, 11064, 11360, 11361, 61179) הם באמת 0 נ"ז,
+   * ו-``api.py`` מבחין בעצמו בין הצהרה לבורות (``_stated_credits`` מול
+   * ``_known_credits``): לא ידוע מגיע כ-``null`` עם ``credits_text: "—"``, ואפס
+   * מוצהר מגיע כ-``0`` עם ``credits_source: "curriculum"``. להפוך כאן 0 למקף
+   * היה היפוך כלל המפרט — ולכן נדחים כאן רק לא-מספר וערך שלילי.
+   */
+  function creditsNumber(value) {
+    if (value === null || value === undefined || value === "") return null;
+    var n = num(value, null);
+    if (n === null || !isFinite(n) || n < 0) return null;
+    return n;
+  }
+
+  /** נ"ז מרשומת שרת אחת, מנורמלת ל-``number | null``. */
+  function creditsFromRecord(rec) {
+    return rec && typeof rec === "object" ? creditsNumber(rec.credits) : null;
+  }
+
+  /** הראשון מבין השניים שיש לו ערך (שניהם כבר מנורמלים), או ``null``. */
+  function pickCredits(preferred, fallback) {
+    var v = creditsNumber(preferred);
+    return v !== null ? v : creditsNumber(fallback);
+  }
+
+  /**
+   * נ"ז לקורס, או ``null``, לפי סדר SPEC_MULTIFACULTY §3: תוכנית הלימודים
+   * (רשימת הסמסטר) קודמת, ואחריה הרשומה שהשרת החזיר — כולל נ"ז
+   * מדף פרטי הקורס בידיעון.
+   *
+   * ``state.known`` אחרון בכוונה: הוא מטמון מקומי (localStorage) שנזרע גם
+   * ממספרים שנכתבו ביד ב-``profile.json``. כשהוא קדם לשרת הוא נעל את
+   * הערך הראשון שנשמר — ואז אותו מסך הציג שני סכומים שונים לאותם
+   * קורסים, כי ``scheduleCredits`` כן מעדיף את תשובת השרת.
    */
   function creditsOf(code) {
     var s = semesterCourseByCode(code);
-    if (s && num(s.credits, 0) > 0) return num(s.credits, 0);
-    var k = state.known[txt(code)];
-    if (k && num(k.credits, 0) > 0) return num(k.credits, 0);
+    var v = s ? creditsNumber(s.credits) : null;
+    if (v !== null) return v;
     var c = courseDataByCode(code);
-    if (c && num(c.credits, 0) > 0) return num(c.credits, 0);
-    return 0;
+    v = c ? creditsNumber(c.credits) : null;
+    if (v !== null) return v;
+    var k = state.known[txt(code)];
+    return k ? creditsNumber(k.credits) : null;
   }
 
-  function totalCredits() {
-    return state.codes.reduce(function (sum, code) {
-      return sum + creditsOf(code);
-    }, 0);
+  /** "—" לכל נ"ז שאינה ידועה. אף פעם לא "0" במקום חוסר. */
+  function fmtCredits(value) {
+    var v = creditsNumber(value);
+    return v === null ? "—" : fmtNumber(v);
+  }
+
+  /** סיכום נ"ז על רשימת קודים: הסכום הידוע, וכמה קורסים אין להם נתון. */
+  function creditsSummary(codes) {
+    var total = 0;
+    var known = 0;
+    var unknown = 0;
+    (codes || []).forEach(function (code) {
+      var v = creditsOf(code);
+      if (v === null) unknown++;
+      else {
+        total += v;
+        known++;
+      }
+    });
+    return { total: total, known: known, unknown: unknown };
+  }
+
+  /**
+   * טקסט הסכום. סכום ששותק על קורסים בלי נתון הוא מספר בטוח ושגוי — ולכן
+   * מספר החסרים נאמר לצידו, ולא מוסתר.
+   */
+  function creditsText(summary, opts) {
+    opts = opts || {};
+    var head = summary.known ? fmtNumber(summary.total) : "—";
+    if (opts.unit) head += ' נ"ז';
+    if (!summary.unknown) return head;
+    return head + " (" + missingCreditsText(summary.unknown, opts.short) + ")";
+  }
+
+  function missingCreditsText(count, short) {
+    if (short) return count + " ללא נתון";
+    return count === 1 ? "קורס אחד ללא נתון" : count + " קורסים ללא נתון";
+  }
+
+  function totalCreditsText(opts) {
+    return creditsText(creditsSummary(state.codes), opts);
   }
 
   /** סגירה טרנזיטיבית של קורסים צמודים סביב קוד אחד. */
@@ -1001,11 +1164,13 @@
       .then(function (data) {
         runtime.bootstrap = data;
         runtime.bootstrapError = null;
+        runtime.curriculumAvailable = readCurriculumAvailable(data);
         applyBootstrapDefaults(data);
         if (isScrapeRunning(data)) startPolling();
         runtime.ready = true;
         render();
         syncData(true);
+        ensureCatalogBrowse();
       })
       .catch(function (err) {
         runtime.bootstrapError = errorText(err);
@@ -1047,7 +1212,7 @@
       var prev = state.known[code] || {};
       state.known[code] = {
         name: txt(rec.name) || prev.name || "",
-        credits: num(rec.credits, num(prev.credits, 0)),
+        credits: pickCredits(creditsFromRecord(rec), prev.credits),
         semester: txt(rec.from_semester) || prev.semester || "",
       };
     });
@@ -1081,7 +1246,11 @@
     }
 
     var resolved = semesterOf(state.studyYear, state.term);
-    state.semester = resolved || (runtime.restored ? "" : txt(defaults.semester));
+    // ``defaults.semester`` הוא ``curriculum_semester`` מ-profile.json. בלי
+    // תוכנית טעונה הוא מצביע על סמסטר שאינו קיים, והיה שולח
+    // /api/semester/5/courses לשוא ומצהיר "סמסטר 5 בתוכנית הלימודים".
+    var mayGuess = !runtime.restored && runtime.curriculumAvailable !== false;
+    state.semester = resolved || (mayGuess ? txt(defaults.semester) : "");
     saveState();
   }
 
@@ -1090,13 +1259,24 @@
     if (!sem) {
       runtime.semesterCourses = [];
       runtime.semesterError = null;
+      runtime.semesterCurriculumAvailable = null;
+      runtime.semesterBusy = false;
+      // "אין סמסטר בתוכנית" (למשל קיץ) הוא תשובה, לא המתנה.
+      runtime.semesterFetched = true;
       render();
+      ensureCatalogBrowse();
       return Promise.resolve();
     }
     var my = ++seq.semester;
+    runtime.semesterBusy = true;
     return getJSON("/api/semester/" + encodeURIComponent(sem) + "/courses")
       .then(function (data) {
         if (my !== seq.semester) return;
+        runtime.semesterBusy = false;
+        runtime.semesterFetched = true;
+        // ‏SPEC §4: השרת אומר במפורש אם יש תוכנית לימודים טעונה. אין דגל —
+        // ``null``, והרשימה עצמה מכריעה.
+        runtime.semesterCurriculumAvailable = readCurriculumAvailable(data);
         runtime.semesterCourses = pickList(data, ["courses", "items"], "code")
           .map(normalizeSemesterCourse)
           .filter(function (rec) {
@@ -1107,21 +1287,27 @@
           var prev = state.known[rec.code] || {};
           state.known[rec.code] = {
             name: rec.name || prev.name || "",
-            credits: num(rec.credits, num(prev.credits, 0)),
+            credits: pickCredits(rec.credits, prev.credits),
             semester: sem,
           };
         });
         saveState();
         render();
+        ensureCatalogBrowse();
       })
       .catch(function (err) {
         if (my !== seq.semester) return;
         // המשיכה נכשלה — לשכוח את החתימה, אחרת syncData יחשוב שהנתונים
         // כבר בידינו ולא ינסה שוב עד רענון הדף.
         lastSig.semester = null;
+        runtime.semesterBusy = false;
+        runtime.semesterFetched = true;
+        runtime.semesterCurriculumAvailable = null;
         runtime.semesterCourses = [];
         runtime.semesterError = errorText(err);
         render();
+        // גם כישלון כזה לא משאיר מסך ריק: עוברים לעיון בקטלוג.
+        ensureCatalogBrowse();
       });
   }
 
@@ -1129,7 +1315,7 @@
     return {
       code: txt(rec.code),
       name: txt(rec.name),
-      credits: num(rec.credits, 0),
+      credits: creditsFromRecord(rec),
       he: num(rec.he, 0),
       te: num(rec.te, 0),
       ma: num(rec.ma, 0),
@@ -1244,7 +1430,10 @@
           var prev = state.known[c.code] || {};
           state.known[c.code] = {
             name: c.name || prev.name || "",
-            credits: num(prev.credits, 0) || num(c.credits, 0),
+            // השרת קודם למטמון, ולא הפוך: תשובה טרייה חייבת לתקן ערך
+            // שנשמר ב-localStorage, אחרת המספר הראשון שנראה אי-פעם קופא לנצח.
+            // זהה לכותב שב-``fetchSemesterCourses``.
+            credits: pickCredits(c.credits, prev.credits),
             semester: prev.semester || "",
           };
         });
@@ -1272,7 +1461,7 @@
     return {
       code: txt(rec.code),
       name: txt(rec.name),
-      credits: num(rec.credits, 0),
+      credits: creditsFromRecord(rec),
       tied_with: Array.isArray(rec.tied_with) ? rec.tied_with.map(txt) : [],
       freshness: rec.freshness || rec.meta || null,
       warnings: pickList(rec, ["warnings"], null),
@@ -1420,7 +1609,7 @@
           return {
             code: txt(rec.code),
             name: txt(rec.name),
-            credits: num(rec.credits, 0),
+            credits: creditsFromRecord(rec),
             in_curriculum: rec.in_curriculum === true,
             curriculum_semester: txt(
               rec.curriculum_semester !== undefined
@@ -1439,6 +1628,75 @@
         runtime.catalogError = errorText(err);
         renderSearchResults();
       });
+  }
+
+  /**
+   * ‏SPEC §4 — עיון בקטלוג המלא. זה המסלול של מי שתוכנית המחלקה שלו/ה אינה
+   * טעונה: חיפוש לפי שם, קוד או תחילית קוד, ישירות מול ``/api/catalog/browse``.
+   * שאילתה ריקה מחזירה את תחילת הקטלוג — כדי שהמסך לעולם לא יהיה ריק.
+   */
+  function browseCatalog(query) {
+    var q = txt(query).trim();
+    runtime.browseQuery = q;
+    runtime.browseLoaded = true;
+    // שאילתה חדשה לא נשפטת לפי כישלון קודם. בלי השורה הזאת
+    // שגיאה אחת (400 על תחילית קוד, הפעלה מחדש של השרת) הייתה נועלת
+    // את מצב הקטלוג עד רענון הדף.
+    runtime.browseError = null;
+    var my = ++seq.browse;
+    runtime.browseBusy = true;
+    renderCatalogBrowse();
+
+    var params = "limit=" + BROWSE_LIMIT;
+    // ספרות בלבד = תחילית קוד (כך סטודנטים חושבים על זה). כל השאר = שם.
+    // עד 7 ספרות בלבד: זו המגבלה של /api/catalog/browse, ורצף ארוך יותר
+    // (הדבקה או טעות הקלדה) צריך להחזיר "לא נמצא" — לא שגיאת 400.
+    if (q) params += (/^\d{1,7}$/.test(q) ? "&prefix=" : "&q=") + encodeURIComponent(q);
+
+    return getJSON("/api/catalog/browse?" + params)
+      .then(function (data) {
+        if (my !== seq.browse) return;
+        runtime.browseBusy = false;
+        runtime.browseError = null;
+        runtime.browseTotal = num(data && (data.total !== undefined ? data.total : data.matched), null);
+        runtime.browseResults = pickList(
+          data,
+          ["results", "courses", "items", "matches", "catalog"],
+          "code"
+        )
+          .map(function (rec) {
+            return {
+              code: txt(rec.code),
+              name: txt(rec.name),
+              credits: creditsFromRecord(rec),
+              in_curriculum: rec.in_curriculum === true,
+              has_data: rec.has_data === true,
+              offered: rec.offered !== false,
+            };
+          })
+          .filter(function (rec) {
+            return !!rec.code;
+          });
+        renderCatalogBrowse();
+      })
+      .catch(function (err) {
+        if (my !== seq.browse) return;
+        runtime.browseBusy = false;
+        runtime.browseResults = [];
+        runtime.browseTotal = null;
+        runtime.browseError = errorText(err);
+        renderCatalogBrowse();
+      });
+  }
+
+  /** טעינה ראשונה של הקטלוג ברגע שברור שאין רשימת קורסים מהתוכנית. */
+  function ensureCatalogBrowse() {
+    if (!catalogFallbackActive()) return;
+    if (runtime.browseBusy) return;
+    // כשהניסיון הקודם נכשל — לנסות שוב. ``browseLoaded`` לבדו היה אומר
+    // "כבר ניסינו" גם על ניסיון שהסתיים בשגיאה, והופך תקלה חולפת לקבועה.
+    if (runtime.browseLoaded && !runtime.browseError) return;
+    browseCatalog(ui.search ? txt(ui.search.value) : "");
   }
 
   function buildSolveBody() {
@@ -1765,7 +2023,15 @@
     ui.searchResults = byId("course-search-results");
     ui.courseList = byId("course-list");
     ui.creditsTotal = byId("credits-total");
+    ui.creditsUnknown = byId("credits-unknown");
     ui.coursesNote = byId("courses-note");
+    // ‏SPEC §4 — מצב קטלוג. אותה תיבת חיפוש, יעד אחר: כשאין תוכנית לימודים
+    // היא מזינה את רשימת הקטלוג שמתחתיה במקום את הרשימה הנפתחת.
+    ui.searchPlaceholder = ui.search ? txt(ui.search.getAttribute("placeholder")) : "";
+    ui.browseBox = byId("catalog-browse");
+    ui.browseNote = byId("catalog-browse-note");
+    ui.browseList = byId("catalog-results");
+    ui.browseState = byId("catalog-browse-state");
 
     ui.daysRow = byId("days-buttons");
     ui.dayButtons = ui.daysRow
@@ -1819,6 +2085,21 @@
     };
   }
 
+  /**
+   * לאן הולכת הקלדה בתיבת החיפוש. במצב קטלוג היא מזינה את רשימת
+   * הקטלוג — ואם העיון נכשל בפעם הקודמת מנסים אותו שוב וגם פותחים את
+   * הרשימה הנפתחת, כדי שכישלון אחד לא ינעל את מצב הקטלוג לכל הסשן.
+   */
+  function driveSearchBox(value) {
+    if (!catalogFallbackActive()) {
+      searchCatalog(value);
+      return;
+    }
+    var wasBroken = catalogBrowseBroken();
+    browseCatalog(value);
+    if (wasBroken) searchCatalog(value);
+  }
+
   function wireEvents() {
     if (ui.selYear) ui.selYear.addEventListener("change", onYearTermChange);
     if (ui.selTerm) ui.selTerm.addEventListener("change", onYearTermChange);
@@ -1830,15 +2111,21 @@
         if (searchTimer) clearTimeout(searchTimer);
         searchTimer = setTimeout(function () {
           searchTimer = null;
-          searchCatalog(value);
+          driveSearchBox(value);
         }, SEARCH_DEBOUNCE_MS);
       });
       ui.search.addEventListener("keydown", function (ev) {
         if (ev.key === "Escape") {
           ui.search.value = "";
-          searchCatalog("");
+          driveSearchBox("");
         } else if (ev.key === "Enter") {
           ev.preventDefault();
+          if (browseDrivesSearchBox()) {
+            var hit = runtime.browseResults[0];
+            // במצב קטלוג הרשימה נשארת פתוחה — בוחרים כמה קורסים ברצף.
+            if (hit) addCourse(hit.code, hit.name, hit.credits, { keepQuery: true });
+            return;
+          }
           var first = runtime.catalogResults[0];
           if (first) addCourse(first.code, first.name, first.credits);
         }
@@ -2144,6 +2431,7 @@
     renderYearStep();
     renderCoursesStep();
     renderSearchResults();
+    renderCatalogBrowse();
     renderDaysStep();
     renderLecturersStep();
     renderScheduleStep();
@@ -2257,9 +2545,10 @@
     ui.selTerm.value = txt(state.term);
 
     var info = semesterInfo(state.semester);
-    if (txt(state.semester)) {
+    var yearLabel = YEAR_LABELS[state.studyYear] || "שנה " + state.studyYear;
+    if (curriculumSemesterKnown()) {
       var parts = [
-        YEAR_LABELS[state.studyYear] || "שנה " + state.studyYear,
+        yearLabel,
         "סמסטר " + txt(state.term),
         "סמסטר " + txt(state.semester) + " בתוכנית הלימודים",
       ];
@@ -2268,6 +2557,11 @@
       }
       setText(ui.semesterSummary, parts.join(" · "));
       setText(ui.yearNote, "");
+    } else if (runtime.curriculumAvailable === false) {
+      // אין תוכנית טעונה — הבחירה עצמה תקפה, ואסור לדבר על סמסטר
+      // בתוכנית שאינה קיימת.
+      setText(ui.semesterSummary, yearLabel + " · סמסטר " + txt(state.term));
+      setText(ui.yearNote, FALLBACK_NOTE["no-curriculum"]);
     } else {
       setText(ui.semesterSummary, "אין סמסטר תואם בתוכנית הלימודים");
       setText(
@@ -2319,20 +2613,27 @@
     setState({ codes: uniq(codes), activeSchedule: 0 });
   }
 
-  function addCourse(code, name, credits) {
+  /**
+   * ‏opts.keepQuery — במצב קטלוג לא מנקים את החיפוש אחרי בחירה: אותה שאילתה
+   * משמשת לבחירת כמה קורסים ברצף.
+   */
+  function addCourse(code, name, credits, opts) {
+    opts = opts || {};
     var c = txt(code);
     if (!c) return;
     if (state.codes.indexOf(c) !== -1) return;
     var known = Object.assign({}, state.known);
     known[c] = {
       name: txt(name) || (known[c] && known[c].name) || "",
-      credits: num(credits, (known[c] && known[c].credits) || 0),
+      credits: pickCredits(credits, known[c] && known[c].credits),
       semester: (known[c] && known[c].semester) || "",
     };
     state.known = known;
-    if (ui.search) ui.search.value = "";
-    runtime.catalogQuery = "";
-    runtime.catalogResults = [];
+    if (!opts.keepQuery) {
+      if (ui.search) ui.search.value = "";
+      runtime.catalogQuery = "";
+      runtime.catalogResults = [];
+    }
     toggleCourse(c, true);
   }
 
@@ -2365,6 +2666,9 @@
                   tied_with: [],
                   note: "",
                   fromSemester: txt(known.semester),
+                  // במצב קטלוג אין "סמסטר בתוכנית" שאפשר להיות מחוצה לו.
+                  fromCatalog: catalogFallbackActive() && !txt(known.semester),
+                  in_curriculum: false,
                   offered: true,
                   has_data: !!courseDataByCode(code),
                 },
@@ -2374,7 +2678,8 @@
             );
           });
 
-        if (!list.firstChild) {
+        // במצב קטלוג ההסבר יושב מתחת, ליד רשימת הקטלוג עצמה — לא כאן.
+        if (!list.firstChild && !catalogFallbackActive()) {
           list.appendChild(
             el("p", {
               class: "note",
@@ -2387,7 +2692,21 @@
       });
     }
 
-    setText(ui.creditsTotal, fmtNumber(totalCredits()));
+    // ‏SPEC §3: הסכום לעולם לא מציג 0 לנ"ז שאינה ידועה, ולעולם לא מסתיר
+    // בשקט קורסים שאין להם נתון — הם נספרים בשורה שמתחת למספר.
+    var credits = creditsSummary(state.codes);
+    // בלי קורסים כלל הסכום הוא באמת 0. "—" שמור למצב שבו יש קורסים
+    // ואין לאף אחד מהם נ"ז ידועות — שני דברים שונים לגמרי.
+    var noneChosen = state.codes.length === 0;
+    setText(
+      ui.creditsTotal,
+      credits.known || noneChosen ? fmtNumber(credits.total) : "—"
+    );
+    setText(
+      ui.creditsUnknown,
+      credits.unknown ? "(" + missingCreditsText(credits.unknown) + ")" : ""
+    );
+    setHidden(ui.creditsUnknown, !credits.unknown);
 
     if (ui.coursesNote) {
       var notes = [];
@@ -2398,9 +2717,11 @@
             " כחבילה אחת: סימון של אחד מסמן את כולם, וביטול של אחד מבטל את כולם."
         );
       });
-      notes.push(
-        "אפשר להוסיף כל קורס אחר מהידיעון דרך תיבת החיפוש — כולל חזרה על קורס מסמסטר קודם, שהוא מקרה רגיל לגמרי."
-      );
+      if (!catalogFallbackActive()) {
+        notes.push(
+          "אפשר להוסיף כל קורס אחר מהידיעון דרך תיבת החיפוש — כולל חזרה על קורס מסמסטר קודם, שהוא מקרה רגיל לגמרי."
+        );
+      }
       setText(ui.coursesNote, notes.join(" "));
     }
   }
@@ -2526,7 +2847,14 @@
     fetchCourses();
   }
 
-  function courseItem(rec, checked, isExtra) {
+  /**
+   * כרטיס קורס אחד.
+   * ‏opts.onToggle — מי שמטפל בסימון במקום ``toggleCourse`` (שורת קטלוג
+   * צריכה גם לשמור שם ונ"ז). ‏opts.quiet — בלי פסקת ההסבר על מצב הנתונים,
+   * לרשימות ארוכות שבהן היא הייתה הופכת לרעש.
+   */
+  function courseItem(rec, checked, isExtra, opts) {
+    opts = opts || {};
     var code = txt(rec.code);
     var unavailable = rec.offered === false;
 
@@ -2535,7 +2863,8 @@
       data: { fk: "course-" + code },
       on: {
         change: function (ev) {
-          toggleCourse(code, ev.target.checked);
+          if (opts.onToggle) opts.onToggle(ev.target.checked === true);
+          else toggleCourse(code, ev.target.checked);
         },
       },
     });
@@ -2552,7 +2881,8 @@
     if (num(rec.te, 0)) hours.push("תרגול " + fmtNumber(rec.te));
     if (num(rec.ma, 0)) hours.push("מעבדה " + fmtNumber(rec.ma));
     if (num(rec.pr, 0)) hours.push("פרויקט " + fmtNumber(rec.pr));
-    var meta = [fmtNumber(rec.credits) + ' נ"ז'];
+    // ‏SPEC §3: "—" ולא "0" — 86% מהקטלוג אינו בתוכנית, ואין לו נ"ז שמורות.
+    var meta = [fmtCredits(rec.credits) + ' נ"ז'];
     if (hours.length) meta.push(hours.join(" · "));
     if (rec.prereq && rec.prereq.length) meta.push("קדם: " + rec.prereq.join(", "));
     main.appendChild(el("span", { class: "course-meta", text: meta.join(" | ") }));
@@ -2561,7 +2891,14 @@
     }
 
     var tags = el("div", { class: "course-tags" });
-    if (isExtra) {
+    if (rec.fromCatalog) {
+      tags.appendChild(
+        el("span", {
+          class: "tag " + (rec.in_curriculum ? "tag--in-plan" : "tag--out-plan"),
+          text: rec.in_curriculum ? "בתוכנית הלימודים" : "מהקטלוג",
+        })
+      );
+    } else if (isExtra) {
       tags.appendChild(
         el("span", {
           class: "tag tag--out-plan",
@@ -2595,7 +2932,9 @@
       );
     }
     if (tags.firstChild) main.appendChild(tags);
-    if (status.text) {
+    // ברשימת הקטלוג נשארת רק התגית הקצרה: ההסבר המלא וכפתור הניסיון החוזר
+    // מופיעים בכרטיס של הקורס הנבחר למעלה, וכפילות שלהם היא רעש.
+    if (status.text && !opts.quiet) {
       main.appendChild(
         el("span", {
           class: "course-meta",
@@ -2604,7 +2943,7 @@
         })
       );
     }
-    if (status.retry) main.appendChild(retryButton(code));
+    if (status.retry && !opts.quiet) main.appendChild(retryButton(code));
 
     var cls = "course-item";
     if (checked) cls += " is-selected";
@@ -2625,6 +2964,12 @@
 
   function renderSearchResults() {
     if (!ui.searchResults) return;
+    // במצב קטלוג אותה תיבה מזינה את רשימת הקטלוג שמתחת, ולכן אין רשימה נפתחת.
+    if (browseDrivesSearchBox()) {
+      clear(ui.searchResults);
+      setHidden(ui.searchResults, true);
+      return; // תפקיד התיבה מתעדכן ב-renderCatalogBrowse
+    }
     var results = runtime.catalogResults;
     // הרשימה נפתחת בזמן שיש חיפוש פעיל — גם כדי להראות "מחפש…" או "לא נמצאו".
     var show = !!runtime.catalogQuery;
@@ -2692,6 +3037,107 @@
     if (ui.search) {
       ui.search.setAttribute("aria-expanded", show ? "true" : "false");
     }
+  }
+
+  /* --- שלב 2, מצב קטלוג: בחירה מהקטלוג המלא (SPEC §4) ---------------- */
+
+  /**
+   * הרשימה שמחליפה את קורסי התוכנית כשאין תוכנית טעונה.
+   * שני המצבים חיים זה לצד זה: כשיש תוכנית, כל זה נשאר מוסתר והרשימה
+   * הרגילה אינה משתנה כלל.
+   */
+  function renderCatalogBrowse() {
+    var reason = catalogFallbackReason();
+    var active = reason !== "";
+
+    var drives = browseDrivesSearchBox();
+    setHidden(ui.browseBox, !active);
+    if (ui.search) {
+      ui.search.setAttribute(
+        "placeholder",
+        drives ? BROWSE_PLACEHOLDER : txt(ui.searchPlaceholder)
+      );
+      // ‏combobox פירושו רשימה נפתחת. כשהתיבה מזינה רשימה קבועה שמתחתיה
+      // אין רשימה נפתחת — ולכן גם התפקיד הנגיש משתנה.
+      ui.search.setAttribute("role", drives ? "searchbox" : "combobox");
+      ui.search.setAttribute(
+        "aria-controls",
+        drives ? "catalog-results" : "course-search-results"
+      );
+      if (drives) ui.search.removeAttribute("aria-expanded");
+    }
+    if (!active) return;
+
+    var note = FALLBACK_NOTE[reason] || FALLBACK_NOTE["empty-semester"];
+    if (catalogBrowseBroken()) note += " החיפוש בקטלוג לא זמין — אפשר להוסיף קורס בתיבת החיפוש שלמעלה.";
+    setText(ui.browseNote, note);
+
+    if (ui.browseList) {
+      rebuild(ui.browseList, function (list) {
+        if (runtime.browseError) {
+          list.appendChild(
+            el("p", { class: "note", text: "החיפוש בקטלוג נכשל: " + runtime.browseError })
+          );
+          return;
+        }
+        if (!runtime.browseResults.length) {
+          list.appendChild(
+            el("p", {
+              class: "note",
+              text: runtime.browseBusy
+                ? "טוען מהקטלוג…"
+                : runtime.browseQuery
+                ? "לא נמצא קורס מתאים בקטלוג."
+                : "הקטלוג ריק — יש להריץ רענון מהידיעון.",
+            })
+          );
+          return;
+        }
+        var selected = selectedSet();
+        runtime.browseResults.forEach(function (rec) {
+          list.appendChild(catalogItem(rec, selected[rec.code] === true));
+        });
+      });
+    }
+
+    var bits = [];
+    if (runtime.browseResults.length) {
+      bits.push("מוצגים " + runtime.browseResults.length + " קורסים");
+      if (
+        runtime.browseTotal !== null &&
+        runtime.browseTotal > runtime.browseResults.length
+      ) {
+        bits.push("מתוך " + runtime.browseTotal + " — אפשר לצמצם בחיפוש");
+      }
+    }
+    setText(ui.browseState, bits.join(" "));
+  }
+
+  /** שורת קטלוג אחת — אותו כרטיס בדיוק, עם שמירת השם והנ"ז בבחירה. */
+  function catalogItem(rec, checked) {
+    return courseItem(
+      {
+        code: rec.code,
+        name: rec.name,
+        credits: rec.credits,
+        prereq: [],
+        tied_with: [],
+        note: "",
+        offered: rec.offered !== false,
+        has_data: rec.has_data === true,
+        fromCatalog: true,
+        in_curriculum: rec.in_curriculum === true,
+      },
+      checked,
+      false,
+      {
+        quiet: true,
+        onToggle: function (on) {
+          if (on) addCourse(rec.code, rec.name, rec.credits, { keepQuery: true });
+          else toggleCourse(rec.code, false);
+        },
+      }
+    );
   }
 
   /* --- שלב 3: ימי לימוד ---------------------------------------------- */
@@ -2926,7 +3372,7 @@
     var code = course.code;
     var idx = colorOf(code);
 
-    var metaBits = [fmtNumber(creditsOf(code)) + ' נ"ז', course.groups.length + " קבוצות"];
+    var metaBits = [fmtCredits(creditsOf(code)) + ' נ"ז', course.groups.length + " קבוצות"];
     var fresh = course.freshness || {};
     if (txt(fresh.age_text)) {
       metaBits.push((fresh.stale === true ? "נתונים ישנים · " : "") + txt(fresh.age_text));
@@ -3246,7 +3692,7 @@
           )
         );
         box.appendChild(fact("חורים", fmtSpan(sch.gap_minutes)));
-        box.appendChild(fact('נ"ז', fmtNumber(scheduleCredits(sch))));
+        box.appendChild(fact('נ"ז', creditsText(scheduleCredits(sch), { short: true })));
         if (num(sch.lecturer_total, 0) > 0) {
           box.appendChild(
             fact(
@@ -3381,17 +3827,24 @@
     ]);
   }
 
+  /** סיכום נ"ז למערכת אחת, כולל ספירת הקורסים שאין להם נתון. */
   function scheduleCredits(sch) {
     var seen = Object.create(null);
     var total = 0;
+    var known = 0;
+    var unknown = 0;
     pickList(sch, ["picks"], null).forEach(function (p) {
       var code = txt(p.code);
       if (seen[code]) return;
       seen[code] = true;
-      var c = num(p.credits, 0);
-      total += c > 0 ? c : creditsOf(code);
+      var v = pickCredits(creditsFromRecord(p), creditsOf(code));
+      if (v === null) unknown++;
+      else {
+        total += v;
+        known++;
+      }
     });
-    return total;
+    return { total: total, known: known, unknown: unknown };
   }
 
   /** כל המפגשים של מערכת אחת, שטוחים, עם פרטי הקורס. */
@@ -3721,15 +4174,17 @@
     var steps = [
       {
         key: "year",
+        // בחירת שנה+סמסטר היא שלב שלם גם כשאין לה סמסטר בתוכנית
+        // (תוכנית קצרה מ-8 סמסטרים, קיץ, או אין תוכנית כלל).
         locked: false,
-        complete: !!txt(state.semester) || txt(state.term) === "קיץ",
-        text: txt(state.semester)
+        complete: !!txt(state.term),
+        text: txt(state.term)
           ? (YEAR_LABELS[state.studyYear] || "") +
             " · סמסטר " +
             txt(state.term) +
-            " · סמסטר " +
-            txt(state.semester) +
-            " בתוכנית"
+            (curriculumSemesterKnown()
+              ? " · סמסטר " + txt(state.semester) + " בתוכנית"
+              : "")
           : "יש לבחור שנה וסמסטר",
       },
       {
@@ -3737,7 +4192,11 @@
         locked: false,
         complete: hasCodes,
         text: hasCodes
-          ? state.codes.length + " קורסים · " + fmtNumber(totalCredits()) + ' נ"ז'
+          ? state.codes.length +
+            " קורסים · " +
+            totalCreditsText({ unit: true, short: true })
+          : catalogFallbackActive()
+          ? "יש לבחור קורסים מהקטלוג"
           : "יש לסמן קורסים",
       },
       {

@@ -13,6 +13,7 @@
     data/db/
       catalog.json         כל הקורסים שנפתחו השנה:  code -> {name, status}
       sections.json        פירוט הקבוצות לכל קורס במעקב + מטא-דאטה לכל קורס
+      details.json         פרטי הקורסים מהידיעון: נ"ז, שעות, שפת הוראה, תנאי קדם
       tracked.json         קבוצת קודי הקורסים שאנחנו דואגים לרענן
       refresh_log.jsonl    שורת JSON אחת לכל ריצת רענון (append-only)
       changes.jsonl        שורת JSON אחת לכל שינוי שזוהה (append-only)
@@ -48,13 +49,15 @@ Technical notes
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import sys
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Sequence
 
@@ -83,6 +86,7 @@ except ImportError:  # pragma: no cover
 __all__ = [
     "SCHEMA_VERSION",
     "DEFAULT_MAX_AGE_HOURS",
+    "DEFAULT_DETAILS_MAX_AGE_HOURS",
     "MAX_SNAPSHOTS",
     "CourseMeta",
     "Store",
@@ -106,6 +110,13 @@ SCHEMA_VERSION = 1
 #: בני כמה שעות הנתונים עדיין נחשבים טריים. הרענון רץ פעם ביום.
 DEFAULT_MAX_AGE_HOURS = 24.0
 
+#: בני כמה שעות *פרטי הקורס* (נ"ז, שעות, שפת הוראה, תנאי קדם) עדיין נחשבים
+#: טריים. שבוע שלם — ובכוונה, בניגוד ל-24 השעות של מערכת השעות: קבוצה, מרצה
+#: או חדר זזים באמצע סמסטר; מספר נקודות הזכות של קורס כמעט אף פעם לא. חלון של
+#: 24 שעות כאן היה מכפיל את מספר הפניות של הרענון היומי לידיעון בשביל נתון
+#: שלא זז — וזו בדיוק חוסר-הנימוס שהכלי הזה נמנע ממנה.
+DEFAULT_DETAILS_MAX_AGE_HOURS = 24.0 * 7
+
 #: כמה גיבויים של sections.json שומרים בתיקיית snapshots/.
 #: ‏30 = בערך חודש של ריצה יומית. מעבר לזה הישנים ביותר נמחקים, כדי שהתיקייה
 #: לא תתפח בלי גבול על המחשב של הסטודנט.
@@ -114,6 +125,7 @@ MAX_SNAPSHOTS = 30
 #: שמות הקבצים בתוך תיקיית המסד.
 CATALOG_FILE = "catalog.json"
 SECTIONS_FILE = "sections.json"
+DETAILS_FILE = "details.json"
 TRACKED_FILE = "tracked.json"
 REFRESH_LOG_FILE = "refresh_log.jsonl"
 CHANGES_LOG_FILE = "changes.jsonl"
@@ -122,6 +134,7 @@ SNAPSHOTS_DIR = "snapshots"
 #: מזהי סכימה שנכתבים לתוך הקבצים, כדי שקובץ זר יזוהה מיד.
 CATALOG_SCHEMA = "braude-schedule-builder/catalog"
 SECTIONS_SCHEMA = "braude-schedule-builder/sections-db"
+DETAILS_SCHEMA = "braude-schedule-builder/course-details"
 TRACKED_SCHEMA = "braude-schedule-builder/tracked"
 
 #: פורמט חותמת הזמן. ISO-8601 ב-UTC עם Z בסוף — "2026-08-30T14:03:11Z".
@@ -404,6 +417,51 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _jsonable(value: Any) -> Any:
+    """מחזיר עותק של הערך שאפשר לכתוב ל-JSON, בלי להתפוצץ על טיפוס לא צפוי.
+
+    למה זה נחוץ: ``save_details`` מקבל מילון שמגיע מהפרסור של דף הידיעון, ואם
+    נכנס לתוכו טיפוס שהמודול הזה לא מכיר (למשל ``Decimal``, או קבוצה) —
+    ``json.dumps`` היה מרים ``TypeError`` באמצע הרענון היומי ומפיל אותו. כאן
+    כל דבר לא מוכר הופך למחרוזת, וגרוע מכך לא קורה.
+
+    ``NaN``/``Infinity`` הופכים ל-``None``: פייתון היה כותב אותם בשקט, אבל הם
+    אינם JSON חוקי וכל קורא אחר היה נופל עליהם. "לא ידוע" עדיף על קובץ שבור.
+    """
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_jsonable(v) for v in value]
+    return str(value)
+
+
+def _as_details_dict(details: Any) -> dict[str, Any] | None:
+    """מנרמל את הקלט של :meth:`Store.save_details` למילון, או ``None``.
+
+    סלחני בכוונה, בדיוק כמו שאר המודול: מקבל מילון, ‏NamedTuple (למשל
+    ``CourseDetails`` של הפרסר, שיש לו ``_asdict``) או dataclass. כל דבר אחר —
+    ובכלל זה ``None`` ומילון ריק — מוחזר כ-``None``, כלומר "לא התקבלו פרטים",
+    וזה מה שמפעיל את מסלול הכישלון ששומר על הרשומה הקודמת.
+    """
+    if details is None:
+        return None
+    if is_dataclass(details) and not isinstance(details, type):
+        details = asdict(details)
+    elif hasattr(details, "_asdict"):
+        try:
+            details = details._asdict()
+        except Exception:  # pragma: no cover - NamedTuple חריג
+            return None
+    if not isinstance(details, dict) or not details:
+        return None
+    clean = _jsonable(details)
+    return clean if isinstance(clean, dict) and clean else None
+
+
 # ==========================================================================
 # 4. סריאליזציה של Course/Group/Meeting
 # ==========================================================================
@@ -670,6 +728,7 @@ class Store:
         self.root = os.path.abspath(str(root))
         self.catalog_path = os.path.join(self.root, CATALOG_FILE)
         self.sections_path = os.path.join(self.root, SECTIONS_FILE)
+        self.details_path = os.path.join(self.root, DETAILS_FILE)
         self.tracked_path = os.path.join(self.root, TRACKED_FILE)
         self.refresh_log_path = os.path.join(self.root, REFRESH_LOG_FILE)
         self.changes_log_path = os.path.join(self.root, CHANGES_LOG_FILE)
@@ -1222,7 +1281,308 @@ class Store:
         return out
 
     # ------------------------------------------------------------------
-    # 6.4 סט המעקב
+    # 6.4 פרטי קורס — נ"ז, שעות, שפת הוראה ותנאי קדם (S_CourseDetails)
+    # ------------------------------------------------------------------
+    # למה החלק הזה קיים: עד עכשיו נקודות הזכות ותנאי הקדם הגיעו מ-
+    # curriculum.json, שמתאר תוכנית לימודים של מחלקה אחת. 493 מתוך 571 קורסי
+    # הקטלוג — 86% — פשוט לא נמצאים שם, ולכן דווחו כ-0.0 נ"ז. הידיעון מפרסם
+    # את המידע הזה לכל קורס, בלי התחברות, בדף S_CourseDetails; כאן הוא נשמר,
+    # וכך תוכנית הלימודים הופכת מדרישה להעשרה אופציונלית.
+    #
+    # שלושה כללים שולטים בכל מה שלמטה:
+    #   1. **חלון טריות משלו — שבוע.** ראו DEFAULT_DETAILS_MAX_AGE_HOURS.
+    #   2. **לא ממציאים 0.0.** אין רשומה -> None. סכום נ"ז ששותק על 86%
+    #      מהקורסים גרוע מסכום שאומר בפירוש "לא ידוע".
+    #   3. **כישלון לא הורס נתון טוב** — בדיוק כמו ב-save_course.
+    #
+    # מבנה הרשומה בקובץ details.json::
+    #
+    #     {"details": {...}, "fetched_at": "...", "ok": true,
+    #      "last_attempt_at": "...", "last_error": ""}
+
+    def _load_details_db(self) -> dict[str, Any]:
+        """הקובץ הגולמי של details.json, תמיד בצורה תקינה (גם כשאינו קיים)."""
+        data = self._read_json(self.details_path, None)
+        if not isinstance(data, dict):
+            return {"schema": DETAILS_SCHEMA, "version": SCHEMA_VERSION, "courses": {}}
+        courses = data.get("courses")
+        if not isinstance(courses, dict):
+            courses = {}
+        return {
+            "schema": data.get("schema", DETAILS_SCHEMA),
+            "version": _safe_int(data.get("version", SCHEMA_VERSION), SCHEMA_VERSION),
+            "updated_at": data.get("updated_at", ""),
+            "courses": courses,
+        }
+
+    def _store_details_db(self, entries: dict[str, Any]) -> None:
+        """כותב את details.json מחדש, ממוין לפי קוד קורס — כתיבה אטומית."""
+        payload = {
+            "schema": DETAILS_SCHEMA,
+            "version": SCHEMA_VERSION,
+            "updated_at": utc_now_iso(),
+            "courses": {c: entries[c] for c in sorted(entries, key=_code_sort_key)},
+        }
+        self._write_json(self.details_path, payload)
+
+    @staticmethod
+    def _split_details_entry(entry: Any) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+        """מפרק רשומת פרטים אחת ל-``(details, meta)``.
+
+        סלחני לשתי צורות, בדיוק כמו :meth:`_split_entry`: הצורה שאנחנו כותבים
+        (``{"details": {...}, "fetched_at": ...}``), וגם קובץ שנכתב ביד שבו
+        הרשומה *עצמה* היא הפרטים. רשומה שאינה מילון, או שהפרטים שבתוכה אינם
+        מילון או ריקים, מחזירה ``(None, ...)`` — כלומר "פגומה", וזה מספיק כדי
+        שתיחשב מיושנת ותרוענן.
+        """
+        if not isinstance(entry, dict):
+            return None, {}
+        if "details" in entry or "fetched_at" in entry or "ok" in entry:
+            payload = entry.get("details")
+            meta = {k: v for k, v in entry.items() if k != "details"}
+            return (payload if isinstance(payload, dict) and payload else None), meta
+        return (dict(entry) if entry else None), {}
+
+    @staticmethod
+    def _details_entry_is_stale(
+        payload: dict[str, Any] | None,
+        meta: dict[str, Any],
+        max_age_hours: float,
+        now: datetime | None,
+    ) -> bool:
+        """הכלל היחיד למיושנוּת של פרטים — ראו :meth:`details_stale`."""
+        if payload is None:
+            return True
+        if not bool(meta.get("ok", True)):
+            return True
+        age = age_hours_since(meta.get("fetched_at"), now)
+        if age is None:      # חסרה חותמת, או שאי אפשר לפרש אותה -> מיושן
+            return True
+        return age > _safe_float(max_age_hours, DEFAULT_DETAILS_MAX_AGE_HOURS)
+
+    def _details_failure_entry(
+        self,
+        prev_payload: dict[str, Any] | None,
+        prev_meta: dict[str, Any],
+        error: str,
+        attempt_at: str,
+    ) -> dict[str, Any]:
+        """בונה רשומת כישלון ששומרת על הנתון הטוב הקודם במלואו.
+
+        בדיוק כמו במסלול הכישלון של :meth:`save_course`: ``fetched_at`` (חותמת
+        ההצלחה האחרונה) **לא** נדרסת, הפרטים הישנים נשארים במקומם, ורק ``ok``,
+        ``last_attempt_at`` ו-``last_error`` מתעדכנים. התוצאה: התצוגה עדיין
+        יודעת כמה נ"ז יש לקורס, והרענון הבא ינסה שוב.
+        """
+        entry: dict[str, Any] = {}
+        if prev_payload is not None:
+            entry["details"] = prev_payload
+        entry["fetched_at"] = str(prev_meta.get("fetched_at", "") or "")
+        entry["ok"] = False
+        entry["last_attempt_at"] = attempt_at
+        entry["last_error"] = error
+        return entry
+
+    def save_details(self, code: str, details: dict, fetched_at: str) -> None:
+        """שומר את פרטי הקורס (נ"ז, שעות, שפה, תיאור, תנאי קדם) מדף הידיעון.
+
+        שני מסלולים, בדיוק כמו ב-:meth:`save_course`:
+
+        **שליפה שהצליחה** — ``details`` הוא מילון עם תוכן. הוא נשמר *כפי שהוא*,
+        ו-``fetched_at`` נשמר גם הוא בדיוק כפי שהתקבל: חותמת ריקה או משובשת
+        תגרום לרשומה להיחשב מיושנת ולהתרענן בהרצה הבאה, וזה הכיוון הבטוח. אין
+        כאן השלמה שקטה ל"עכשיו", שהייתה מציגה נתון ממקור-זמן לא ידוע כטרי.
+
+        **שליפה שנכשלה** — ``details`` ריק, ``None``, או לא מילון. הרשומה
+        הקודמת **נשארת במלואה**, כולל ``fetched_at``; מתעדכנים רק ``ok=False``,
+        ``last_attempt_at`` ו-``last_error``, והרשומה נחשבת מיושנת.
+
+        Args:
+            code: קוד הקורס. חובה.
+            details: מילון הפרטים. מתקבל גם ``NamedTuple``/dataclass (למשל
+                ``CourseDetails`` של הפרסר) — ראו :func:`_as_details_dict`.
+            fetched_at: חותמת ISO-8601 ב-UTC, למשל מ-:func:`utc_now_iso`.
+
+        Raises:
+            StoreError: כשקוד הקורס ריק, או כשהכתיבה לדיסק נכשלה.
+        """
+        code = str(code or "").strip()
+        if not code:
+            raise StoreError("save_details נקרא בלי קוד קורס.")
+
+        payload = _as_details_dict(details)
+        db = self._load_details_db()
+        entries: dict[str, Any] = dict(db.get("courses") or {})
+        prev_payload, prev_meta = self._split_details_entry(entries.get(code))
+        stamp = str(fetched_at or "")
+
+        if payload is None:
+            entries[code] = self._details_failure_entry(
+                prev_payload,
+                prev_meta,
+                "לא התקבלו פרטי קורס מהידיעון",
+                stamp or utc_now_iso(),
+            )
+        else:
+            entries[code] = {
+                "details": payload,
+                "fetched_at": stamp,
+                "ok": True,
+                "last_attempt_at": stamp or utc_now_iso(),
+                "last_error": "",
+            }
+        self._store_details_db(entries)
+
+    def mark_details_failed(self, code: str, error: str = "") -> None:
+        """מסמן ששליפת הפרטים של קורס נכשלה, בלי לגעת במה ששמור.
+
+        קיצור דרך ל-``save_details(code, None, utc_now_iso())`` עם תיאור שגיאה
+        משלכם, לשימוש כשאין בכלל דף ביד (הדף לא נטען, הקורס לא קיים בידיעון).
+        """
+        code = str(code or "").strip()
+        if not code:
+            return
+        db = self._load_details_db()
+        entries: dict[str, Any] = dict(db.get("courses") or {})
+        prev_payload, prev_meta = self._split_details_entry(entries.get(code))
+        entries[code] = self._details_failure_entry(
+            prev_payload,
+            prev_meta,
+            error or "שליפת פרטי הקורס נכשלה",
+            utc_now_iso(),
+        )
+        self._store_details_db(entries)
+
+    def load_details(self, code: str) -> dict | None:
+        """מחזיר את פרטי הקורס ששמורים, או ``None`` כשאין רשומה תקינה.
+
+        מה שנשמר הוא מה שחוזר — עיגול הלוך-ושוב מדויק, בלי שדות מטא שמוזרקים
+        פנימה (את חותמת הזמן שולפים ב-:meth:`details_meta` או
+        ב-:meth:`details_fetched_at`). מוחזר עותק עמוק, כדי ששינוי אצל הקורא לא
+        ידלוף למטמון הקריאה של המודול.
+
+        ``None`` פירושו "לא ידוע" — **לא** אפס. מי שמציג נ"ז חייב להראות מקף
+        במקרה הזה ולא ``0.0``: סכום שמעלים 86% מהקורסים גרוע מסכום שמודה שאינו
+        יודע.
+        """
+        code = str(code or "").strip()
+        if not code:
+            return None
+        db = self._load_details_db()
+        payload, _meta = self._split_details_entry((db.get("courses") or {}).get(code))
+        if payload is None:
+            return None
+        return copy.deepcopy(payload)
+
+    def details_meta(self, code: str) -> dict | None:
+        """המטא של רשומת הפרטים, או ``None`` כשאין רשומה בכלל.
+
+        Returns:
+            ``{"fetched_at", "ok", "last_attempt_at", "last_error", "has_details"}``.
+        """
+        code = str(code or "").strip()
+        db = self._load_details_db()
+        entry = (db.get("courses") or {}).get(code)
+        if entry is None:
+            return None
+        payload, meta = self._split_details_entry(entry)
+        return {
+            "fetched_at": str(meta.get("fetched_at", "") or ""),
+            "ok": bool(meta.get("ok", True)),
+            "last_attempt_at": str(meta.get("last_attempt_at", "") or ""),
+            "last_error": str(meta.get("last_error", "") or ""),
+            "has_details": payload is not None,
+        }
+
+    def details_fetched_at(self, code: str) -> str:
+        """חותמת ההצלחה האחרונה של הפרטים, או מחרוזת ריקה."""
+        meta = self.details_meta(code)
+        return str((meta or {}).get("fetched_at", "") or "")
+
+    def details_age_hours(self, code: str, now: datetime | None = None) -> float | None:
+        """גיל הפרטים בשעות. ``None`` כשאין רשומה או שהחותמת לא קריאה."""
+        return age_hours_since(self.details_fetched_at(code), now)
+
+    def details_stale(
+        self,
+        code: str,
+        max_age_hours: float = DEFAULT_DETAILS_MAX_AGE_HOURS,
+        now: datetime | None = None,
+    ) -> bool:
+        """האם צריך לשלוף מחדש את פרטי הקורס.
+
+        מיושן = אחד מארבעה:
+          * הקוד לא נמצא בקובץ הפרטים בכלל;
+          * הרשומה פגומה (אינה מילון, או שאין בה פרטים);
+          * ``ok is False`` — הניסיון האחרון נכשל, אז הנתונים חשודים;
+          * הגיל (``now - fetched_at``, בהשוואה ב-UTC) גדול מ-``max_age_hours``.
+
+        חותמת זמן חסרה או שאי אפשר לפרש אותה נחשבת מיושנת — אותו כלל בטיחות
+        כמו ב-:meth:`is_stale`. הגבול עצמו סלחני: גיל *ששווה בדיוק* לסף עדיין
+        טרי; רק מעליו זה מיושן.
+
+        ברירת המחדל היא שבוע (``DEFAULT_DETAILS_MAX_AGE_HOURS``) ולא 24 שעות,
+        כי נ"ז ותנאי קדם כמעט לא משתנים — הרענון היומי לא צריך להכפיל את מספר
+        הפניות שלו לידיעון בשביל נתון שלא זז.
+        """
+        code = str(code or "").strip()
+        db = self._load_details_db()
+        entry = (db.get("courses") or {}).get(code)
+        if entry is None:
+            return True
+        payload, meta = self._split_details_entry(entry)
+        return self._details_entry_is_stale(payload, meta, max_age_hours, now)
+
+    def all_details(self) -> dict[str, dict]:
+        """כל רשומות הפרטים התקינות שבמסד, ``{code: details}``.
+
+        רשומות שהן מטא בלבד (שליפה ראשונה שנכשלה) לא מופיעות כאן — אין להן
+        תוכן להציג.
+        """
+        db = self._load_details_db()
+        out: dict[str, dict] = {}
+        for code, entry in (db.get("courses") or {}).items():
+            payload, _meta = self._split_details_entry(entry)
+            if payload is not None:
+                out[str(code)] = copy.deepcopy(payload)
+        return out
+
+    def details_codes(self) -> list[str]:
+        """כל הקודים שיש להם רשומת פרטים (כולל רשומת כישלון), ממוינים."""
+        db = self._load_details_db()
+        return sorted((db.get("courses") or {}).keys(), key=_code_sort_key)
+
+    def stale_details_codes(
+        self,
+        codes: Iterable[str] | None = None,
+        max_age_hours: float = DEFAULT_DETAILS_MAX_AGE_HOURS,
+        now: datetime | None = None,
+    ) -> list[str]:
+        """אילו מהקודים דורשים שליפת פרטים. סדר הקלט נשמר; כפילויות מנוכות.
+
+        ``codes=None`` בודק את כל הסט שבמעקב (:meth:`tracked`). הקובץ נקרא פעם
+        אחת לכל הקריאה, ולא פעם לכל קוד.
+        """
+        wanted = self._as_code_list(codes) if codes is not None else self.tracked()
+        db = self._load_details_db()
+        entries = db.get("courses") or {}
+        seen: set[str] = set()
+        out: list[str] = []
+        for c in wanted:
+            if c in seen:
+                continue
+            seen.add(c)
+            entry = entries.get(c)
+            if entry is None:
+                out.append(c)
+                continue
+            payload, meta = self._split_details_entry(entry)
+            if self._details_entry_is_stale(payload, meta, max_age_hours, now):
+                out.append(c)
+        return out
+
+    # ------------------------------------------------------------------
+    # 6.5 סט המעקב
     # ------------------------------------------------------------------
     def tracked(self) -> list[str]:
         """קודי הקורסים שהרענון היומי דואג להם, ממוינים."""
@@ -1262,7 +1622,7 @@ class Store:
         self._store_tracked(remaining)
 
     # ------------------------------------------------------------------
-    # 6.5 יומנים וגיבויים
+    # 6.6 יומנים וגיבויים
     # ------------------------------------------------------------------
     def log_refresh(self, record: dict) -> None:
         """מוסיף רשומה ליומן הרענונים (``refresh_log.jsonl``), שורה אחת לריצה."""
@@ -1407,7 +1767,7 @@ class Store:
         return deleted
 
     # ------------------------------------------------------------------
-    # 6.6 סיכום מצב לתצוגה
+    # 6.7 סיכום מצב לתצוגה
     # ------------------------------------------------------------------
     def freshness(
         self,
@@ -1657,6 +2017,67 @@ def self_check(verbose: bool = True) -> list[str]:
         c99, m99 = store.load_course("99999")
         check("mark_failed: אין קורס", c99, None)
         check("mark_failed: המטא נרשם", m99.last_error if m99 else None, "הקורס לא נמצא בידיעון")
+
+        # ----- פרטי קורס: עיגול הלוך-ושוב, חלון של שבוע, כישלון שלא הורס -----
+        details = {
+            "code": "61753",
+            "name": "אלגוריתמים",
+            "credits": 5.0,
+            "hours": {"he": 4.0, "te": 2.0, "ma": 0.0, "pr": 0.0},
+            "weekly_hours": 4.0,
+            "language": "עברית",
+            "description": "מטרת הקורס היא להקנות כלים לתכנון וניתוח אלגוריתמים.",
+            "prerequisites": [
+                {"code": "61140", "name": "מבני נתונים", "relation": "תנאי קדם", "alternative": ""}
+            ],
+            "warnings": [],
+        }
+        check("details: אין רשומה -> None", store.load_details("61753"), None)
+        check("details: אין רשומה -> מיושן", store.details_stale("61753"), True)
+
+        store.save_details("61753", details, utc_now_iso(now - timedelta(days=3)))
+        check("details: עיגול הלוך-ושוב מדויק", store.load_details("61753"), details)
+        check("details: בן 3 ימים טרי בחלון של שבוע",
+              store.details_stale("61753", now=now), False)
+        check("details: אותה רשומה מיושנת בחלון של 24 שעות",
+              store.details_stale("61753", 24.0, now=now), True)
+        check("details: ברירת המחדל היא שבוע", DEFAULT_DETAILS_MAX_AGE_HOURS, 168.0)
+        check("details: all_details", list(store.all_details()), ["61753"])
+        check("details: stale_details_codes",
+              store.stale_details_codes(["61753", "99999"], now=now), ["99999"])
+
+        store.save_details("61753", details, utc_now_iso(now - timedelta(days=8)))
+        check("details: בן 8 ימים -> מיושן", store.details_stale("61753", now=now), True)
+
+        # כישלון: הרשומה הטובה נשארת, רק המטא מתעדכן
+        good_stamp = utc_now_iso(now - timedelta(days=1))
+        store.save_details("61753", details, good_stamp)
+        store.save_details("61753", None, utc_now_iso(now))
+        check("details: כישלון לא מוחק את הפרטים", store.load_details("61753"), details)
+        check("details: כישלון לא דורס את fetched_at", store.details_fetched_at("61753"), good_stamp)
+        check("details: כישלון -> מיושן", store.details_stale("61753", 100_000.0, now=now), True)
+        store.save_details("61753", details, good_stamp)   # חזרה למצב תקין
+        check("details: רענון מוצלח מחזיר לטרי", store.details_stale("61753", now=now), False)
+
+        # חותמת לא קריאה = מיושן (אותו כלל בטיחות כמו בקורסים)
+        store.save_details("11001", {"code": "11001", "credits": None}, "לא תאריך")
+        check("details: חותמת משובשת -> מיושן", store.details_stale("11001", now=now), True)
+        check("details: הפרטים עצמם עדיין נטענים",
+              (store.load_details("11001") or {}).get("code"), "11001")
+        check("details: credits לא ידוע נשאר None ולא 0.0",
+              (store.load_details("11001") or {}).get("credits"), None)
+
+        # קוד שלא נשלף מעולם, ורשומת כישלון בלי נתון קודם
+        store.mark_details_failed("99999", "הקורס לא נמצא בידיעון")
+        check("mark_details_failed: אין פרטים", store.load_details("99999"), None)
+        check("mark_details_failed: המטא נרשם",
+              (store.details_meta("99999") or {}).get("last_error"), "הקורס לא נמצא בידיעון")
+        try:
+            store.save_details("", details, utc_now_iso(now))
+            empty_code_raised = False
+        except StoreError:
+            empty_code_raised = True
+        check("details: קוד ריק -> StoreError", empty_code_raised, True)
 
         # ----- יומנים -----
         store.log_refresh({"started_at": utc_now_iso(), "ok": True, "refreshed": 1})

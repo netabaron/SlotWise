@@ -55,7 +55,21 @@
 
   1 שנה וסמסטר   #select-year #select-term #semester-summary #year-note
   2 קורסים        #course-search #course-search-results #course-list
-                  #credits-total #courses-note
+                  #credits-total  סכום הנ"ז הידועות ("—" כשאין אף אחת)
+                  #credits-unknown  "(2 קורסים ללא נתון)" — hidden כשאין חוסר.
+                                  נ"ז שאינן ידועות מוצגות "—", לעולם לא "0":
+                                  86% מהקטלוג אינו בתוכנית הלימודים ואין לו
+                                  נ"ז שמורות. לעומת זאת אפס שהוצהר בתוכנית
+                                  (‏11063 אנגלית בסיסי ועוד ארבעה) מוצג "0" —
+                                  הוא נתון, לא חוסר.
+                  #courses-note
+                  מצב קטלוג (אין תוכנית לימודים טעונה):
+                  #catalog-browse       העטיפה. hidden כשיש תוכנית.
+                  #catalog-browse-note  שורת ההסבר האחת
+                  #catalog-results      שורות הקטלוג, אותם כרטיסי .course-item
+                  #catalog-browse-state כמה מוצג מתוך כמה (aria-live)
+                  באותו מצב תיבת #course-search מזינה את #catalog-results
+                  במקום את הרשימה הנפתחת.
   3 ימי לימוד     #days-buttons (כפתורים עם data-days="2".."6")
                   #days-target-label #min-days-label #feasible-count-label
                   #days-warning (hidden) #input-earliest #input-latest
@@ -173,10 +187,21 @@
         <div class="credits" id="credits-box">
           <span class="credits-label">סך נקודות זכות</span>
           <strong class="credits-value" id="credits-total">0</strong>
+          <span class="credits-label" id="credits-unknown" hidden></span>
         </div>
       </div>
       <ul class="search-results" id="course-search-results" role="listbox" aria-label="תוצאות חיפוש" hidden></ul>
       <div class="course-list" id="course-list"></div>
+
+      <!-- בחירה מהקטלוג — נפתח רק כשאין רשימת קורסים מתוכנית הלימודים.
+           ‏class="step-body" כאן הוא פריסה בלבד (עמודה עם רווחים), ואין
+           בקובץ הזה שום סגנון חדש: עיצוב הוא מעבר נפרד. -->
+      <div class="step-body catalog-browse" id="catalog-browse" hidden>
+        <p class="note" id="catalog-browse-note"></p>
+        <div class="course-list" id="catalog-results"></div>
+        <p class="note" id="catalog-browse-state" role="status" aria-live="polite"></p>
+      </div>
+
       <p class="note" id="courses-note"></p>
     </div>
   </section>

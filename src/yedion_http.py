@@ -98,11 +98,14 @@ __all__ = [
     "DEFAULT_DELAY_S",
     "DEFAULT_TIMEOUT_S",
     "course_url",
+    "details_url",
+    "PRGNAME_COURSE_DETAILS",
     "hebrew_year_label",
     "YedionHTTPError",
     "YearSwitchError",
     "YearMismatchError",
     "GatedEndpointError",
+    "ThrottledError",
     "YedionHTTP",
     "main",
 ]
@@ -126,6 +129,36 @@ PRGNAME_COURSE_SEARCH = "S_LOOK_FOR_NOSE"
 
 #: רשימת כל הקורסים — ציבורי גם הוא.
 PRGNAME_CATALOG = "S_LOOK_FOR_NOSE_AB"
+
+#: פרטי קורס בודד — נ"ז, שעות, שפת הוראה, תיאור ותנאי קדם.
+#: ציבורי בדיוק כמו האחרים (GROUND_TRUTH §1 ו-§9) — בלי התחברות.
+PRGNAME_COURSE_DETAILS = "S_CourseDetails"
+
+# --------------------------------------------------------------------------
+#  דף ההשהיה — התשובה היחידה של הידיעון שנראית תקינה לגמרי ואינה
+# --------------------------------------------------------------------------
+# כשחורגים מקצב השאילתות השרת עונה **סטטוס 200**, מאותו host, עם כ-100 בתים:
+#   "השהיית גישה זמנית: כתובת IP: …<br>יותר מידי שאילתות בדקה<br>…"
+# ובגרסה השעתית: "יותר מידי שאילתות בשעה<br>ניתן לנסות שוב החל משעה 21:00".
+# שום בדיקה אחרת במודול הזה לא תופסת אותו: המארח נכון, הסטטוס נכון, ואין בו
+# שנה — ולכן גם ``_assert_page_year`` שותק. בלי הזיהוי כאן הוא היה נשמר
+# כ-HTML גולמי, נשלח לפרסר, וחוזר כקורס בלי נ"ז, בלי תנאי קדם ובלי תיאור —
+# ואז נשמר במטמון לשבוע (SPEC_MULTIFACULTY §2). זה בדיוק ה-0.0 שנראה אמיתי.
+_THROTTLE_MARKERS: tuple[str, ...] = (
+    "השהיית גישה זמנית",
+    "יותר מידי שאילתות",
+    "יותר מדי שאילתות",
+)
+
+#: סימנים שיש בכל דף פרטי קורס אמיתי — כולל דף של קורס שאינו נפתח, שהוא
+#: דף חלקי **תקין** ובכל זאת 18KB. שניהם נמדדו בשני ה-fixtures האמיתיים.
+_DETAILS_PAGE_MARKERS: tuple[str, ...] = (
+    "fcontainer",
+    "פרטים נוספים על הקורס המבוקש",
+)
+
+#: מתחת לזה זה כבר לא דף. הדפים האמיתיים הם 17–26KB.
+_DETAILS_MIN_CHARS = 1024
 
 #: המסך היחיד שכן חסום לאנונימיים. משמש **רק** ל-POST של החלפת השנה,
 #: שעובד גם בלי הזדהות אחרי בקשת החימום.
@@ -176,7 +209,12 @@ def current_academic_year(today: "_dt.date | None" = None) -> str:
 DEFAULT_YEAR = current_academic_year()
 
 #: השהיה בין בקשות. אין מי שיחסום אותנו — לכן אנחנו חוסמים את עצמנו.
-DEFAULT_DELAY_S = 1.2
+# ‏3.0 ולא 1.2. ב-2026-09-01 ריצה של 571 קורסים ב-1.2 שניות (כ-50 בקשות
+# לדקה) הפעילה את מגבלת הקצב של הידיעון: הוא החזיר 200 עם דף
+# "השהיית גישה זמנית … יותר מידי שאילתות בשעה … ניתן לנסות שוב החל משעה 21:00",
+# והדף הזה נשמר על גבי שישה דמפים תקינים. הקטלוג כולו עדיין נגמר בפחות מחצי
+# שעה בקצב הזה, וזה בהחלט מספיק למשימה יומית.
+DEFAULT_DELAY_S = 3.0
 
 #: פסק זמן לבקשה בודדת.
 DEFAULT_TIMEOUT_S = 45.0
@@ -211,6 +249,59 @@ def course_url(code: str) -> str:
         f"{BASE_URL}?prgname={PRGNAME_COURSE_SEARCH}"
         f"&arguments=-N{quote(clean, safe='')}"
     )
+
+
+def _details_argument(value: object, default: str) -> str:
+    """ארגומנט אחד של ‎S_CourseDetails‎ — ריק חוזר לברירת המחדל, ותמיד מקודד."""
+    text = str(value if value is not None else "").strip()
+    return quote(text or default, safe="")
+
+
+def details_url(
+    code: str,
+    semester_code: str = "1",
+    kind_code: str = "1",
+    group_id: str = "0",
+) -> str:
+    """
+    בונה את כתובת ה-GET של דף **פרטי הקורס** (``S_CourseDetails``).
+
+    זה המסך שנושא את מה שחסר לכל שאר הקטלוג: נקודות זכות, פירוק שעות,
+    שעות סמסטריאליות, שפת הוראה, תיאור ותנאי קדם. הוא ציבורי בדיוק כמו
+    ``S_LOOK_FOR_NOSE`` — אין כאן התחברות ואין סיסמה (GROUND_TRUTH §9).
+
+    צורת הארגומנטים מתועדת ב-GROUND_TRUTH §1 ונלקחה מכפתורי "פרטים נוספים"
+    שבדף התוצאות::
+
+        arguments=-N<course>,-N<sem>,-N<kind>,-N<group>,-N
+
+    ברירות המחדל (``sem=1``, ``kind=1``, ``group=0``) הן מה שמחזיר את דף
+    ה"כללי" של הקורס — בדיוק הדף ששני ה-fixtures האמיתיים נשמרו ממנו. הן
+    לא תלויות במחלקה ולא בתוכנית לימודים כלשהי, וזו הנקודה: פרטי קורס הם
+    נתון של הקורס, לא של הסטודנט/ית.
+
+    Args:
+        code: קוד הקורס, למשל ``"61753"``.
+        semester_code: קוד הסמסטר בידיעון (``"1"`` / ``"2"``).
+        kind_code: קוד סוג המקצוע (1 = הרצאה, 9 = תרגיל וכו').
+        group_id: מזהה הקבוצה. ``"0"`` = הקורס כולו, בלי קבוצה מסוימת.
+
+    Returns:
+        כתובת GET מלאה.
+
+    >>> details_url("61753")
+    'https://info.braude.ac.il/yedion/fireflyweb.aspx?prgname=S_CourseDetails&arguments=-N61753,-N1,-N1,-N0,-N'
+    """
+    arguments = ",".join(
+        (
+            f"-N{_details_argument(code, '')}",
+            f"-N{_details_argument(semester_code, '1')}",
+            f"-N{_details_argument(kind_code, '1')}",
+            f"-N{_details_argument(group_id, '0')}",
+            "-N",
+        )
+    )
+    return f"{BASE_URL}?prgname={PRGNAME_COURSE_DETAILS}&arguments={arguments}"
 
 
 # ==========================================================================
@@ -248,6 +339,19 @@ class GatedEndpointError(YedionHTTPError):
     נכון להיום זה לא אמור לקרות ב-``S_LOOK_FOR_NOSE``; אם זה קורה, המכללה
     כנראה סגרה את נקודות הקצה הציבוריות, וזה היום שבשבילו נשמר מסלול
     הדפדפן (``refresh.py --browser``).
+    """
+
+
+class ThrottledError(YedionHTTPError):
+    """הידיעון החזיר דף "השהיית גישה זמנית" במקום את התוכן.
+
+    **תקלה זמנית, לא תשובה.** השרת מגביל שאילתות לדקה ולשעה, ועונה 200 עם
+    כמאה בתים של "יותר מידי שאילתות". מי שתופס אותה צריך להמתין (ולהאט את
+    ``delay_s``) ולנסות שוב — ובשום אופן לא לשמור את התוצאה: רשומה ריקה
+    שנשמרת עכשיו נראית כמו קורס בלי נ"ז ובלי תנאי קדם, ונתקעת ככזאת לשבוע.
+
+    יורשת מ-``YedionHTTPError`` כדי שקוד קיים שתופס "כל תקלת שליפה" ימשיך
+    לעבוד — אבל מי שרוצה להאט ולנסות שוב יכול לתפוס דווקא אותה.
     """
 
 
@@ -676,6 +780,10 @@ class YedionHTTP:
 
         self.errors: list[tuple[str, str]] = []
         self.year_label: str = ""
+        #: נדלק כשהידיעון החזיר דף השהיית-גישה. הריצה נעצרת, ומה שנשאר
+        #: נרשם ב-``skipped`` — "לא נוסה", שזה מידע אחר לגמרי מ"נכשל".
+        self.throttled: bool = False
+        self.skipped: list[str] = []
         #: האם השנה אומתה כבר על דף אמיתי. False = האימות נדחה לדף הקורס
         #: הראשון, שם _assert_page_year אוכף אותו ממילא.
         self._year_verified: bool = False
@@ -934,6 +1042,46 @@ class YedionHTTP:
         self.dumps.append(path)
         self._emit(f"נשמר HTML גולמי: {path}")
         return path
+
+    def _assert_details_payload(self, what: str, html: str) -> None:
+        """
+        מוודא שמה שחזר הוא **דף פרטים**, לפני שהוא נשמר או מפוענח.
+
+        ``_request`` בודק host וסטטוס בלבד, ו-``_assert_page_year`` שותק
+        כשאין בדף שנה — ולכן דף ההשהיה עובר את שניהם. הוא נראה אז זהה
+        לחלוטין לקורס שבאמת אינו מפרסם פרטים, וזה ההבדל שכל הפרק הזה נועד
+        לשמור עליו: "לא ידוע" חייב להיות שונה מ"אין".
+
+        הבדיקה רצה **לפני** ``dump_html`` בכוונה — גוף השהיה שנשמר לתיקיית
+        ה-raw מזהם אותה: ``reparse.py`` יפענח אותו כדף ריק, והבדיקות
+        שקוראות משם דפים אמיתיים יקבלו מאה בתים של הודעת שגיאה.
+
+        Raises:
+            ThrottledError: דף השהיה — להמתין ולנסות שוב, לא לשמור.
+            YedionHTTPError: מה שחזר אינו דף פרטי קורס בכלל.
+        """
+        text = str(html or "")
+        plain = _html.unescape(text)
+
+        for marker in _THROTTLE_MARKERS:
+            if marker in plain:
+                raise ThrottledError(
+                    f"{what}: הידיעון החזיר דף השהיית גישה ולא את דף הפרטים — "
+                    "חרגנו מקצב השאילתות. הדף לא נשמר ולא פוענח, כי רשומה "
+                    'ריקה שנשמרת עכשיו תיראה כמו קורס בלי נ"ז ובלי תנאי קדם '
+                    "ותישאר כזאת שבוע שלם. כדאי להמתין ולהגדיל את delay_s. "
+                    "(throttled by the yedion; response withheld)"
+                )
+
+        if len(text.strip()) < _DETAILS_MIN_CHARS or not any(
+            marker in plain for marker in _DETAILS_PAGE_MARKERS
+        ):
+            raise YedionHTTPError(
+                f"{what}: מה שחזר אינו דף פרטי קורס ({len(text):,} תווים, בלי "
+                "הסימנים הקבועים של הדף). דף חלקי של קורס שאינו נפתח הוא "
+                "תשובה תקינה — זה לא דף חלקי, זה בכלל לא הדף. "
+                "(not a course-details page)"
+            )
 
     # ------------------------------------------------------- אימות שנה
     def _page_year(self, html: str) -> str:
@@ -1236,6 +1384,77 @@ class YedionHTTP:
             )
         return html
 
+    def fetch_details(
+        self,
+        code: str,
+        group_id: str = "0",
+        kind_code: str = "1",
+        *,
+        semester_code: str = "1",
+    ) -> str:
+        """
+        מביא את דף **פרטי הקורס** (``S_CourseDetails``) ומחזיר HTML גולמי.
+
+        אותו סדר ברזל כמו ``fetch_course``: שליפה -> **שמירה גולמית** ->
+        אימות שנה -> החזרה. השמירה קודמת לכל פירסור, כדי שאפשר יהיה לתקן
+        את הפרסר בלי לגרד שוב את השרת של המכללה.
+
+        נימוס: הדף הזה נשלף **הרבה פחות** מדף המערכת. נקודות זכות ותנאי קדם
+        כמעט לא משתנים במהלך השנה, ולכן חלון הרעננות שלהם הוא שבוע ולא יממה
+        (SPEC_MULTIFACULTY §2). הרענון היומי לא אמור להכפיל את מספר הבקשות
+        שלו עבור נתונים שכמעט אינם זזים — ההשהיה ``delay_s`` חלה כאן בדיוק
+        כמו בכל בקשה אחרת.
+
+        Args:
+            code: קוד הקורס.
+            group_id: מזהה קבוצה; ``"0"`` = הקורס כולו (ברירת המחדל).
+            kind_code: קוד סוג המקצוע (1 = הרצאה).
+            semester_code: קוד הסמסטר בידיעון. פרטי הקורס אינם תלויים בו,
+                והוא קיים רק כדי שאפשר יהיה לשחזר קישור מדויק מדף התוצאות.
+
+        Returns:
+            ה-HTML של דף הפרטים. דף חלקי — למשל של קורס שאינו נפתח, שבו
+            "נקודות זכות :" ריק — הוא תשובה **תקינה**; ``parse_course_details``
+            יחזיר ``credits=None`` ואזהרה, ולא יזרוק.
+
+        Raises:
+            ThrottledError: הידיעון החזיר דף "השהיית גישה זמנית" — חרגנו
+                מקצב השאילתות. הדף **לא** נשמר ולא הוחזר, כדי שרשומה ריקה
+                לא תיכנס למטמון לשבוע במקום פרטי הקורס.
+            YearMismatchError: אם הדף מצהיר על שנת לימודים אחרת.
+            GatedEndpointError / YedionHTTPError: תקלות רשת, או תשובה
+                שאינה דף פרטי קורס בכלל.
+        """
+        clean = str(code).strip()
+        if not clean:
+            raise YedionHTTPError("קוד קורס ריק. (empty course code)")
+        if not clean.isdigit():
+            self._emit(f"אזהרה: הקוד {clean!r} אינו מספרי — הידיעון מצפה לקוד מספרי.")
+
+        self._warn_if_no_session(f"פרטי קורס {clean}")
+        self._emit(f"פרטי קורס {clean}: מביא מהידיעון…")
+
+        url = details_url(
+            clean,
+            semester_code=semester_code,
+            kind_code=kind_code,
+            group_id=group_id,
+        )
+        html = self._request("GET", url, what=f"פרטי קורס {clean}")
+
+        # לפני חוק הברזל: לוודא שזה בכלל דף. גוף השהיה אינו "דף חלקי" —
+        # הוא לא תשובה, ואסור שיישמר לדיסק או ייכנס למטמון כרשומה ריקה.
+        self._assert_details_payload(f"פרטי קורס {clean}", html)
+
+        # חוק ברזל: קודם לדיסק, אחר כך פירסור (גם אימות השנה מפרסר).
+        # שם הקובץ מתחיל ב-"details_" ולא בקוד, כדי ש-reparse.py — שסורק
+        # "<code>_*.html" — לא יבלבל דף פרטים עם דף מערכת שעות.
+        self.dump_html(f"details_{clean}", html)
+        self._assert_page_year(f"פרטי קורס {clean}", html)
+
+        self._emit(f"פרטי קורס {clean}: התקבלו {len(html):,} תווים.")
+        return html
+
     def fetch_catalog(self) -> str:
         """
         מביא את **כל** קטלוג הקורסים של השנה שבסשן — בבקשה אחת.
@@ -1294,6 +1513,18 @@ class YedionHTTP:
             self._emit(f"({i}/{total}) קורס {code}")
             try:
                 results[code] = self.fetch_course(code)
+            except ThrottledError as exc:
+                # השרת אמר במפורש "האטו". להמשיך ולנסות את כל השאר זה גם חסר
+                # תועלת (כולם יחזרו כדף השהיה) וגם לא מנומס. עוצרים כאן,
+                # ומסמנים את מה שנשאר כ"לא נוסה" ולא כ"נכשל".
+                self.throttled = True
+                remaining = wanted[i - 1 :]
+                self._emit(
+                    f"עצירה: הידיעון הגביל את קצב הבקשות. {len(remaining)} קורסים "
+                    f"לא נוסו בכלל. {exc}"
+                )
+                self.skipped.extend(remaining)
+                break
             except YedionHTTPError as exc:
                 self.errors.append((code, str(exc)))
                 self._emit(f"שגיאה בקורס {code}: {exc}")

@@ -128,6 +128,44 @@ FETCH_DELAY_S = 1.2
 #: תקרת זמן לבקשת HTTP אחת.
 FETCH_TIMEOUT_S = 45.0
 
+#: חלון הטריות של **פרטי הקורס** (‏S_CourseDetails): שבעה ימים, לא יממה.
+#: נ"ז, שעות ותנאי קדם משתנים אחת לשנה בערך, בעוד שהמערכת עצמה משתנה תוך כדי
+#: סמסטר. חלון של 24 שעות היה מכפיל את מספר הבקשות לשרת המכללה בשביל נתון
+#: שכמעט אינו זז. ‏SPEC_MULTIFACULTY §2.
+DETAILS_MAX_AGE_HOURS = 24.0 * 7
+
+#: כמה שליפות **פרטים** מותרות בבקשה אחת. תמיד רק לקורסים שנבחרו בפועל —
+#: לעולם לא לכל הקטלוג.
+MAX_ONDEMAND_DETAIL_FETCHES = 12
+
+#: כמה פרטי קורס מותר לטעון קוד-קוד כשה-Store אינו חושף טעינה בבת אחת.
+#: גדר נגד עמוד עיון שיקרא את אותו קובץ מאתיים פעם.
+MAX_DETAILS_LOOKUPS = 64
+
+#: עיון בקטלוג: כמה תוצאות כברירת מחדל וכמה לכל היותר.
+DEFAULT_BROWSE_LIMIT = 50
+MAX_BROWSE_LIMIT = 200
+
+#: מקורות הנ"ז, לפי סדר העדיפות שב-SPEC_MULTIFACULTY §3.
+CREDITS_SOURCE_CURRICULUM = "curriculum"
+CREDITS_SOURCE_YEDION = "yedion"
+CREDITS_SOURCE_UNKNOWN = "unknown"
+
+#: מה שמוצג במקום נ"ז שאינן ידועות. **לעולם לא 0.0** — מכיוון ש-86% מהקטלוג
+#: אינם בתוכנית הלימודים, סכום ששותק עליהם הוא שקר, וסכום שאומר "לא ידוע"
+#: הוא תשובה. ‏SPEC_MULTIFACULTY §3.
+CREDITS_UNKNOWN_TEXT = "—"
+
+#: מה שאומרים פעם אחת, בפשטות, כשאין תוכנית לימודים טעונה.
+CURRICULUM_MISSING_NOTE = (
+    "תוכנית הלימודים של המחלקה אינה טעונה — אפשר לבחור כל קורס מהקטלוג"
+)
+
+#: מה שאומרים כשהתוכנית טעונה אבל אין בה קורסים לסמסטר שנבחר.
+CURRICULUM_EMPTY_SEMESTER_NOTE = (
+    "אין קורסים לסמסטר הזה בתוכנית הלימודים — אפשר לבחור כל קורס מהקטלוג"
+)
+
 #: הערת ידיעון שמעידה על חובת נוכחות. ‏11069 כותב "חובת הנוכחות בקורס היא
 #: מרגע הרישום לקורס" — לכן ה"ה" הידיעה חייבת להיות אופציונלית. "חובה לקחת
 #: בצמוד לקורס זה" (61756) הוא **לא** ביטוי של נוכחות ואסור לו להיתפס כאן.
@@ -287,13 +325,21 @@ def course_to_json(course: models.Course, extra: dict[str, Any] | None = None) -
     """קורס וכל קבוצותיו → dict. טהורה.
 
     ``extra`` ממוזג פנימה כמו שהוא — שם נכנסים שדות ההקשר (טריות, אזהרות,
-    האם מוצע השנה) שאינם חלק מהמודל עצמו.
+    האם מוצע השנה) שאינם חלק מהמודל עצמו, וגם ``credits``/``credits_source``
+    המוכרעים (``course_facts``) כשהקורא/ת יודע/ת יותר מהמודל.
+
+    ‏``credits`` כאן הוא ``None`` — ולא ‏0.0 — כשאין נ"ז ידועות: ‏0.0 הוא מה
+    שהפענוח מחזיר כשלא מצא את השורה, ולהציג אותו כאילו הוא נתון זו שקר קטן
+    שמצטבר לסכום שגוי. ‏SPEC_MULTIFACULTY §3.
     """
     groups = sorted(course.groups, key=_group_sort_key)
+    resolved, credits_src = _course_credits(course)
     payload: dict[str, Any] = {
         "code": course.code,
         "name": course.name,
-        "credits": float(course.credits),
+        "credits": resolved,
+        "credits_source": credits_src,
+        "credits_text": credits_text(resolved),
         "tied_with": list(course.tied_with),
         "kinds": course.kinds(),
         "group_count": len(course.groups),
@@ -303,6 +349,23 @@ def course_to_json(course: models.Course, extra: dict[str, Any] | None = None) -
     if extra:
         payload.update(extra)
     return payload
+
+
+def _course_credits(course: Any) -> tuple[float | None, str]:
+    """הנ"ז המוכרעות של קורס שנבנה, ומקורן — ``(None, "unknown")`` כשאין.
+
+    ‏``_build_courses`` תולה על הקורס את התוצאה של ``resolve_credits``; מי
+    שקיבל קורס ממקום אחר (בדיקה, מודול אחר) נופל בחזרה לערך שבמודל, שם
+    ‏0.0 פירושו "לא נמצא בדף".
+    """
+    if course is None:
+        return None, CREDITS_SOURCE_UNKNOWN
+    if hasattr(course, "credits_resolved"):
+        value = getattr(course, "credits_resolved")
+        source = str(getattr(course, "credits_source", "") or CREDITS_SOURCE_UNKNOWN)
+        return (value if value is None else float(value)), source
+    fallback = _known_credits(getattr(course, "credits", None))
+    return fallback, (CREDITS_SOURCE_YEDION if fallback is not None else CREDITS_SOURCE_UNKNOWN)
 
 
 def _course_index(courses: Any) -> dict[str, models.Course]:
@@ -531,7 +594,7 @@ def schedule_to_json(
                 "kind": group.kind,
                 "group_id": group.group_id,
                 "lecturer": group.lecturer,
-                "credits": float(course.credits) if course is not None else 0.0,
+                "credits": _course_credits(course)[0],
                 "note": group.note,
                 "linked_to": list(group.linked_to),
                 "meetings": [
@@ -542,13 +605,15 @@ def schedule_to_json(
         )
 
     days = sorted(sched.selection.days_used())
-    # נ"ז נספרות פעם אחת לכל קורס, לא פעם אחת לכל רכיב.
+    # נ"ז נספרות פעם אחת לכל קורס, לא פעם אחת לכל רכיב — ורק כשהן ידועות.
     seen: set[str] = set()
-    credits_total = 0.0
+    per_course: list[Any] = []
     for pick in picks:
         if pick["code"] not in seen:
             seen.add(pick["code"])
-            credits_total += float(pick["credits"])
+            per_course.append(pick["credits"])
+    summary = credits_summary(per_course)
+    credits_total = summary["total"]
 
     return {
         "score": round(float(sched.score), 4),
@@ -560,7 +625,12 @@ def schedule_to_json(
         "lecturer_hits": int(sched.lecturer_hits),
         "lecturer_total": int(sched.lecturer_total),
         "breakdown": {k: round(float(v), 4) for k, v in (sched.breakdown or {}).items()},
-        "credits": round(credits_total, 2),
+        # סכום של מה שידוע בלבד, ולצידו כמה קורסים לא נספרו ולמה.
+        "credits": credits_total,
+        "credits_summary": summary,
+        "credits_unknown": summary["unknown"],
+        "credits_complete": summary["complete"],
+        "credits_text": summary["text"],
         "truncated": bool(getattr(sched, "truncated", False)),
         "summary": sched.summary(),
         "picks": picks,
@@ -990,8 +1060,32 @@ def _store() -> store_mod.Store:
     return obj
 
 
+def _request_cache() -> dict[str, Any]:
+    """מטמון קצר-טווח שחי **רק לאורך הבקשה הנוכחית**.
+
+    כאן יושבים דברים שמותר לקרוא פעם אחת בבקשה אבל אסור לשמור בין בקשות —
+    למשל פרטי הקורסים, שמשתנים ברגע שהרענון שומר אותם. מחוץ להקשר בקשה
+    (בדיקה שקוראת לפונקציה ישירות) מוחזר מילון חדש, כלומר בלי מטמון בכלל.
+    """
+    try:
+        from flask import g
+
+        cache = getattr(g, "_schedule_builder_cache", None)
+        if cache is None:
+            cache = {}
+            g._schedule_builder_cache = cache  # noqa: SLF001 - זה בדיוק ייעודו של g
+        return cache
+    except Exception:  # noqa: BLE001 - אין הקשר בקשה: פשוט בלי מטמון
+        return {}
+
+
 def _curriculum() -> dict:
-    """תוכנית הלימודים, בקאש עם בדיקת mtime (עריכה של הקובץ נקלטת מיד)."""
+    """תוכנית הלימודים, בקאש עם בדיקת mtime (עריכה של הקובץ נקלטת מיד).
+
+    ‏**קובץ חסר או פגום מחזיר ``{}``, לא חריגה.** התוכנית הפכה להעשרה
+    אופציונלית (‏SPEC_MULTIFACULTY §4): סטודנט/ית שהמסלול שלהם אינו ב-rec.pdf
+    חייבים לעבור לעיון בקטלוג ולהמשיך לעבוד, ולא לקבל ‏500 בכל נקודת קצה.
+    """
     from flask import current_app
 
     cache = current_app.extensions.setdefault("schedule_builder", {})
@@ -1001,7 +1095,12 @@ def _curriculum() -> dict:
     except OSError:
         stamp = 0
     if cache.get("curriculum_stamp") != stamp or "curriculum" not in cache:
-        cache["curriculum"] = curriculum_mod.load_curriculum(path)
+        try:
+            loaded = curriculum_mod.load_curriculum(path)
+        except Exception as exc:  # noqa: BLE001 - חסר/פגום = "אין תוכנית", לא תקלה
+            LOG.info("אין תוכנית לימודים טעונה (%s): %s", path, exc)
+            loaded = {}
+        cache["curriculum"] = loaded if isinstance(loaded, dict) else {}
         cache["curriculum_stamp"] = stamp
     return cache["curriculum"]
 
@@ -1035,6 +1134,476 @@ def _import_root_module(name: str):
     if root not in sys.path:
         sys.path.append(root)
     return importlib.import_module(name)
+
+
+# ===========================================================================
+# 5א. נ"ז ותנאי קדם — בלי תלות בתוכנית הלימודים  (SPEC_MULTIFACULTY §3)
+#
+# ‏493 מתוך 571 קורסי הקטלוג (86%) אינם ב-curriculum.json. עד כאן הם דיווחו
+# ‏0.0 נ"ז, בלי תנאי קדם ובלי קורסים צמודים — כלומר הכלי עבד רק לתוכנית אחת.
+# הידיעון עצמו יודע את כל זה (‏S_CourseDetails, קריא בלי התחברות), ולכן סדר
+# ההכרעה **בכל מקום** הוא אחד:
+#
+#     1. ‏curriculum.json — העשיר ביותר (אשכולות, קורסים צמודים, חליפיים)
+#     2. פרטי הידיעון השמורים (``data/db/details.json``)
+#     3. ‏``None`` — ולא ‏0.0. הממשק מציג "—".
+#
+# ‏**0.0 לעולם אינו "לא ידוע".** סכום נ"ז ששותק על 86% מהקטלוג גרוע מסכום
+# שמודה שאינו יודע, ולכן ``credits_summary`` סופר גם את מה שלא ידוע ואומר זאת.
+# ===========================================================================
+#: שמות אפשריים לטעינת **כל** הפרטים בקריאה אחת. ``store.py`` שייך לסוכן
+#: אחר; אם אחת מהשיטות קיימת נשתמש בה, ואם לא — נטען קוד-קוד עם תקרה.
+_DETAILS_BULK_METHODS: tuple[str, ...] = ("all_details", "load_all_details", "details_map")
+
+
+def _details_supported() -> bool:
+    """האם ה-Store שבשימוש בכלל יודע לשמור פרטי קורס."""
+    store = _store()
+    return callable(getattr(store, "load_details", None)) or any(
+        callable(getattr(store, name, None)) for name in _DETAILS_BULK_METHODS
+    )
+
+
+def _details_bulk() -> dict[str, dict] | None:
+    """כל פרטי הקורסים בקריאה אחת — או ``None`` אם ה-Store אינו תומך בכך.
+
+    נשמר במטמון לאורך הבקשה בלבד: אותה בקשה לא תקרא את הקובץ פעמיים, ובקשה
+    הבאה תראה מיד מה שנשמר בינתיים.
+    """
+    cache = _request_cache()
+    if "details_bulk" in cache:
+        return cache["details_bulk"]
+    store = _store()
+    result: dict[str, dict] | None = None
+    for name in _DETAILS_BULK_METHODS:
+        loader = getattr(store, name, None)
+        if not callable(loader):
+            continue
+        try:
+            raw = loader()
+        except Exception:  # noqa: BLE001 - מסד פגום לא מפיל בקשה
+            LOG.exception("טעינת כל פרטי הקורסים נכשלה (%s)", name)
+            raw = None
+        if isinstance(raw, dict):
+            result = {
+                str(code): dict(info)
+                for code, info in raw.items()
+                if isinstance(info, dict)
+            }
+            break
+    cache["details_bulk"] = result
+    return result
+
+
+def _course_details(code: str) -> dict | None:
+    """פרטי הידיעון השמורים לקורס אחד. ``None`` כשאין, וגם כשאין תמיכה.
+
+    לעולם לא זורק: פרטים הם העשרה, ואפליקציה שנופלת בגללם מפסידה יותר
+    ממה שהיא מרוויחה.
+    """
+    key = str(code or "").strip()
+    if not key:
+        return None
+    bulk = _details_bulk()
+    if bulk is not None:
+        return bulk.get(key)
+
+    cache = _request_cache()
+    memo: dict[str, dict | None] = cache.setdefault("details_one", {})
+    if key in memo:
+        return memo[key]
+    if len(memo) >= MAX_DETAILS_LOOKUPS:
+        # מעבר לתקרה לא משקרים: פשוט לא יודעים, וזה מה שיוחזר.
+        return None
+    store = _store()
+    loader = getattr(store, "load_details", None)
+    value: dict | None = None
+    if callable(loader):
+        try:
+            raw = loader(key)
+        except Exception:  # noqa: BLE001
+            LOG.exception("טעינת פרטי הקורס %s נכשלה", key)
+            raw = None
+        if isinstance(raw, dict):
+            value = raw
+    memo[key] = value
+    return value
+
+
+def _details_age_hours(details: Any) -> float | None:
+    """גיל הפרטים בשעות, לפי ``fetched_at``. ``None`` כשאי אפשר לדעת.
+
+    החותמת יכולה לשבת ברמה העליונה או תחת ``meta`` — שתי הצורות מקובלות,
+    כי מבנה ``details.json`` נקבע בקובץ של סוכן אחר.
+    """
+    if not isinstance(details, dict):
+        return None
+    stamp = details.get("fetched_at")
+    if not stamp and isinstance(details.get("meta"), dict):
+        stamp = details["meta"].get("fetched_at")
+    return store_mod.age_hours_since(stamp) if stamp else None
+
+
+def _details_max_age() -> float:
+    """חלון הטריות של הפרטים, לפי ההגדרות. ברירת המחדל היא שבעה ימים."""
+    try:
+        value = float(_config().get("details_max_age_hours") or DETAILS_MAX_AGE_HOURS)
+    except Exception:  # noqa: BLE001 - מחוץ להקשר בקשה, או ערך לא מספרי
+        return DETAILS_MAX_AGE_HOURS
+    return value if value > 0 else DETAILS_MAX_AGE_HOURS
+
+
+def _details_stale(
+    code: str,
+    details: Any = None,
+    *,
+    max_age_hours: float | None = None,
+) -> bool:
+    """האם שווה למשוך מחדש את פרטי הקורס — חלון של שבעה ימים.
+
+    ``store.details_stale`` הוא מקור האמת אם הוא קיים; אחרת מחשבים מהחותמת
+    השמורה. חסר לגמרי = מיושן (כלומר: שווה להביא).
+    """
+    key = str(code or "").strip()
+    if not key:
+        return False
+    if max_age_hours is None:
+        max_age_hours = _details_max_age()
+    store = _store()
+    checker = getattr(store, "details_stale", None)
+    if callable(checker):
+        try:
+            return bool(checker(key, max_age_hours))
+        except TypeError:
+            with contextlib.suppress(Exception):
+                return bool(checker(key, max_age_hours=max_age_hours))
+        except Exception:  # noqa: BLE001
+            LOG.exception("בדיקת טריות הפרטים של %s נכשלה", key)
+    if details is None:
+        details = _course_details(key)
+    if not isinstance(details, dict) or not details:
+        return True
+    age = _details_age_hours(details)
+    if age is None:
+        return True
+    return age > float(max_age_hours)
+
+
+def _stated_credits(value: Any) -> float | None:
+    """נ"ז שמקור **הצהיר** עליהן במפורש — כולל אפס אמיתי.
+
+    ‏11063 (אנגלית בסיסי) הוא באמת ‏0 נ"ז בתוכנית, ו-``parse_course_details``
+    מחזיר ``None`` (ולא ‏0.0) כשהוא לא ידע. לכן במקורות מוצהרים ‏0.0 הוא
+    **ידיעה**, ורק ``None``/ריק הוא בורות. ההבחנה הזו היא כל ההבדל בין
+    להציג ‏0 לבין להציג מקף.
+    """
+    if value is None or isinstance(value, bool) or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _known_credits(value: Any) -> float | None:
+    """נ"ז מתוך **דף המערכת** — שם ‏0.0 פירושו "לא נמצא", כלומר לא ידוע.
+
+    ‏``parser._extract_credits`` מחזיר ‏0.0 עם אזהרה כשהשורה חסרה בדף, ולכן
+    אסור להציג ‏0.0 שהגיע משם כאילו מישהו אמר אותו.
+    """
+    number = _stated_credits(value)
+    if number is None or number <= 0:
+        return None
+    return number
+
+
+def credits_text(value: Any) -> str:
+    """נ"ז לתצוגה: ‏5.0 → "5", ‏0.0 → "0", לא ידוע (``None``) → "—"."""
+    number = _stated_credits(value)
+    if number is None:
+        return CREDITS_UNKNOWN_TEXT
+    return f"{number:g}"
+
+
+def resolve_credits(
+    code: str,
+    *,
+    entry: dict | None = None,
+    details: Any = None,
+    course: Any = None,
+) -> tuple[float | None, str]:
+    """נ"ז של קורס + **מאיפה** הן. זהו העוזר היחיד; אין העתקים.
+
+    Args:
+        code: קוד הקורס.
+        entry: רשומת ``curriculum.json`` אם כבר נטענה (חוסך חיפוש).
+        details: פרטי הידיעון השמורים אם כבר נטענו. ``None`` = לטעון.
+        course: ``models.Course`` שנטען מהמסד. **אינו מקור נ"ז.** המספר
+            שמופיע בדף המערכת נשלף משורת הערה חופשית ("טווח 72.01-96 נ\"ז",
+            "‏10 נ\"ז, נוכחות חובה") ולכן הוא לא פעם טווח זכאות או תנאי
+            רישום — לא נ"ז הקורס. הפרמטר נשמר כדי שהחתימה לא תישבר.
+
+    Returns:
+        ``(credits, source)`` כאשר ``source`` הוא ``"curriculum"`` /
+        ``"yedion"`` / ``"unknown"``. ‏**לעולם לא מוחזר 0.0 כ"לא ידוע"**,
+        וגם לא מספר שנקרע מתוך הערה חופשית בדף המערכת.
+    """
+    key = str(code or "").strip()
+    if entry is None and key:
+        entry = curriculum_mod.find_course(_curriculum(), key)
+    if isinstance(entry, dict):
+        # מקור מוצהר: ‏0.0 בתוכנית (אנגלית בסיסי) הוא אפס אמיתי, לא "לא ידוע".
+        from_curriculum = _stated_credits(entry.get("credits"))
+        if from_curriculum is not None:
+            return from_curriculum, CREDITS_SOURCE_CURRICULUM
+
+    if details is None and key:
+        details = _course_details(key)
+    if isinstance(details, dict):
+        from_yedion = _stated_credits(details.get("credits"))
+        if from_yedion is not None:
+            return from_yedion, CREDITS_SOURCE_YEDION
+
+    # אין שלב שלישי. ‏SPEC_MULTIFACULTY §3 מגדיר שני מקורות בלבד — התוכנית
+    # ואז פרטי הידיעון — ואז "לא ידוע". המספר שב-``course.credits`` מגיע
+    # מהערה חופשית בדף המערכת, ולכן הוא עלול להיות טווח זכאות (96 במקום 5),
+    # תנאי רישום, או ‏0.25 שנחתך ל-25. להציג אותו כ"ידוע" זה בדיוק הסך
+    # המטעה שהמפרט בא לחסל, רק בתחפושת.
+    return None, CREDITS_SOURCE_UNKNOWN
+
+
+def _details_prereq_rows(details: Any) -> list[dict[str, Any]]:
+    """טבלת תנאי הקדם מתוך הפרטים השמורים, מנורמלת ובסדר הידיעון.
+
+    כל השדות שהפענוח מוציא נשמרים — כולל ``population`` (לגבי מי התנאי תקף)
+    ו-``alternative_name`` (הקורס החליפי שמספיק לעבור במקומו). בלעדיהם השורה
+    אומרת "יש תנאי" ולא *איזה*, וזה ההבדל בין מידע לרעש.
+    """
+    rows: list[dict[str, Any]] = []
+    if not isinstance(details, dict):
+        return rows
+    for row in details.get("prerequisites") or []:
+        if not isinstance(row, dict):
+            text = str(row or "").strip()
+            if text:
+                rows.append(
+                    {
+                        "code": text,
+                        "name": "",
+                        "relation": "",
+                        "alternative": None,
+                        "alternative_name": "",
+                        "population": "",
+                    }
+                )
+            continue
+        rows.append(
+            {
+                "code": str(row.get("code") or "").strip(),
+                "name": str(row.get("name") or "").strip(),
+                "relation": str(row.get("relation") or ""),
+                "alternative": row.get("alternative"),
+                "alternative_name": str(row.get("alternative_name") or ""),
+                "population": str(row.get("population") or ""),
+            }
+        )
+    return rows
+
+
+def _details_prereq_codes(details: Any) -> list[str]:
+    """מזהי תנאי הקדם מתוך טבלת הפרטים, בלי כפילויות ובסדר הידיעון.
+
+    בטבלה האמיתית (``S_CourseDetails``) **אין עמודת קוד בכלל** — עמודת
+    "נושא נקשר" נותנת שם. לכן השם הוא הנפילה־לאחור, אחרת כל הטבלה נזרקת
+    ואנחנו מדווחים "אין מידע" על טבלה שפענחנו במלואה.
+    """
+    out: list[str] = []
+    for row in _details_prereq_rows(details):
+        ident = row["code"] or row["name"]
+        if ident and ident not in out:
+            out.append(ident)
+    return out
+
+
+def resolve_prerequisites(
+    code: str,
+    *,
+    entry: dict | None = None,
+    details: Any = None,
+) -> tuple[list[str], str, list[dict[str, Any]]]:
+    """תנאי הקדם + מאיפה + הטבלה המלאה (כשהיא קיימת בפרטי הידיעון).
+
+    אותו סדר הכרעה כמו הנ"ז: התוכנית קודם (היא מכירה קורסים חליפיים), ואז
+    הידיעון. ``([], "unknown", [])`` פירושו "אין לנו מידע", לא "אין תנאי קדם".
+    """
+    key = str(code or "").strip()
+    if entry is None and key:
+        entry = curriculum_mod.find_course(_curriculum(), key)
+    if details is None and key:
+        details = _course_details(key)
+    # הטבלה נבנית פעם אחת ומוחזרת בכל ענף: היא תיאור, לא הכרעה. גם כשהתוכנית
+    # היא זו שנותנת את הקודים, הטבלה של הידיעון היא מה שמסביר *למה*.
+    rows = _details_prereq_rows(details)
+
+    if isinstance(entry, dict):
+        listed = [str(p).strip() for p in (entry.get("prereq") or []) if str(p or "").strip()]
+        if listed:
+            return listed, CREDITS_SOURCE_CURRICULUM, rows
+
+    # התנאי הוא על **השורות**, לא על הקודים: טבלה שכולה שמות היא עדיין מידע.
+    if rows:
+        return _details_prereq_codes(details), CREDITS_SOURCE_YEDION, rows
+
+    # רשומת תוכנית שקיימת ומצהירה במפורש על אפס תנאי קדם היא ידיעה, לא בורות.
+    if isinstance(entry, dict) and "prereq" in entry:
+        return [], CREDITS_SOURCE_CURRICULUM, rows
+    return [], CREDITS_SOURCE_UNKNOWN, rows
+
+
+def course_facts(
+    code: str,
+    *,
+    course: Any = None,
+    entry: dict | None = None,
+    details: Any = None,
+    stale: bool | None = None,
+) -> dict[str, Any]:
+    """כל מה שידוע על קורס אחד **בלי תלות בתוכנית** — נקודת האמת היחידה.
+
+    כל נקודת קצה שמציגה נ"ז, תנאי קדם או קורסים צמודים עוברת דרך כאן, כדי
+    שהתשובה תהיה זהה בכל מקום — כולל ההודאה "לא ידוע".
+
+    Args:
+        code: קוד הקורס.
+        course: ``models.Course`` שנטען, אם יש.
+        entry: רשומת התוכנית, אם כבר נטענה.
+        details: פרטי הידיעון, אם כבר נטענו.
+        stale: האם הפרטים מיושנים, כשהקורא/ת כבר יודע/ת. ‏``None`` =
+            "לא נבדק" — ובכוונה: בדיקת טריות קוד-קוד הייתה קוראת את קובץ
+            הפרטים פעם לכל שורה בעמוד עיון, ולכן היא נעשית בבת אחת
+            ב-``_details_needing_fetch`` ומועברת לכאן.
+
+    Returns:
+        מילון עם ``credits`` (‏``float | None``), ``credits_source``,
+        ``credits_text``, ``prereq``, ``prereq_source``, ``prereq_detail``,
+        ``tied_with``, ``in_curriculum``, ``curriculum_semester``,
+        ``cluster``, ``name``, ``hours``, ``weekly_hours``, ``language``,
+        ``description``, ``details_available``, ``details_stale``.
+    """
+    key = str(code or "").strip()
+    curr = _curriculum()
+    if entry is None and key:
+        entry = curriculum_mod.find_course(curr, key)
+    if details is None and key:
+        details = _course_details(key)
+    details_dict = details if isinstance(details, dict) else None
+
+    credits, credits_source = resolve_credits(
+        key, entry=entry, details=details_dict, course=course
+    )
+    prereq, prereq_source, prereq_rows = resolve_prerequisites(
+        key, entry=entry, details=details_dict
+    )
+
+    source_label = curriculum_mod.find_course_source(curr, key) if key else None
+    semester = cluster = None
+    if source_label:
+        if source_label.startswith("semester:"):
+            semester = source_label.split(":", 1)[1]
+        elif source_label.startswith("cluster:"):
+            cluster = source_label.split(":", 1)[1]
+
+    tied: list[str] = []
+    if key:
+        with contextlib.suppress(Exception):
+            tied = [other for other in curriculum_mod.tied_group(curr, key) if other != key]
+
+    name = ""
+    for candidate in (
+        (entry or {}).get("name") if isinstance(entry, dict) else "",
+        (details_dict or {}).get("name") if details_dict else "",
+        getattr(course, "name", ""),
+    ):
+        if str(candidate or "").strip():
+            name = str(candidate).strip()
+            break
+
+    hours: dict[str, Any] = {}
+    if isinstance(entry, dict) and any(k in entry for k in ("he", "te", "ma", "pr")):
+        hours = {k: entry.get(k) for k in ("he", "te", "ma", "pr")}
+    elif details_dict and isinstance(details_dict.get("hours"), dict):
+        hours = dict(details_dict["hours"])
+
+    return {
+        "code": key,
+        "name": name,
+        "credits": credits,
+        "credits_source": credits_source,
+        "credits_text": credits_text(credits),
+        "prereq": prereq,
+        "prereq_source": prereq_source,
+        "prereq_detail": prereq_rows,
+        "tied_with": tied,
+        "in_curriculum": isinstance(entry, dict) and bool(entry),
+        "curriculum_semester": semester,
+        "cluster": cluster,
+        "hours": hours,
+        "weekly_hours": (details_dict or {}).get("weekly_hours"),
+        "language": str((details_dict or {}).get("language") or ""),
+        "description": str((details_dict or {}).get("description") or ""),
+        "details_available": bool(details_dict),
+        "details_stale": stale,
+    }
+
+
+def credits_summary(values: Iterable[Any]) -> dict[str, Any]:
+    """סיכום נ"ז שמודה במה שאינו ידוע.
+
+    מחבר **רק** ערכים ידועים, וסופר בנפרד כמה קורסים אין להם נ"ז. סכום
+    שמתעלם מזה בשקט הוא בדיוק מה ש-SPEC_MULTIFACULTY §3 אוסר.
+    """
+    total = 0.0
+    known = 0
+    unknown = 0
+    for value in values:
+        # הערכים כאן כבר עברו הכרעה: ``None`` = לא ידוע, ‏0.0 = אפס אמיתי.
+        number = _stated_credits(value)
+        if number is None:
+            unknown += 1
+        else:
+            total += number
+            known += 1
+    rounded = round(total, 2)
+    if unknown == 0:
+        text = f"{rounded:g}"
+    elif known == 0:
+        text = CREDITS_UNKNOWN_TEXT
+    else:
+        text = f"{rounded:g} (ועוד {unknown} קורסים ללא נתוני נ\"ז)"
+    return {
+        "total": rounded,
+        "known": known,
+        "unknown": unknown,
+        "complete": unknown == 0,
+        "text": text,
+    }
+
+
+def _curriculum_available(curr: dict | None = None) -> bool:
+    """האם יש בכלל תוכנית לימודים טעונה שאפשר להישען עליה.
+
+    תוכנית ריקה אינה תקלה: סטודנט/ית שהמסלול שלהם אינו ב-rec.pdf חייבים
+    להמשיך לעבוד מול הקטלוג. ‏SPEC_MULTIFACULTY §4.
+    """
+    data = _curriculum() if curr is None else curr
+    if not isinstance(data, dict) or not data:
+        return False
+    if data.get("semesters") or data.get("elective_clusters"):
+        try:
+            return bool(next(curriculum_mod.iter_all_courses(data), None))
+        except Exception:  # noqa: BLE001
+            return False
+    return False
 
 
 # ===========================================================================
@@ -1176,11 +1745,18 @@ def _build_courses(
             )
             continue
 
-        # ── מה שהמנוע צריך ולא נמצא בדף הידיעון ──
+        # ── מה שהמנוע צריך ולא נמצא בדף המערכת ──
         tied = [other for other in curriculum_mod.tied_group(curr, code) if other != code]
         course.tied_with = tied
-        if entry.get("credits") is not None:
-            course.credits = float(entry["credits"])
+        # נ"ז לפי סדר ההכרעה היחיד: תוכנית → פרטי הידיעון → דף המערכת.
+        # ‏``course.credits`` נשאר ``float`` — כך המודל מצהיר, וכך ``render``
+        # ומודולים אחרים ממשיכים לעבוד. ההכרעה המלאה (כולל "לא ידוע" ואת
+        # מקורה) נתלית לצד המודל בשדה נלווה, ונקראת ב-``_course_credits``.
+        resolved_credits, credits_src = resolve_credits(code, entry=entry, course=course)
+        if resolved_credits is not None:
+            course.credits = float(resolved_credits)
+        course.credits_resolved = resolved_credits  # type: ignore[attr-defined]
+        course.credits_source = credits_src  # type: ignore[attr-defined]
         if not course.name and curr_name:
             course.name = curr_name
 
@@ -1935,6 +2511,299 @@ def fetch_catalog_into_store(
     return report
 
 
+def _details_to_dict(parsed: Any) -> dict[str, Any]:
+    """‏``parser.CourseDetails`` → ‏dict, בלי להניח שהוא NamedTuple דווקא."""
+    if isinstance(parsed, dict):
+        return dict(parsed)
+    as_dict = getattr(parsed, "_asdict", None)
+    if callable(as_dict):
+        with contextlib.suppress(Exception):
+            return dict(as_dict())
+    if dataclasses.is_dataclass(parsed) and not isinstance(parsed, type):
+        with contextlib.suppress(Exception):
+            return dataclasses.asdict(parsed)
+    fields = (
+        "code", "name", "credits", "hours", "weekly_hours",
+        "language", "description", "prerequisites", "warnings",
+    )
+    return {name: getattr(parsed, name) for name in fields if hasattr(parsed, name)}
+
+
+def _details_payload_is_empty(payload: Any) -> bool:
+    """האם הפענוח לא למד **כלום** — דף שגיאה, או קוד שהידיעון אינו מגיש.
+
+    ‏GROUND_TRUTH §6: הידיעון עונה ‏200 גם לקוד שאין לו, עם דף בלי תוכן, וגם
+    דף שגיאת ‏ASP.NET חוזר כ-200. ``parse_course_details`` מפענח אותם בלי
+    לזרוק (וזה נכון), אבל שמירת התוצאה כהצלחה עם חותמת טרייה מקפיאה את
+    הקורס לשבעה ימים: ``details_stale`` מחזיר ‏False, ``has_details`` מחזיר
+    ‏True, ואין ניסיון חוזר גם אחרי שהידיעון התאושש.
+
+    ‏0.0 נ"ז או שם ריק כשלעצמם אינם "ריק" — רק היעדר *כל* השדות.
+    """
+    if not isinstance(payload, dict):
+        return True
+    for key in ("name", "language", "description"):
+        if str(payload.get(key) or "").strip():
+            return False
+    for key in ("credits", "weekly_hours"):
+        if payload.get(key) is not None:
+            return False
+    if payload.get("hours"):
+        return False
+    if payload.get("prerequisites"):
+        return False
+    return True
+
+
+def _fetch_details_page(fetcher: Any, code: str) -> str:
+    """מביא את עמוד ``S_CourseDetails`` — עם סלחנות לחתימות שונות.
+
+    ‏``yedion_http`` נכתב בקובץ של סוכן אחר; חתימה שהתרחבה או הצטמצמה לא
+    צריכה להפיל שליפה שכל כולה העשרה.
+    """
+    grabber = getattr(fetcher, "fetch_details", None)
+    if not callable(grabber):
+        raise AttributeError("fetch_details")
+    for args, kwargs in (
+        ((code,), {}),
+        ((code,), {"group_id": "0"}),
+        ((code,), {"group_id": "0", "kind_code": "1"}),
+    ):
+        try:
+            return str(grabber(*args, **kwargs))
+        except TypeError:
+            continue
+    return str(grabber(code))
+
+
+def fetch_details_into_store(
+    codes: Iterable[str],
+    *,
+    year_he: str = "",
+    year_gregorian: str = "",
+    emit: Callable[[str], None] | None = None,
+    cap: int = MAX_ONDEMAND_DETAIL_FETCHES,
+    delay_s: float = FETCH_DELAY_S,
+    fetcher: Any = None,
+) -> dict[str, Any]:
+    """מביא **פרטי קורס** (‏S_CourseDetails) ושומר אותם. לעולם לא זורק.
+
+    זה מה שהופך את הכלי לרב-מחלקתי: נ"ז, פירוט שעות ותנאי קדם לקורס שאינו
+    ב-``curriculum.json`` בכלל. הדף פתוח לקריאה בלי התחברות בדיוק כמו דף
+    המערכת (‏GROUND_TRUTH §9).
+
+    נימוס: רק לקורסים שנמסרו (כלומר: שנבחרו בפועל), תקרה לבקשה, השהיה בין
+    בקשות, וחלון טריות של שבעה ימים — פרטים כמעט אינם משתנים.
+
+    Returns:
+        ``{"supported", "requested", "fetched", "failed", "skipped", "log",
+        "error", "cap", "delay_s", "max_age_hours"}``.
+    """
+    lines: list[str] = []
+
+    def say(text: str) -> None:
+        lines.append(str(text))
+        if emit is not None:
+            try:
+                emit(str(text))
+            except Exception:  # noqa: BLE001
+                LOG.exception("כתיבה ליומן נכשלה")
+
+    wanted = [str(c).strip() for c in codes if str(c or "").strip()]
+    report: dict[str, Any] = {
+        "supported": True,
+        "requested": list(wanted),
+        "fetched": [],
+        "failed": [],
+        "skipped": [],
+        "log": lines,
+        "error": "",
+        "cap": int(cap),
+        "delay_s": float(delay_s),
+        "max_age_hours": DETAILS_MAX_AGE_HOURS,
+    }
+    if not wanted:
+        return report
+
+    store = _store()
+    parse = getattr(parser_mod, "parse_course_details", None)
+    saver = getattr(store, "save_details", None)
+    if not callable(parse) or not callable(saver):
+        report["supported"] = False
+        report["error"] = (
+            "פענוח או שמירה של פרטי קורס אינם זמינים בגרסה הזו — "
+            "הנתונים המוצגים הם מה שכבר שמור."
+        )
+        report["skipped"] = [{"code": c, "reason": report["error"]} for c in wanted]
+        return report
+
+    head, tail = wanted[: max(0, int(cap))], wanted[max(0, int(cap)) :]
+    for code in tail:
+        report["skipped"].append(
+            {
+                "code": code,
+                "reason": (
+                    f"בבקשה אחת נשלפים פרטים של עד {cap} קורסים. "
+                    f"הפרטים של {code} יושלמו בפעם הבאה."
+                ),
+            }
+        )
+    if not head:
+        return report
+
+    owned = fetcher is None
+    injected = False
+    if owned:
+        fetcher, error, injected = _make_fetcher(
+            year_gregorian=year_gregorian, log=say, delay_s=delay_s
+        )
+        if fetcher is None:
+            report["error"] = error
+            report["skipped"] += [{"code": c, "reason": error} for c in head]
+            say(error)
+            return report
+        error = _open_fetcher_session(fetcher, year_he)
+        if error:
+            report["error"] = error
+            report["skipped"] += [{"code": c, "reason": error} for c in head]
+            say(error)
+            return report
+
+    if not callable(getattr(fetcher, "fetch_details", None)):
+        report["supported"] = False
+        report["error"] = (
+            "שליפת פרטי קורס אינה נתמכת בשולף הנוכחי — הנתונים המוצגים הם "
+            "מה שכבר שמור."
+        )
+        report["skipped"] += [{"code": c, "reason": report["error"]} for c in head]
+        return report
+
+    pacer = _Pacer(0.0 if injected else delay_s)
+    for code in head:
+        pacer.wait()
+        say(f"מביא את פרטי הקורס {code} מהידיעון…")
+        try:
+            html = _fetch_details_page(fetcher, code)
+        except Exception as exc:  # noqa: BLE001 - קורס אחד לא מפיל את השאר
+            LOG.warning("שליפת פרטי %s נכשלה: %s: %s", code, type(exc).__name__, exc)
+            reason = f"לא ניתן היה לשלוף את פרטי הקורס {code} ({type(exc).__name__})."
+            report["failed"].append({"code": code, "reason": reason})
+            say(reason)
+            continue
+
+        try:
+            parsed = parse(html, code)
+        except Exception as exc:  # noqa: BLE001
+            LOG.exception("פענוח פרטי %s נכשל", code)
+            reason = f"לא ניתן היה לפענח את דף הפרטים של {code} ({type(exc).__name__})."
+            report["failed"].append({"code": code, "reason": reason})
+            say(reason)
+            continue
+
+        payload = _details_to_dict(parsed)
+        if _details_payload_is_empty(payload):
+            # לא שומרים. רשומה ריקה עם חותמת טרייה היא שקר שמחזיק שבוע:
+            # היא משתיקה כל ניסיון חוזר ומדווחת ``has_details: true`` על
+            # רשומה שאין בה דבר. ``mark_details_failed`` משאיר את מה שהיה
+            # שמור, רושם את הסיבה, והרשומה נשארת מיושנת — כלומר תיבדק שוב.
+            reason = (
+                f"דף הפרטים של {code} חזר ריק (ייתכן שהידיעון אינו מגיש את "
+                f"הקוד הזה, או שהוגשה שגיאה). לא נשמר — ייבדק שוב בפעם הבאה."
+            )
+            marker = getattr(store, "mark_details_failed", None)
+            if callable(marker):
+                try:
+                    marker(code, "דף הפרטים חזר ריק")
+                except Exception:  # noqa: BLE001 - סימון כישלון לא מפיל שליפה
+                    LOG.exception("סימון כישלון פרטים ל-%s נכשל", code)
+            report["failed"].append({"code": code, "reason": reason})
+            say(reason)
+            continue
+
+        stamp = _now_iso()
+        payload.setdefault("code", code)
+        # החותמת נשמרת במטא של הרשומה (הארגומנט השלישי) ולא בתוך הפרטים —
+        # ``load_details`` מחזיר בדיוק את מה שנשמר, ואסור ללכלך אותו.
+        try:
+            saver(code, payload, stamp)
+        except TypeError:
+            try:
+                saver(code, payload, fetched_at=stamp)
+            except Exception as exc:  # noqa: BLE001
+                LOG.exception("שמירת פרטי %s נכשלה", code)
+                reason = f"לא ניתן היה לשמור את פרטי הקורס {code} ({type(exc).__name__})."
+                report["failed"].append({"code": code, "reason": reason})
+                say(reason)
+                continue
+        except Exception as exc:  # noqa: BLE001
+            LOG.exception("שמירת פרטי %s נכשלה", code)
+            reason = f"לא ניתן היה לשמור את פרטי הקורס {code} ({type(exc).__name__})."
+            report["failed"].append({"code": code, "reason": reason})
+            say(reason)
+            continue
+
+        report["fetched"].append(code)
+        got = credits_text(payload.get("credits"))
+        say(f"נשמרו פרטי {code}: {got} נ\"ז.")
+
+    return report
+
+
+def _details_needing_fetch(
+    codes: Iterable[str],
+    *,
+    max_age_hours: float | None = None,
+) -> list[str]:
+    """אילו מהקודים חסרים פרטים או שהפרטים שלהם ישנים מ-7 ימים.
+
+    זה הגלגל שמונע הכפלת בקשות: בדרך המהירה (הפרטים טריים) הרשימה ריקה,
+    ואז אפילו לא נבנה שולף ולא נפתח סשן.
+    """
+    if not _details_supported():
+        return []
+    wanted: list[str] = []
+    for raw in codes:
+        code = str(raw or "").strip()
+        if code and code not in wanted:
+            wanted.append(code)
+    if not wanted:
+        return []
+    window = _details_max_age() if max_age_hours is None else float(max_age_hours)
+
+    # ‏``stale_details_codes`` קורא את הקובץ פעם אחת לכל הרשימה במקום פעם לכל
+    # קוד — עדיף בהרבה כשנבחרו עשרים קורסים.
+    bulk = getattr(_store(), "stale_details_codes", None)
+    if callable(bulk):
+        try:
+            return [str(c) for c in bulk(wanted, window)]
+        except Exception:  # noqa: BLE001 - נופלים בחזרה לבדיקה קוד-קוד
+            LOG.exception("בדיקת טריות הפרטים בבת אחת נכשלה")
+    return [code for code in wanted if _details_stale(code, max_age_hours=window)]
+
+
+def _details_fetch_supported() -> bool:
+    """האם בכלל יש מי שיודע לשלוף פרטים — **בלי לבנות שולף ובלי רשת**.
+
+    זו הבדיקה שמונעת את הנזק הגדול: בלי לוודא מראש, כל בקשה ל-``/api/courses``
+    הייתה פותחת סשן מול הידיעון רק כדי לגלות ששליפת פרטים לא ממומשת — כלומר
+    מוסיפה שניות למסלול המהיר ובקשה מיותרת לשרת המכללה, בכל פעם מחדש.
+    """
+    if not callable(getattr(parser_mod, "parse_course_details", None)):
+        return False
+    if not callable(getattr(_store(), "save_details", None)):
+        return False
+    from flask import current_app
+
+    injected = current_app.config.get("COURSE_FETCHER")
+    if injected is not None:
+        if hasattr(injected, "fetch_course"):          # מופע מוכן
+            return callable(getattr(injected, "fetch_details", None))
+        return True                                    # מפעל — נדע רק אחרי הבנייה
+    module = _yedion_module()
+    cls = getattr(module, "YedionHTTP", None) if module is not None else None
+    return callable(getattr(cls, "fetch_details", None))
+
+
 def _stale_or_missing(
     codes: Iterable[str],
     problems: list[dict[str, Any]],
@@ -2540,11 +3409,19 @@ bp = Blueprint("api", __name__, url_prefix="/api")
 @bp.get("/bootstrap")
 @_endpoint
 def bootstrap():
-    """כל מה שהממשק צריך בפתיחה: ברירות מחדל, סמסטרים, טריות, קטלוג, גרידה."""
+    """כל מה שהממשק צריך בפתיחה: ברירות מחדל, סמסטרים, טריות, קטלוג, גרידה.
+
+    ‏``curriculum_available`` (וגם ``curriculum.available``) אומר מיד, בצביעה
+    הראשונה, אם יש בכלל תוכנית לימודים טעונה. בלעדיו הממשק היה מציג רשימת
+    קורסים ריקה לסטודנט/ית שהמסלול שלהם אינו ב-rec.pdf, ורק אחר כך מגלה
+    שצריך לעבור לעיון בקטלוג — הבהוב שגם מבלבל וגם נראה כמו תקלה.
+    ‏SPEC_MULTIFACULTY §4.
+    """
     curr = _curriculum()
     profile = _profile()
     student = profile.get("student") or {}
     prefs = profile.get("preferences") or {}
+    has_curriculum = _curriculum_available(curr)
 
     semesters = []
     for key in sorted((curr.get("semesters") or {}).keys(), key=lambda k: (len(k), k)):
@@ -2617,11 +3494,20 @@ def bootstrap():
                 "בתוכנית הלימודים אין סמסטר קיץ — אפשר לבחור קורסים מהקטלוג החי, "
                 "אבל אין רשימת קורסים מומלצת לסמסטר הזה."
             ),
+            # שני השדות האלה נמצאים גם ברמה העליונה בכוונה: הממשק בודק אותם
+            # לפני שהוא מצייר את שלב 2, ולא צריך לחפור בשביל זה.
+            "curriculum_available": has_curriculum,
+            "program": str(curr.get("program", "") or ""),
             "curriculum": {
+                "available": has_curriculum,
                 "program": curr.get("program", ""),
+                "program_en": curr.get("program_en", ""),
                 "catalog": curr.get("catalog", ""),
                 "degree_credits_required": curr.get("degree_credits_required"),
                 "hour_legend": curr.get("hour_legend") or {},
+                "course_count": len(curriculum_mod.all_course_codes(curr)) if has_curriculum else 0,
+                "semester_count": len(curr.get("semesters") or {}),
+                "note": "" if has_curriculum else CURRICULUM_MISSING_NOTE,
             },
             "db": _db_snapshot(),
             "catalog": catalog_summary,
@@ -2634,7 +3520,11 @@ def bootstrap():
                 "max_top_n": MAX_TOP_N,
                 "max_log_lines": MAX_LOG_LINES,
                 "max_ondemand_fetches": MAX_ONDEMAND_FETCHES,
+                "max_ondemand_detail_fetches": MAX_ONDEMAND_DETAIL_FETCHES,
                 "fetch_delay_s": FETCH_DELAY_S,
+                "browse_limit_default": DEFAULT_BROWSE_LIMIT,
+                "browse_limit_max": MAX_BROWSE_LIMIT,
+                "details_max_age_hours": DETAILS_MAX_AGE_HOURS,
             },
             "features": {
                 # קורס בלי נתונים כבר לא חייב להישאר כזה — הוא נשלף בלחיצה.
@@ -2646,6 +3536,11 @@ def bootstrap():
                 # ‏GROUND_TRUTH §9: הרענון הרגיל אינו דורש התחברות.
                 "refresh_needs_login": False,
                 "refresh_mode": "http",
+                # תוכנית הלימודים היא העשרה, לא תנאי: בלעדיה עוברים לעיון
+                # בקטלוג (‏/api/catalog/browse) והכול ממשיך לעבוד.
+                "curriculum_optional": True,
+                "catalog_browse": True,
+                "course_details": _details_supported(),
             },
         }
     )
@@ -2655,50 +3550,72 @@ def bootstrap():
 @bp.get("/semester/<sem>/courses")
 @_endpoint
 def semester_courses(sem: str):
-    """קורסי הסמסטר מתוך ``curriculum.json``, עם 'מוצע השנה' ו'יש נתונים'."""
-    curr = _curriculum()
-    try:
-        entries = curriculum_mod.semester_courses(curr, sem)
-        info = curriculum_mod.semester_info(curr, sem)
-    except curriculum_mod.UnknownSemesterError as exc:
-        raise ApiError(404, str(exc).split("(")[0].strip(), f"unknown semester {sem!r}") from exc
+    """קורסי הסמסטר מתוך ``curriculum.json``, עם 'מוצע השנה' ו'יש נתונים'.
 
-    catalog, _summary = _catalog_snapshot()
+    ‏**חוסר בתוכנית אינו שגיאה.** סמסטר שהתוכנית לא מספקת לו קורסים —
+    בין אם אין תוכנית טעונה בכלל ובין אם היא ריקה לסמסטר הזה — מחזיר ‏200
+    עם רשימה ריקה, ``curriculum_available: false`` והערה בעברית. הממשק
+    נשען בדיוק על הדגל הזה כדי לעבור לעיון בקטלוג (‏/api/catalog/browse),
+    ולכן ‏4xx כאן היה הופך "אין לי תוכנית" ל"הכלי לא עובד".
+    ‏SPEC_MULTIFACULTY §4.
+
+    קוד סמסטר שאינו קיים בתוכנית *טעונה* נשאר ‏404 — זו טעות בבקשה, לא
+    היעדר תוכנית.
+    """
+    curr = _curriculum()
+    has_curriculum = _curriculum_available(curr)
+    info: dict[str, Any] = {}
+    entries: list[dict[str, Any]] = []
+    if has_curriculum:
+        try:
+            entries = curriculum_mod.semester_courses(curr, sem)
+            info = curriculum_mod.semester_info(curr, sem)
+        except curriculum_mod.UnknownSemesterError as exc:
+            raise ApiError(
+                404, str(exc).split("(")[0].strip(), f"unknown semester {sem!r}"
+            ) from exc
+
+    catalog, catalog_summary = _catalog_snapshot()
     offered = discovery_mod.offered_codes(catalog)
     store = _store()
     have_data = set(store.codes())
 
     courses: list[dict[str, Any]] = []
-    credits_total = 0.0
+    credit_values: list[Any] = []
     for entry in entries:
         raw_code = entry.get("code")
         code = str(raw_code).strip() if raw_code else ""
-        credits = float(entry.get("credits") or 0.0)
-        credits_total += credits
+        facts = course_facts(code, entry=entry) if code else None
+        credits = facts["credits"] if facts else _known_credits(entry.get("credits"))
+        credit_values.append(credits)
 
         item: dict[str, Any] = {
             "code": code or None,
             "name": entry.get("name", ""),
+            # ‏None ולא ‏0.0 — הממשק מצייר "—" ולא מספר שאיש לא אמר.
             "credits": credits,
+            "credits_source": facts["credits_source"] if facts else CREDITS_SOURCE_UNKNOWN,
+            "credits_text": credits_text(credits),
             "he": entry.get("he", 0),
             "te": entry.get("te", 0),
             "ma": entry.get("ma", 0),
             "pr": entry.get("pr", 0),
             "prereq": [str(p) for p in (entry.get("prereq") or [])],
+            "prereq_source": facts["prereq_source"] if facts else CREDITS_SOURCE_UNKNOWN,
             "tied_with": [],
             "note": entry.get("note", ""),
             "cond": entry.get("cond", ""),
             "group": entry.get("group", ""),
             "curriculum_semester": str(sem),
+            "in_curriculum": True,
             "selectable": bool(code),
             "offered": False,
             "has_data": False,
         }
 
         if code:
-            item["tied_with"] = [
-                other for other in curriculum_mod.tied_group(curr, code) if other != code
-            ]
+            item["prereq"] = list(facts["prereq"]) if facts else item["prereq"]
+            item["tied_with"] = list(facts["tied_with"]) if facts else []
             item["offered"] = code in offered
             item["has_data"] = code in have_data
             item["catalog_name"] = str((catalog.get(code) or {}).get("name", ""))
@@ -2718,24 +3635,91 @@ def semester_courses(sem: str):
 
         courses.append(item)
 
+    summary = credits_summary(credit_values)
+    if not has_curriculum:
+        note = CURRICULUM_MISSING_NOTE
+    elif not courses:
+        note = CURRICULUM_EMPTY_SEMESTER_NOTE
+    else:
+        note = ""
+
     return _ok(
         {
             "semester": str(sem),
             "info": {
                 "year": info.get("year"),
                 "term": info.get("term", ""),
-                "label": _semester_label(str(sem), info),
+                "label": _semester_label(str(sem), info) if info else f"סמסטר {sem}",
                 "total": info.get("total") or {},
                 "plus": info.get("plus", ""),
             },
             "courses": courses,
-            "credits_total": round(credits_total, 2),
+            "credits_total": summary["total"],
+            "credits_summary": summary,
+            "credits_unknown": summary["unknown"],
             "count": len(courses),
+            # הדגל שהממשק נשען עליו כדי לעבור לעיון בקטלוג. ריק = אין על מה
+            # להישען כאן, ולא "משהו נשבר".
+            "curriculum_available": bool(courses),
+            "curriculum_loaded": has_curriculum,
+            "program": str(curr.get("program", "") or ""),
+            "note": note,
+            "fallback": {
+                "endpoint": "/api/catalog/browse",
+                "catalog_count": catalog_summary.get("count", 0),
+            },
         }
     )
 
 
 # --------------------------------------------------------- catalog search
+def _catalog_tag(in_curriculum: bool, semester: Any, cluster: Any) -> str:
+    """התווית הקצרה שמופיעה ליד תוצאת חיפוש/עיון."""
+    if in_curriculum and semester:
+        return f"[בתוכנית-סמסטר {semester}]"
+    if in_curriculum and cluster:
+        return f"[אשכול בחירה: {cluster}]"
+    if in_curriculum:
+        return "[בתוכנית]"
+    return "[מחוץ לתוכנית]"
+
+
+def _catalog_entry_json(
+    code: str,
+    name: str,
+    *,
+    info: dict[str, Any] | None = None,
+    have_data: set[str] | None = None,
+    offered: set[str] | None = None,
+    details: Any = None,
+) -> dict[str, Any]:
+    """שורת קטלוג אחת, זהה בחיפוש ובעיון — כולל נ"ז כנות ומקורן."""
+    info = info or {}
+    facts = course_facts(code, details=details)
+    in_curriculum = bool(info.get("in_curriculum", facts["in_curriculum"]))
+    semester = info.get("curriculum_semester", facts["curriculum_semester"])
+    cluster = info.get("cluster", facts["cluster"])
+    return {
+        "code": code,
+        "name": name or facts["name"],
+        "in_curriculum": in_curriculum,
+        "curriculum_semester": semester,
+        "cluster": cluster,
+        # ‏None כשלא ידוע. אף פעם לא 0.0.
+        "credits": facts["credits"],
+        "credits_source": facts["credits_source"],
+        "credits_text": facts["credits_text"],
+        "tied_with": list(info.get("tied_with") or facts["tied_with"]),
+        "prereq": list(info.get("prereq") or facts["prereq"]),
+        "prereq_source": facts["prereq_source"],
+        "language": facts["language"],
+        "has_details": facts["details_available"],
+        "has_data": code in (have_data or set()),
+        "offered": (code in offered) if offered is not None else None,
+        "tag": _catalog_tag(in_curriculum, semester, cluster),
+    }
+
+
 @bp.get("/catalog/search")
 @_endpoint
 def catalog_search():
@@ -2753,36 +3737,141 @@ def catalog_search():
     raw = {code: {"name": name} for code, name in hits}
     annotated = discovery_mod.annotate_with_curriculum(raw, curr)
 
-    results: list[dict[str, Any]] = []
-    for code, name in hits:  # סדר הדירוג של search_catalog נשמר
-        info = annotated.get(code) or {}
-        in_curriculum = bool(info.get("in_curriculum"))
-        semester = info.get("curriculum_semester")
-        cluster = info.get("cluster")
-        if in_curriculum and semester:
-            tag = f"[בתוכנית-סמסטר {semester}]"
-        elif in_curriculum and cluster:
-            tag = f"[אשכול בחירה: {cluster}]"
-        elif in_curriculum:
-            tag = "[בתוכנית]"
-        else:
-            tag = "[מחוץ לתוכנית]"
-        results.append(
-            {
-                "code": code,
-                "name": name,
-                "in_curriculum": in_curriculum,
-                "curriculum_semester": semester,
-                "cluster": cluster,
-                "credits": info.get("credits"),
-                "tied_with": list(info.get("tied_with") or []),
-                "prereq": list(info.get("prereq") or []),
-                "has_data": code in have_data,
-                "tag": tag,
-            }
-        )
+    results = [
+        _catalog_entry_json(code, name, info=annotated.get(code) or {}, have_data=have_data)
+        for code, name in hits  # סדר הדירוג של search_catalog נשמר
+    ]
 
     return _ok({"query": query, "limit": limit, "results": results, "count": len(results)})
+
+
+# --------------------------------------------------------- catalog browse
+def _norm_browse(text: Any) -> str:
+    """נרמול להשוואה: רווח קשיח, גרש/גרשיים עבריים ומרכאות מסולסלות.
+
+    בלי זה חיפוש ``מתמטיקה ב'`` לא היה מוצא קורס שנכתב בידיעון עם ``ב׳`` —
+    בדיוק כמו ב-``store.search_catalog``.
+    """
+    value = str(text or "").replace(" ", " ")
+    for src, dst in (("׳", "'"), ("״", '"'), ("’", "'"), ("‘", "'"), ("“", '"'), ("”", '"')):
+        value = value.replace(src, dst)
+    return re.sub(r"\s+", " ", value).strip().lower()
+
+
+def _browse_sort_key(code: str) -> tuple[int, int, str]:
+    """מיון לפי קוד: מספרי כשאפשר, אחרת אלפביתי — תמיד יציב."""
+    text = str(code or "")
+    if text.isdigit():
+        return (0, int(text), text)
+    return (1, 0, text)
+
+
+@bp.get("/catalog/browse")
+@_endpoint
+def catalog_browse():
+    """עיון בקטלוג המלא — הדרך של מי שהתוכנית שלהם אינה ב-rec.pdf.
+
+    ‏SPEC_MULTIFACULTY §4: ‏86% מהקטלוג אינם ב-``curriculum.json``, ולכן שלב
+    ‏2 חייב מקור שני. שלושה אופנים, כולם אופציונליים ומצטברים:
+
+    * ``prefix`` — קידומת קוד (‏"110" → 11001, 11002 …). כך סטודנטים חושבים:
+      טווח קודים הוא בפועל שם המחלקה.
+    * ``q`` — תת-מחרוזת בשם (עברית) או בקוד.
+    * ``limit`` + ``offset`` — דפדוף, עם תקרה קשיחה של ‏200 שורות לבקשה.
+
+    בלי שני הראשונים מוחזר ראש הקטלוג לפי קוד — עיון הוא בדיוק המצב שבו
+    עוד אין מה להקליד.
+    """
+    prefix = str(request.args.get("prefix", "") or "").strip()
+    if prefix and not prefix.isdigit():
+        raise ApiError(
+            400,
+            "קידומת קוד חייבת להיות ספרות בלבד (למשל 110 או 617).",
+            f"bad prefix {prefix!r}",
+        )
+    if len(prefix) > 7:
+        raise ApiError(
+            400, "קידומת קוד ארוכה מדי — קוד קורס הוא עד 7 ספרות.", f"long prefix {prefix!r}"
+        )
+
+    query = str(request.args.get("q", "") or "").strip()
+    limit = _as_int(
+        request.args.get("limit"),
+        field="limit",
+        default=DEFAULT_BROWSE_LIMIT,
+        low=1,
+        high=MAX_BROWSE_LIMIT,
+    )
+    offset = _as_int(request.args.get("offset"), field="offset", default=0, low=0, high=100000)
+
+    catalog, catalog_summary = _catalog_snapshot()
+    store = _store()
+    curr = _curriculum()
+    needle = _norm_browse(query)
+    needle_nospace = needle.replace(" ", "")
+
+    matched: list[tuple[str, str]] = []
+    for raw_code, raw_info in catalog.items():
+        code = str(raw_code).strip()
+        if not code:
+            continue
+        name = str(raw_info.get("name", "")) if isinstance(raw_info, dict) else str(raw_info or "")
+        if prefix and not code.startswith(prefix):
+            continue
+        if needle:
+            code_n = _norm_browse(code)
+            if needle not in _norm_browse(name) and not code_n.startswith(needle_nospace):
+                continue
+        matched.append((code, name))
+
+    matched.sort(key=lambda pair: _browse_sort_key(pair[0]))
+    total = len(matched)
+    page = matched[offset : offset + limit]
+
+    have_data = set(store.codes())
+    offered = discovery_mod.offered_codes(catalog)
+    annotated = discovery_mod.annotate_with_curriculum(
+        {code: {"name": name} for code, name in page}, curr
+    )
+    results = [
+        _catalog_entry_json(
+            code,
+            name,
+            info=annotated.get(code) or {},
+            have_data=have_data,
+            offered=offered,
+        )
+        for code, name in page
+    ]
+
+    if not catalog:
+        note = (
+            "הקטלוג עדיין לא נטען. יש להריץ רענון מהידיעון כדי למשוך את רשימת "
+            "הקורסים המלאה."
+        )
+    elif not results:
+        note = "לא נמצאו קורסים שמתאימים לחיפוש הזה בקטלוג."
+    elif not _curriculum_available(curr):
+        note = CURRICULUM_MISSING_NOTE
+    else:
+        note = ""
+
+    return _ok(
+        {
+            "prefix": prefix,
+            "query": query,
+            "limit": limit,
+            "offset": offset,
+            "results": results,
+            "count": len(results),
+            "total": total,
+            "has_more": offset + len(results) < total,
+            "next_offset": (offset + len(results)) if offset + len(results) < total else None,
+            "curriculum_available": _curriculum_available(curr),
+            "note": note,
+            "catalog": catalog_summary,
+        }
+    )
 
 
 # ---------------------------------------------------------------- courses
@@ -2803,6 +3892,11 @@ def _ondemand_fetch(
     ‏GROUND_TRUTH §9 השליפה אינה דורשת התחברות, ולכן "אין נתונים" הפסיק להיות
     גזר דין. כל מה שכאן הוא **שמירות**: מכסה, השהיה, כותב יחיד, ובלי רשת
     כשאסור. כישלון של קורס אחד אף פעם לא מפיל את הבקשה.
+
+    בנוסף למערכת עצמה נשלפים כאן גם **פרטי הקורס** (נ"ז, שעות, תנאי קדם)
+    כשהם חסרים או ישנים משבעה ימים — ורק לקורסים שנבחרו בפועל, אף פעם לא
+    לכל הקטלוג. בדרך המקובלת (פרטים טריים) לא נשלחת אף בקשה נוספת, ולכן
+    המסלול המהיר נשאר מהיר. ‏SPEC_MULTIFACULTY §3+§5.
     """
     report: dict[str, Any] = {
         "enabled": bool(enabled),
@@ -2816,16 +3910,38 @@ def _ondemand_fetch(
         "error": "",
         "cap": MAX_ONDEMAND_FETCHES,
         "delay_s": FETCH_DELAY_S,
+        "details": {
+            "enabled": bool(enabled),
+            "supported": _details_fetch_supported(),
+            "requested": [],
+            "fetched": [],
+            "failed": [],
+            "skipped": [],
+            "log": [],
+            "error": "",
+            "cap": MAX_ONDEMAND_DETAIL_FETCHES,
+            "delay_s": FETCH_DELAY_S,
+            "max_age_hours": DETAILS_MAX_AGE_HOURS,
+        },
     }
     wanted = _stale_or_missing(
         codes, problems, metas, year=year, max_age_hours=max_age_hours
     )
+    # פרטים נשלפים רק לקורסים שנבחרו, ורק כשהם באמת ישנים (7 ימים) — וגם
+    # רק אם יש בכלל מי שיודע לשלוף אותם, אחרת פותחים סשן לחינם בכל בקשה.
+    details_wanted = (
+        _details_needing_fetch(codes) if report["details"]["supported"] else []
+    )
     report["requested"] = wanted
-    if not wanted:
+    report["details"]["requested"] = details_wanted
+    if not wanted and not details_wanted:
         return report
 
     def skip_all(reason: str) -> dict[str, Any]:
         report["skipped"] = [{"code": code, "reason": reason} for code in wanted]
+        report["details"]["skipped"] = [
+            {"code": code, "reason": reason} for code in details_wanted
+        ]
         return report
 
     if not enabled:
@@ -2850,19 +3966,38 @@ def _ondemand_fetch(
             "פעולה אחרת כותבת כרגע לנתונים. אפשר לנסות שוב בעוד רגע."
         )
     try:
-        result = fetch_courses_into_store(
-            wanted,
-            semester=semester,
-            year_he=year,
-            year_gregorian=year_gregorian,
-            cap=MAX_ONDEMAND_FETCHES,
-            delay_s=FETCH_DELAY_S,
-        )
+        result: dict[str, Any] = {}
+        if wanted:
+            result = fetch_courses_into_store(
+                wanted,
+                semester=semester,
+                year_he=year,
+                year_gregorian=year_gregorian,
+                cap=MAX_ONDEMAND_FETCHES,
+                delay_s=FETCH_DELAY_S,
+            )
+        details_result: dict[str, Any] = {}
+        if details_wanted:
+            details_result = fetch_details_into_store(
+                details_wanted,
+                year_he=year,
+                year_gregorian=year_gregorian,
+                cap=MAX_ONDEMAND_DETAIL_FETCHES,
+                delay_s=FETCH_DELAY_S,
+            )
     finally:
         _db_write_lock.release()
 
     for key in ("fetched", "failed", "skipped", "changes", "not_offered", "log", "error"):
         report[key] = result.get(key, report[key])
+    for key in ("supported", "fetched", "failed", "skipped", "log", "error"):
+        if key in details_result:
+            report["details"][key] = details_result[key]
+    if details_result.get("fetched"):
+        # הפרטים שנשמרו זה עתה חייבים להיקרא מחדש באותה בקשה, אחרת התשובה
+        # תציג "—" עבור נ"ז שכבר יושבות במסד.
+        _request_cache().pop("details_bulk", None)
+        _request_cache().pop("details_one", None)
     return report
 
 
@@ -2922,7 +4057,10 @@ def courses():
             problem["reason"] = reason
 
     payload: list[dict[str, Any]] = []
-    credits_total = 0.0
+    credit_values: list[Any] = []
+    # קריאה אחת לכל הרשימה, לא אחת לכל קורס — אחרי השליפה, כדי שמה שנשלף
+    # עכשיו כבר ייחשב טרי.
+    stale_details = set(_details_needing_fetch(codes))
     for course in built:
         sources[course.code] = "fetched" if course.code in fetched_ok else "db"
         meta = metas.get(course.code)
@@ -2937,7 +4075,15 @@ def courses():
             warnings.append(
                 f"הנתונים של הקורס נשלפו {meta_json['age_text']} ועשויים להיות מיושנים."
             )
-        credits_total += float(course.credits)
+        facts = course_facts(
+            course.code, course=course, stale=course.code in stale_details
+        )
+        credit_values.append(facts["credits"])
+        if facts["credits"] is None:
+            warnings.append(
+                "נקודות הזכות של הקורס אינן ידועות — הוא אינו בתוכנית הלימודים "
+                "ופרטיו טרם נשלפו מהידיעון."
+            )
         payload.append(
             course_to_json(
                 course,
@@ -2946,6 +4092,21 @@ def courses():
                     "source": sources.get(course.code, "db"),
                     "freshness": meta_json,
                     "warnings": warnings,
+                    # נ"ז ותנאי קדם לפי סדר ההכרעה היחיד — עם המקור, כדי
+                    # שהממשק יוכל לומר את האמת ולא לנחש.
+                    "credits": facts["credits"],
+                    "credits_source": facts["credits_source"],
+                    "credits_text": facts["credits_text"],
+                    "prereq": facts["prereq"],
+                    "prereq_source": facts["prereq_source"],
+                    "prereq_detail": facts["prereq_detail"],
+                    "in_curriculum": facts["in_curriculum"],
+                    "cluster": facts["cluster"],
+                    "hours": facts["hours"],
+                    "weekly_hours": facts["weekly_hours"],
+                    "language": facts["language"],
+                    "has_details": facts["details_available"],
+                    "details_stale": facts["details_stale"],
                     "curriculum_semester": (
                         curriculum_mod.find_course_source(_curriculum(), course.code) or ""
                     ).replace("semester:", ""),
@@ -2953,6 +4114,14 @@ def courses():
             )
         )
 
+    # קורסים שלא נבנו (אין נתונים שמורים, אין קבוצות, סמסטר אחר) חייבים
+    # להיספר גם הם: 251100 ו-41942 שוות ‏3 נ"ז כל אחת בתוכנית, ובלי השורה
+    # הזו בחירה בשתיהן הייתה מחזירה ‏"0" עם ``complete: true`` — בדיוק הסך
+    # השקט ש-SPEC_MULTIFACULTY §3 אוסר, רק הפוך: אפס במקום מקף.
+    for problem in problems:
+        credit_values.append(course_facts(str(problem.get("code") or ""))["credits"])
+
+    summary = credits_summary(credit_values)
     return _ok(
         {
             "semester": semester,
@@ -2960,7 +4129,13 @@ def courses():
             "codes": codes,
             "courses": payload,
             "not_offered": problems,
-            "credits_total": round(credits_total, 2),
+            # סכום של הידוע בלבד; ``credits_summary`` אומר כמה לא ידוע.
+            "credits_total": summary["total"],
+            "credits_summary": summary,
+            "credits_unknown": summary["unknown"],
+            "credits_complete": summary["complete"],
+            "credits_text": summary["text"],
+            "curriculum_available": _curriculum_available(),
             "count": len(payload),
             "sources": sources,
             "fetch": fetch_report,
@@ -3035,6 +4210,15 @@ def solve():
 
     # ── 1. הקורסים: deepcopy, tied_with, נ"ז ──
     built, problems, _metas = _build_courses(codes, semester=semester, year=year)
+    # רק נ"ז ידועות נסכמות, וכמה לא ידועות נאמר במפורש (SPEC_MULTIFACULTY §3).
+    # נספרים **כל** הקודים שנבחרו, גם אלה שאין להם נתונים שמורים: אחרת בחירה
+    # שכולה קורסים בלי מערכת שמורה חוזרת כ-"0" עם ``complete: true``, כלומר
+    # אפס שמתחזה לתשובה שלמה. הסכום אינו תלוי בנעיצות, ולכן הוא נחשב כאן —
+    # לפני היציאה המוקדמת, שאחרת הייתה מחזירה אפס קשיח.
+    solve_credits = credits_summary(
+        [course_facts(c.code, course=c)["credits"] for c in built]
+        + [course_facts(str(p.get("code") or ""))["credits"] for p in problems]
+    )
     base_common: dict[str, Any] = {
         "codes": codes,
         "semester": semester,
@@ -3048,7 +4232,12 @@ def solve():
         "target_reachable": False,
         "reasons": [],
         "suggestions": [],
-        "credits_total": 0.0,
+        "credits_total": solve_credits["total"],
+        "credits_summary": solve_credits,
+        "credits_unknown": solve_credits["unknown"],
+        "credits_complete": solve_credits["complete"],
+        "credits_text": solve_credits["text"],
+        "curriculum_available": _curriculum_available(),
         "elapsed_ms": 0,
         "allow_soft_conflicts": bool(allow_soft_conflicts),
         "attendance_supported": bool(attendance_supported),
@@ -3075,7 +4264,6 @@ def solve():
     applied_pins, dropped_pins = resolve_pins(built, pinned_request)
     base_common["pinned"] = applied_pins
     base_common["dropped_pins"] = dropped_pins
-    base_common["credits_total"] = round(sum(float(c.credits) for c in built), 2)
 
     # ── 3. חבילת קורסים צמודים — נבדק *לפני* הספירה, אחרת התשובה סותרת את
     #      עצמה ("יש 12 צירופים" לצד "אין אף מערכת"). זו תשובה, לא תקלה.
@@ -3519,6 +4707,10 @@ def create_app(
         "raw_dir": str(PROJECT_ROOT / "data" / "raw"),
         "browser_profile_dir": str(PROJECT_ROOT / "data" / ".browser_profile"),
         "max_age_hours": float(store_mod.DEFAULT_MAX_AGE_HOURS),
+        # פרטי קורס (נ"ז, שעות, תנאי קדם) מקבלים חלון טריות משלהם — שבעה
+        # ימים, לא יממה. הם כמעט אינם משתנים, והכפלת הבקשות בשבילם היא
+        # חוסר נימוס כלפי שרת המכללה. ‏SPEC_MULTIFACULTY §2.
+        "details_max_age_hours": DETAILS_MAX_AGE_HOURS,
         # ‏None = אוטומטי: פנייה לידיעון מותרת, אבל לא בתוך הרצת בדיקות.
         "allow_network": None,
     }
@@ -3612,8 +4804,13 @@ def create_app(
 # 11. בדיקת עשן: python src/web/api.py
 # ===========================================================================
 def _smoke_test() -> int:  # pragma: no cover - כלי דיבוג ידני
-    """מריץ את כל נקודות הקצה מול המסד האמיתי, בלי רשת ובלי דפדפן."""
-    app = create_app()
+    """מריץ את כל נקודות הקצה מול המסד האמיתי, בלי רשת ובלי דפדפן.
+
+    ‏``allow_network=False`` הוא מה שהופך את ההבטחה הזו לאמת: מאז שהשליפה
+    על-פי-דרישה מביאה גם *פרטי* קורס, כלי דיבוג ידני היה יכול לפנות לידיעון
+    עשרות פעמים רק כדי להדפיס וי.
+    """
+    app = create_app({"allow_network": False})
     client = app.test_client()
     checks: list[tuple[str, bool, str]] = []
 
@@ -3637,6 +4834,15 @@ def _smoke_test() -> int:  # pragma: no cover - כלי דיבוג ידני
     res = client.get("/api/catalog/search?q=617&limit=5")
     data = res.get_json()
     check("catalog/search", res.status_code == 200 and data.get("count", 0) > 0, f"{data.get('count')} תוצאות")
+
+    res = client.get("/api/catalog/browse?prefix=110&limit=5")
+    data = res.get_json()
+    zeros = [c for c in data.get("results", []) if c.get("credits") == 0.0]
+    check(
+        "catalog/browse",
+        res.status_code == 200 and data.get("count", 0) > 0 and not zeros,
+        f"{data.get('count')}/{data.get('total')} תוצאות, בלי אף 0.0 מזויף",
+    )
 
     codes = ["11069", "61753", "61756", "61757", "61832", "62027"]
     res = client.post("/api/courses", json={"codes": codes, "semester": "א"})
