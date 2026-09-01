@@ -4238,6 +4238,79 @@ def courses():
     )
 
 
+# ------------------------------------------------ electives (clusters/tracks)
+@bp.get("/program/electives")
+@_endpoint
+def program_electives():
+    """קבוצות קורסי הבחירה של תוכנית לימודים, מפרק השנתון שלה.
+
+    שלושה מבנים אפשריים, והם **אינם** שקולים:
+      ``clusters`` — אשכולות: קורס אחד **מכל** אשכול (תוכנה, תעשייה, מערכות מידע)
+      ``tracks``   — מסלולי התמחות: בוחרים מסלול **אחד** (אזרחית, מכונות)
+      ``flat``     — אין קיבוץ בפרק (חשמל, מתמטיקה) -> אין מה להציג
+
+    ``year`` הוא שנת המחזור **רק** כשהפרק מצהיר עליה. ``None`` = המסמך לא
+    ציין שנה, והממשק חייב לכתוב "שנה לא צוינה" ולא להמציא.
+    ``available: false`` = אין פרק לתוכנית הזאת, או שאין בו קיבוץ — ואז
+    הממשק **מסתיר** את החלק הזה לגמרי במקום להראות רשימה ריקה או מנוחשת.
+    """
+    program = str(request.args.get("program", "")).strip()
+    if not program:
+        raise ApiError(400, "חסר שם תוכנית.", "program is required")
+
+    try:
+        from shnaton import load_curricula
+
+        all_programs = load_curricula(str(PROJECT_ROOT / "data" / "curricula.json"))
+    except Exception:  # noqa: BLE001 - היעדר הקובץ אינו תקלה
+        all_programs = {}
+
+    def norm(text: Any) -> str:
+        return re.sub(r"[\s\"'׳״-]", "", str(text or ""))
+
+    chapter = all_programs.get(program)
+    if chapter is None:
+        for name, entry in all_programs.items():
+            if norm(name) == norm(program):
+                chapter = entry
+                break
+
+    if not chapter:
+        return {
+            "ok": True,
+            "program": program,
+            "available": False,
+            "reason": "אין פרק שנתון לתוכנית הזאת.",
+        }
+
+    clusters = chapter.get("clusters") or {}
+    tracks = chapter.get("tracks") or {}
+    if not clusters and not tracks:
+        return {
+            "ok": True,
+            "program": chapter.get("program", program),
+            "available": False,
+            "structure": chapter.get("structure", "flat"),
+            "reason": "פרק השנתון של התוכנית אינו מקבץ את קורסי הבחירה.",
+        }
+
+    year = chapter.get("year")
+    return {
+        "ok": True,
+        "program": chapter.get("program", program),
+        "available": True,
+        "structure": chapter.get("structure"),
+        "year": year,
+        "year_text": year or "שנה לא צוינה במסמך",
+        "source": chapter.get("source", ""),
+        "clusters": clusters,
+        "tracks": tracks,
+        "cluster_rule": "יש לקחת קורס אחד לפחות מכל אשכול." if clusters else "",
+        "track_rule": "יש לבחור מסלול התמחות אחד ולהתמחות בו." if tracks else "",
+        "warnings": chapter.get("warnings", []),
+    }
+
+
 # ------------------------------------------------------------------ solve
 @bp.post("/solve")
 @_endpoint
