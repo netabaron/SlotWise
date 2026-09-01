@@ -1593,6 +1593,53 @@ def credits_summary(values: Iterable[Any]) -> dict[str, Any]:
 OTHER_PROGRAM = "other"
 
 
+def _program_choices(curr: dict | None = None) -> list[dict]:
+    """רשימת המסלולים לבחירה בשלב 1.
+
+    המקור הוא ``data/programs.json`` — נמשך מהאתר הציבורי של המכללה
+    (``src/programs.py``), ולכן זו הרשימה **המוסמכת והעדכנית**: 8 תוכניות
+    תואר ראשון. אם הקובץ חסר, נופלים חזרה לשתי אפשרויות בלבד, כדי שהממשק
+    ימשיך לעבוד גם בלי משיכה מהאתר.
+
+    ``has_curriculum`` נכון רק לתוכנית שיש לה ``curriculum.json`` — כרגע
+    הנדסת תוכנה בלבד, כי ``rec.pdf`` הוא הפרק שלה. לכל השאר הכלי עובד מול
+    הקטלוג המלא, שממילא מכסה את כל המחלקות.
+    """
+    mine = curriculum_program(curr)
+    try:
+        from programs import load_programs
+
+        listed = load_programs(str(PROJECT_ROOT / "data" / "programs.json"))
+    except Exception:  # noqa: BLE001 — היעדר הקובץ אינו תקלה
+        listed = []
+
+    out: list[dict] = []
+    for entry in listed:
+        name = str(entry.get("name") or "").strip()
+        if not name:
+            continue
+        out.append(
+            {
+                "id": name,
+                "label": name,
+                "has_curriculum": _program_matches_curriculum(name, curr),
+                "url": entry.get("url", ""),
+                "description": entry.get("description", ""),
+                "tracks_text": entry.get("tracks_text", ""),
+            }
+        )
+    if mine and not any(p["id"] == mine for p in out):
+        out.insert(0, {"id": mine, "label": mine, "has_curriculum": True})
+    out.append(
+        {
+            "id": OTHER_PROGRAM,
+            "label": "תוכנית אחרת / לא ברשימה",
+            "has_curriculum": False,
+        }
+    )
+    return out
+
+
 def curriculum_program(curr: dict | None = None) -> str:
     """שם התוכנית ש-``curriculum.json`` מתאר, למשל ``'הנדסת תוכנה'``."""
     data = _curriculum() if curr is None else curr
@@ -3538,18 +3585,7 @@ def bootstrap():
             # אחד בלבד (הנדסת תוכנה); כל השאר עובדים מול הקטלוג, שהוא ממילא
             # מלא ומכסה את כל המחלקות.
             "curriculum_program": curriculum_program(curr),
-            "programs": [
-                {
-                    "id": curriculum_program(curr),
-                    "label": curriculum_program(curr),
-                    "has_curriculum": True,
-                },
-                {
-                    "id": OTHER_PROGRAM,
-                    "label": "תוכנית אחרת / לא ברשימה",
-                    "has_curriculum": False,
-                },
-            ],
+            "programs": _program_choices(curr),
             "program": str(curr.get("program", "") or ""),
             "curriculum": {
                 "available": has_curriculum,
