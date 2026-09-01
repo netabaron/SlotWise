@@ -1589,7 +1589,42 @@ def credits_summary(values: Iterable[Any]) -> dict[str, Any]:
     }
 
 
-def _curriculum_available(curr: dict | None = None) -> bool:
+#: המזהה שהממשק שולח כשהסטודנט/ית בוחר/ת "תוכנית אחרת / לא ברשימה".
+OTHER_PROGRAM = "other"
+
+
+def curriculum_program(curr: dict | None = None) -> str:
+    """שם התוכנית ש-``curriculum.json`` מתאר, למשל ``'הנדסת תוכנה'``."""
+    data = _curriculum() if curr is None else curr
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("program") or data.get("program_en") or "").strip()
+
+
+def _program_matches_curriculum(program: Any, curr: dict | None = None) -> bool:
+    """האם התוכנית שהסטודנט/ית ציין/ה היא זו שיש לנו קובץ תוכנית עבורה.
+
+    ‏rec.pdf הוא פרק **הנדסת תוכנה** בשנתון בלבד — 15% מהקטלוג. עד עכשיו
+    רשימת הקורסים של שלב 2 נבנתה ממנו לכל אחד/ת, כך שסטודנט/ית ממכונות
+    שבחר/ה "שנה ג' סמסטר א'" קיבל/ה **קורסי תוכנה** כאילו הם המסלול שלו/ה.
+    לכן: מציגים את התוכנית רק כשהיא באמת שלו/ה, ואחרת עוברים לקטלוג.
+
+    ערך ריק = לא נשאלו / לא ידוע -> **כן** מתאים, כדי לא לשנות התנהגות
+    קיימת של קריאות שאינן מציינות תוכנית.
+    """
+    wanted = str(program or "").strip()
+    if not wanted:
+        return True
+    if wanted.casefold() == OTHER_PROGRAM:
+        return False
+    mine = curriculum_program(curr)
+    if not mine:
+        return False
+    norm = lambda t: re.sub(r"[\s\"'׳״-]", "", str(t))
+    return norm(wanted) == norm(mine)
+
+
+def _curriculum_available(curr: dict | None = None, program: Any = None) -> bool:
     """האם יש בכלל תוכנית לימודים טעונה שאפשר להישען עליה.
 
     תוכנית ריקה אינה תקלה: סטודנט/ית שהמסלול שלהם אינו ב-rec.pdf חייבים
@@ -1597,6 +1632,8 @@ def _curriculum_available(curr: dict | None = None) -> bool:
     """
     data = _curriculum() if curr is None else curr
     if not isinstance(data, dict) or not data:
+        return False
+    if not _program_matches_curriculum(program, data):
         return False
     if data.get("semesters") or data.get("elective_clusters"):
         try:
@@ -3497,6 +3534,22 @@ def bootstrap():
             # שני השדות האלה נמצאים גם ברמה העליונה בכוונה: הממשק בודק אותם
             # לפני שהוא מצייר את שלב 2, ולא צריך לחפור בשביל זה.
             "curriculum_available": has_curriculum,
+            # מה התוכנית הטעונה מכסה, ומה אפשר לבחור. יש לנו קובץ תוכנית
+            # אחד בלבד (הנדסת תוכנה); כל השאר עובדים מול הקטלוג, שהוא ממילא
+            # מלא ומכסה את כל המחלקות.
+            "curriculum_program": curriculum_program(curr),
+            "programs": [
+                {
+                    "id": curriculum_program(curr),
+                    "label": curriculum_program(curr),
+                    "has_curriculum": True,
+                },
+                {
+                    "id": OTHER_PROGRAM,
+                    "label": "תוכנית אחרת / לא ברשימה",
+                    "has_curriculum": False,
+                },
+            ],
             "program": str(curr.get("program", "") or ""),
             "curriculum": {
                 "available": has_curriculum,
@@ -3563,7 +3616,10 @@ def semester_courses(sem: str):
     היעדר תוכנית.
     """
     curr = _curriculum()
-    has_curriculum = _curriculum_available(curr)
+    # ‏rec.pdf הוא פרק הנדסת תוכנה בלבד. בלי הסינון הזה סטודנט/ית מכל מחלקה
+    # אחרת היה/תה מקבל/ת כאן קורסי תוכנה כאילו הם המסלול שלו/ה.
+    program = request.args.get("program", "")
+    has_curriculum = _curriculum_available(curr, program)
     info: dict[str, Any] = {}
     entries: list[dict[str, Any]] = []
     if has_curriculum:

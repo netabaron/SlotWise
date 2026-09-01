@@ -416,6 +416,9 @@
       // תמיד true: סימון חובת הנוכחות הוא הפקד היחיד. אין עוד מתג נפרד
       // שאפשר לשכוח להדליק, וזו בדיוק התקלה שדווחה.
       allowSoftConflicts: true,
+      // המסלול שנבחר בשלב 1. ‏rec.pdf הוא פרק הנדסת תוכנה בלבד, ולכן רשימת
+      // הקורסים של שלב 2 רלוונטית רק למי שלומד/ת אותו. לכל השאר — הקטלוג.
+      program: "",
       earliest: null, // דקות מחצות, או null
       latest: null,
       blocked: [], // [[יום, התחלה, סוף], ...]
@@ -443,6 +446,7 @@
     // ‏SPEC §4 — מצב קטלוג. תוכנית הלימודים היא העשרה, לא תנאי: כשאין ממנה
     // קורסים, שלב 2 עובר לעיון בקטלוג המלא במקום להישאר מסך ריק בלי הסבר.
     curriculumAvailable: null, // מ-/api/bootstrap. null = השרת לא אמר
+    programs: [], // רשימת המסלולים מ-/api/bootstrap
     semesterCurriculumAvailable: null, // מ-/api/semester/<n>/courses
     semesterBusy: false,
     semesterFetched: false, // האם כבר יש תשובה על רשימת הסמסטר
@@ -1165,6 +1169,15 @@
         runtime.bootstrap = data;
         runtime.bootstrapError = null;
         runtime.curriculumAvailable = readCurriculumAvailable(data);
+        // רשימת המסלולים. ברירת המחדל היא המסלול שיש לו קובץ תוכנית, כדי
+        // שסטודנט/ית תוכנה לא תצטרך לבחור כלום; כל השאר בוחרים "אחר"
+        // ומקבלים את הקטלוג המלא במקום רשימה של מחלקה זרה.
+        if (Array.isArray(data.programs) && data.programs.length) {
+          runtime.programs = data.programs;
+          if (!txt(state.program)) {
+            state.program = txt(data.curriculum_program) || txt(data.programs[0].id);
+          }
+        }
         applyBootstrapDefaults(data);
         if (isScrapeRunning(data)) startPolling();
         runtime.ready = true;
@@ -1269,7 +1282,10 @@
     }
     var my = ++seq.semester;
     runtime.semesterBusy = true;
-    return getJSON("/api/semester/" + encodeURIComponent(sem) + "/courses")
+    return getJSON(
+      "/api/semester/" + encodeURIComponent(sem) + "/courses" +
+        "?program=" + encodeURIComponent(state.program || "")
+    )
       .then(function (data) {
         if (my !== seq.semester) return;
         runtime.semesterBusy = false;
@@ -2014,6 +2030,7 @@
     ui.tplBanner = byId("tpl-banner");
     ui.tplToast = byId("tpl-toast");
 
+    ui.selProgram = byId("select-program");
     ui.selYear = byId("select-year");
     ui.selTerm = byId("select-term");
     ui.semesterSummary = byId("semester-summary");
@@ -2101,6 +2118,11 @@
   }
 
   function wireEvents() {
+    if (ui.selProgram) {
+      ui.selProgram.addEventListener("change", function () {
+        setState({ program: txt(ui.selProgram.value), activeSchedule: 0 });
+      });
+    }
     if (ui.selYear) ui.selYear.addEventListener("change", onYearTermChange);
     if (ui.selTerm) ui.selTerm.addEventListener("change", onYearTermChange);
 
@@ -2521,7 +2543,32 @@
 
   var yearOptionsSig = null;
 
+  function renderProgramSelect() {
+    if (!ui.selProgram) return;
+    var opts = runtime.programs || [];
+    if (!opts.length) {
+      // אין רשימה מהשרת (גרסה ישנה) — מסתירים את הפקד ולא מחליטים במקומו.
+      ui.selProgram.parentNode.hidden = true;
+      return;
+    }
+    ui.selProgram.parentNode.hidden = false;
+    var sig = JSON.stringify(opts);
+    if (sig !== programOptionsSig) {
+      programOptionsSig = sig;
+      clear(ui.selProgram);
+      opts.forEach(function (o) {
+        ui.selProgram.appendChild(
+          el("option", { attrs: { value: txt(o.id) }, text: txt(o.label) || txt(o.id) })
+        );
+      });
+    }
+    ui.selProgram.value = txt(state.program) || txt(opts[0] && opts[0].id);
+  }
+
+  var programOptionsSig = null;
+
   function renderYearStep() {
+    renderProgramSelect();
     if (!ui.selYear || !ui.selTerm) return;
     var years = yearOptions();
     var terms = termOptions();
