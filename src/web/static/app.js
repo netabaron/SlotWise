@@ -447,6 +447,11 @@
     // קורסים, שלב 2 עובר לעיון בקטלוג המלא במקום להישאר מסך ריק בלי הסבר.
     curriculumAvailable: null, // מ-/api/bootstrap. null = השרת לא אמר
     programs: [], // רשימת המסלולים מ-/api/bootstrap
+    // קבוצות קורסי הבחירה של המסלול, מ-/api/program/electives.
+    // null = עוד לא נשאל; available:false = אין מה להציג, ומסתירים.
+    electives: null,
+    electivesFor: "",
+    electivesBusy: false,
     semesterCurriculumAvailable: null, // מ-/api/semester/<n>/courses
     semesterBusy: false,
     semesterFetched: false, // האם כבר יש תשובה על רשימת הסמסטר
@@ -618,7 +623,7 @@
   }
 
   /** מספרים רצים — תשובה שמגיעה אחרי בקשה חדשה יותר נזרקת. */
-  var seq = { semester: 0, courses: 0, solve: 0, catalog: 0, browse: 0 };
+  var seq = { semester: 0, courses: 0, solve: 0, catalog: 0, browse: 0, electives: 0 };
 
   /* =====================================================================
    * 5. נגזרות מהמצב
@@ -1782,7 +1787,7 @@
   }
 
   /** מה כבר נמשך — כדי לא למשוך שוב סתם. */
-  var lastSig = { semester: null, courses: null };
+  var lastSig = { semester: null, courses: null, program: null };
 
   function syncData(force) {
     if (!runtime.ready) return;
@@ -1790,6 +1795,13 @@
     if (force || semSig !== lastSig.semester) {
       lastSig.semester = semSig;
       fetchSemesterCourses();
+    }
+    // קבוצות הבחירה תלויות במסלול בלבד, ולכן נמשכות רק כשהוא משתנה.
+    if (force || txt(state.program) !== lastSig.program) {
+      lastSig.program = txt(state.program);
+      runtime.electives = null;
+      runtime.electivesFor = "";
+      fetchElectives();
     }
     var coursesSig = JSON.stringify([
       state.codes.slice().sort(),
@@ -2031,6 +2043,11 @@
     ui.tplToast = byId("tpl-toast");
 
     ui.selProgram = byId("select-program");
+    ui.electives = byId("electives");
+    ui.electivesTitle = byId("electives-title");
+    ui.electivesRule = byId("electives-rule");
+    ui.electivesSource = byId("electives-source");
+    ui.electivesGroups = byId("electives-groups");
     ui.selYear = byId("select-year");
     ui.selTerm = byId("select-term");
     ui.semesterSummary = byId("semester-summary");
@@ -2454,6 +2471,7 @@
     renderCoursesStep();
     renderSearchResults();
     renderCatalogBrowse();
+    renderElectives();
     renderDaysStep();
     renderLecturersStep();
     renderScheduleStep();
@@ -3093,6 +3111,92 @@
    * שני המצבים חיים זה לצד זה: כשיש תוכנית, כל זה נשאר מוסתר והרשימה
    * הרגילה אינה משתנה כלל.
    */
+
+  // ======================================================================
+  // קבוצות קורסי בחירה (אשכולות / מסלולי התמחות) מפרק השנתון של המסלול
+  // ======================================================================
+  function fetchElectives() {
+    var program = txt(state.program);
+    if (!program || program === "other") {
+      runtime.electives = { available: false };
+      runtime.electivesFor = program;
+      return Promise.resolve();
+    }
+    if (runtime.electivesFor === program && runtime.electives) return Promise.resolve();
+    runtime.electivesFor = program;
+    runtime.electivesBusy = true;
+    var my = ++seq.electives;
+    return getJSON("/api/program/electives?program=" + encodeURIComponent(program))
+      .then(function (data) {
+        if (my !== seq.electives) return; // תשובה ישנה — מתעלמים
+        runtime.electivesBusy = false;
+        runtime.electives = data || { available: false };
+        render();
+      })
+      .catch(function () {
+        if (my !== seq.electives) return;
+        runtime.electivesBusy = false;
+        // כישלון רשת אינו "אין אשכולות" — מסתירים, ולא ממציאים.
+        runtime.electives = { available: false };
+        runtime.electivesFor = "";
+        render();
+      });
+  }
+
+  function renderElectives() {
+    if (!ui.electives) return;
+    var data = runtime.electives;
+    var show = !!(data && data.available);
+    setHidden(ui.electives, !show);
+    if (!show) return;
+
+    var isTracks = data.structure === "tracks";
+    var groups = (isTracks ? data.tracks : data.clusters) || {};
+    setText(
+      ui.electivesTitle,
+      isTracks ? "מסלולי התמחות" : "אשכולות קורסי בחירה"
+    );
+    // הכלל אינו קוסמטי: אשכול = אחד מכל קבוצה, מסלול = בוחרים מסלול אחד.
+    setText(ui.electivesRule, txt(isTracks ? data.track_rule : data.cluster_rule));
+    // שנה מוצגת תמיד — גם כשהמסמך לא ציין אותה, ואז נאמר בדיוק את זה.
+    setText(
+      ui.electivesSource,
+      "מקור: פרק השנתון של " + txt(data.program) + " · " + txt(data.year_text)
+    );
+
+    rebuild(ui.electivesGroups, function (box) {
+      var selected = selectedSet();
+      Object.keys(groups).forEach(function (name) {
+        var courses = groups[name] || [];
+        var wrap = el("div", { class: "electives-group" });
+        wrap.appendChild(
+          el("h4", {
+            class: "electives-group-title",
+            text: name + " (" + courses.length + ")",
+          })
+        );
+        var list = el("div", { class: "course-list" });
+        courses.forEach(function (course) {
+          var code = txt(course.code);
+          var chosen = selected[code] === true;
+          var row = el("label", { class: "course-row" + (chosen ? " is-selected" : "") });
+          var box2 = el("input", { attrs: { type: "checkbox" } });
+          box2.checked = chosen;
+          box2.addEventListener("change", function () {
+            if (box2.checked) addCourse(code, course.name, null, { keepQuery: true });
+            else toggleCourse(code, false);
+          });
+          row.appendChild(box2);
+          row.appendChild(el("span", { class: "course-code", text: code }));
+          row.appendChild(el("span", { class: "course-name", text: txt(course.name) }));
+          list.appendChild(row);
+        });
+        wrap.appendChild(list);
+        box.appendChild(wrap);
+      });
+    });
+  }
+
   function renderCatalogBrowse() {
     var reason = catalogFallbackReason();
     var active = reason !== "";
