@@ -204,13 +204,21 @@ def mk_course(code: str, groups: list[Group], name: str = "קורס בדיקה")
     return Course(code=code, name=name, credits=1.0, groups=groups, tied_with=[])
 
 
-def weights(lecturer=0.0, days=0.0, gaps=0.0, compactness=0.0) -> dict[str, float]:
-    """מילון משקולות מלא — תמיד כל ארבעת המפתחות, כדי לבודד רכיב אחד."""
+def weights(
+    lecturer=0.0, days=0.0, gaps=0.0, compactness=0.0, late_finish=0.0
+) -> dict[str, float]:
+    """מילון משקולות **מלא** — כל המפתחות, כדי לבודד רכיב אחד.
+
+    ``late_finish`` חייב להופיע כאן: הוא נוסף כרכיב חמישי, ומילון שאינו
+    מכיל אותו נופל לברירת המחדל (4.0) ומזהם בדיוק את הבידוד שהפונקציה
+    הזאת קיימת בשבילו.
+    """
     return {
         "lecturer": float(lecturer),
         "days": float(days),
         "gaps": float(gaps),
         "compactness": float(compactness),
+        "late_finish": float(late_finish),
     }
 
 
@@ -836,10 +844,18 @@ def test_days_count_matches_days_used_for_a_split_lecture(courses):
     assert sched.selection.days_used() == {2, 4}
 
 
-def test_score_breakdown_has_exactly_the_four_components():
-    """breakdown הוא חוזה: ארבעה מפתחות, וסכומם הוא הניקוד הסופי."""
+def test_score_breakdown_has_exactly_the_five_components():
+    """breakdown הוא חוזה, וסכומו הוא הניקוד הסופי.
+
+    ‏"late_finish" נוסף כרכיב חמישי בעקבות בקשה מפורשת: "שהיום ייגמר מוקדם
+    ככל האפשר". הוא מוצג לסטודנט/ית ככל רכיב אחר — ניקוד שמשתנה בלי הסבר
+    גלוי הוא בדיוק מה ש-breakdown נועד למנוע.
+    """
     sched = score(_selection_over_n_days(5), Preferences(target_days=4))
-    assert set(sched.breakdown) == {"lecturer", "days", "gaps", "compactness"}
+    assert set(sched.breakdown) == {
+        "lecturer", "days", "gaps", "compactness", "late_finish"
+    }
+    assert sched.breakdown["late_finish"] <= 0.0
     assert sched.score == pytest.approx(sum(sched.breakdown.values()))
     assert sched.breakdown["days"] <= 0.0
     assert sched.breakdown["gaps"] <= 0.0

@@ -64,6 +64,14 @@ FRIDAY: int = 6
 #: מפתח המשקל של חפיפה מכוונת (soft conflict).
 WEIGHT_SOFT_CONFLICT: str = "soft_conflict"
 
+#: "לסיים מוקדם" — הבקשה המפורשת של הסטודנט/ית.
+WEIGHT_LATE_FINISH: str = "late_finish"
+
+#: השעה שממנה ואילך יום נחשב "נגמר מאוחר". 14:00 — כל שעה אחריה היא שעה
+#: שביקשו במפורש להימנע ממנה. שימו לב שזה **לא** span: יום 08:00-12:00 ויום
+#: 16:00-20:00 זהים באורכם, ורק השני מחזיר הביתה בערב.
+LATE_BASELINE_MIN: int = 14 * 60
+
 #: משקולות ברירת המחדל — "מאוזן" (balanced), בדיוק כמו ב-data/profile.json.
 #:
 #: ``soft_conflict`` הוא קנס: 6.0 נקודות לכל חפיפה מכוונת. הוא לא נועד לחסום
@@ -75,6 +83,8 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "days": 8.0,
     "gaps": 4.0,
     "compactness": 1.0,
+            # "לסיים מוקדם" — הבקשה המפורשת של הסטודנט/ית.
+            WEIGHT_LATE_FINISH: 4.0,
     WEIGHT_SOFT_CONFLICT: 6.0,
 }
 
@@ -226,6 +236,43 @@ class Preferences:
     #: בהרצאה של 61753", והמערכת המשיכה לחסום — כי מתג נפרד וכבוי ביטל את
     #: הסימון בשקט. שני פקדים לאותה החלטה אחת; נשאר רק אחד.
     allow_soft_conflicts: bool = True
+
+
+
+def day_end_times(sel: "models.Selection") -> dict[int, int]:
+    """{יום: דקת הסיום של המפגש האחרון בו}."""
+    out: dict[int, int] = {}
+    for meeting in sel.all_meetings():
+        if meeting.end > out.get(meeting.day, -1):
+            out[meeting.day] = meeting.end
+    return out
+
+
+def late_finish_minutes(sel: "models.Selection") -> int:
+    """סך הדקות שבהן ימי הלימוד נמשכים אחרי ``LATE_BASELINE_MIN``.
+
+    זה **לא** אותו דבר כמו ``span_minutes``: יום 08:00-12:00 ויום 16:00-20:00
+    זהים באורכם, אבל רק השני גורם לחזור הביתה בערב. הסטודנט/ית ביקש/ה
+    במפורש ש"היום ייגמר מוקדם ככל האפשר", וזה המדד שמודד בדיוק את זה.
+    """
+    return sum(max(0, end - LATE_BASELINE_MIN) for end in day_end_times(sel).values())
+
+
+def attendance_free_days(sel: "models.Selection", prefs: "Preferences") -> set[int]:
+    """ימים שבהם **כל** המפגשים פטורים מחובת נוכחות.
+
+    יום כזה אינו באמת יום לימודים: אפשר פשוט לא להגיע. ספירתו כיום קמפוס
+    היא בדיוק מה שגרם למערכת לפתוח יום שלם עבור תרגול יחיד שממילא לא חובה.
+    """
+    by_day: dict[int, list] = {}
+    for group in sel.groups:
+        for meeting in group.meetings:
+            by_day.setdefault(meeting.day, []).append(group)
+    return {
+        day
+        for day, groups in by_day.items()
+        if groups and not any(attendance_required(prefs, g) for g in groups)
+    }
 
 
 def _weight(prefs: Preferences, key: str) -> float:
@@ -988,10 +1035,16 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
     lecturer_sum, lecturer_hits, lecturer_total = _lecturer_component(sel, prefs)
 
     days_used = sel.days_used()
-    days_penalty = max(0, len(days_used) - prefs.target_days)
+    # יום שכולו רכיבים בלי חובת נוכחות אינו יום קמפוס — פשוט לא מגיעים.
+    # בלי ההבחנה הזאת המערכת "פותחת" יום שלם עבור תרגול יחיד שממילא אפשר
+    # לוותר עליו, ואז סופרת אותו כאילו הוא מחייב הגעה.
+    skippable = attendance_free_days(sel, prefs)
+    effective_days = days_used - skippable
+    days_penalty = max(0, len(effective_days) - prefs.target_days)
 
     gap_min = sel.gap_minutes()  # מ-models — לא ממציאים מחדש
     span_min = sel.span_minutes()  # מ-models — לא ממציאים מחדש
+    late_min = late_finish_minutes(sel)
 
     conflicts = soft_conflicts_in(sel, prefs)  # ריק כברירת מחדל — ראי למעלה
     soft_count = len(conflicts)
@@ -1003,6 +1056,9 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
         "days": -w_days * days_penalty,
         "gaps": -w_gaps * (gap_min / 60.0),
         "compactness": -w_comp * (span_min / 60.0),
+        # ככל שהיום נגמר מאוחר יותר — קנס גדול יותר. זה המדד שמבטא
+        # "שהיום ייגמר מוקדם ככל האפשר", ו-span לבדו לא מבטא אותו.
+        WEIGHT_LATE_FINISH: -_weight(prefs, WEIGHT_LATE_FINISH) * (late_min / 60.0),
     }
     if soft_count:
         breakdown[WEIGHT_SOFT_CONFLICT] = -_weight(prefs, WEIGHT_SOFT_CONFLICT) * soft_count
@@ -1021,6 +1077,9 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
     # כמו ``.truncated`` ש-solve() מצמיד — כדי שמודל הנתונים המשותף יישאר
     # כפי שהוא. הקוראים שאינם בטוחים ישתמשו ב-soft_conflicts_of() /
     # soft_conflict_minutes_of(), שאף פעם לא נופלים.
+    sched.late_finish_minutes = late_min  # type: ignore[attr-defined]
+    sched.skippable_days = sorted(skippable)  # type: ignore[attr-defined]
+    sched.effective_days = len(effective_days)  # type: ignore[attr-defined]
     sched.soft_conflicts = soft_count  # type: ignore[attr-defined]
     sched.soft_conflict_minutes = soft_minutes  # type: ignore[attr-defined]
     return sched
