@@ -63,7 +63,7 @@
         {"code": "61755", "name": "מערכות מסדי נתונים מ'", "he": 3, "te": 2, "ma": 0, "credits": 4.0, "prereq": ["61739"]},
         {"code": "61179", "name": "מבוא לפיזיקה להנדסת תוכנה", "he": 2, "te": 2, "ma": 0, "credits": 0.0, "prereq": ["11006", "61738", "61741"], "physics_track": "no_exemption", "tied_with": ["61180"], "note": "רק למי שאין פטור מפיזיקה אקדמית; חובה בצמוד ל-61180"},
         {"code": "61180", "name": "פיזיקה להנדסת תוכנה ל'", "he": 2, "te": 2, "ma": 0, "credits": 3.0, "prereq": ["11006", "61738", "61741"], "physics_track": "no_exemption", "tied_with": ["61179"], "note": "חובה בצמוד ל-61179"},
-        {"code": "61181", "name": "פיזיקה להנדסת תוכנה", "he": 3, "te": 2, "ma": 0, "credits": 3.0, "prereq": ["11006", "61738", "61741"], "physics_track": "exemption", "note": "רק למי שיש פטור מפיזיקה אקדמית"},
+        {"code": "61181", "name": "פיזיקה להנדסת תוכנה", "he": 2, "te": 2, "ma": 0, "credits": 3.0, "prereq": ["11006", "61738", "61741"], "physics_track": "exemption", "note": "רק למי שיש פטור מפיזיקה אקדמית"},
         {"code": null, "name": "קורס כללי 2", "he": 2, "te": 0, "ma": 0, "credits": 2.0, "prereq": [], "group": "general"}
       ]
     },

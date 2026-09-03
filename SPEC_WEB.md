@@ -168,8 +168,22 @@ re-solves via `/api/solve`. Persist state to `localStorage` so a refresh does no
    (61756/61757/62027) are visually bound: checking one checks all three, and a note explains why.
    A search box adds any other course from the live catalog — repeats from earlier semesters are a
    normal case and must be plainly selectable, tagged `[בתוכנית-סמסטר N]` / `[מחוץ לתוכנית]`.
-   None of this applies to a program with no curriculum file: there step 2 stays in catalog-browse
-   mode, and an existing hand-built selection is never touched.
+   **Every department that has a שנתון chapter has its own curriculum**, one file per program under
+   `data/curricula/`, selected by the `?program=` the client already sends. `/api/bootstrap` also
+   returns `semesters_by_program`, because the browser maps year+term onto a semester number before
+   it fetches anything — and a program's table is not always eight semesters long.
+   A course belonging to one specialisation track carries a non-empty `track` and is treated exactly
+   like a placement or physics alternative: **shown, badged with the track name, never auto-checked.**
+   The tool does not know which track a student is in, and in Civil Engineering the track is assigned
+   on grades, so the student may not know either.
+   Each semester also carries `reconciles`: false means the credits extracted from the chapter do not
+   equal the total the chapter itself prints, and step 2 says so rather than implying a precision the
+   document does not support. Sometimes the document is the thing that does not add up.
+   None of this applies to a program with no usable curriculum file: there step 2 stays in
+   catalog-browse mode, and an existing hand-built selection is never touched. Three programs are in
+   that position deliberately — Biotechnology has no chapter at all, while Industrial Engineering and
+   Applied Mathematics each print their whole plan **twice** (once per specialisation, and once per
+   winter/spring intake respectively), so a single flat list would be wrong for half their students.
 3. **ימי לימוד** — target days 2–6 as a slider or button row. Show `min_days` from the solver next to
    it, and if the target is unreachable say so directly: *"4 ימים אינם אפשריים עם הקורסים האלה —
    המינימום הוא 5"*.

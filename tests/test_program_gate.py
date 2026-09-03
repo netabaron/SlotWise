@@ -99,8 +99,28 @@ def test_a_software_student_still_gets_the_curriculum(client):
 
 
 def test_a_student_of_another_program_is_not_shown_software_courses(client):
-    """**התקלה שהקובץ הזה שומר עליה.**"""
+    """**התקלה שהקובץ הזה שומר עליה.**
+
+    ‏העיקרון לא השתנה: רואים תוכנית לימודים רק אם היא באמת שלך. מה שהשתנה
+    הוא מה שיש להציע במקום — מאז שלכל מחלקה שיש לה פרק שנתון יש קובץ תוכנית
+    משלה, סטודנט/ית להנדסת מכונות מקבל/ת את **קורסי המכונות**, ולא רשימה
+    ריקה. הבדיקה נעשתה חזקה יותר, לא רופפת: קודם היא בדקה "לא קיבל כלום",
+    ועכשיו היא בודקת "לא קיבל קורסי תוכנה" — וזה מה שהיה כתוב בשמה מלכתחילה.
+    ‏מסלול שאין לו פרק כלל נבדק בנפרד, מיד אחרי.
+    """
+    software = client.get("/api/semester/5/courses?program=הנדסת תוכנה").get_json()
+    software_codes = {c["code"] for c in software["courses"] if c["code"]}
+
     data = client.get("/api/semester/5/courses?program=הנדסת מכונות").get_json()
+    codes = {c["code"] for c in data["courses"] if c["code"]}
+    assert codes, "למכונות יש פרק שנתון משלה, ולכן יש לה רשימת קורסים"
+    assert not (codes & software_codes), "ואף אחד מהם אינו קורס של הנדסת תוכנה"
+    assert data["program"] == "הנדסת מכונות"
+
+
+def test_a_program_with_no_chapter_at_all_is_shown_nothing(client):
+    """להנדסת ביוטכנולוגיה אין קובץ ‏PDF ואין תוכנית — והיא עוברת לקטלוג."""
+    data = client.get("/api/semester/5/courses?program=הנדסת ביוטכנולוגיה").get_json()
     assert data["curriculum_available"] is False
     assert data["courses"] == []
 

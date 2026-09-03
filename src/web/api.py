@@ -1079,7 +1079,71 @@ def _request_cache() -> dict[str, Any]:
         return {}
 
 
-def _curriculum() -> dict:
+def _norm_program(value: Any) -> str:
+    """שם מסלול לשם השוואה בלבד — בלי רווחים, גרשיים ומקפים."""
+    return re.sub(r"[\s\"'׳״-]", "", str(value or ""))
+
+
+def _curricula() -> dict[str, dict]:
+    """כל תוכניות הלימודים שיש לנו, לפי שם מסלול מנורמל.
+
+    ‏``curriculum_path`` (הנדסת תוכנה) ועוד קובץ לכל מחלקה תחת
+    ``curricula_dir``. עד שהתיקייה הזאת נוצרה הייתה כאן תוכנית אחת בלבד,
+    וכל מי שאינו הנדסת תוכנה קיבל/ה קטלוג במקום רשימת סמסטר.
+
+    ‏**קובץ חסר או פגום פשוט אינו נכנס לרשימה.** מסלול בלי תוכנית עובד מול
+    הקטלוג, וזו התנהגות תקינה — ‏SPEC_MULTIFACULTY §4 — ולא תקלה.
+    """
+    from flask import current_app
+
+    cache = current_app.extensions.setdefault("schedule_builder", {})
+    cfg = _config()
+    paths = [Path(cfg["curriculum_path"])]
+    folder = Path(cfg.get("curricula_dir") or "")
+    if folder.is_dir():
+        paths.extend(sorted(folder.glob("*.json")))
+
+    def stamp_of(path: Path) -> int:
+        try:
+            return path.stat().st_mtime_ns
+        except OSError:
+            return 0
+
+    stamp = tuple((str(p), stamp_of(p)) for p in paths)
+    if cache.get("curricula_stamp") != stamp or "curricula" not in cache:
+        loaded: dict[str, dict] = {}
+        for path in paths:
+            try:
+                data = curriculum_mod.load_curriculum(path)
+            except Exception as exc:  # noqa: BLE001 — חסר/פגום = "אין תוכנית"
+                LOG.info("תוכנית לימודים שלא נטענה (%s): %s", path, exc)
+                continue
+            if not isinstance(data, dict) or not data:
+                continue
+            name = _norm_program(data.get("program") or data.get("program_en"))
+            # הקובץ הראשון ברשימה מנצח, כדי שתוכנית ברירת המחדל תישאר יציבה.
+            if name and name not in loaded:
+                loaded[name] = data
+        cache["curricula"] = loaded
+        cache["curricula_stamp"] = stamp
+    return cache["curricula"]
+
+
+def _curriculum(program: Any = None) -> dict:
+    """תוכנית הלימודים של המסלול המבוקש, או תוכנית ברירת המחדל בלעדיו.
+
+    בלי ``program`` מוחזרת התוכנית שב-``curriculum_path`` — בדיוק כמו קודם,
+    כדי שכל קריאה קיימת תמשיך להתנהג אותו דבר.
+    """
+    wanted = str(program or "").strip()
+    if not wanted:
+        return _default_curriculum()
+    if wanted.casefold() == OTHER_PROGRAM:
+        return {}
+    return _curricula().get(_norm_program(wanted), {})
+
+
+def _default_curriculum() -> dict:
     """תוכנית הלימודים, בקאש עם בדיקת mtime (עריכה של הקובץ נקלטת מיד).
 
     ‏**קובץ חסר או פגום מחזיר ``{}``, לא חריגה.** התוכנית הפכה להעשרה
@@ -1622,7 +1686,9 @@ def _program_choices(curr: dict | None = None) -> list[dict]:
             {
                 "id": name,
                 "label": name,
-                "has_curriculum": _program_matches_curriculum(name, curr),
+                # לפי המרשם, לא לפי תוכנית ברירת המחדל: לכל מחלקה שיש לה
+                # קובץ תוכנית משלה מגיע "יש תוכנית", לא רק להנדסת תוכנה.
+                "has_curriculum": _norm_program(name) in _curricula(),
                 "url": entry.get("url", ""),
                 "description": entry.get("description", ""),
                 "tracks_text": entry.get("tracks_text", ""),
@@ -1677,7 +1743,7 @@ def _curriculum_available(curr: dict | None = None, program: Any = None) -> bool
     תוכנית ריקה אינה תקלה: סטודנט/ית שהמסלול שלהם אינו ב-rec.pdf חייבים
     להמשיך לעבוד מול הקטלוג. ‏SPEC_MULTIFACULTY §4.
     """
-    data = _curriculum() if curr is None else curr
+    data = _curriculum(program) if curr is None else curr
     if not isinstance(data, dict) or not data:
         return False
     if not _program_matches_curriculum(program, data):
@@ -3507,26 +3573,41 @@ def bootstrap():
     prefs = profile.get("preferences") or {}
     has_curriculum = _curriculum_available(curr)
 
-    semesters = []
-    for key in sorted((curr.get("semesters") or {}).keys(), key=lambda k: (len(k), k)):
-        try:
-            info = curriculum_mod.semester_info(curr, key)
-        except curriculum_mod.UnknownSemesterError:  # pragma: no cover - לא אמור לקרות
-            continue
-        courses = curriculum_mod.semester_courses(curr, key)
-        semesters.append(
-            {
-                "semester": key,
-                "year": info.get("year"),
-                "term": info.get("term", ""),
-                "year_label": YEAR_LABELS.get(info.get("year"), ""),
-                "term_label": TERM_LABELS.get(str(info.get("term") or ""), ""),
-                "label": _semester_label(key, info),
-                "total": info.get("total") or {},
-                "plus": info.get("plus", ""),
-                "course_count": len(courses),
-            }
-        )
+    def semester_rows(source: dict) -> list[dict]:
+        rows = []
+        for key in sorted((source.get("semesters") or {}).keys(), key=lambda k: (len(k), k)):
+            try:
+                info = curriculum_mod.semester_info(source, key)
+            except curriculum_mod.UnknownSemesterError:  # pragma: no cover
+                continue
+            courses = curriculum_mod.semester_courses(source, key)
+            rows.append(
+                {
+                    "semester": key,
+                    "year": info.get("year"),
+                    "term": info.get("term", ""),
+                    "year_label": YEAR_LABELS.get(info.get("year"), ""),
+                    "term_label": TERM_LABELS.get(str(info.get("term") or ""), ""),
+                    "label": _semester_label(key, info),
+                    "total": info.get("total") or {},
+                    "plus": info.get("plus", ""),
+                    "course_count": len(courses),
+                    # השנה והסמסטר אינם כתובים באף פרק שנתון — הם נגזרים
+                    # ממספר הסמסטר. הדגל הזה קיים כדי שלא נציג נגזרת כעובדה.
+                    "year_term_inferred": bool(info.get("year_term_inferred")),
+                }
+            )
+        return rows
+
+    semesters = semester_rows(curr)
+    # מיפוי שנה+סמסטר -> מספר סמסטר נעשה בדפדפן לפני כל משיכה, ולכן הוא
+    # חייב להכיר את כל המסלולים מראש. מתמטיקה שימושית, למשל, היא תוכנית
+    # תלת-שנתית בת שישה סמסטרים, ולוח של שמונה היה שגוי עבורה.
+    semesters_by_program = {
+        str(data.get("program") or ""): semester_rows(data)
+        for data in _curricula().values()
+        if data.get("program")
+    }
 
     selected = [
         str(item.get("code"))
@@ -3569,6 +3650,7 @@ def bootstrap():
             },
             "defaults": defaults,
             "semesters": semesters,
+            "semesters_by_program": semesters_by_program,
             "terms": [
                 {"term": key, "label": label, "in_curriculum": key in {"א", "ב"}}
                 for key, label in TERM_LABELS.items()
@@ -3651,10 +3733,10 @@ def semester_courses(sem: str):
     קוד סמסטר שאינו קיים בתוכנית *טעונה* נשאר ‏404 — זו טעות בבקשה, לא
     היעדר תוכנית.
     """
-    curr = _curriculum()
-    # ‏rec.pdf הוא פרק הנדסת תוכנה בלבד. בלי הסינון הזה סטודנט/ית מכל מחלקה
-    # אחרת היה/תה מקבל/ת כאן קורסי תוכנה כאילו הם המסלול שלו/ה.
+    # התוכנית של המסלול שנבחר, לא תוכנית ברירת המחדל: בלי זה סטודנט/ית מכל
+    # מחלקה אחרת היה/תה מקבל/ת כאן קורסי הנדסת תוכנה כאילו הם המסלול שלו/ה.
     program = request.args.get("program", "")
+    curr = _curriculum(program)
     has_curriculum = _curriculum_available(curr, program)
     info: dict[str, Any] = {}
     entries: list[dict[str, Any]] = []
@@ -3707,6 +3789,10 @@ def semester_courses(sem: str):
             # חובה גמור — כלל שנשען עליהם היה מבטל אותו בטעות.
             "placement": bool(entry.get("placement", False)),
             "physics_track": str(entry.get("physics_track") or ""),
+            # מסלול התמחות. מחלקות אחדות מפצלות חלק מהסמסטרים לפי מסלול,
+            # והכלי אינו יודע באיזה מסלול הסטודנט/ית — באזרחית הוא בכלל
+            # נקבע לפי ציונים. ריק = קורס ליבה משותף לכולם.
+            "track": str(entry.get("track") or ""),
             "curriculum_semester": str(sem),
             "in_curriculum": True,
             "selectable": bool(code),
@@ -3753,7 +3839,19 @@ def semester_courses(sem: str):
                 "label": _semester_label(str(sem), info) if info else f"סמסטר {sem}",
                 "total": info.get("total") or {},
                 "plus": info.get("plus", ""),
+                # השנה והסמסטר אינם כתובים באף פרק שנתון — הם נגזרים ממספר
+                # הסמסטר, וזה מה שהדגל אומר. אין להציג נגזרת כעובדה.
+                "year_term_inferred": bool(info.get("year_term_inferred")),
+                # האם הנ"ז שחילצנו שווה לסה"כ שהשנתון עצמו מדפיס. ‏False
+                # אינו "תקלה" אלא "אל תסמכו על הרשימה הזאת בלי לבדוק" —
+                # ולפעמים המסמך עצמו הוא שאינו מסתדר.
+                "reconciles": info.get("reconciles"),
+                "semester_note": str(info.get("note") or ""),
+                "printed_total_credits": info.get("printed_total_credits"),
             },
+            # אזהרות ברמת התוכנית כולה, מקובץ התוכנית של המחלקה.
+            "program_warnings": [str(w) for w in (curr.get("warnings") or [])],
+            "cohort_year": str(curr.get("cohort_year") or ""),
             "courses": courses,
             "credits_total": summary["total"],
             "credits_summary": summary,
@@ -4877,6 +4975,9 @@ def create_app(
     settings: dict[str, Any] = {
         "db_root": str(PROJECT_ROOT / "data" / "db"),
         "curriculum_path": str(PROJECT_ROOT / "data" / "curriculum.json"),
+        # תוכנית לימודים אחת לכל מחלקה. ‏curriculum_path נשאר תוכנית
+        # ברירת המחדל (הנדסת תוכנה) כדי לא לשנות התנהגות קיימת.
+        "curricula_dir": str(PROJECT_ROOT / "data" / "curricula"),
         "profile_path": str(PROJECT_ROOT / "data" / "profile.json"),
         "raw_dir": str(PROJECT_ROOT / "data" / "raw"),
         "browser_profile_dir": str(PROJECT_ROOT / "data" / ".browser_profile"),

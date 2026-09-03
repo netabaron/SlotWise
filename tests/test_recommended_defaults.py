@@ -151,6 +151,10 @@ def recommended_codes(data: dict) -> list[str]:
             return False
         if course.get("physics_track"):
             return False
+        # קורס של מסלול התמחות. אותו היגיון בדיוק: הכלי אינו יודע באיזה
+        # מסלול הסטודנט/ית, ובהנדסה אזרחית המסלול נקבע לפי ציונים.
+        if course.get("track"):
+            return False
         if known_offered and course.get("offered") is False:
             return False
         return True

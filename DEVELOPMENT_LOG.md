@@ -250,6 +250,71 @@ and had none. That absence is exactly why bugs 4-6 survived a careful reading of
 
 ---
 
+## Phase 10 — A curriculum for every department (2026-09-04)
+
+Step 2 recommended per-semester courses only for Software Engineering, because there was only ever
+one curriculum file. The other seven programs got catalog search even where the college publishes a
+full semester-by-semester plan for them.
+
+**The audit came first, and it was worth it.** All seven שנתון chapters turn out to contain a real
+required-course plan — none is elective-clusters-only — but only two (`sw`, `system`) have the flat
+eight-semester shape `data/curriculum.json` assumes:
+
+| chapter | plan | the complication |
+|---|---|---|
+| `sw`, `system` | 1–8 | none |
+| `electric` | 1–8 | semesters 7–8 are three תכן־הנדסי routes; totals printed as `3/5/7` |
+| `civil` | 1–8 | core + overlay; semesters 3–7 split by 2 tracks — **not the 4 `curricula.json` claimed** |
+| `mecho` | 1–8 | semesters 5–7 split by 4 tracks; 4 of 8 semesters do not reconcile |
+| `industry` | 1–8 **twice** | the whole plan once per התמחות; semesters 3–8 diverge, credit loads included |
+| `math` | 1–6 **twice** | a 3-year degree, split by **winter/spring intake**, with no shared semester |
+
+Two facts hold across all seven: **no chapter states the study year or term** next to any table —
+Software Engineering's `year: 3, term: "א"` was always an inference from the semester number — and
+only two state a cohort year. The `תשפ"X` tokens in the other five mean other things entirely (an
+English policy date, departmental history), so `cohort_year` is `null` there and every semester now
+carries `year_term_inferred: true`.
+
+**What shipped:** one curriculum file per department under `data/curricula/`, a `_curricula()`
+registry, and `_curriculum(program)` resolving by program name. Civil, Electrical, Mechanical and
+Information Systems now get their own recommended list. Industrial Engineering and Applied
+Mathematics deliberately do **not** — a single flat list would be wrong for half their students —
+and Biotechnology has no chapter at all. All three stay on catalog search, with an explanation.
+
+Track courses reuse the alternatives mechanism from Phase 9: non-empty `track` means shown, badged
+with the track name, never auto-checked. That was the whole reason the mechanism generalised cleanly.
+
+**Verified by arithmetic, not by eye.** Every published semester's extracted credits are checked
+against the total the chapter itself prints: `electronic` and `infosystems` reconcile 8/8, `civil`
+7/8, `mechines` 4/8. Semesters that do not reconcile are published with `reconciles: false` and a
+Hebrew note, and step 2 shows the caveat — for `mecho` the printed totals are themselves suspect
+(semester 7 demands a 3.0-credit course that appears in no table).
+
+**A shipped data bug, found on the way:** `data/curriculum.json` recorded 61181 with `he: 3`. The
+PDF says 2 — the "3" is a 6.56pt bold footnote marker sitting left of the course name, against 9.42pt
+body text. One row in 56 was affected; the same trap exists in every chapter.
+
+**Three bugs the browser found that reading did not:**
+1. Switching *program* kept the previous program's plan checked, because the semester number does not
+   change when the program does. Ownership is now the pair (program, semester), not the semester.
+2. Electrical semester 8 auto-checks nothing (all three rows are track routes), and the explanation
+   was hidden along with the empty recommendation — leaving a blank list with no reason given.
+   "A plan was applied" and "some course qualified" are different conditions.
+3. A program change never recomputed `state.semester`, so Biotechnology — which has no chapter —
+   went on claiming "סמסטר 5 בתוכנית הלימודים" inherited from Software Engineering.
+
+**Test fallout, legitimate:** `test_a_student_of_another_program_is_not_shown_software_courses`
+asserted that Mechanical Engineering gets an empty list. It now gets its own courses, so the test
+asserts what its name always claimed — that none of them are Software Engineering courses — and a
+new test covers the genuinely chapter-less case.
+
+**Known gap, stated plainly:** the four new files were extracted per-department, each needing its own
+handling of totals rows, track tables and section boundaries. There is no committed shared extractor
+that reproduces all four, so these JSON files are currently artifacts rather than build output.
+`src/shnaton.py` still covers only the elective sections.
+
+---
+
 ## Things that cost time, worth remembering
 
 - **Heredocs and Hebrew.** `bash <<'EOF'` broke on Hebrew apostrophes (`א'`). Use the file-writing
@@ -278,3 +343,9 @@ and had none. That absence is exactly why bugs 4-6 survived a careful reading of
     is not a guard.
 12. Pins, lecturer rankings and attendance settings are never destroyed by a course leaving the
     list. They go dormant and are filtered at the wire.
+13. A student is shown their own department's curriculum or none at all — never another
+    department's, and never a plan invented to fill a gap.
+14. Year and term are inferred from the semester number, never read from a chapter, and every
+    semester says so with `year_term_inferred`.
+15. A semester whose credits do not match the total its own chapter prints is published with
+    `reconciles: false` and a visible caveat, or not at all.

@@ -412,6 +412,10 @@
       // במה שנבחר ידנית, וכדי שביטול ידני של קורס מומלץ לא יבוטל על ידי
       // משיכה מאוחרת של אותה רשימה.
       autoSemester: "", // הסמסטר שההמלצה שלו מוחלת כרגע. "" = אין המלצה מוחלת
+      // והמסלול שלו. מספר הסמסטר לבדו אינו מזהה המלצה: החלפת מסלול אינה
+      // משנה אותו, וסטודנט/ית שעברו מהנדסת תוכנה לאזרחית נשארו עם רשימת
+      // התוכנה מסומנת מתחת לקורסי האזרחית.
+      autoProgram: "",
       autoCodes: [], // מה שסומן אוטומטית עבור autoSemester
       manualCodes: [], // מה שנוסף ידנית (חיפוש/קטלוג/בחירה) — שורד החלפת סמסטר
       autoDropped: [], // קורסים מומלצים שבוטלו ידנית — לא לסמן שוב
@@ -470,6 +474,10 @@
     // ריק (התקנה טרייה). בשני המקרים אסור להסיק מ-``offered: false`` שקורס
     // אינו נפתח — אין נתונים, וזה לא אותו דבר.
     semesterCatalogCount: null,
+    // ‏false = הנ"ז שחולצה מהשנתון אינה שווה לסה"כ שהשנתון מדפיס.
+    // ‏null = אין בדיקה כזאת לתוכנית הזאת.
+    semesterReconciles: null,
+    semesterNote: "",
     // הסמסטר שהבחירה השמורה שייכת לו, כפי שנקרא ב-boot. ריק = אין מצב שמור.
     adoptSemester: "",
     // ‏limits.max_codes מהשרת. חורגים ממנו ⇒ כל /api/courses ו-/api/solve
@@ -555,6 +563,7 @@
     // מוחלט בלי מסלול הגירה, והעלאה הייתה מוחקת לכל משתמש קיים את הנעיצות,
     // דירוג המרצים, החלונות החסומים וחובות הנוכחות. הוספת שדות אינה דורשת זאת.
     base.autoSemester = txt(base.autoSemester);
+    base.autoProgram = txt(base.autoProgram);
     ["autoCodes", "manualCodes", "autoDropped"].forEach(function (k) {
       if (!Array.isArray(base[k])) base[k] = [];
       base[k] = uniq(base[k].map(txt).filter(Boolean));
@@ -662,10 +671,34 @@
    * 5. נגזרות מהמצב
    * ===================================================================== */
 
+  /**
+   * לוח הסמסטרים של המסלול שנבחר. ‏semesterOf() ממפה שנה+סמסטר למספר
+   * סמסטר לפני כל משיכה מהשרת, ולכן הוא חייב את הלוח הנכון כבר כאן:
+   * מתמטיקה שימושית היא תוכנית תלת-שנתית בת שישה סמסטרים, ולוח של שמונה
+   * היה מציע לה סמסטר 7 שאינו קיים.
+   * בלי לוח למסלול — הלוח הראשי, כפי שהיה קודם.
+   */
   function bootSemesters() {
-    return runtime.bootstrap
-      ? pickList(runtime.bootstrap, ["semesters"], "semester")
-      : [];
+    if (!runtime.bootstrap) return [];
+    var byProgram = runtime.bootstrap.semesters_by_program;
+    if (byProgram && txt(state.program)) {
+      var mine = byProgram[txt(state.program)];
+      // מסלול שאין לו תוכנית מקבל רשימה ריקה, ולא את הלוח של מסלול אחר.
+      // בלי זה סטודנט/ית לביוטכנולוגיה — שלמחלקה שלהם אין בכלל פרק שנתון —
+      // היו רואים "סמסטר 5 בתוכנית הלימודים" שנלקח מהנדסת תוכנה.
+      return mine && mine.length
+        ? pickList({ semesters: mine }, ["semesters"], "semester")
+        : [];
+    }
+    return pickList(runtime.bootstrap, ["semesters"], "semester");
+  }
+
+  /** האם לשרת יש בכלל לוח סמסטרים למסלול שנבחר. */
+  function programHasPlan() {
+    var byProgram = runtime.bootstrap && runtime.bootstrap.semesters_by_program;
+    if (!byProgram || !txt(state.program)) return true; // שרת ישן — לא מכריעים
+    var mine = byProgram[txt(state.program)];
+    return !!(mine && mine.length);
   }
 
   function semesterOf(studyYear, term) {
@@ -684,6 +717,9 @@
     // שאינו קיים, מקבל 404, ומציג באנר אדום על בחירה לגיטימית.
     // ‏SPEC_MULTIFACULTY §5.
     if (list.length) return "";
+    // אין לוח למסלול הזה ⇒ אין לו סמסטר בתוכנית. הניחוש האריתמטי שלמטה
+    // שייך רק לשרת ישן שלא שלח לוח בכלל.
+    if (!programHasPlan()) return "";
     if (runtime.curriculumAvailable === false) return "";
     // רק כשהשרת לא אמר כלום (שרת ישן): 8 סמסטרים, שניים בשנה.
     if (term === "א") return String(studyYear * 2 - 1);
@@ -1018,6 +1054,12 @@
     if (txt(rec.physicsTrack)) {
       return "מסלול פיזיקה — תלוי בפטור, ויש לבחור מסלול אחד";
     }
+    // קורס ששייך למסלול התמחות מסוים. חלק מהמחלקות מפצלות סמסטרים לפי
+    // מסלול, והכלי אינו יודע באיזה מסלול הסטודנט/ית — באזרחית הוא נקבע
+    // לפי ציונים. מציגים, מסבירים, ולא מסמנים.
+    if (txt(rec.track)) {
+      return txt(rec.track) + " — קורס של מסלול התמחות, לסימון לפי המסלול שלכם";
+    }
     return "";
   }
 
@@ -1117,6 +1159,8 @@
   function applyRecommendedDefaults(sem) {
     var target = txt(sem);
     var owned = txt(state.autoSemester);
+    // הבעלות היא על צמד מסלול+סמסטר. ראו ההערה ליד ``autoProgram``.
+    var sameOwner = owned === target && txt(state.autoProgram) === txt(state.program);
 
     // 1. אימוץ בחירה קיימת, פעם אחת בלבד. מצב שנשמר לפני שהתכונה הזאת
     //    הייתה קיימת מגיע בלי מקור לקודים שבו; הוא לא נמחק ולא מוחלף, רק
@@ -1138,6 +1182,7 @@
           {
             provenanceReady: true,
             autoSemester: target,
+            autoProgram: txt(state.program),
             autoCodes: adopted.slice(),
             autoDropped: adopted.filter(function (c) {
               return picked[c] !== true;
@@ -1160,7 +1205,7 @@
     //    התנאי על הרשימה אינו קישוט: החלפת **מסלול** אינה משנה את מספר
     //    הסמסטר, ובלעדיו סטודנט/ית שעברו להנדסה אזרחית נשארו עם שישה
     //    קורסי תוכנה מסומנים עד שיחליפו גם שנה או סמסטר.
-    if (owned && owned === target && runtime.semesterCourses.length) return;
+    if (owned && sameOwner && runtime.semesterCourses.length) return;
 
     // 3. החלפה: ההמלצה החדשה במקום הישנה, והבחירה הידנית נשארת.
     //    בלי רשימה (קיץ, צירוף שאינו בתוכנית, מסלול בלי תוכנית) ההמלצה
@@ -1173,10 +1218,11 @@
       over = capped.dropped;
     }
     var next = uniq(recommended.concat(manual));
-    var nextSemester = recommended.length ? target : "";
+    var nextSemester = target && runtime.semesterCourses.length ? target : "";
     if (
       sameCodes(next, state.codes) &&
       nextSemester === owned &&
+      txt(state.autoProgram) === txt(state.program) &&
       state.provenanceReady &&
       !claimAsManual
     ) {
@@ -1188,6 +1234,7 @@
       provenanceReady: true,
       manualCodes: manual,
       autoSemester: nextSemester,
+      autoProgram: nextSemester ? txt(state.program) : "",
       autoCodes: recommended.slice(),
       autoDropped: [],
       activeSchedule: 0,
@@ -1216,6 +1263,7 @@
       codes: uniq(capped.recommended.concat(state.manualCodes)),
       provenanceReady: true,
       autoSemester: target,
+      autoProgram: txt(state.program),
       autoCodes: capped.recommended.slice(),
       autoDropped: [],
       activeSchedule: 0,
@@ -1604,6 +1652,11 @@
           data && data.fallback ? data.fallback.catalog_count : null,
           null
         );
+        var semInfo = (data && data.info) || {};
+        // ‏false בלבד הוא אזהרה. ‏undefined פירושו "השרת לא אמר", וזה לא
+        // אותו דבר — תוכנית שאין בה בדיקת סכום אינה תוכנית חשודה.
+        runtime.semesterReconciles = semInfo.reconciles === false ? false : null;
+        runtime.semesterNote = txt(semInfo.semester_note);
         // כאן, ולא ב-onYearTermChange: רק עכשיו רשימת הסמסטר החדש בידינו.
         // הפעלה מוקדמת יותר הייתה מסמנת את קורסי הסמסטר *הקודם*.
         applyRecommendedDefaults(sem);
@@ -1644,6 +1697,7 @@
       // נעלם, ולכן שני אלה חייבים לנחות יחד עם השינוי ב-api.py.
       placement: rec.placement === true,
       physicsTrack: txt(rec.physics_track),
+      track: txt(rec.track),
       offered: rec.offered !== false,
       has_data: rec.has_data === true,
     };
@@ -2439,7 +2493,16 @@
   function wireEvents() {
     if (ui.selProgram) {
       ui.selProgram.addEventListener("change", function () {
-        setState({ program: txt(ui.selProgram.value), activeSchedule: 0 });
+        // מספר הסמסטר נגזר מלוח הסמסטרים של המסלול, ולכן הוא חייב להיגזר
+        // מחדש כאן. בלי זה מסלול שאין לו תוכנית כלל היה ממשיך להצהיר
+        // "סמסטר 5 בתוכנית הלימודים" שנשאר מהמסלול הקודם.
+        // צורת הפונקציה בכוונה: ``semesterOf`` קורא את ``state.program``,
+        // ולכן הוא חייב לרוץ אחרי שהוא כבר עודכן.
+        setState(function (s) {
+          s.program = txt(ui.selProgram.value);
+          s.semester = semesterOf(s.studyYear, s.term);
+          s.activeSchedule = 0;
+        });
       });
     }
     if (ui.selYear) ui.selYear.addEventListener("change", onYearTermChange);
@@ -3155,14 +3218,30 @@
     // בסמסטר 1 התוכנית מונה עשרה, ומהם סומנו חמישה — השאר הם חלופות
     // ושורות בלי קוד. הניסוח השני היה מצהיר על מספר שאיש לא אמר.
     var parts = [
-      "סומנו מראש " + state.autoCodes.length +
-        " קורסים מתוך תוכנית הלימודים לסמסטר " + sem + ".",
+      state.autoCodes.length
+        ? "סומנו מראש " + state.autoCodes.length +
+          " קורסים מתוך תוכנית הלימודים לסמסטר " + sem + "."
+        : // קורה כשכל הסמסטר הוא חלופות — למשל סמסטר 8 בהנדסת חשמל, שכולו
+          // שלושה מסלולי תכן הנדסי שבוחרים אחד מהם.
+          "בסמסטר " + sem + " התוכנית מציעה רק קורסים לבחירה, ולכן לא סומן דבר מראש.",
     ];
     var alternatives = runtime.semesterCourses.filter(function (rec) {
       return !!alternativeReason(rec);
     });
     if (alternatives.length) {
-      parts.push("קורסי חלופה — השמה או מסלול פיזיקה — לא סומנו, ויש לבחור את המתאים.");
+      var tracks = uniq(
+        alternatives
+          .map(function (rec) {
+            return txt(rec.track);
+          })
+          .filter(Boolean)
+      );
+      parts.push(
+        tracks.length
+          ? "קורסי מסלולי ההתמחות (" + tracks.join(", ") + ") וקורסי חלופה לא סומנו — " +
+            "הכלי אינו יודע באיזה מסלול אתם, ויש לסמן את הקורסים של המסלול שלכם."
+          : "קורסי חלופה — השמה או מסלול פיזיקה — לא סומנו, ויש לבחור את המתאים."
+      );
     }
     if (state.autoDropped.length) {
       parts.push("בוטלו: " + state.autoDropped.join(", ") + ".");
@@ -3170,6 +3249,16 @@
     parts.push(
       "צריך להשלים קורס מסמסטר קודם? אפשר לחפש אותו בתיבה שלמעלה ולהוסיף אותו לרשימה."
     );
+    // ‏הסתייגות, לא תקלה: מספר הנ"ז שחולץ מהשנתון אינו שווה לסה"כ שהשנתון
+    // עצמו מדפיס לסמסטר הזה. לפעמים המסמך הוא שאינו מסתדר. עדיף לומר זאת
+    // מאשר להציג רשימה בביטחון שאינו קיים.
+    if (runtime.semesterReconciles === false) {
+      parts.push(
+        "שימו לב: סכום הנ\"ז ברשימה הזאת אינו תואם לסה\"כ המודפס בשנתון לסמסטר הזה, " +
+          "ולכן כדאי לוודא אותה מול הידיעון." +
+          (runtime.semesterNote ? " " + runtime.semesterNote : "")
+      );
+    }
     setText(ui.recommendedNote, parts.join(" "));
   }
 
@@ -3369,7 +3458,14 @@
       tags.appendChild(el("span", { class: "tag tag--tied", text: "קורס צמוד" }));
     }
     if (altReason) {
-      tags.appendChild(el("span", { class: "tag tag--warn", text: "חלופה — לבחירה ידנית" }));
+      tags.appendChild(
+        el("span", {
+          class: "tag tag--warn",
+          // בקורס של מסלול התמחות שם המסלול הוא המידע השימושי; בשאר
+          // החלופות אין שם קצר, ו"חלופה" הוא מה שיש לומר.
+          text: txt(rec.track) ? txt(rec.track) : "חלופה — לבחירה ידנית",
+        })
+      );
     }
     if (unavailable) {
       tags.appendChild(el("span", { class: "tag tag--dead", text: "לא נפתח בסמסטר" }));

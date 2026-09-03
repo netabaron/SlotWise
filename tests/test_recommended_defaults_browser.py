@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import json
+import re
 import socket
 import sys
 import threading
@@ -200,9 +201,17 @@ def test_summer_drops_the_plan_and_keeps_the_manual_pick(page):
     assert state["autoSemester"] == ""
 
 
+#: מסלול שאין לו תוכנית לימודים כלל — אין לו פרק שנתון. הבדיקות שמתארות
+#: "מסלול בלי תוכנית" חייבות להצביע עליו במפורש: מאז שכל מחלקה שיש לה פרק
+#: קיבלה תוכנית משלה, "המסלול הראשון שאינו הנדסת תוכנה" הוא כבר מסלול
+#: שכן יש לו תוכנית, והבדיקות היו בודקות את ההפך ממה שכתוב בשמן.
+NO_CURRICULUM_PROGRAM = "הנדסת ביוטכנולוגיה"
+
+
 def other_program(page) -> str:
     options = page.eval_on_selector_all("#select-program option", "els => els.map(e => e.value)")
-    return next(o for o in options if "תוכנה" not in o and o != "other")
+    assert NO_CURRICULUM_PROGRAM in options, "המסלול חייב להופיע ברשימה"
+    return NO_CURRICULUM_PROGRAM
 
 
 def test_switching_program_drops_the_previous_program_plan(page):
@@ -448,6 +457,59 @@ def test_adoption_does_not_swallow_the_students_next_choice(browser, server):
         assert set(SUMMER_STATE["codes"]) <= set(state["codes"])
     finally:
         ctx.close()
+
+
+# ==========================================================================
+# 7. תוכנית לימודים לכל מחלקה
+# ==========================================================================
+def test_another_department_gets_its_own_plan_not_software_engineering(page):
+    """‏מספר הסמסטר אינו משתנה בהחלפת מסלול, ולכן "אותו סמסטר, אל תיגע"
+    השאיר את רשימת הנדסת תוכנה מסומנת מתחת לקורסי האזרחית. הבעלות היא על
+    צמד מסלול+סמסטר."""
+    assert "61756" in snap(page)["checked"], "מתחילים בהנדסת תוכנה"
+
+    page.select_option("#select-program", "הנדסה אזרחית")
+    page.wait_for_timeout(2200)
+    state = snap(page)
+    checked = set(state["checked"])
+    assert not (checked & {"61756", "61757", "62027", "61832", "11069"}), (
+        "אף קורס מתוכנית הנדסת תוכנה לא נשאר מסומן"
+    )
+    assert checked, "ויש רשימה משלה"
+    assert all(c.startswith("42") for c in checked), (
+        f"קורסי אזרחית מתחילים ב-42: {sorted(checked)}"
+    )
+
+
+def test_track_courses_are_shown_but_never_auto_checked(page):
+    page.select_option("#select-program", "הנדסה אזרחית")
+    page.wait_for_timeout(2200)
+    rows = {r["code"]: r for r in snap(page)["rows"]}
+    tracked = {c: r for c, r in rows.items() if "מבנים" in r["tags"] or "ניהול הבנייה" in r["tags"]}
+    assert tracked, "קורסי המסלולים מוצגים"
+    for code, row in tracked.items():
+        assert not row["checked"], f"{code} שייך למסלול ואין לסמן אותו אוטומטית"
+    note = snap(page)["note"]
+    assert "מסלול" in note, "וההסבר אומר למה הם ריקים"
+
+
+def test_a_department_with_no_chapter_stays_on_the_catalog(page):
+    """להנדסת ביוטכנולוגיה אין פרק שנתון כלל. אסור שתקבל לוח סמסטרים של
+    מחלקה אחרת, ואסור שתראה "סמסטר 5 בתוכנית הלימודים"."""
+    page.select_option("#select-program", "הנדסת ביוטכנולוגיה")
+    page.wait_for_timeout(2200)
+    state = snap(page)
+    assert state["autoSemester"] == ""
+    assert state["codes"] == []
+    summary = page.evaluate(
+        "() => (document.getElementById('semester-summary')||{}).textContent || ''"
+    )
+    # ‏"אין סמסטר תואם בתוכנית הלימודים" הוא המשפט הנכון, והוא מכיל את אותן
+    # מילים — ולכן הבדיקה היא על ההצהרה עצמה: "סמסטר <מספר> בתוכנית".
+    assert not re.search(r"סמסטר\s*\d+\s*בתוכנית", summary), (
+        f"אין להצהיר על סמסטר בתוכנית למסלול שאין לו תוכנית: {summary!r}"
+    )
+    assert "אין סמסטר תואם" in summary, f"וצריך לומר זאת במפורש: {summary!r}"
 
 
 def test_the_page_raises_no_javascript_errors(page):
