@@ -788,7 +788,11 @@ def test_lecturer_preference_steers_the_winning_schedule(course_list):
     )
     assert best.lecturer_hits == 2
     assert best.lecturer_total == 2
-    assert best.score == pytest.approx(20.0)
+    # ‏14.0 ולא 20.0: התאמה בהרצאה שווה מלוא המשקל (10.0), והתאמה בתרגול
+    # שווה 0.4 ממנו (4.0). זו בקשה מפורשת — "הרצאה חשובה יותר, ובתרגול
+    # אפשר להתפשר אם זה מקצר את היום". המרצות עצמן עדיין נבחרות: שתי
+    # הבדיקות שמעל (lecturer_hits/​total) עוברות ללא שינוי.
+    assert best.score == pytest.approx(14.0)
 
 
 # ==========================================================================

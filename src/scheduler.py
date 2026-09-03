@@ -42,7 +42,13 @@ from pathlib import Path
 from models import (
     DAY_LETTERS_HE,
     DAY_NAMES_HE,
+    KIND_COMBINED,
+    KIND_LAB,
+    KIND_LECTURE,
     KIND_ORDER,
+    KIND_OTHER,
+    KIND_PROJECT,
+    KIND_TUTORIAL,
     Course,
     Group,
     Meeting,
@@ -66,6 +72,19 @@ WEIGHT_SOFT_CONFLICT: str = "soft_conflict"
 
 #: "לסיים מוקדם" — הבקשה המפורשת של הסטודנט/ית.
 WEIGHT_LATE_FINISH: str = "late_finish"
+
+#: כמה משקל יש להעדפת המרצה **לפי סוג הרכיב**.
+#: הרצאה שווה מלוא המשקל; תרגול/מעבדה שווים פחות — כי אפשר להתפשר על
+#: המתרגל/ת אם זה מקצר את היום, אבל לא על מי שמעביר/ה את ההרצאה.
+#: סוג שאינו ברשימה מקבל 1.0 (לא מנחשים כלפי מטה).
+LECTURER_KIND_WEIGHT: dict[str, float] = {
+    KIND_LECTURE: 1.0,
+    KIND_COMBINED: 1.0,
+    KIND_TUTORIAL: 0.4,
+    KIND_LAB: 0.4,
+    KIND_PROJECT: 0.4,
+    KIND_OTHER: 0.6,
+}
 
 #: השעה שממנה ואילך יום נחשב "נגמר מאוחר". 14:00 — כל שעה אחריה היא שעה
 #: שביקשו במפורש להימנע ממנה. שימו לב שזה **לא** span: יום 08:00-12:00 ויום
@@ -236,6 +255,8 @@ class Preferences:
     #: בהרצאה של 61753", והמערכת המשיכה לחסום — כי מתג נפרד וכבוי ביטל את
     #: הסימון בשקט. שני פקדים לאותה החלטה אחת; נשאר רק אחד.
     allow_soft_conflicts: bool = True
+    #: דריסה של ``LECTURER_KIND_WEIGHT``. ריק = ברירת המחדל.
+    lecturer_kind_weight: dict[str, float] = field(default_factory=dict)
 
 
 
@@ -955,6 +976,35 @@ def soft_conflict_minutes_of(sched: ScoredSchedule) -> int:
 # ==========================================================================
 # 2. score — ניקוד מערכת בודדת
 # ==========================================================================
+def _kind_weight(prefs: "Preferences", kind: str) -> float:
+    """משקל העדפת המרצה לסוג רכיב. הרצאה = מלא, תרגול = חלקי."""
+    override = getattr(prefs, "lecturer_kind_weight", None) or {}
+    if kind in override:
+        try:
+            return float(override[kind])
+        except (TypeError, ValueError):
+            pass
+    return LECTURER_KIND_WEIGHT.get(kind, 1.0)
+
+
+def _ranking_for(ranking: Any, kind: str | None = None) -> list:
+    """מקבל רשימה שטוחה **או** מילון לפי סוג רכיב.
+
+    ``{"61832": ["ד\"ר X"]}``                       — כמו קודם, לכל הרכיבים
+    ``{"61832": {"הרצאה": ["X"], "תרגול": ["Y"]}}``  — העדפה נפרדת לכל רכיב
+    """
+    if isinstance(ranking, dict):
+        if kind is None:
+            merged: list = []
+            for value in ranking.values():
+                for name in value or []:
+                    if name not in merged:
+                        merged.append(name)
+            return merged
+        return list(ranking.get(kind) or [])
+    return list(ranking or [])
+
+
 def _lecturer_component(
     sel: Selection, prefs: Preferences
 ) -> tuple[float, int, int]:
@@ -972,7 +1022,7 @@ def _lecturer_component(
     ranked_courses = 0
 
     for code, ranking in (prefs.preferred_lecturers or {}).items():
-        if not ranking:
+        if not _ranking_for(ranking):
             continue  # רשימה ריקה = "אין לי העדפה" — לא נספר כקורס מדורג
         if code not in present_codes:
             continue  # דירוג לקורס שלא במערכת הזו — לא רלוונטי ולא מעוות את היחס
@@ -981,21 +1031,33 @@ def _lecturer_component(
 
         # מיפוי שם מרצה מנורמל -> הדירוג הטוב ביותר שלו ברשימה
         rank_of: dict[str, int] = {}
-        for i, name in enumerate(ranking):
+        for i, name in enumerate(_ranking_for(ranking)):
             key = _norm_name(name)
             if key and key not in rank_of:
                 rank_of[key] = i
 
-        best_rank: int | None = None
+        # הדירוג הטוב ביותר **לכל סוג רכיב בנפרד**, כדי שאפשר יהיה לשקלל
+        # הרצאה ותרגול אחרת. קודם נלקח המקסימום על כל הקורס, וכך העדפה
+        # למרצה ההרצאה והעדפה למתרגל/ת נשקלו זהה — בדיוק מה שביקשו להפריד.
+        best_by_kind: dict[str, int] = {}
         for g in sel.groups:
             if g.course_code != code:
                 continue
             r = rank_of.get(_norm_name(g.lecturer))
-            if r is not None and (best_rank is None or r < best_rank):
-                best_rank = r
+            if r is None:
+                continue
+            cur = best_by_kind.get(g.kind)
+            if cur is None or r < cur:
+                best_by_kind[g.kind] = r
 
-        if best_rank is not None:
-            total += 1.0 / (best_rank + 1)
+        if best_by_kind:
+            best_rank = min(best_by_kind.values())
+            # הציון הוא הטוב ביותר מבין הרכיבים, אחרי שקלול לפי סוג:
+            # הרצאה עם המרצה המועדף/ת שווה יותר מתרגול איתו/ה.
+            total += max(
+                (1.0 / (rank + 1)) * _kind_weight(prefs, kind)
+                for kind, rank in best_by_kind.items()
+            )
             if best_rank == 0:
                 hits += 1
         # אחרת: 0.0 — אף אחת מהקבוצות שנבחרו אינה של מרצה מהרשימה.

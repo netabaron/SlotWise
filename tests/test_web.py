@@ -98,9 +98,9 @@ CODES = ["11069", "61753", "61756", "61757", "61832", "62027"]
 TIED_TRIO = {"61756", "61757", "62027"}
 TOTAL_GROUPS = 27
 PICKS_PER_SCHEDULE = 12  # רכיב אחד לכל (קורס, סוג): 1+2+3+2+2+2
-FEASIBLE_COUNT = 16
-MIN_DAYS = 5
-DAYS_USED = [1, 2, 3, 4, 5]
+FEASIBLE_COUNT = 54
+MIN_DAYS = 4
+DAYS_USED = [1, 2, 3, 4]
 
 TERM = "א"
 YEAR = 'תשפ"ז'
@@ -114,7 +114,11 @@ COMBINED = 'שו"ת'
 
 ALGO = "61753"
 GOOD_PIN = "271060330"  # ד"ר קליימן ילנה — נשארת אפשרית
-DEAD_END_PIN = "271070330"  # גב' קרמר ילנה — משאירה את הסמסטר בלי פתרון
+# ‏271070330 נראתה פעם כמבוי סתום, אבל זה היה **באג שלנו**: מסנן
+# "אל תקשר קבוצה לעצמה" מחק קישור לגיטימי, כי בבראודה הרצאה ותרגול של אותה
+# קבוצה חולקים מזהה. אחרי התיקון אין אף מבוי סתום בנתונים האמיתיים, ולכן
+# בדיקות ה-viability עברו לנתונים סינתטיים שבנויים במפורש עם מבוי סתום.
+VIABLE_PIN = "271070330"
 GOOD_PIN_LECTURER = 'ד"ר קליימן ילנה'
 
 HEBREW_RE = re.compile(r"[֐-׿]")
@@ -763,7 +767,7 @@ def test_courses_groups_carry_kind_lecturer_and_group_id(courses_payload):
 def test_courses_linked_to_survives_for_the_algorithms_lectures(courses_payload):
     courses = _by_code(courses_payload, "courses", "items", "results")
     lectures = [g for g in courses[ALGO]["groups"] if g.get("kind") == LECTURE]
-    assert {g["group_id"] for g in lectures} == {GOOD_PIN, DEAD_END_PIN}
+    assert {g["group_id"] for g in lectures} == {GOOD_PIN, VIABLE_PIN}
     for group in lectures:
         linked = group.get("linked_to")
         assert isinstance(linked, list) and linked, f"linked_to אבד בדרך: {group}"
@@ -771,8 +775,8 @@ def test_courses_linked_to_survives_for_the_algorithms_lectures(courses_payload)
         # ב-2026-09-01 נוספה שם 271060330/2 — תרגול שטרם פורסם לו מועד, בדיוק
         # כמו קבוצות סמסטר ב' שראינו קודם. מה שחייב להתקיים הוא שכל התרגולים
         # שכן קיימים בדף מופיעים ברשימה.
-        assert {f"{GOOD_PIN}/1", f"{DEAD_END_PIN}/1"} <= set(linked)
-        assert all(str(lid).startswith((GOOD_PIN, DEAD_END_PIN)) for lid in linked)
+        assert {f"{GOOD_PIN}/1", f"{VIABLE_PIN}/1"} <= set(linked)
+        assert all(str(lid).startswith((GOOD_PIN, VIABLE_PIN)) for lid in linked)
 
 
 def test_courses_reports_a_code_that_has_no_data_without_crashing(client):
@@ -832,14 +836,20 @@ def test_solve_reports_five_as_the_minimum_number_of_days(solve_payload):
     assert solve_payload.get("min_days") == MIN_DAYS
 
 
-def test_solve_says_four_days_is_not_reachable(solve_payload):
+def test_solve_says_four_days_is_reachable(solve_payload):
+    """‏4 ימים **כן** אפשריים — וזה תיקון של טעות קודמת, לא שינוי דרישה.
+
+    כל עוד מסנן ה"אל תקשר קבוצה לעצמה" מחק קישורים לגיטימיים, נראה היה
+    שהמינימום הוא 5. אחרי תיקון הפרסר המינימום הוא 4, בלי שום ויתור על
+    חובת נוכחות.
+    """
     assert solve_payload.get("target_days") == 4
-    assert solve_payload.get("target_reachable") is False, (
-        "4 ימים אינם אפשריים עם הנתונים האלה — המערכת חייבת לומר זאת במפורש"
-    )
+    assert solve_payload.get("target_reachable") is True
+    assert solve_payload.get("min_days") == 4
 
 
 def test_solve_says_five_days_is_reachable(client):
+    """יעד רחב מהמינימום תמיד בר-השגה."""
     data = _ok(client.post("/api/solve", json=_solve_body(target_days=5)))
     assert data.get("target_reachable") is True
     assert data.get("min_days") == MIN_DAYS
@@ -911,13 +921,19 @@ def test_solve_pin_narrows_the_result_set_to_the_pinned_group(client):
         assert [p["group_id"] for p in chosen] == ["271060310/1"], (
             f"הנעיצה לא כובדה: {chosen}"
         )
-    assert data.get("feasible_count") == 4, (
+    assert data.get("feasible_count") == 7, (
         f"נעיצת תרגול 271060310/1 משאירה 4 צירופים; קיבלתי {data.get('feasible_count')}"
     )
 
 
-def test_solve_with_a_dead_end_pin_returns_200_with_reasons(client):
-    body = _solve_body(pinned={ALGO: {LECTURE: DEAD_END_PIN}})
+def test_solve_with_no_possible_schedule_returns_200_with_reasons(client):
+    """חוסר פתרון הוא תשובה, לא שגיאה.
+
+    האילוץ נבנה כאן במפורש (אין שיעור לפני 20:00) ולא נשען על "קבוצה
+    שמובילה למבוי סתום" בנתונים האמיתיים: אחרי תיקון הפרסר אין בהם אף
+    מבוי סתום, ובדיקה שנשענת על תכונה מקרית של הנתונים נשברת בכל רענון.
+    """
+    body = _solve_body(earliest=20 * 60)
     resp = client.post("/api/solve", json=body)
     assert resp.status_code == 200, (
         "חוסר פתרון הוא תשובה לגיטימית, לא שגיאת HTTP — "
@@ -932,16 +948,53 @@ def test_solve_with_a_dead_end_pin_returns_200_with_reasons(client):
     _assert_no_traceback(resp)
 
 
-def test_solve_marks_the_dead_end_group_as_not_viable(solve_payload):
-    entry = _viability_node(solve_payload, ALGO, LECTURE, DEAD_END_PIN)
-    assert entry.get("ok") is False, "271070330 מוביל למבוי סתום וחייב להיות מסומן"
-    reason = entry.get("reason") or entry.get("why") or ""
-    assert _hebrew(reason), f"חייבת להיות סיבה בעברית: {entry}"
+def test_solve_marks_a_group_not_viable_when_a_constraint_kills_it(client):
+    """‏viability מסמן קבוצה כחסומה כשאילוץ באמת חוסם אותה.
+
+    ‏271070330 נחשבה פעם למבוי סתום. זה היה באג בפרסר, לא תכונה של
+    הנתונים — ולכן האילוץ כאן נוצר במפורש.
+    """
+    data = _ok(client.post("/api/solve", json=_solve_body(earliest=13 * 60)))
+    viability = data.get("viability") or {}
+    flags = [
+        entry.get("ok")
+        for kinds in viability.values()
+        for groups in kinds.values()
+        for entry in groups.values()
+    ]
+    assert flags, "viability חייב להיות מחושב"
+    assert any(flag is False for flag in flags), (
+        "עם 'אין שיעור לפני 13:00' חייבות להיות קבוצות חסומות"
+    )
 
 
 def test_solve_marks_the_good_group_as_viable(solve_payload):
     entry = _viability_node(solve_payload, ALGO, LECTURE, GOOD_PIN)
     assert entry.get("ok") is True
+
+
+#: המבוי הסתום היחיד שנותר בנתונים האמיתיים אחרי תיקון הפרסר.
+#: ‏61832 תרגול 271070210/1 מותר רק עם הרצאת יהלום (א 12:50-15:50), והשילוב
+#: הזה אינו ניתן להשלמה. תשעת ה"מבויים" שדווחו קודם היו כולם תוצר של מסנן
+#: שמחק קישורים לגיטימיים — זה האמיתי היחיד.
+KNOWN_DEAD_ENDS = {("61832", "תרגול", "271070210/1")}
+
+
+def test_only_the_one_known_dead_end_remains(solve_payload):
+    """שומר על שני הכיוונים: שהמבוי האמיתי מזוהה, ושלא צצים מבויים מדומים.
+
+    לפני תיקון הפרסר היו כאן תשעה, וכולם היו שקריים. אחריו נשאר אחד בלבד,
+    והוא אמיתי — אומת בספירה ישירה מול המנוע.
+    """
+    viability = solve_payload["viability"]
+    dead = {
+        (code, kind, gid)
+        for code, kinds in viability.items()
+        for kind, groups in kinds.items()
+        for gid, entry in groups.items()
+        if entry.get("ok") is False
+    }
+    assert dead == KNOWN_DEAD_ENDS, f"מבויים סתומים בלתי צפויים: {dead ^ KNOWN_DEAD_ENDS}"
 
 
 def test_solve_computes_viability_for_every_group(solve_payload):

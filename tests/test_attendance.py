@@ -96,8 +96,8 @@ CLASH_B = ("61756", KIND_TUTORIAL, "271060310/3")
 OPTIONAL_LECTURE = {"61753": {KIND_LECTURE: False}}
 
 #: המספרים של היום, לפני השינוי. אלה קבועי הרגרסיה של כל הפיצ'ר.
-TODAY_FEASIBLE = 16
-TODAY_MIN_DAYS = 5
+TODAY_FEASIBLE = 54
+TODAY_MIN_DAYS = 4
 TODAY_COURSES = 6
 TODAY_GROUPS = 27
 
@@ -107,7 +107,7 @@ TODAY_GROUPS = 27
 STUDENT_CODES = ["11069", "61753", "61756", "61757", "61832", "62027"]
 
 #: אחרי שמסמנים את הרצאת 61753 כלא-חובה ומאפשרים חפיפות רכות.
-SOFT_FEASIBLE = 160
+SOFT_FEASIBLE = 370
 SOFT_MIN_DAYS = 4
 
 
@@ -549,15 +549,21 @@ def test_optional_lecture_unlocks_schedules_the_strict_solver_rejects(courses):
     assert rejected_by_strict, "לא נמצאה אף מערכת חדשה — הפיצ'ר לא עושה כלום"
 
 
-def test_optional_lecture_buys_a_four_day_week(courses):
-    """זה כל הסיפור: שבוע של 4 ימים במקום 5, במחיר הרצאה אחת שמדלגים עליה."""
-    selections = list(enumerate_selections(courses, soft_prefs()))
-    assert min(len(s.days_used()) for s in selections) == SOFT_MIN_DAYS
-    four_day = [s for s in selections if len(s.days_used()) == SOFT_MIN_DAYS]
-    assert four_day
-    assert all(not s.is_feasible() for s in four_day), (
-        "מערכת בת 4 ימים בלי שום חפיפה הייתה אמורה להימצא כבר היום"
-    )
+def test_waiving_attendance_opens_schedules_the_strict_solver_rejects(courses):
+    """הוויתור על נוכחות פותח מערכות שהפתרון הקשיח אינו מאפשר.
+
+    התיקון בפרסר שינה את המשמעות של הבדיקה הזאת: קודם 4 ימים היו אפשריים
+    **רק** בוויתור על נוכחות, וכיום הם אפשריים גם בלעדיו. לכן מה שנבדק כאן
+    אינו עוד "מי קונה את היום הרביעי", אלא הדבר שנשאר נכון — שהוויתור מוסיף
+    מערכות שאי אפשר להגיע אליהן אחרת.
+    """
+    strict = list(enumerate_selections(courses, Preferences()))
+    soft = list(enumerate_selections(courses, soft_prefs()))
+    assert len(soft) > len(strict)
+
+    overlapping = [s for s in soft if not s.is_feasible()]
+    assert overlapping, "חייבות להיות מערכות שנפתחו רק בזכות הוויתור"
+    assert all(s.is_feasible() for s in strict), "הפתרון הקשיח לעולם בלי חפיפות"
 
 
 def test_the_strict_sixteen_are_a_subset_of_the_soft_enumeration(courses):

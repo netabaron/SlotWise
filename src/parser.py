@@ -1325,7 +1325,13 @@ def _rows_to_groups(
             group.note = (group.note + " | " + note) if group.note else note
 
         for linked_id in list(linked) + list(note_linked):
-            if linked_id and linked_id != gid and linked_id not in group.linked_to:
+            # **לא** מסננים לפי zהות מזהה. בבראודה הרצאה ותרגול של אותה
+            # קבוצה חולקים מזהה זהה (‏62027: הרצאה 271060310/1 ותרגול
+            # 271060310/1), והידיעון מציין את שניהם ברשימת הקבוצות הצמודות.
+            # סינון "לא לקשר לעצמי" מחק בדיוק את התרגול הלגיטימי הזה, והשאיר
+            # רק את התרגול של היום השני — כלומר אילץ הגעה ליום שלם עבור
+            # תרגול בודד. הקישור הוא בין *רכיבים*, לא בין מזהים.
+            if linked_id and linked_id not in group.linked_to:
                 group.linked_to.append(linked_id)
 
         for m in meetings:
@@ -1728,7 +1734,13 @@ def _blocks_to_groups(blocks: list[Any], code: str, warnings: list[str]) -> list
         if note and note not in group.note:
             group.note = (group.note + " | " + note) if group.note else note
         for linked_id in linked:
-            if linked_id and linked_id != gid and linked_id not in group.linked_to:
+            # **לא** מסננים לפי zהות מזהה. בבראודה הרצאה ותרגול של אותה
+            # קבוצה חולקים מזהה זהה (‏62027: הרצאה 271060310/1 ותרגול
+            # 271060310/1), והידיעון מציין את שניהם ברשימת הקבוצות הצמודות.
+            # סינון "לא לקשר לעצמי" מחק בדיוק את התרגול הלגיטימי הזה, והשאיר
+            # רק את התרגול של היום השני — כלומר אילץ הגעה ליום שלם עבור
+            # תרגול בודד. הקישור הוא בין *רכיבים*, לא בין מזהים.
+            if linked_id and linked_id not in group.linked_to:
                 group.linked_to.append(linked_id)
         for meeting in meetings:
             # הסמסטר הוא חלק מהזהות (ראו ההערה בנתיב הטבלאות).
