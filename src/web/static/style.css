@@ -617,6 +617,17 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
   justify-content: space-between;
 }
 
+/* שורת ההמלצה: ההסבר בצד אחד, "החזרת הרשימה המומלצת" בשני. */
+.recommended-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.recommended-row .note { margin: 0; }
+
 .credits {
   display: flex;
   flex-direction: column;

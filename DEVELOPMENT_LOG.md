@@ -181,6 +181,75 @@ this and names the command to run in a real terminal.
 
 ---
 
+## Phase 9 — The year+semester choice actually decides what is marked (2026-09-03)
+
+**Problem:** step 2 marked the same six courses for everyone. The checked set was seeded once from
+`/api/bootstrap` → `defaults.codes` → `data/profile.json`, which is one student's personal list and
+included 61753 — a **semester 4** course. Picking a different year or term re-fetched and re-drew the
+course list but never touched the selection, so a student on year 2 saw semester 3's six courses
+empty and, underneath them, six checked semester-5 courses tagged "מחוץ לסמסטר הזה".
+
+**Fix:** the recommendation for the chosen semester is what gets checked, applied in
+`applyRecommendedDefaults()` from inside the `fetchSemesterCourses` response — the only moment the
+new semester's list actually exists. Seeding on the year/term change itself would have marked the
+*previous* semester's courses. The profile seed in `applyBootstrapDefaults` is gone; the name cache
+it also fed stays, so a course added by hand still shows its real name.
+
+Four persisted fields carry provenance, with `state.codes` still the single source of truth for
+drawing: `autoSemester`, `autoCodes`, `manualCodes`, `autoDropped`. Switching semester swaps the
+first set and keeps the second — the tool only ever removes what the tool added.
+
+**What the data forced:**
+- **Alternatives may not all be checked.** Three English/Hebrew placement rows in semester 1, two in
+  semester 2, and both physics tracks in semester 4 (61179+61180 vs 61181). They are flagged, shown,
+  and left empty with a visible reason. The flags `placement` / `physics_track` existed in
+  `curriculum.json` and were being dropped by both the API row builder and `normalizeSemesterCourse`.
+- **The near-miss:** keying exclusivity off `group` or `cond` looks right and is wrong. 11069
+  (אנגלית טכנית) is `group: "english"` with a `cond`, and is a hard requirement — such a rule would
+  have silently unchecked the one English course in semester 5. A test now pins this.
+- **`offered: false` is only trustworthy with a catalog.** `offered_codes({})` is empty, so on a
+  fresh install every row reads "not offered" and the recommendation would have been empty with no
+  explanation. Gated on `fallback.catalog_count > 0`.
+
+**Six bugs, none of which came from reading the code.** Three surfaced by driving the page in
+headless Chromium, three more from an adversarial review of the finished diff:
+
+1. Returning from קיץ re-ran the *adoption* path and marked the entire recommendation as
+   "manually cancelled", leaving the list empty. `autoSemester === ""` cannot distinguish "never
+   applied" from "cleared by summer" — that needed its own flag, `provenanceReady`.
+2. **Switching program kept the previous program's plan checked** — six software courses for a civil
+   engineering student. The semester number does not change when the program does, so the
+   "same semester, don't touch" gate let it through. The deeper cause is older than this change:
+   `syncData` keyed the semester fetch on `state.semester` alone, so a program change never
+   re-requested the list with the new `?program=`. The program is now part of that signature.
+3. The first browser test raced the app's own first save: writing `localStorage` after `goto` lost to
+   the bootstrap chain about half the time. Seeding via `add_init_script`, before any page script
+   runs, is deterministic.
+4. **The `seq.semester` staleness guard had a hole.** The "no semester" early return changes the
+   effective request but did not advance the counter, so a still-in-flight response for the previous
+   semester passed the guard. Reproduced: pick year 2, then קיץ within ~100 ms, and the semester-3
+   recommendation is applied and *saved* while the screen says summer. Before this change the same
+   race only left a stale list rendered; the applier turned a display glitch into state corruption.
+5. **A semester change silently destroyed pinned groups, lecturer rankings and attendance settings.**
+   `prunePicks` deleted them for every code not in `state.codes`, which was safe only while a
+   semester change never removed codes. Peeking at another semester and coming back lost the work
+   for good. Those entries are now kept dormant and filtered at the wire (`buildSolveBody`) and in
+   the counters instead — so coming back to a course brings its pins back with it.
+6. **The one-time adoption swallowed the student's first choice** when the saved state belonged to no
+   semester (saved on קיץ). Picking שנה ג׳/סמסטר א׳ recorded the whole semester-5 recommendation as
+   "cancelled" and left an empty list — the exact opposite of the request. Adoption is now bound to
+   the semester the saved state actually belonged to; a selection from any other semester is treated
+   as manual and the new recommendation applies over it.
+
+Each of 4, 5 and 6 was mutation-checked: the fix was reverted and the matching test confirmed to fail.
+
+**Result:** 498 → 528 tests, 6 skipped, none failing. 13 of the new ones cover the server contract and
+the rule; 17 drive step 2 in headless Chromium, which is the project's first coverage of `app.js` at
+all — the rule, the provenance bookkeeping, the summer path and the staleness guard all live there
+and had none. That absence is exactly why bugs 4-6 survived a careful reading of the diff.
+
+---
+
 ## Things that cost time, worth remembering
 
 - **Heredocs and Hebrew.** `bash <<'EOF'` broke on Hebrew apostrophes (`א'`). Use the file-writing
@@ -200,4 +269,12 @@ this and names the command to run in a real terminal.
 5. Stale data is never presented as current.
 6. Overlap is half-open `[start, end)` — touching classes do not conflict.
 7. Tied courses (61756/61757/62027) are all-or-nothing.
+   A tied package is auto-checked only if every member qualifies — never half of one.
 8. `linked_to` is enforced, or the tool will propose schedules that cannot be registered.
+9. Mutually exclusive alternatives (`placement`, `physics_track`) are shown but never auto-checked —
+   and exclusivity is never inferred from `group` or `cond`.
+10. The tool removes only courses the tool added. A hand-picked course survives every semester change.
+11. Every path that changes the requested semester advances `seq.semester` — a guard with one hole
+    is not a guard.
+12. Pins, lecturer rankings and attendance settings are never destroyed by a course leaving the
+    list. They go dormant and are filtered at the wire.

@@ -105,7 +105,7 @@ Never leak a raw traceback to the browser; log it server-side.
 | Method + path | Purpose |
 | --- | --- |
 | `GET /api/bootstrap` | everything the UI needs at start: profile defaults, the 8 semesters with year/term labels, DB freshness, catalog size, whether a scrape is running |
-| `GET /api/semester/<sem>/courses` | courses from `curriculum.json` for that curriculum semester, each with `code, name, credits, he, te, ma, pr, prereq, tied_with, note`, plus `offered` (is it in the catalog) and `has_data` (is it in the Store) |
+| `GET /api/semester/<sem>/courses` | courses from `curriculum.json` for that curriculum semester, each with `code, name, credits, he, te, ma, pr, prereq, tied_with, note`, plus `offered` (is it in the catalog), `has_data` (is it in the Store), and the two exclusivity flags `placement` (an English/Hebrew levelling course, chosen by score) and `physics_track` (`no_exemption` / `exemption` / `""`). Rows are never filtered out — an alternative is flagged, not hidden. `fallback.catalog_count` says how many courses the catalog snapshot holds, which is what makes `offered: false` distinguishable from "no catalog yet". |
 | `GET /api/catalog/search?q=&limit=` | live-catalog search for adding a repeat/extra course; returns `code, name, in_curriculum, curriculum_semester` |
 | `POST /api/courses` | body `{codes:[...], semester, year}` → per course: name, credits, freshness, and every group with `group_id, kind, lecturer, note, linked_to, meetings[{day,start,end,room,building,semester}]`. Courses not offered that semester come back in `not_offered` with a reason. |
 | `POST /api/solve` | body `{codes, semester, year, target_days, pinned:{code:{kind:group_id}}, ranked:{code:[lecturer,...]}, blocked:[[day,start,end]], earliest, latest, forbid_friday, top_n}` → `{schedules:[...], viability:{...}, min_days, feasible_count}` |
@@ -149,10 +149,27 @@ re-solves via `/api/solve`. Persist state to `localStorage` so a refresh does no
 1. **שנה וסמסטר** — pick year (א׳–ד׳) and term (א/ב/קיץ) → resolves to a curriculum semester.
    Default from `profile.json` (year 3, term א → semester 5).
 2. **קורסים** — the semester's courses from `rec.pdf` as checkboxes, showing credits and a running
-   total. Tied courses (61756/61757/62027) are visually bound: checking one checks all three, and a
-   note explains why. A search box adds any other course from the live catalog — repeats from earlier
-   semesters are a normal case and must be plainly selectable, tagged
-   `[בתוכנית-סמסטר N]` / `[מחוץ לתוכנית]`.
+   total. **The step-1 choice is what decides the marks:** the courses the curriculum recommends for
+   the chosen semester come pre-checked, and switching year/term swaps that set for the new
+   semester's. A course from an earlier semester is *not* offered automatically — the student adds it
+   through the search box, which is the normal way to catch up on or repeat a course. Anything added
+   by hand survives a semester switch; only what the tool marked, the tool removes.
+   Three rules constrain what may be pre-checked:
+   - **Mutually exclusive alternatives are never auto-checked.** Placement courses (`placement`,
+     the English/Hebrew levels chosen by psychometric or יע"ל score) and both physics tracks
+     (`physics_track`) are shown unchecked with a visible reason — the tool does not know the
+     student's score or exemption, and marking all of them would build a schedule nobody studies.
+     Never infer exclusivity from `group` or `cond`: 11069 has both and is a hard requirement.
+   - **Tied courses stay all-or-nothing.** A package is auto-checked only if every member qualifies.
+   - **`offered: false` only counts when there is a catalog to trust** (`fallback.catalog_count > 0`).
+     An empty catalog means "no data", not "nothing is offered".
+   Unchecking a recommended course is remembered, so a later re-fetch of the same semester never
+   silently re-checks it; a "החזרת הרשימה המומלצת" button brings the set back. Tied courses
+   (61756/61757/62027) are visually bound: checking one checks all three, and a note explains why.
+   A search box adds any other course from the live catalog — repeats from earlier semesters are a
+   normal case and must be plainly selectable, tagged `[בתוכנית-סמסטר N]` / `[מחוץ לתוכנית]`.
+   None of this applies to a program with no curriculum file: there step 2 stays in catalog-browse
+   mode, and an existing hand-built selection is never touched.
 3. **ימי לימוד** — target days 2–6 as a slider or button row. Show `min_days` from the solver next to
    it, and if the target is unreachable say so directly: *"4 ימים אינם אפשריים עם הקורסים האלה —
    המינימום הוא 5"*.

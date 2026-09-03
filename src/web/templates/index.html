@@ -195,6 +195,19 @@
         </div>
       </div>
       <ul class="search-results" id="course-search-results" role="listbox" aria-label="תוצאות חיפוש" hidden></ul>
+
+      <!-- ‏רשימת ההמלצה של הסמסטר שנבחר בשלב 1: מה סומן מראש, ומה לעשות
+           כשצריך להשלים קורס מסמסטר קודם. ההסברים הארוכים יותר (קורסים
+           צמודים, תיבת החיפוש) נשארים ב-#courses-note מתחת לרשימה. -->
+      <div class="recommended-row" id="recommended-row" hidden>
+        <!-- טקסט מתאר, לא סטטוס: אין כאן ‏aria-live, כדי לא להקריא את אותו
+             משפט מחדש בכל ציור. ההצהרה החיה על הסמסטר יושבת ב-#semester-summary. -->
+        <p class="note" id="recommended-note"></p>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-restore-recommended" hidden>
+          החזרת הרשימה המומלצת
+        </button>
+      </div>
+
       <div class="course-list" id="course-list"></div>
 
       <!-- בחירה מהקטלוג — נפתח רק כשאין רשימת קורסים מתוכנית הלימודים.

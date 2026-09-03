@@ -3698,6 +3698,15 @@ def semester_courses(sem: str):
             "note": entry.get("note", ""),
             "cond": entry.get("cond", ""),
             "group": entry.get("group", ""),
+            # ‏חלופות הדדיות בתוכנית. שתי השורות האלה קיימות כדי שהממשק יידע
+            # אילו קורסים *אסור* לסמן אוטומטית: קורס השמה נקבע לפי ציון
+            # פסיכומטרי/יע"ל, ומסלול הפיזיקה נקבע לפי פטור. סימון כולם יחד
+            # היה מרכיב מערכת שאיש לא אמור ללמוד.
+            # ‏אזהרה: אין להסיק חלופיות מ-``group`` או מ-``cond``. ‏11069
+            # (אנגלית טכנית) הוא ``group: "english"`` עם ``cond``, והוא קורס
+            # חובה גמור — כלל שנשען עליהם היה מבטל אותו בטעות.
+            "placement": bool(entry.get("placement", False)),
+            "physics_track": str(entry.get("physics_track") or ""),
             "curriculum_semester": str(sem),
             "in_curriculum": True,
             "selectable": bool(code),

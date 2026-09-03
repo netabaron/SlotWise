@@ -407,6 +407,19 @@
       semester: "5", // סמסטר בתוכנית הלימודים (1..8), "" אם אין
       academicYear: "", // שנה"ל (למשל תשפ"ז) — מגיע מהשרת
       codes: [], // קודי הקורסים שנבחרו, לפי סדר הוספה
+      // מקור הבחירה. ‏codes נשאר מקור האמת היחיד לציור; שלושת אלה רק זוכרים
+      // *מי* סימן כל קורס, כדי שהחלפת שנה/סמסטר תחליף את ההמלצה בלי לגעת
+      // במה שנבחר ידנית, וכדי שביטול ידני של קורס מומלץ לא יבוטל על ידי
+      // משיכה מאוחרת של אותה רשימה.
+      autoSemester: "", // הסמסטר שההמלצה שלו מוחלת כרגע. "" = אין המלצה מוחלת
+      autoCodes: [], // מה שסומן אוטומטית עבור autoSemester
+      manualCodes: [], // מה שנוסף ידנית (חיפוש/קטלוג/בחירה) — שורד החלפת סמסטר
+      autoDropped: [], // קורסים מומלצים שבוטלו ידנית — לא לסמן שוב
+      // האם כבר קבענו מקור לכל קוד שנבחר. ‏autoSemester ריק אינו סימן טוב
+      // מספיק לשאלה הזאת: הוא ריק גם לפני ההחלה הראשונה וגם אחרי מעבר
+      // לקיץ, ובלי הבחנה ביניהם חזרה מקיץ הייתה מסמנת את כל ההמלצה
+      // כ"בוטלה" ומשאירה את הרשימה ריקה.
+      provenanceReady: false,
       known: {}, // מטמון שמות/נ"ז: {code: {name, credits, semester}}
       targetDays: 4,
       forbidFriday: false,
@@ -453,6 +466,15 @@
     electivesFor: "",
     electivesBusy: false,
     semesterCurriculumAvailable: null, // מ-/api/semester/<n>/courses
+    // כמה קורסים יש בקטלוג שנמשך. ‏null = השרת עוד לא ענה, 0 = הקטלוג באמת
+    // ריק (התקנה טרייה). בשני המקרים אסור להסיק מ-``offered: false`` שקורס
+    // אינו נפתח — אין נתונים, וזה לא אותו דבר.
+    semesterCatalogCount: null,
+    // הסמסטר שהבחירה השמורה שייכת לו, כפי שנקרא ב-boot. ריק = אין מצב שמור.
+    adoptSemester: "",
+    // ‏limits.max_codes מהשרת. חורגים ממנו ⇒ כל /api/courses ו-/api/solve
+    // מחזירים 400 והאפליקציה נראית שבורה לגמרי, ולכן ההמלצה נחתכת מראש.
+    maxCodes: 0,
     semesterBusy: false,
     semesterFetched: false, // האם כבר יש תשובה על רשימת הסמסטר
     browseQuery: "",
@@ -529,6 +551,17 @@
     });
     if (!Array.isArray(base.codes)) base.codes = [];
     base.codes = uniq(base.codes.map(txt).filter(Boolean));
+    // ‏STORAGE_SCHEMA לא עולה בגלל השדות האלה: ההשוואה ב-loadState היא שוויון
+    // מוחלט בלי מסלול הגירה, והעלאה הייתה מוחקת לכל משתמש קיים את הנעיצות,
+    // דירוג המרצים, החלונות החסומים וחובות הנוכחות. הוספת שדות אינה דורשת זאת.
+    base.autoSemester = txt(base.autoSemester);
+    ["autoCodes", "manualCodes", "autoDropped"].forEach(function (k) {
+      if (!Array.isArray(base[k])) base[k] = [];
+      base[k] = uniq(base[k].map(txt).filter(Boolean));
+    });
+    // מצב שנשמר לפני שהשדות האלה היו קיימים מגיע בלי הדגל, ולכן בלי מקור
+    // ידוע לקודים שבו — בדיוק המקרה שהאימוץ ב-applyRecommendedDefaults נועד לו.
+    base.provenanceReady = base.provenanceReady === true;
     if (!base.known || typeof base.known !== "object") base.known = {};
     if (!base.pinned || typeof base.pinned !== "object") base.pinned = {};
     if (!base.ranked || typeof base.ranked !== "object") base.ranked = {};
@@ -957,6 +990,238 @@
     return out;
   }
 
+  /* =====================================================================
+   * 5א. רשימת ההמלצה של הסמסטר
+   *
+   * הבחירה בשלב 1 — שנה וסמסטר — היא שקובעת מה מסומן בשלב 2: הקורסים
+   * שתוכנית הלימודים ממליצה עליהם בסמסטר הזה מסומנים מראש, וקורס שצריך
+   * להשלים מסמסטר קודם מתווסף ידנית דרך תיבת החיפוש.
+   *
+   * מה שהמערכת *לא* עושה כאן, בכוונה: היא לא יודעת מה כבר נלמד, לא מה
+   * עבר ולא מה נכשל, ולכן היא לא מנחשת השלמות ולא מציעה אותן. "מומלץ"
+   * פירושו "זה מה שכתוב בתוכנית לסמסטר הזה" — לא "זה מה שמתאים לך".
+   * ===================================================================== */
+
+  /**
+   * חלופות הדדיות: קורסים שהתוכנית מציעה כמה מהם ובוחרים אחד. סימון
+   * אוטומטי של כולם היה מרכיב מערכת שאיש לא לומד, ולכן הם נשארים ריקים
+   * עם הסבר. מחזירה טקסט הסבר בעברית, או "" כשהקורס אינו חלופה.
+   */
+  function alternativeReason(rec) {
+    if (!rec) return "";
+    // אנגלית/עברית לפי ציון פסיכומטרי או יע"ל. בסמסטר 1 יש שתי רמות
+    // אנגלית באותה רשימה, ורק אחת מהן שייכת לסטודנט/ית מסוימים.
+    if (rec.placement === true) {
+      return "קורס השמה — הרמה נקבעת לפי ציון, ויש לבחור את המתאימה";
+    }
+    // ‏61179+61180 למי שאין פטור מפיזיקה אקדמית, 61181 למי שיש. אחד מהשניים.
+    if (txt(rec.physicsTrack)) {
+      return "מסלול פיזיקה — תלוי בפטור, ויש לבחור מסלול אחד";
+    }
+    return "";
+  }
+
+  /**
+   * האם ל-``offered`` יש בכלל משמעות. קטלוג ריק מחזיר ``offered: false``
+   * לכל שורה, וזה "אין נתונים" — לא "שום קורס לא נפתח". להסיק מזה היה
+   * משאיר התקנה טרייה עם רשימה ריקה ובלי הסבר.
+   */
+  function offeredIsKnown() {
+    return runtime.semesterCatalogCount !== null && runtime.semesterCatalogCount > 0;
+  }
+
+  /** האם קורס בודד ראוי לסימון אוטומטי. */
+  function isRecommendable(rec) {
+    if (!rec || !txt(rec.code)) return false; // "קורס כללי", "ספורט" — אין קוד לסמן
+    if (alternativeReason(rec)) return false;
+    if (offeredIsKnown() && rec.offered === false) return false;
+    return true;
+  }
+
+  /**
+   * הקודים שיסומנו אוטומטית, בסדר שבו התוכנית מונה אותם.
+   * קורסים צמודים נבחנים כחבילה: אם חבר אחד נפסל, כל החבילה יוצאת —
+   * חצי חבילה היא בדיוק מה שהידיעון דוחה.
+   */
+  function recommendedCodes() {
+    var decided = Object.create(null);
+    runtime.semesterCourses.forEach(function (rec) {
+      var code = txt(rec.code);
+      if (!code || decided[code] !== undefined) return;
+      // רק חברים שנמצאים ברשימת הסמסטר הזה: ‏TIED_FALLBACK עלול להביא קוד
+      // שאינו בה, ואין לסמן קורס על סמך רשימה שלא מכילה אותו.
+      var family = tiedGroupFor(code).filter(function (c) {
+        return !!semesterCourseByCode(c);
+      });
+      if (family.indexOf(code) === -1) family.push(code);
+      var ok = family.every(function (c) {
+        return isRecommendable(semesterCourseByCode(c));
+      });
+      family.forEach(function (c) {
+        decided[c] = ok;
+      });
+    });
+    return uniq(
+      runtime.semesterCourses
+        .map(function (rec) {
+          return txt(rec.code);
+        })
+        .filter(function (c) {
+          return c && decided[c] === true;
+        })
+    );
+  }
+
+  /** השוואת רשימות קודים לפי סדר — כדי לא לצייר מחדש בלי שינוי. */
+  function sameCodes(a, b) {
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (txt(a[i]) !== txt(b[i])) return false;
+    }
+    return true;
+  }
+
+  /**
+   * חיתוך לפי ``limits.max_codes``. חריגה ממנו מחזירה 400 בכל בקשת
+   * ‏/api/courses ו-/api/solve, כלומר האפליקציה נראית שבורה לגמרי ולא
+   * "קצת עמוסה". מה שנבחר ידנית שורד; ההמלצה נחתכת, ותמיד בחבילות שלמות.
+   */
+  function capRecommended(rec, manual) {
+    var limit = num(runtime.maxCodes, 0);
+    var kept = rec.slice();
+    var dropped = [];
+    while (limit > 0 && kept.length && uniq(kept.concat(manual)).length > limit) {
+      var family = tiedGroupFor(kept[kept.length - 1]);
+      var before = kept.length;
+      kept = kept.filter(function (c) {
+        return family.indexOf(c) === -1;
+      });
+      family.forEach(function (c) {
+        if (rec.indexOf(c) !== -1 && dropped.indexOf(c) === -1) dropped.push(c);
+      });
+      if (kept.length === before) break; // הגנה: חבילה שלא הסירה כלום
+    }
+    return { recommended: kept, dropped: dropped };
+  }
+
+  /**
+   * מחילה את רשימת ההמלצה של ``sem`` על הבחירה.
+   *
+   * נקראת רק מתוך התשובה של ``fetchSemesterCourses``, אחרי שומר
+   * ה-``seq.semester`` ואחרי ש-``runtime.semesterCourses`` כבר עודכן.
+   * כל יציאה מוקדמת כאן היא הבטחה שנשמרת:
+   *   • משיכה חוזרת של אותו סמסטר לא מסמנת מחדש מה שבוטל ידנית;
+   *   • מסלול בלי תוכנית לימודים לא מאבד את מה שנבחר בו ביד;
+   *   • רק מה שהמערכת סימנה — המערכת מסירה.
+   */
+  function applyRecommendedDefaults(sem) {
+    var target = txt(sem);
+    var owned = txt(state.autoSemester);
+
+    // 1. אימוץ בחירה קיימת, פעם אחת בלבד. מצב שנשמר לפני שהתכונה הזאת
+    //    הייתה קיימת מגיע בלי מקור לקודים שבו; הוא לא נמחק ולא מוחלף, רק
+    //    מקבל שיוך: מה שברשימת ההמלצה נחשב מומלץ, מה שמחוצה לה נחשב ידני,
+    //    ומה שההמלצה כוללת ולא סומן נחשב "בוטל" ולא יחזור מעצמו. אף תיבה
+    //    לא משנה כאן את מצבה — זה כל העניין.
+    //    האימוץ תקף רק לסמסטר שהבחירה השמורה **שייכת** לו. סטודנט/ית
+    //    ששמרו בקיץ, ואז בחרו שנה ג' סמסטר א', היו מקבלים אחרת את כל
+    //    המלצת סמסטר 5 רשומה כ"בוטלה" ורשימה ריקה — בדיוק ההפך ממה
+    //    שביקשו. במקרה כזה הבחירה הישנה נחשבת ידנית, וההמלצה מוחלת עליה.
+    var manual = state.manualCodes;
+    var claimAsManual = false;
+    if (!state.provenanceReady && state.codes.length) {
+      if (!target || !runtime.semesterCourses.length) return;
+      if (target === txt(runtime.adoptSemester)) {
+        var adopted = recommendedCodes();
+        var picked = selectedSet();
+        setState(
+          {
+            provenanceReady: true,
+            autoSemester: target,
+            autoCodes: adopted.slice(),
+            autoDropped: adopted.filter(function (c) {
+              return picked[c] !== true;
+            }),
+            manualCodes: state.codes.filter(function (c) {
+              return adopted.indexOf(txt(c)) === -1;
+            }),
+          },
+          { solve: false }
+        );
+        return;
+      }
+      manual = state.codes.slice();
+      claimAsManual = true;
+    }
+
+    // 2. אותו סמסטר שכבר הוחל, ועדיין יש לו רשימה — לא נוגעים. זה מה
+    //    שמחזיק ביטול ידני גם אחרי רענון מהידיעון, בנייה מחדש, או ניסיון
+    //    חוזר אחרי שגיאה.
+    //    התנאי על הרשימה אינו קישוט: החלפת **מסלול** אינה משנה את מספר
+    //    הסמסטר, ובלעדיו סטודנט/ית שעברו להנדסה אזרחית נשארו עם שישה
+    //    קורסי תוכנה מסומנים עד שיחליפו גם שנה או סמסטר.
+    if (owned && owned === target && runtime.semesterCourses.length) return;
+
+    // 3. החלפה: ההמלצה החדשה במקום הישנה, והבחירה הידנית נשארת.
+    //    בלי רשימה (קיץ, צירוף שאינו בתוכנית, מסלול בלי תוכנית) ההמלצה
+    //    ריקה — כלומר מסירים את מה שסימנו, ורק אותו.
+    var recommended = [];
+    var over = [];
+    if (target && runtime.semesterCourses.length) {
+      var capped = capRecommended(recommendedCodes(), manual);
+      recommended = capped.recommended;
+      over = capped.dropped;
+    }
+    var next = uniq(recommended.concat(manual));
+    var nextSemester = recommended.length ? target : "";
+    if (
+      sameCodes(next, state.codes) &&
+      nextSemester === owned &&
+      state.provenanceReady &&
+      !claimAsManual
+    ) {
+      return;
+    }
+
+    setState({
+      codes: next,
+      provenanceReady: true,
+      manualCodes: manual,
+      autoSemester: nextSemester,
+      autoCodes: recommended.slice(),
+      autoDropped: [],
+      activeSchedule: 0,
+    });
+    if (over.length) {
+      toast(
+        "אפשר לשבץ עד " + num(runtime.maxCodes, 0) + " קורסים בבת אחת, ולכן לא סומנו: " +
+          over.join(", ") + ". אפשר להוסיף אותם אחרי הסרת קורס אחר.",
+        "warn"
+      );
+    }
+  }
+
+  /** האם הבחירה הנוכחית שונה מרשימת ההמלצה של הסמסטר. */
+  function recommendedChanged() {
+    if (!txt(state.autoSemester)) return false;
+    return state.autoDropped.length > 0;
+  }
+
+  /** "החזרת הרשימה המומלצת" — מבטל את הביטולים הידניים ומסמן מחדש. */
+  function restoreRecommended() {
+    var target = txt(state.semester);
+    if (!target || !runtime.semesterCourses.length) return;
+    var capped = capRecommended(recommendedCodes(), state.manualCodes);
+    setState({
+      codes: uniq(capped.recommended.concat(state.manualCodes)),
+      provenanceReady: true,
+      autoSemester: target,
+      autoCodes: capped.recommended.slice(),
+      autoDropped: [],
+      activeSchedule: 0,
+    });
+  }
+
   /* --- חובת נוכחות (SPEC_V2 §2) ------------------------------------- */
 
   /** ברירת המחדל היא תמיד "יש חובת נוכחות". הוויתור הוא בחירה מפורשת. */
@@ -1096,18 +1361,35 @@
     return i === -1 ? 0 : i + 1;
   }
 
+  /**
+   * עותק של מפת {קוד: ...} עם הקורסים שנבחרו בלבד.
+   * רשומה רדומה של קורס שירד מהרשימה נשמרת במצב (‏prunePicks לא מוחק
+   * אותה), ולכן כל מי שמדווח או שולח חייב לסנן — אחרת יוצהר על נעיצות
+   * שאינן שייכות לשום קורס שעל המסך.
+   */
+  function pickedFor(map) {
+    var selected = selectedSet();
+    var out = {};
+    Object.keys(map || {}).forEach(function (code) {
+      if (selected[txt(code)]) out[code] = deepCopy(map[code]);
+    });
+    return out;
+  }
+
   function pinCount() {
     var n = 0;
-    Object.keys(state.pinned).forEach(function (code) {
-      n += Object.keys(state.pinned[code] || {}).length;
+    var picked = pickedFor(state.pinned);
+    Object.keys(picked).forEach(function (code) {
+      n += Object.keys(picked[code] || {}).length;
     });
     return n;
   }
 
   function rankedCount() {
     var n = 0;
-    Object.keys(state.ranked).forEach(function (code) {
-      n += (state.ranked[code] || []).length;
+    var picked = pickedFor(state.ranked);
+    Object.keys(picked).forEach(function (code) {
+      n += (picked[code] || []).length;
     });
     return n;
   }
@@ -1173,6 +1455,7 @@
       .then(function (data) {
         runtime.bootstrap = data;
         runtime.bootstrapError = null;
+        runtime.maxCodes = num(data && data.limits ? data.limits.max_codes : null, 0);
         runtime.curriculumAvailable = readCurriculumAvailable(data);
         // רשימת המסלולים. ברירת המחדל היא המסלול שיש לו קובץ תוכנית, כדי
         // שסטודנט/ית תוכנה לא תצטרך לבחור כלום; כל השאר בוחרים "אחר"
@@ -1252,15 +1535,12 @@
       var late = num(defaults.latest, null);
       if (late !== null) state.latest = late;
 
-      var codes = pickList(defaults, ["codes"], null).map(txt).filter(Boolean);
-      if (!codes.length) {
-        codes = pickList(profile, ["selected_courses"], "code")
-          .map(function (rec) {
-            return txt(rec.code);
-          })
-          .filter(Boolean);
-      }
-      if (codes.length && !state.codes.length) state.codes = uniq(codes);
+      // ‏defaults.codes (הבחירה מ-data/profile.json) *אינו* מסמן קורסים.
+      // הוא רשימה אישית של סטודנט/ית אחד/ת, והיא כללה גם קורס מסמסטר 4
+      // — כך שכל מי שפתח/ה את העמוד קיבל/ה אותו מסומן, ובחירת שנה
+      // וסמסטר אחרים לא שינתה זאת. מה שמסמן הוא רשימת ההמלצה של הסמסטר
+      // שנבחר, ב-``applyRecommendedDefaults``. השמות מהפרופיל עדיין
+      // נשמרים במטמון למעלה, כדי שקורס כזה יוצג בשמו כשמוסיפים אותו.
     }
 
     var resolved = semesterOf(state.studyYear, state.term);
@@ -1274,6 +1554,11 @@
 
   function fetchSemesterCourses() {
     var sem = txt(state.semester);
+    // הקידום קורה **לפני** הענף של "אין סמסטר", ולא אחריו. מעבר לקיץ הוא
+    // בקשה חדשה לכל דבר — "אל תציג סמסטר" — ובלי הקידום תשובה של הסמסטר
+    // הקודם שעדיין באוויר הייתה עוברת את השומר ומחילה את ההמלצה שלו על
+    // בחירה שכבר עברה הלאה.
+    var my = ++seq.semester;
     if (!sem) {
       runtime.semesterCourses = [];
       runtime.semesterError = null;
@@ -1281,11 +1566,13 @@
       runtime.semesterBusy = false;
       // "אין סמסטר בתוכנית" (למשל קיץ) הוא תשובה, לא המתנה.
       runtime.semesterFetched = true;
+      // אין סמסטר ⇒ אין המלצה. מסירים את מה שסימנו עבור הסמסטר הקודם,
+      // אחרת הקורסים שלו נשארים מסומנים ומוצגים כ"מחוץ לסמסטר הזה".
+      applyRecommendedDefaults("");
       render();
       ensureCatalogBrowse();
       return Promise.resolve();
     }
-    var my = ++seq.semester;
     runtime.semesterBusy = true;
     return getJSON(
       "/api/semester/" + encodeURIComponent(sem) + "/courses" +
@@ -1312,6 +1599,14 @@
             semester: sem,
           };
         });
+        // מה שהקטלוג יודע, לפני שמסיקים משהו מ-``offered``.
+        runtime.semesterCatalogCount = num(
+          data && data.fallback ? data.fallback.catalog_count : null,
+          null
+        );
+        // כאן, ולא ב-onYearTermChange: רק עכשיו רשימת הסמסטר החדש בידינו.
+        // הפעלה מוקדמת יותר הייתה מסמנת את קורסי הסמסטר *הקודם*.
+        applyRecommendedDefaults(sem);
         saveState();
         render();
         ensureCatalogBrowse();
@@ -1344,6 +1639,11 @@
       prereq: Array.isArray(rec.prereq) ? rec.prereq.map(txt) : [],
       tied_with: Array.isArray(rec.tied_with) ? rec.tied_with.map(txt) : [],
       note: txt(rec.note),
+      cond: txt(rec.cond),
+      // חלופות הדדיות. הרשימה הזאת היא whitelist — שדה שלא נכתב כאן פשוט
+      // נעלם, ולכן שני אלה חייבים לנחות יחד עם השינוי ב-api.py.
+      placement: rec.placement === true,
+      physicsTrack: txt(rec.physics_track),
       offered: rec.offered !== false,
       has_data: rec.has_data === true,
     };
@@ -1525,19 +1825,22 @@
   }
 
   /** ניקוי נעיצות ודירוגים שכבר לא קיימים בנתונים. */
+  /**
+   * ניקוי הבחירות העדינות — נעיצות, דירוג מרצים, חובות נוכחות.
+   *
+   * ‏**קוד שאינו מסומן אינו נמחק כאן.** מאז שהחלפת שנה/סמסטר מחליפה את
+   * רשימת הקורסים, מחיקה לפי "לא מסומן" הייתה משמעותה שהצצה בסמסטר אחר
+   * וחזרה מוחקת בשקט נעיצה שנבחרה ביד — עבודה אמיתית שאבדה בלי שנאמר עליה
+   * דבר. הרשומות נשארות רדומות, וחוזרות לעצמן כשהקורס נבחר שוב.
+   * מה שכן מנוקה: נעיצה על קבוצה שכבר אינה קיימת בנתונים.
+   *
+   * מה שנשלח לשרת מסונן בנפרד (``buildSolveBody``), ולכן רשומה רדומה אינה
+   * מגיעה לחוט ואינה משפיעה על השיבוץ.
+   */
   function prunePicks() {
     var changed = false;
-    var selected = Object.create(null);
-    state.codes.forEach(function (c) {
-      selected[txt(c)] = true;
-    });
 
     Object.keys(state.pinned).forEach(function (code) {
-      if (!selected[code]) {
-        delete state.pinned[code];
-        changed = true;
-        return;
-      }
       var data = courseDataByCode(code);
       if (!data) return; // אין עדיין נתונים — לא נוגעים
       var byKind = state.pinned[code] || {};
@@ -1557,19 +1860,8 @@
       }
     });
 
-    Object.keys(state.ranked).forEach(function (code) {
-      if (!selected[code]) {
-        delete state.ranked[code];
-        changed = true;
-      }
-    });
-
-    Object.keys(state.attendance).forEach(function (code) {
-      if (!selected[code]) {
-        delete state.attendance[code];
-        changed = true;
-      }
-    });
+    // דירוג מרצים וחובות נוכחות נשמרים גם לקורס שאינו מסומן כרגע: הם
+    // תלויים רק בקורס עצמו, ולכן נכונים גם כשחוזרים אליו.
 
     if (changed) saveState();
     return changed;
@@ -1726,8 +2018,11 @@
       semester: state.term,
       year: state.academicYear,
       target_days: state.targetDays,
-      pinned: deepCopy(state.pinned),
-      ranked: deepCopy(state.ranked),
+      // רק לקורסים שנבחרו. ‏prunePicks כבר לא מוחק רשומה של קורס שירד
+      // מהרשימה — היא נשארת רדומה כדי לחזור אם הקורס יחזור — ולכן הסינון
+      // חייב לקרות כאן, בדיוק כמו ב-attendanceBody.
+      pinned: pickedFor(state.pinned),
+      ranked: pickedFor(state.ranked),
       blocked: deepCopy(state.blocked),
       forbid_friday: state.forbidFriday === true,
       top_n: state.topN,
@@ -1791,7 +2086,11 @@
 
   function syncData(force) {
     if (!runtime.ready) return;
-    var semSig = txt(state.semester);
+    // גם המסלול, ולא רק הסמסטר: ‏/api/semester/<n>/courses מקבל ``?program=``
+    // ומחזיר רשימה ריקה למסלול שאין לו תוכנית. בלי המסלול בחתימה החלפת
+    // מסלול לא הייתה מושכת מחדש כלום, והרשימה של המסלול הקודם — כולל מה
+    // שסומן ממנה — הייתה נשארת על המסך.
+    var semSig = txt(state.semester) + "|" + txt(state.program);
     if (force || semSig !== lastSig.semester) {
       lastSig.semester = semSig;
       fetchSemesterCourses();
@@ -2059,6 +2358,9 @@
     ui.creditsTotal = byId("credits-total");
     ui.creditsUnknown = byId("credits-unknown");
     ui.coursesNote = byId("courses-note");
+    ui.recommendedRow = byId("recommended-row");
+    ui.recommendedNote = byId("recommended-note");
+    ui.btnRestoreRecommended = byId("btn-restore-recommended");
     // ‏SPEC §4 — מצב קטלוג. אותה תיבת חיפוש, יעד אחר: כשאין תוכנית לימודים
     // היא מזינה את רשימת הקטלוג שמתחתיה במקום את הרשימה הנפתחת.
     ui.searchPlaceholder = ui.search ? txt(ui.search.getAttribute("placeholder")) : "";
@@ -2142,6 +2444,10 @@
     }
     if (ui.selYear) ui.selYear.addEventListener("change", onYearTermChange);
     if (ui.selTerm) ui.selTerm.addEventListener("change", onYearTermChange);
+
+    if (ui.btnRestoreRecommended) {
+      ui.btnRestoreRecommended.addEventListener("click", restoreRecommended);
+    }
 
     if (ui.search) {
       var searchTimer = null;
@@ -2389,7 +2695,22 @@
           label: "הוספת הקורסים החסרים",
           run: function () {
             var codes = uniq(state.codes.concat(missingTied));
-            setState({ codes: codes, activeSchedule: 0 });
+            // הוספה שעוקפת את toggleCourse, ולכן רושמת את המקור בעצמה:
+            // מה שאינו מרשימת ההמלצה הוא ידני, ושורד החלפת סמסטר.
+            var manual = state.manualCodes.slice();
+            missingTied.forEach(function (c) {
+              if (state.autoCodes.indexOf(c) === -1 && manual.indexOf(c) === -1) {
+                manual.push(c);
+              }
+            });
+            setState({
+              codes: codes,
+              manualCodes: manual,
+              autoDropped: state.autoDropped.filter(function (x) {
+                return missingTied.indexOf(x) === -1;
+              }),
+              activeSchedule: 0,
+            });
           },
         },
       });
@@ -2651,17 +2972,33 @@
     var family = tiedGroupFor(code);
     var set = selectedSet();
     var order = state.codes.slice();
+    var manual = state.manualCodes.slice();
+    var dropped = state.autoDropped.slice();
 
     family.forEach(function (c) {
+      var fromPlan = state.autoCodes.indexOf(c) !== -1;
       if (checked) {
         if (!set[c]) {
           set[c] = true;
           order.push(c);
         }
+        // סימון חוזר מבטל את ה"ביטול". קורס שאינו מרשימת ההמלצה נרשם
+        // כידני, וזה מה שמאפשר לו לשרוד מעבר לסמסטר אחר — בדיוק המקרה
+        // של השלמת קורס מסמסטר קודם.
+        dropped = dropped.filter(function (x) {
+          return x !== c;
+        });
+        if (!fromPlan && manual.indexOf(c) === -1) manual.push(c);
       } else {
         delete set[c];
         delete state.pinned[c];
         delete state.ranked[c];
+        // ביטול של קורס מומלץ נזכר, אחרת משיכה חוזרת של רשימת הסמסטר
+        // הייתה מסמנת אותו שוב ומבטלת את ההחלטה בלי לומר מילה.
+        if (fromPlan && dropped.indexOf(c) === -1) dropped.push(c);
+        manual = manual.filter(function (x) {
+          return x !== c;
+        });
       }
     });
 
@@ -2675,7 +3012,12 @@
         "info"
       );
     }
-    setState({ codes: uniq(codes), activeSchedule: 0 });
+    setState({
+      codes: uniq(codes),
+      manualCodes: manual,
+      autoDropped: dropped,
+      activeSchedule: 0,
+    });
   }
 
   /**
@@ -2773,6 +3115,8 @@
     );
     setHidden(ui.creditsUnknown, !credits.unknown);
 
+    renderRecommendedRow();
+
     if (ui.coursesNote) {
       var notes = [];
       tiedFamilies().forEach(function (family) {
@@ -2789,6 +3133,44 @@
       }
       setText(ui.coursesNote, notes.join(" "));
     }
+  }
+
+  /**
+   * שורת ההמלצה: מה סומן מראש בעקבות הבחירה בשלב 1, ומה עושים כשצריך
+   * להשלים קורס מסמסטר קודם. מוסתרת לגמרי במצב קטלוג ובקיץ — שם אין
+   * רשימת המלצה, ומשפט שמדבר עליה היה מצהיר על משהו שאינו קיים.
+   */
+  function renderRecommendedRow() {
+    if (!ui.recommendedRow) return;
+    var sem = txt(state.autoSemester);
+    var show = !catalogFallbackActive() && !!sem && runtime.semesterCourses.length > 0;
+    setHidden(ui.recommendedRow, !show);
+    setHidden(ui.btnRestoreRecommended, !show || !recommendedChanged());
+    if (!show) {
+      setText(ui.recommendedNote, "");
+      return;
+    }
+
+    // ‏"N קורסים מתוך התוכנית" ולא "N הקורסים שהתוכנית ממליצה עליהם":
+    // בסמסטר 1 התוכנית מונה עשרה, ומהם סומנו חמישה — השאר הם חלופות
+    // ושורות בלי קוד. הניסוח השני היה מצהיר על מספר שאיש לא אמר.
+    var parts = [
+      "סומנו מראש " + state.autoCodes.length +
+        " קורסים מתוך תוכנית הלימודים לסמסטר " + sem + ".",
+    ];
+    var alternatives = runtime.semesterCourses.filter(function (rec) {
+      return !!alternativeReason(rec);
+    });
+    if (alternatives.length) {
+      parts.push("קורסי חלופה — השמה או מסלול פיזיקה — לא סומנו, ויש לבחור את המתאים.");
+    }
+    if (state.autoDropped.length) {
+      parts.push("בוטלו: " + state.autoDropped.join(", ") + ".");
+    }
+    parts.push(
+      "צריך להשלים קורס מסמסטר קודם? אפשר לחפש אותו בתיבה שלמעלה ולהוסיף אותו לרשימה."
+    );
+    setText(ui.recommendedNote, parts.join(" "));
   }
 
   /**
@@ -2922,6 +3304,9 @@
     opts = opts || {};
     var code = txt(rec.code);
     var unavailable = rec.offered === false;
+    // חלופה שלא סומנה אוטומטית. בלי ההסבר הזה הסטודנט/ית רואים שלוש
+    // שורות אנגלית ריקות ולא יודעים אם זו תקלה או כוונה.
+    var altReason = isExtra ? "" : alternativeReason(rec);
 
     var box = el("input", {
       attrs: { type: "checkbox" },
@@ -2954,6 +3339,9 @@
     if (txt(rec.note)) {
       main.appendChild(el("span", { class: "course-meta", text: txt(rec.note) }));
     }
+    if (altReason) {
+      main.appendChild(el("span", { class: "course-meta", text: altReason }));
+    }
 
     var tags = el("div", { class: "course-tags" });
     if (rec.fromCatalog) {
@@ -2979,6 +3367,9 @@
     }
     if (isTied(code)) {
       tags.appendChild(el("span", { class: "tag tag--tied", text: "קורס צמוד" }));
+    }
+    if (altReason) {
+      tags.appendChild(el("span", { class: "tag tag--warn", text: "חלופה — לבחירה ידנית" }));
     }
     if (unavailable) {
       tags.appendChild(el("span", { class: "tag tag--dead", text: "לא נפתח בסמסטר" }));
@@ -4417,6 +4808,11 @@
 
   function boot() {
     runtime.restored = loadState();
+    // לאיזה סמסטר הבחירה השמורה שייכת. האימוץ החד-פעמי ב-
+    // ``applyRecommendedDefaults`` נשען על זה: בחירה ששייכת לסמסטר 5 אינה
+    // תשובה לשאלה "מה מומלץ בסמסטר 3", ואימוץ שלה שם היה רושם את כל ההמלצה
+    // החדשה כ"בוטלה" ומשאיר את הרשימה ריקה.
+    runtime.adoptSemester = runtime.restored ? txt(state.semester) : "";
     cacheElements();
     wireEvents();
     refreshColorMap();
