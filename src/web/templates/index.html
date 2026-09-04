@@ -154,6 +154,13 @@
 
 <main class="steps" id="steps">
 
+  <!-- ‏שתי עמודות מעל 1100px (ראו style.css §13): העמודה הזאת היא
+       הימנית — שם מתחילים לקרוא — והמערכת נדבקת משמאלה. מתחת לרוחב
+       הזה שתי העטיפות הן display: contents, כלומר אין להן קופסה
+       והפריסה חוזרת בדיוק לעמודה אחת. תוכן העטיפות לא הוזח פנימה
+       בכוונה: הן שכבת פריסה בלבד, וההזחה הייתה מסתירה את השינוי. -->
+  <div class="steps-config" id="steps-config">
+
   <!-- ===================== 1. שנה וסמסטר ===================== -->
   <section class="step" id="step-year" data-step="1" aria-labelledby="step-year-title">
     <div class="step-head">
@@ -346,6 +353,10 @@
     </div>
   </section>
 
+  </div>
+
+  <div class="steps-result" id="steps-result">
+
   <!-- ===================== 5. המערכת ===================== -->
   <section class="step" id="step-schedule" data-step="5" aria-labelledby="step-schedule-title">
     <div class="step-head">
@@ -383,6 +394,8 @@
       <p class="note" id="schedule-note"></p>
     </div>
   </section>
+
+  </div>
 
 </main>
 
