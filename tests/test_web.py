@@ -98,7 +98,9 @@ CODES = ["11069", "61753", "61756", "61757", "61832", "62027"]
 TIED_TRIO = {"61756", "61757", "62027"}
 TOTAL_GROUPS = 27
 PICKS_PER_SCHEDULE = 12  # רכיב אחד לכל (קורס, סוג): 1+2+3+2+2+2
-FEASIBLE_COUNT = 54
+# ‏עודכן ב-2026-09-04 אחרי ריענון מלא: ראו ההערה ב-tests/test_attendance.py.
+# תיקון הקבוצות המקושרות נכנס לנתונים רק בריענון, ופתח צירופים שהיו חסומים.
+FEASIBLE_COUNT = 83
 MIN_DAYS = 4
 DAYS_USED = [1, 2, 3, 4]
 
@@ -828,7 +830,7 @@ def solve_payload(app):
     return data
 
 
-def test_solve_finds_the_sixteen_feasible_combinations(solve_payload):
+def test_solve_finds_every_feasible_combination(solve_payload):
     assert solve_payload.get("feasible_count") == FEASIBLE_COUNT
 
 
@@ -921,8 +923,8 @@ def test_solve_pin_narrows_the_result_set_to_the_pinned_group(client):
         assert [p["group_id"] for p in chosen] == ["271060310/1"], (
             f"הנעיצה לא כובדה: {chosen}"
         )
-    assert data.get("feasible_count") == 7, (
-        f"נעיצת תרגול 271060310/1 משאירה 4 צירופים; קיבלתי {data.get('feasible_count')}"
+    assert data.get("feasible_count") == 14, (
+        f"נעיצת תרגול 271060310/1 משאירה 14 צירופים; קיבלתי {data.get('feasible_count')}"
     )
 
 
@@ -977,14 +979,23 @@ def test_solve_marks_the_good_group_as_viable(solve_payload):
 #: ‏61832 תרגול 271070210/1 מותר רק עם הרצאת יהלום (א 12:50-15:50), והשילוב
 #: הזה אינו ניתן להשלמה. תשעת ה"מבויים" שדווחו קודם היו כולם תוצר של מסנן
 #: שמחק קישורים לגיטימיים — זה האמיתי היחיד.
-KNOWN_DEAD_ENDS = {("61832", "תרגול", "271070210/1")}
+#: ‏ריק, ובכוונה. עד 2026-09-04 ישב כאן ("61832", "תרגול", "271070210/1"),
+#: והוא היה שריד לנתונים שנפרסרו לפני תיקון הקבוצות המקושרות: הרצאת
+#: ‏271060310/1 לא הצביעה על המזהה של עצמה, ולכן התרגול ההוא נראה בלתי-שביר.
+#: אחרי ריענון מלא מהידיעון, עם הפרסר המתוקן, אין אף מבוי סתום.
+KNOWN_DEAD_ENDS: set[tuple[str, str, str]] = set()
 
 
-def test_only_the_one_known_dead_end_remains(solve_payload):
-    """שומר על שני הכיוונים: שהמבוי האמיתי מזוהה, ושלא צצים מבויים מדומים.
+def test_no_phantom_dead_ends_appear(solve_payload):
+    """אין מבויים סתומים, וגם לא אמורים לצוץ כאלה.
 
-    לפני תיקון הפרסר היו כאן תשעה, וכולם היו שקריים. אחריו נשאר אחד בלבד,
-    והוא אמיתי — אומת בספירה ישירה מול המנוע.
+    ההיסטוריה כאן שווה זכירה: לפני תיקון הפרסר היו תשעה מבויים, וכולם היו
+    שקריים. אחריו נשאר אחד, שנראה אמיתי — ואחרי ריענון מלא מהידיעון עם
+    הפרסר המתוקן התברר שגם הוא היה שריד: הרצאת 271060310/1 של 61832 לא
+    הצביעה על המזהה של עצמה, ובבראודה הרצאה ותרגול חולקים מזהה קבוצה.
+
+    הבדיקה שומרת עכשיו על כיוון אחד בלבד — שלא יצוצו מבויים מדומים — וזה
+    הכיוון שכל התקלות כאן היו בו ממילא.
     """
     viability = solve_payload["viability"]
     dead = {

@@ -135,7 +135,7 @@ refresh.py                עבודת הרענון היומית + התקנה ל-T
 reparse.py                פענוח מחדש של דפי ה-HTML השמורים, בלי רשת ובלי התחברות
 src/render.py             טרמינל + HTML
 src/cli.py, main.py       הזרימה האינטראקטיבית
-tests/                    537 בדיקות, רצות לגמרי בלי רשת (20 מהן בכרומיום מקומי)
+tests/                    548 בדיקות, רצות לגמרי בלי רשת (20 מהן בכרומיום מקומי)
 tests/fixtures/real_yedion/  6 דפי ידיעון אמיתיים (כולל קטלוג מלא) לבדיקת הפענוח
 GROUND_TRUTH.md           הפרוטוקול המאומת של הידיעון — המסמך הכי חשוב כאן
 SPEC.md                   חוזה הממשקים המקורי
@@ -145,7 +145,7 @@ SPEC_AUTOREFRESH.md       חוזה הגילוי, מסד הנתונים והרע�
 ## בדיקות
 
 ```bash
-python -m pytest tests/ -q     # 537 עוברות, ללא רשת
+python -m pytest tests/ -q     # 548 עוברות, ללא רשת
 ```
 
 ‏`tests/test_recommended_defaults_browser.py` מריץ את שלב 2 בכרומיום מקומי — זו

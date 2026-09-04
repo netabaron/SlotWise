@@ -96,7 +96,11 @@ CLASH_B = ("61756", KIND_TUTORIAL, "271060310/3")
 OPTIONAL_LECTURE = {"61753": {KIND_LECTURE: False}}
 
 #: המספרים של היום, לפני השינוי. אלה קבועי הרגרסיה של כל הפיצ'ר.
-TODAY_FEASIBLE = 54
+#: ‏עודכנו ב-2026-09-04 אחרי ריענון מלא מהידיעון: תיקון הקבוצות המקושרות
+#: מהקומיט הקודם נכנס לנתונים רק כשהדפים נמשכו ופורסרו מחדש. קבוצת הרצאה
+#: מקושרת גם למזהה של עצמה — בבראודה הרצאה ותרגול חולקים מזהה קבוצה —
+#: ולכן יש יותר צירופי הרצאה↔תרגול חוקיים. ‏54 -> 83.
+TODAY_FEASIBLE = 83
 TODAY_MIN_DAYS = 4
 TODAY_COURSES = 6
 TODAY_GROUPS = 27
@@ -107,7 +111,7 @@ TODAY_GROUPS = 27
 STUDENT_CODES = ["11069", "61753", "61756", "61757", "61832", "62027"]
 
 #: אחרי שמסמנים את הרצאת 61753 כלא-חובה ומאפשרים חפיפות רכות.
-SOFT_FEASIBLE = 370
+SOFT_FEASIBLE = 564
 SOFT_MIN_DAYS = 4
 
 
@@ -241,7 +245,7 @@ def test_default_preferences_have_no_attendance_overrides():
     assert prefs.allow_soft_conflicts is True
 
 
-def test_default_preferences_reproduce_exactly_sixteen_combinations(courses):
+def test_default_preferences_reproduce_the_strict_enumeration(courses):
     """**שומר הרגרסיה של כל השינוי.** 16 צירופים, בדיוק כמו לפניו."""
     assert len(list(enumerate_selections(courses, Preferences()))) == TODAY_FEASIBLE
 
@@ -566,7 +570,7 @@ def test_waiving_attendance_opens_schedules_the_strict_solver_rejects(courses):
     assert all(s.is_feasible() for s in strict), "הפתרון הקשיח לעולם בלי חפיפות"
 
 
-def test_the_strict_sixteen_are_a_subset_of_the_soft_enumeration(courses):
+def test_the_strict_enumeration_is_a_subset_of_the_soft_one(courses):
     def key(sel):
         return tuple(
             sorted(f"{g.course_code}~{g.kind}~{g.group_id}" for g in sel.groups)

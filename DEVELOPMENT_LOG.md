@@ -315,6 +315,59 @@ that reproduces all four, so these JSON files are currently artifacts rather tha
 
 ---
 
+## Phase 11 — Re-baselining the solver constants (2026-09-04)
+
+Eleven tests in `test_attendance.py` and `test_web.py` were failing. They assert solver constants
+measured against a particular `data/db` vintage, and the database had gone mixed: most courses were a
+day old, six had been refetched hours earlier by verification scripts that ran with the network on.
+
+`python refresh.py` (571 tracked courses, ~29 min, HTTP path, no login) reported **partial**: 286
+refreshed, 260 failed, 172 changes. Of the failures, 255 are `parse returned no course` — the normal
+outcome for tracked codes the yedion does not serve a course page for — and 5 were HTTP errors. It
+also **skipped the two courses that mattered most**, 61832 and 62027, because they were under the
+20-hour staleness threshold; a targeted `--codes ... --max-age 0` brought all six to one vintage.
+
+**Why the numbers moved, which is the whole point of doing this properly.** In `61832`, two lecture
+groups now carry a `linked_to` entry pointing at *their own group id*:
+
+```
+271060310/1 הרצאה   now = ['271060310/1', '271060310/2', '271070210/1']
+                    was = [                '271060310/2', '271070210/1']
+```
+
+That self-link is exactly what the "do not link a group to itself" filter removed in Phase 9 used to
+drop, and it is correct — at Braude a lecture and its tutorial **share a group id**, so a lecture
+linking to its own id means "the tutorial with that id". The parser was fixed in Phase 9, but the
+stored data still held pre-fix pages; only re-fetching and re-parsing put the fix into the database.
+
+Consequences, all one cause:
+
+| constant | was | now |
+|---|---|---|
+| `FEASIBLE_COUNT` / `TODAY_FEASIBLE` | 54 | 83 |
+| `SOFT_FEASIBLE` | 370 | 564 |
+| pinned-tutorial count | 7 | 14 |
+| `KNOWN_DEAD_ENDS` | 1 entry | **none** |
+
+Unchanged and re-verified: `TOTAL_GROUPS` 27, `PICKS_PER_SCHEDULE` 12, `MIN_DAYS` 4,
+`DAYS_USED` [1,2,3,4], and the group ids the pin test names.
+
+The last dead end was itself an artifact. `61832 תרגול 271070210/1` looked unreachable only because
+its lecture's `linked_to` was missing the self-referential id. Nine dead ends before the parser fix,
+one after, none after the data caught up — so `test_only_the_one_known_dead_end_remains` became
+`test_no_phantom_dead_ends_appear`, which is the direction every bug here was ever in.
+
+Three test names still said "sixteen" while asserting 83, stale since the 16→54 re-baseline. Renamed;
+a name that has to be re-read against the constant is worse than no name.
+
+**548 passing, 6 skipped, zero failures** — the first fully green suite since the database drifted.
+
+**The lesson, recorded because it cost real time:** verification scripts must run with
+`allow_network: False` against the real `data/db`, or point at a temp copy. The committed browser
+tests do; ad-hoc scratch scripts did not, and quietly moved five baselines.
+
+---
+
 ## Things that cost time, worth remembering
 
 - **Heredocs and Hebrew.** `bash <<'EOF'` broke on Hebrew apostrophes (`א'`). Use the file-writing
