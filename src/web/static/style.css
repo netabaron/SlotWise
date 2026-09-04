@@ -610,6 +610,85 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
 
 .step-body { display: flex; flex-direction: column; gap: var(--gap); }
 
+/* ---- קיפול שלב לשורת סיכום אחת ----
+   הכפתור יושב בתוך ה-h2 ותופס את כל רוחב הכותרת, כדי שאפשר יהיה ללחוץ
+   על כל השורה ולא רק על המילה. עיגול המספר/ה-✓ נשאר על ‎.step-title::before‎
+   ולכן כל כללי המצב הקיימים ממשיכים לעבוד בלי שינוי. */
+.step-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  min-inline-size: 0;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  /* המרווח השלילי מחזיר את הכפתור לקו הכותרת המקורי אחרי הריפוד. */
+  padding: 3px 6px;
+  margin: -3px -6px;
+  cursor: pointer;
+}
+
+.step-toggle:hover { background: var(--panel-2); }
+
+.step-name { flex: none; }
+
+/* שורת הסיכום קיימת תמיד ב-DOM (שם נגיש לכפתור), ונראית רק כשמקופל. */
+.step-summary { display: none; }
+
+.step-caret {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--muted);
+  font-size: .8em;
+  line-height: 1;
+}
+
+.step-caret::before {
+  content: "\25BE";
+  display: block;
+  transition: transform .15s ease;
+}
+
+.step.is-collapsed .step-caret::before { transform: rotate(90deg); }
+
+.step.is-collapsed { padding-block-end: 16px; }
+.step.is-collapsed .step-head { margin-block-end: 0; }
+.step.is-collapsed .step-hint,
+.step.is-collapsed .step-state { display: none; }
+
+/* ‏‎> ‎ הכרחי: ל-#catalog-browse ול-#electives יש גם הם class="step-body",
+   והם יושבים **בתוך** גוף שלב 2. בלי הצירוף הישיר קיפול שלב 2 היה מסתיר
+   אותם גם כשהשלב פרוס. */
+.step.is-collapsed > .step-body { display: none; }
+
+.step.is-collapsed .step-summary::before {
+  content: "\00B7";
+  margin-inline-end: .4em;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.step.is-collapsed .step-summary {
+  display: block;
+  flex: 1;
+  min-inline-size: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+  /* סיכום ארוך נחתך ולא שובר את השורה — שורה אחת פירושה שורה אחת. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* שלב נעול לא ניתן לקיפול: אין בו עדיין מה לסכם. */
+.step.is-locked .step-toggle { cursor: default; }
+.step.is-locked .step-caret { visibility: hidden; }
+
 .note {
   font-size: 12.5px;
   color: var(--muted);
@@ -1271,6 +1350,10 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
   }
 
   #step-schedule .step-title::before { display: none; }
+  /* שלב 5 אינו מתקפל, ובכל זאת: הדף המודפס הוא רק הוא, ודף ריק בגלל
+     class שנשאר תקוע אינו כשל שרוצים לגלות מול המדפסת. */
+  #step-schedule > .step-body { display: flex !important; }
+  .step-caret { display: none !important; }
   .step-head { margin-block-end: 8px; }
   .facts { gap: 6px; }
   .fact { padding: 4px 10px; }

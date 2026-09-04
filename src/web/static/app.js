@@ -61,6 +61,19 @@
   var YEAR_LABELS = { 1: "שנה א׳", 2: "שנה ב׳", 3: "שנה ג׳", 4: "שנה ד׳" };
 
   /**
+   * אילו שלבים אפשר לקפל ביד. שלב 5 (המערכת) אינו ברשימה בכוונה: הוא הפלט,
+   * והוא גם היחיד שנשלח למדפסת — שלב מקופל היה מדפיס דף ריק.
+   */
+  var COLLAPSIBLE_STEPS = ["year", "courses", "days", "lecturers"];
+
+  /**
+   * ומה מתקפל **מעצמו** כשחוזרים לעמוד. שלב 1 אינו ברשימה: הוא נקודת
+   * הכניסה — שנה, סמסטר ומסלול הם מה שמחליפים הכי הרבה — והוא גם קצר
+   * ממילא. אפשר לקפל אותו ביד, פשוט לא אוטומטית.
+   */
+  var AUTO_COLLAPSE_STEPS = ["courses", "days", "lecturers"];
+
+  /**
    * קורסים צמודים — רשת ביטחון בלבד.
    * המקור האמיתי הוא ``tied_with`` שמגיע מהשרת (מתוך curriculum.json);
    * זה נכנס לפעולה רק אם השדה חסר.
@@ -456,6 +469,10 @@
       ranked: {}, // {code: [שם מרצה, ...]}
       topN: 5,
       activeSchedule: 0,
+      // קיפול שלבים: {מפתח שלב: true/false}. **רק בחירה מפורשת** נרשמת כאן,
+      // ולכן מפתח חסר פירושו "לא הוכרע" — וזה מה שמתיר לקיפול האוטומטי
+      // לפעול פעם אחת בלי לדרוס העדפה שנקבעה ביד.
+      collapsed: {},
     };
   }
 
@@ -533,6 +550,11 @@
     reparseBusy: false,
     colors: Object.create(null),
     dismissed: Object.create(null),
+    // ‏האם המשתמש/ת כבר נגעו במשהו בעמוד. הקיפול האוטומטי פועל רק לפני
+    // הנגיעה הראשונה: שלב שנסגר מתחת לאצבע באמצע עבודה הוא הפרעה, לא עזרה.
+    userActed: false,
+    // אילו שלבים כבר נשקלו לקיפול אוטומטי — שיקול אחד לכל שלב, לכל טעינה.
+    autoCollapsed: Object.create(null),
     // איזה ‏<details> בתוך באנר פתוח כרגע, לפי מפתח הבאנר.
     // ‏renderBanners בונה את #banners מחדש בכל ציור — וגם כל שתי שניות בזמן
     // רענון — ולכן מצב "פתוח" של אלמנט חייב לחיות כאן ולא ב-DOM, אחרת הרשימה
@@ -593,6 +615,7 @@
     if (!base.pinned || typeof base.pinned !== "object") base.pinned = {};
     if (!base.ranked || typeof base.ranked !== "object") base.ranked = {};
     if (!base.attendance || typeof base.attendance !== "object") base.attendance = {};
+    if (!base.collapsed || typeof base.collapsed !== "object") base.collapsed = {};
     base.allowSoftConflicts = true;  // גם מצב ישן שנשמר ב-localStorage מיושר
     if (!Array.isArray(base.blocked)) base.blocked = [];
     base.targetDays = clamp(Math.round(num(base.targetDays, 4)), 2, 6);
@@ -2491,6 +2514,13 @@
       lecturers: byId("step-lecturers-state"),
       schedule: byId("step-schedule-state"),
     };
+    // שלב 5 אינו מתקפל, ולכן אין לו כפתור ואין לו שורת סיכום.
+    ui.stepToggles = {};
+    ui.stepSummaries = {};
+    COLLAPSIBLE_STEPS.forEach(function (key) {
+      ui.stepToggles[key] = byId("step-" + key + "-toggle");
+      ui.stepSummaries[key] = byId("step-" + key + "-summary");
+    });
   }
 
   /**
@@ -2631,6 +2661,40 @@
         }
       });
     }
+
+    COLLAPSIBLE_STEPS.forEach(function (key) {
+      var btn = ui.stepToggles[key];
+      if (!btn) return;
+      btn.addEventListener("click", function () {
+        // שלב נעול אינו מציג כלום ואינו מקופל; לחיצה עליו לא תרשום העדפה
+        // שתקפוץ ותקפל אותו ברגע שייפתח.
+        var section = ui.steps[key];
+        if (section && section.classList.contains("is-locked")) return;
+        var next = !stepCollapsed(key);
+        // בחירה מפורשת גוברת על הקיפול האוטומטי, ולתמיד: מרגע שנרשמה
+        // כאן, ``autoCollapseIfIdle`` כבר לא נוגע בשלב הזה.
+        state.collapsed[key] = next;
+        runtime.autoCollapsed[key] = true;
+        setState({ collapsed: state.collapsed }, { solve: false });
+      });
+    });
+
+    // נגיעה ראשונה כלשהי בעמוד מכבה את הקיפול האוטומטי. ``capture`` כדי
+    // שגם לחיצה שנעצרת בדרך תיספר, ו-``passive`` כדי לא לעכב גלילה.
+    ["pointerdown", "keydown", "change"].forEach(function (evt) {
+      document.addEventListener(
+        evt,
+        function () {
+          runtime.userActed = true;
+        },
+        { capture: true, passive: true }
+      );
+    });
+  }
+
+  /** האם השלב מקופל כרגע. מפתח חסר = פרוס. */
+  function stepCollapsed(key) {
+    return state.collapsed[key] === true;
   }
 
   function onYearTermChange() {
@@ -4950,6 +5014,37 @@
 
   /* --- מצב חמשת השלבים ------------------------------------------------ */
 
+  /**
+   * מקפל שלבים שכבר היו מוכנים כשהגענו לעמוד.
+   *
+   * שלושה תנאים, וכולם נחוצים:
+   *  1. ``runtime.restored`` — יש מצב שמור. בכניסה ראשונה אין מה לקפל,
+   *     והעמוד צריך להיראות כאשף מלא.
+   *  2. ``!runtime.userActed`` — עוד לא נגעו בכלום. אחרי הנגיעה הראשונה
+   *     שום דבר לא נסגר מעצמו, כדי ששלב לא ייעלם באמצע עבודה בו.
+   *  3. ``state.collapsed[key] === undefined`` — לא נקבעה העדפה מפורשת.
+   *
+   * השיקול נעשה פעם אחת לכל שלב (``runtime.autoCollapsed``), כי "הושלם"
+   * של שלבים 3 ו-4 מגיע רק אחרי שהפתרון הראשון חוזר מהשרת — כמה ציורים
+   * אחרי הטעינה.
+   */
+  function autoCollapseIfIdle(steps) {
+    if (!runtime.restored || runtime.userActed) return;
+    var changed = false;
+    steps.forEach(function (step) {
+      if (AUTO_COLLAPSE_STEPS.indexOf(step.key) === -1) return;
+      if (runtime.autoCollapsed[step.key]) return;
+      if (!step.complete || step.locked) return;
+      runtime.autoCollapsed[step.key] = true;
+      if (state.collapsed[step.key] === undefined) {
+        state.collapsed[step.key] = true;
+        changed = true;
+      }
+    });
+    // שמירה בלבד: אנחנו כבר בתוך ציור, ו-setState היה מזמן ציור נוסף.
+    if (changed) saveState();
+  }
+
   function renderStepStates() {
     var hasCodes = state.codes.length > 0;
     var hasData = runtime.courses.length > 0;
@@ -5001,10 +5096,21 @@
         key: "lecturers",
         locked: !hasData,
         complete: hasData && (rankedCount() > 0 || pinCount() > 0 || list.length > 0),
+        // שני החלקים נאמרים תמיד, גם כשהם אפס: כשהשלב מקופל זו כל האמירה
+        // שנשארת עליו, ו"ללא נעיצות" הוא מידע — היעדרו אינו.
         text: !hasData
           ? "ממתין לנתוני הקבוצות"
-          : (rankedCount() ? rankedCount() + " מרצים מדורגים" : "בלי העדפת מרצים") +
-            (pinCount() ? " · " + pinCount() + " קבוצות נעוצות" : ""),
+          : (rankedCount() === 0
+              ? "בלי העדפות מרצים"
+              : rankedCount() === 1
+              ? "העדפה אחת"
+              : rankedCount() + " העדפות") +
+            " · " +
+            (pinCount() === 0
+              ? "ללא נעיצות"
+              : pinCount() === 1
+              ? "נעיצה אחת"
+              : pinCount() + " נעיצות"),
       },
       {
         key: "schedule",
@@ -5023,19 +5129,29 @@
       },
     ];
 
+    autoCollapseIfIdle(steps);
+
     var activeAssigned = false;
     steps.forEach(function (step) {
       var node = ui.steps[step.key];
       setText(ui.stepStates[step.key], step.text);
+      // שורת הסיכום היא אותו טקסט בדיוק — היא פשוט זו שנראית כשמקופל,
+      // ומשמשת גם כשם הנגיש של הכפתור.
+      setText(ui.stepSummaries[step.key], step.text);
       if (!node) return;
       var isActive = false;
       if (!activeAssigned && !step.locked && !step.complete) {
         isActive = true;
         activeAssigned = true;
       }
+      // שלב נעול הוא ריק ממילא, ואין טעם לקפל אותו.
+      var collapsed = stepCollapsed(step.key) && !step.locked;
       setClass(node, "is-locked", step.locked);
       setClass(node, "is-complete", step.complete && !step.locked);
       setClass(node, "is-active", isActive);
+      setClass(node, "is-collapsed", collapsed);
+      var toggle = ui.stepToggles[step.key];
+      if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
       if (step.locked) node.setAttribute("aria-disabled", "true");
       else node.removeAttribute("aria-disabled");
     });

@@ -49,9 +49,18 @@
     #step-year #step-courses #step-days #step-lecturers #step-schedule
     לכל section.step יש data-step="1".."5", והמספר מוצג אוטומטית ב-CSS.
     מצבים: class "is-active" (השלב הנוכחי) · "is-complete" (הושלם) ·
-           "is-locked" (עדיין לא זמין — רצוי גם aria-disabled="true").
+           "is-locked" (עדיין לא זמין — רצוי גם aria-disabled="true") ·
+           "is-collapsed" (מקופל לשורת סיכום אחת).
     #step-year-state #step-courses-state #step-days-state
     #step-lecturers-state #step-schedule-state   שורת מצב קצרה בכל שלב (aria-live)
+
+    קיפול (שלבים 1..4 בלבד — שלב 5 הוא הפלט, והוא גם מה שנשלח למדפסת):
+    #step-<key>-toggle    הכפתור שבתוך ה-h2. יש לעדכן בו aria-expanded.
+    #step-<key>-summary   אותו טקסט כמו ב-#step-<key>-state, מוצג רק כשמקופל.
+    #step-<key>-body      גוף השלב, היעד של aria-controls.
+    הקיפול הוא class על ה-section ("is-collapsed") ולא el.hidden על הגוף:
+    ‏#catalog-browse ו-#electives נושאים גם הם class="step-body" בתוך שלב 2,
+    ולכן הכלל ב-CSS חייב להיות ‎.step.is-collapsed > .step-body‎.
 
   1 שנה וסמסטר   #select-year #select-term #semester-summary #year-note
   2 קורסים        #course-search #course-search-results #course-list
@@ -148,11 +157,18 @@
   <!-- ===================== 1. שנה וסמסטר ===================== -->
   <section class="step" id="step-year" data-step="1" aria-labelledby="step-year-title">
     <div class="step-head">
-      <h2 class="step-title" id="step-year-title">מסלול, שנה וסמסטר</h2>
+      <h2 class="step-title">
+        <button type="button" class="step-toggle" id="step-year-toggle"
+                aria-expanded="true" aria-controls="step-year-body">
+          <span class="step-name" id="step-year-title">מסלול, שנה וסמסטר</span>
+          <span class="step-summary" id="step-year-summary"></span>
+          <span class="step-caret" aria-hidden="true"></span>
+        </button>
+      </h2>
       <p class="step-hint">קובעים אילו קורסים יוצעו.</p>
       <p class="step-state" id="step-year-state" aria-live="polite"></p>
     </div>
-    <div class="step-body">
+    <div class="step-body" id="step-year-body">
       <div class="field-row">
         <div class="field">
           <label class="label" for="select-program">מסלול</label>
@@ -175,11 +191,18 @@
   <!-- ===================== 2. קורסים ===================== -->
   <section class="step" id="step-courses" data-step="2" aria-labelledby="step-courses-title">
     <div class="step-head">
-      <h2 class="step-title" id="step-courses-title">קורסים</h2>
+      <h2 class="step-title">
+        <button type="button" class="step-toggle" id="step-courses-toggle"
+                aria-expanded="true" aria-controls="step-courses-body">
+          <span class="step-name" id="step-courses-title">קורסים</span>
+          <span class="step-summary" id="step-courses-summary"></span>
+          <span class="step-caret" aria-hidden="true"></span>
+        </button>
+      </h2>
       <p class="step-hint">לסמן מה לומדים. קורסים צמודים נבחרים יחד. אפשר להוסיף כל קורס אחר, כולל חזרה על קורס.</p>
       <p class="step-state" id="step-courses-state" aria-live="polite"></p>
     </div>
-    <div class="step-body">
+    <div class="step-body" id="step-courses-body">
       <div class="courses-toolbar">
         <div class="field field-grow">
           <label class="label" for="course-search">הוספת קורס מהידיעון</label>
@@ -237,11 +260,18 @@
   <!-- ===================== 3. ימי לימוד ===================== -->
   <section class="step" id="step-days" data-step="3" aria-labelledby="step-days-title">
     <div class="step-head">
-      <h2 class="step-title" id="step-days-title">ימי לימוד</h2>
+      <h2 class="step-title">
+        <button type="button" class="step-toggle" id="step-days-toggle"
+                aria-expanded="true" aria-controls="step-days-body">
+          <span class="step-name" id="step-days-title">ימי לימוד</span>
+          <span class="step-summary" id="step-days-summary"></span>
+          <span class="step-caret" aria-hidden="true"></span>
+        </button>
+      </h2>
       <p class="step-hint">כמה ימים להגיע לקמפוס. זה יעד — המינימום האפשרי מוצג לצידו.</p>
       <p class="step-state" id="step-days-state" aria-live="polite"></p>
     </div>
-    <div class="step-body">
+    <div class="step-body" id="step-days-body">
       <div class="field">
         <span class="label" id="days-buttons-label">יעד ימי לימוד</span>
         <div class="days-row" id="days-buttons" role="radiogroup" aria-labelledby="days-buttons-label">
@@ -287,11 +317,18 @@
   <!-- ===================== 4. מרצים ===================== -->
   <section class="step" id="step-lecturers" data-step="4" aria-labelledby="step-lecturers-title">
     <div class="step-head">
-      <h2 class="step-title" id="step-lecturers-title">מרצים</h2>
+      <h2 class="step-title">
+        <button type="button" class="step-toggle" id="step-lecturers-toggle"
+                aria-expanded="true" aria-controls="step-lecturers-body">
+          <span class="step-name" id="step-lecturers-title">מרצים</span>
+          <span class="step-summary" id="step-lecturers-summary"></span>
+          <span class="step-caret" aria-hidden="true"></span>
+        </button>
+      </h2>
       <p class="step-hint">לחיצה על שורה מדרגת מרצה. 📌 מקבעת קבוצה. שורה מעומעמת — אין איתה פתרון.</p>
       <p class="step-state" id="step-lecturers-state" aria-live="polite"></p>
     </div>
-    <div class="step-body">
+    <div class="step-body" id="step-lecturers-body">
       <div class="lect-toolbar">
         <p class="legend-inline">
           <span class="legend-item"><span class="rank-badge">1</span> העדפה ראשונה</span>
