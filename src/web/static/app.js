@@ -395,6 +395,19 @@
     return document.getElementById(id);
   }
 
+  /** ‏"קורס אחד" / "3 קורסים" — ניטרלי מגדרית, כמו שאר הטקסטים. */
+  function coursesHe(n) {
+    var count = Math.max(0, Math.round(num(n, 0)));
+    return count === 1 ? "קורס אחד" : count + " קורסים";
+  }
+
+  /** ‏"קורס אחד ... אינו מעודכן" מול "3 קורסים ... אינם מעודכנים". */
+  function notUpdatedHe(n, middle) {
+    var count = Math.max(0, Math.round(num(n, 0)));
+    var tail = count === 1 ? " אינו מעודכן" : " אינם מעודכנים";
+    return coursesHe(count) + txt(middle) + tail;
+  }
+
   /* =====================================================================
    * 3. מצב + שמירה מקומית
    * ===================================================================== */
@@ -520,6 +533,11 @@
     reparseBusy: false,
     colors: Object.create(null),
     dismissed: Object.create(null),
+    // איזה ‏<details> בתוך באנר פתוח כרגע, לפי מפתח הבאנר.
+    // ‏renderBanners בונה את #banners מחדש בכל ציור — וגם כל שתי שניות בזמן
+    // רענון — ולכן מצב "פתוח" של אלמנט חייב לחיות כאן ולא ב-DOM, אחרת הרשימה
+    // נסגרת מתחת לאצבע בכל סיבוב.
+    bannerOpen: Object.create(null),
     // ‏SPEC_V2 §1 — משיכה לפי דרישה: קודים שנמשכים ממש עכשיו, והמקור שחזר לכל קוד.
     fetching: Object.create(null),
     sources: Object.create(null),
@@ -2718,18 +2736,74 @@
       });
     }
 
+    // ---- נתונים ישנים ----------------------------------------------------
+    // ‏store.freshness מוסיף כל קוד שנכשל לשתי הרשימות גם יחד, ולכן
+    // ‏failed ⊆ stale **תמיד**. הצגת שתיהן זו לצד זו הייתה חוזרת על רוב
+    // הקודים פעמיים; כאן יש רשימה מאוחדת אחת, וכשל מסומן בתוכה בסימן.
+    // החלוקה הפנימית היא לפי מה שנוגע לסטודנט/ית — לא לפי סוג התקלה.
     var db = (runtime.bootstrap && runtime.bootstrap.db) || {};
-    var staleCodes = pickList(db, ["stale"], null).map(txt).filter(Boolean);
-    var failedCodes = pickList(db, ["failed"], null).map(txt).filter(Boolean);
-    if (db.any_stale === true || staleCodes.length || failedCodes.length) {
+    var staleCodes = uniq(pickList(db, ["stale"], null).map(txt).filter(Boolean));
+    var failedSet = Object.create(null);
+    uniq(pickList(db, ["failed"], null).map(txt).filter(Boolean)).forEach(function (c) {
+      failedSet[c] = true;
+    });
+    if (staleCodes.length) {
+      var chosenSet = Object.create(null);
+      state.codes.forEach(function (c) {
+        chosenSet[txt(c)] = true;
+      });
+      var staleMine = staleCodes.filter(function (c) {
+        return chosenSet[c];
+      });
+      var staleOther = staleCodes.filter(function (c) {
+        return !chosenSet[c];
+      });
+      // רועש רק כשזה נוגע למערכת שמוצגת בפועל. קטלוג בן חודשיים שאף קורס
+      // ממנו לא נבחר אינו סיבה לצעוק על מסך שלם.
+      var staleLoud = staleMine.length > 0;
+      var ageHours = num(db.age_hours, null);
+      var agePhrase =
+        ageHours === null
+          ? "לא ידוע מתי הנתונים נמשכו"
+          : "הנתונים נמשכו " + txt(db.age_text);
+
+      var staleSections = [];
+      if (staleMine.length) {
+        staleSections.push({
+          title: "מהקורסים שנבחרו (" + staleMine.length + ")",
+          codes: staleMine,
+        });
+      }
+      if (staleOther.length) {
+        staleSections.push({
+          title: "קורסים נוספים במסד (" + staleOther.length + ")",
+          codes: staleOther,
+        });
+      }
+
       wanted.push({
-        key: "stale-" + staleCodes.join(",") + "|" + failedCodes.join(","),
-        kind: "warn",
-        text:
-          "חלק מהנתונים כבר לא טריים" +
-          (staleCodes.length ? " (" + staleCodes.join(", ") + ")" : "") +
-          ". מומלץ להריץ “רענון מהידיעון” לפני שמסתמכים על המערכת." +
-          (failedCodes.length ? " קורסים שנכשלו: " + failedCodes.join(", ") + "." : ""),
+        // ‏crc32 ולא רשימת הקודים עצמה: המפתח נכנס גם ל-data-fk, ומחרוזת
+        // באורך מאות קודים שם היא רעש. הרגישות לשינוי בסט נשמרת.
+        key: "stale-" + crc32(staleCodes.join(",")),
+        kind: staleLoud ? "warn" : "muted",
+        text: staleLoud
+          ? agePhrase +
+            " · " +
+            notUpdatedHe(staleMine.length, " מהקורסים שנבחרו") +
+            (staleOther.length ? " (ועוד " + staleOther.length + " במסד)" : "")
+          : agePhrase +
+            " · " +
+            notUpdatedHe(staleCodes.length, " במסד") +
+            ", ואף אחד מהם אינו מהקורסים שנבחרו",
+        details: {
+          label: "הצג רשימה",
+          sections: staleSections,
+          failed: failedSet,
+          note: db.courses || {},
+        },
+        action: runtime.scrape.running
+          ? null
+          : { label: "רענון מהידיעון", run: startScrape },
       });
     }
 
@@ -2798,20 +2872,31 @@
         if (textNode) textNode.textContent = item.text;
         else node.appendChild(el("span", { class: "banner-text", text: item.text }));
 
-        if (item.action) {
-          var actionBtn = el("button", {
-            class: "btn btn-ghost btn-sm",
-            attrs: { type: "button" },
-            data: { fk: "banner-action-" + item.key },
-            text: item.action.label,
-            on: { click: item.action.run },
-          });
-          node.appendChild(actionBtn);
-        }
-
         var closeBtn = node.querySelector
           ? node.querySelector(".banner-close")
           : null;
+
+        // הכל נכנס **לפני** כפתור הסגירה, כדי שה-× יישאר אחרון בשורה.
+        function place(child) {
+          if (!child) return;
+          if (closeBtn) node.insertBefore(child, closeBtn);
+          else node.appendChild(child);
+        }
+
+        if (item.details) place(bannerDetails(item));
+
+        if (item.action) {
+          place(
+            el("button", {
+              class: "btn btn-ghost btn-sm",
+              attrs: { type: "button" },
+              data: { fk: "banner-action-" + item.key },
+              text: item.action.label,
+              on: { click: item.action.run },
+            })
+          );
+        }
+
         if (closeBtn) {
           closeBtn.dataset.fk = "banner-close-" + item.key;
           closeBtn.addEventListener("click", function () {
@@ -2822,6 +2907,68 @@
         box.appendChild(node);
       });
     });
+  }
+
+  /**
+   * הרשימה המלאה של הבאנר, מקופלת.
+   * מצב הפתיחה נשמר ב-``runtime.bannerOpen`` ולא ב-DOM: ``renderBanners``
+   * בונה את המכולה מחדש בכל ציור, ובזמן רענון זה קורה כל שתי שניות.
+   */
+  function bannerDetails(item) {
+    var spec = item.details;
+    if (!spec || !spec.sections || !spec.sections.length) return null;
+
+    var body = el("div", { class: "banner-more-body" });
+    var anyFailed = false;
+
+    spec.sections.forEach(function (section) {
+      body.appendChild(el("p", { class: "banner-more-title", text: section.title }));
+      var wrap = el("div", { class: "code-chips" });
+      section.codes.forEach(function (code) {
+        var isFailed = !!(spec.failed && spec.failed[code]);
+        if (isFailed) anyFailed = true;
+        var meta = (spec.note && spec.note[code]) || {};
+        var reason = txt(meta.last_error);
+        wrap.appendChild(
+          el("span", {
+            class: "code-chip" + (isFailed ? " is-failed" : ""),
+            text: isFailed ? code + " ✕" : code,
+            attrs: {
+              title: isFailed
+                ? reason
+                  ? "המשיכה נכשלה: " + reason
+                  : "המשיכה של הקורס נכשלה"
+                : txt(meta.age_text)
+                ? "נמשך " + txt(meta.age_text)
+                : "",
+            },
+          })
+        );
+      });
+      body.appendChild(wrap);
+    });
+
+    if (anyFailed) {
+      body.appendChild(
+        el("p", {
+          class: "banner-more-legend",
+          text: "‏✕ — המשיכה של הקורס נכשלה, ולא רק התיישנה.",
+        })
+      );
+    }
+
+    var summary = el("summary", {
+      class: "banner-more-summary",
+      text: txt(spec.label) || "הצג רשימה",
+      data: { fk: "banner-more-" + item.key },
+    });
+
+    var details = el("details", { class: "banner-more" }, [summary, body]);
+    if (runtime.bannerOpen[item.key]) details.open = true;
+    details.addEventListener("toggle", function () {
+      runtime.bannerOpen[item.key] = details.open;
+    });
+    return details;
   }
 
   function toast(message, kind) {

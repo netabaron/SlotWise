@@ -312,10 +312,13 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
 
 .banners:empty { display: none; }
 
+/* ‏שורה אחת: אייקון, טקסט, "הצג רשימה", פעולה, סגירה.
+   ‏align-items: center ולא flex-start — באנר בן שורה אחת, לא פסקה. */
 .banner {
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
   padding: 10px 14px;
   border: 1px solid var(--info-line);
   border-inline-start: 4px solid var(--info-line);
@@ -325,7 +328,13 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
   font-size: 13px;
 }
 
-.banner-text { flex: 1; }
+/* ‏min-inline-size: 0 — בלעדיו טקסט ארוך בלי רווחים מרחיב את הבאנר
+   מעבר לרוחב העמוד במקום להישבר. */
+.banner-icon { order: 0; flex: none; }
+.banner-text { order: 1; flex: 1 1 14rem; min-inline-size: 0; }
+.banner-more { order: 2; flex: none; }
+.banner .btn { order: 3; flex: none; }
+.banner-close { order: 4; flex: none; margin-inline-start: auto; }
 
 .banner-icon::before { content: "\2139"; font-weight: 700; }
 .banner--ok    { border-color: var(--ok-line);   background: var(--ok-bg);   color: var(--ok-ink); }
@@ -334,6 +343,76 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
 .banner--ok .banner-icon::before    { content: "\2713"; }
 .banner--warn .banner-icon::before  { content: "\26A0"; }
 .banner--error .banner-icon::before { content: "\2716"; }
+
+/* גוון שקט: נכון עובדתית, אבל לא דורש תשומת לב מיידית.
+   אין שלישיית טוקנים ניטרלית בקובץ, ולכן זה נבנה מטוקני הבסיס —
+   וממילא מקבל מצב כהה בלי שורה נוספת בבלוק הכהה. */
+.banner--muted {
+  border-color: var(--line-strong);
+  background: var(--chip);
+  color: var(--muted);
+}
+
+/* ---- הרשימה המלאה, מקופלת ---- */
+/* פתוח = שורה משלו ברוחב מלא, מתחת להודעה. סגור = פריט קטן בשורה. */
+.banner-more[open] {
+  order: 9;
+  flex: 1 1 100%;
+  margin-block-start: 2px;
+}
+
+.banner-more-summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.banner-more-summary:hover { background: rgba(128, 128, 128, .14); }
+
+.banner-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 4px 4px;
+}
+
+.banner-more-title {
+  font-weight: 600;
+  font-size: 12px;
+  opacity: .85;
+}
+
+.banner-more-legend { font-size: 11.5px; opacity: .8; }
+
+.code-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  /* מאות קודים לא ידחפו את העמוד: הרשימה נגללת בתוך עצמה. */
+  max-block-size: 11rem;
+  overflow-y: auto;
+}
+
+.code-chip {
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  line-height: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--ink);
+  /* הקוד הוא מספר: מוצג משמאל לימין גם בתוך עמוד ימין-לשמאל. */
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.code-chip.is-failed {
+  border-color: var(--err-line);
+  color: var(--err-ink);
+  background: var(--err-bg);
+}
 
 .banner-close {
   font: inherit;
