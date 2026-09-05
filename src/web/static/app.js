@@ -89,11 +89,32 @@
 
   var PALETTE_SIZE = 10; // ‏c0..c9, בדיוק כמו הפלטה ב-render.py
 
+  /**
+   * שמות עבריים לרכיבי הניקוד. ‏scheduler.py מייצר חמישה קבועים
+   * (‏lecturer, days, gaps, compactness, late_finish) ורכיב שישי מותנה
+   * (‏soft_conflict, רק כשיש חפיפה מכוונת בפועל). כל מפתח חייב להופיע כאן —
+   * מפתח חסר היה דולף למסך בשמו הפנימי, וכך בדיוק "late_finish" הופיע
+   * לסטודנט/ית כתווית.
+   */
   var BREAKDOWN_HE = {
-    lecturer: "מרצים",
-    days: "ימים",
+    lecturer: "מרצים מועדפים",
+    days: "ימי לימוד",
     gaps: "חורים",
     compactness: "צפיפות",
+    late_finish: "סיום מאוחר",
+    soft_conflict: "חפיפות מכוונות",
+  };
+
+  /**
+   * רכיבי ניקוד שכבר מוצגים כמדידה משלהם בשורת המדדים.
+   * ‏"חורים 3:00" (זמן בפועל) ו-"חורים ‎-12" (תרומה לניקוד) הם שני דברים
+   * שונים בתכלית שנשאו אותה תווית בדיוק, זה לצד זה. המדידה נשארת על המסך,
+   * והתרומה לניקוד עוברת לתיאור של "ניקוד" — שם היא מובנת בהקשר.
+   */
+  var BREAKDOWN_HAS_OWN_FACT = {
+    lecturer: true,
+    days: true,
+    gaps: true,
   };
 
   var PHASE_HE = {
@@ -4263,10 +4284,11 @@
           el("th", { text: "קבוצה" }),
           el("th", { text: "סוג" }),
           el("th", { text: "מרצה" }),
-          el("th", { text: "יום" }),
-          el("th", { text: "שעות" }),
+          // יום ושעה בתא אחד: הם נקראים תמיד יחד, ושתי עמודות נפרדות
+          // רק הרחיבו את הטבלה.
+          el("th", { text: "יום ושעה" }),
           el("th", { text: "חדר" }),
-          el("th", { text: "נעיצה" }),
+          el("th", { class: "th-pin", text: "נעיצה" }),
         ]),
       ]),
     ]);
@@ -4383,23 +4405,30 @@
       },
     });
 
-    // קבוצה
-    var idCell = el("td", { class: "cell-group" }, [el("span", { text: gid })]);
+    // קבוצה — הקוד המלא נשאר על המסך (הוא מה שמצליבים מול הידיעון),
+    // אבל תשעה מכל עשרה תווים בו זהים בין השורות. הסיפרה שמבדילה מודגשת,
+    // והקידומת החוזרת מעומעמת, כדי שהעין תמצא את ההבדל במקום לספור ספרות.
+    var parts = groupIdParts(gid);
+    var idCell = el("td", { class: "cell-group" }, [
+      el("span", { class: "gid", attrs: { title: "קבוצה " + gid } }, [
+        parts.prefix ? el("span", { class: "gid-prefix", text: parts.prefix }) : null,
+        el("span", { class: "gid-suffix", text: parts.suffix }),
+      ]),
+    ]);
     if (group.note) {
       idCell.appendChild(el("div", { class: "course-meta", text: group.note }));
     }
     if (group.linked_to && group.linked_to.length) {
-      // רשימה ארוכה מרחיבה את הטבלה בלי צורך — מציגים אחת ומספר, והשאר בתיאור.
+      // ‏"משויכת ל-271030210/1 ועוד 2" חזר בכל שורה כמעט ותפס עמודה שלמה.
+      // סמל אחד עם תיאור אומר את אותו הדבר בלי לדחוף את הטבלה.
       var linked = group.linked_to;
-      var linkedText =
-        linked.length <= 2
-          ? linked.join(", ")
-          : linked[0] + " ועוד " + (linked.length - 1);
+      var linkedLabel = "משויכת ל" + (linked.length === 1 ? "קבוצה " : "קבוצות ") +
+        linked.join(", ");
       idCell.appendChild(
-        el("div", {
-          class: "course-meta cell-group",
-          attrs: { title: "קבוצות מקושרות: " + linked.join(", ") },
-          text: "משויכת ל-" + linkedText,
+        el("span", {
+          class: "link-badge",
+          attrs: { title: linkedLabel, role: "img", "aria-label": linkedLabel },
+          text: "🔗",
         })
       );
     }
@@ -4417,38 +4446,46 @@
     );
     tr.appendChild(lectCell);
 
-    // יום / שעות / חדר — שורה לכל מפגש
-    var dayCell = el("td");
-    var timeCell = el("td", { class: "cell-time" });
+    // יום ושעה בתא אחד, וחדר לצידו — שורה לכל מפגש
+    var whenCell = el("td");
     var roomCell = el("td");
     if (!group.meetings.length) {
-      dayCell.appendChild(el("div", { text: "—" }));
-      timeCell.appendChild(el("div", { text: "ללא מפגשים" }));
+      whenCell.appendChild(el("div", { text: "ללא מפגשים" }));
       roomCell.appendChild(el("div", { text: "—" }));
     }
     group.meetings.forEach(function (m) {
-      dayCell.appendChild(el("div", { text: dayLetter(m.day) + "׳" }));
-      timeCell.appendChild(
-        el("div", { text: fmtTime(m.start) + "–" + fmtTime(m.end) })
+      // התא עצמו נשאר ימין-לשמאל בגלל אות היום; רק טווח השעות מבודד
+      // ל-LTR, אחרת "12:50–15:50" היה מתהפך לצד האות.
+      whenCell.appendChild(
+        el("div", { class: "when-line" }, [
+          el("span", { class: "when-day", text: dayLetter(m.day) + "׳" }),
+          el("span", { class: "cell-time", text: fmtTime(m.start) + "–" + fmtTime(m.end) }),
+        ])
       );
       roomCell.appendChild(
         el("div", { text: [m.building, m.room].filter(Boolean).join(" ") || "—" })
       );
     });
-    tr.appendChild(dayCell);
-    tr.appendChild(timeCell);
+    tr.appendChild(whenCell);
     tr.appendChild(roomCell);
 
-    // נעיצה — כפתור נפרד; הלחיצה עליו לא מדרגת מרצה
+    // נעיצה — כפתור נפרד; הלחיצה עליו לא מדרגת מרצה.
+    // הסמל מחליף ארבעים תוויות "נעיצה" זהות שמילאו עמודה שלמה. הוא נשאר
+    // נגיש למקלדת ככפתור רגיל, ו-aria-label נושא את המשמעות המלאה — כולל
+    // מספר הקבוצה, כי "נעיצה" לבדה אינה אומרת של מה.
+    var pinLabel = dead
+      ? "לא ניתן לנעוץ את קבוצה " + gid + " — " + txt(via.reason)
+      : (isPinned ? "שחרור הנעיצה מקבוצה " : "נעיצת קבוצה ") + gid;
     var pinBtn = el("button", {
       class: "pin-btn",
       attrs: {
         type: "button",
         "aria-pressed": isPinned ? "true" : "false",
-        title: dead ? via.reason : isPinned ? "שחרור הנעיצה" : "נעיצת הקבוצה הזו",
+        "aria-label": pinLabel,
+        title: pinLabel,
       },
       data: { fk: "pin-" + code + "-" + kind + "-" + gid },
-      text: isPinned ? "נעוץ ✓" : "נעיצה",
+      text: "📌",
       on: {
         click: function (ev) {
           ev.stopPropagation();
@@ -4458,13 +4495,25 @@
       },
     });
     pinBtn.disabled = dead;
-    var pinCell = el("td", {}, [pinBtn]);
-    if (dead) {
-      pinCell.appendChild(el("div", { class: "course-meta", text: via.reason }));
-    }
-    tr.appendChild(pinCell);
+    // הסיבה למבוי הסתום יושבת בתיאור של השורה ושל הכפתור בלבד. כעמודה
+    // משלה היא חזרה על עצמה בכל שורה חסומה והכפילה את רוחב הטבלה.
+    tr.appendChild(el("td", { class: "cell-pin" }, [pinBtn]));
 
     return tr;
+  }
+
+  /**
+   * ‏"271030210/1" -> {prefix: "271030210/", suffix: "1"}.
+   * בלי סימן חוצץ הכל נחשב סיומת: עדיף להדגיש יותר מדי מאשר לנחש איפה
+   * מתחיל החלק המבדיל.
+   */
+  function groupIdParts(gid) {
+    var s = txt(gid);
+    var i = s.lastIndexOf("/");
+    if (i > 0 && i < s.length - 1) {
+      return { prefix: s.slice(0, i + 1), suffix: s.slice(i + 1) };
+    }
+    return { prefix: "", suffix: s };
   }
 
   /* --- שלב 5: המערכת ------------------------------------------------- */
@@ -4526,7 +4575,13 @@
         days.sort(function (a, b) {
           return a - b;
         });
-        box.appendChild(fact("ניקוד", fmtNumber(sch.score)));
+        // ---- המדידות: מה המערכת הזאת עולה בפועל ----
+        box.appendChild(
+          fact("ניקוד", fmtNumber(sch.score), {
+            hint: "גבוה = טוב יותר",
+            title: scoreTitle(sch),
+          })
+        );
         box.appendChild(
           fact(
             "ימים",
@@ -4550,10 +4605,17 @@
             )
           );
         }
+
+        // ---- רכיבי הניקוד: רק מה שאין לו מדידה משלו, ורק מה שאינו אפס ----
         var breakdown = sch.breakdown || {};
         Object.keys(breakdown).forEach(function (k) {
+          if (BREAKDOWN_HAS_OWN_FACT[k]) return;
+          if (breakdownAlwaysZero(list, k)) return;
           box.appendChild(
-            fact(BREAKDOWN_HE[k] || k, fmtNumber(breakdown[k]))
+            fact(BREAKDOWN_HE[k] || k, fmtNumber(breakdown[k]), {
+              hint: "רכיב בניקוד",
+              title: scoreTitle(sch),
+            })
           );
         });
       });
@@ -4669,11 +4731,47 @@
    * ‏"ניקוד: -68.2". המחלקה ltr קיימת ב-style.css בדיוק בשביל זה: בלעדיה
    * המינוס של מספר שלילי מודבק בסוף ("68.2-") בגלל כיוון הכתיבה.
    */
-  function fact(label, value) {
-    return el("span", { class: "fact" }, [
+  function fact(label, value, opts) {
+    opts = opts || {};
+    var node = el("span", { class: "fact", attrs: { title: txt(opts.title) } }, [
       el("span", { class: "fact-label", text: label }),
       el("strong", { class: "fact-value ltr", text: txt(value) }),
     ]);
+    if (opts.hint) node.appendChild(el("span", { class: "fact-hint", text: opts.hint }));
+    return node;
+  }
+
+  /**
+   * מה מרכיב את הניקוד, כטקסט לתיאור הכלי.
+   * הניקוד הוא סכום של רכיבים חתומים: ``lecturer`` הוא בונוס חיובי וכל
+   * השאר קנסות שליליים. לכן אין לו תקרה ידועה, והוא כמעט תמיד שלילי —
+   * מספר שבלי ההסבר הזה אינו אומר דבר.
+   */
+  function scoreTitle(sch) {
+    var b = (sch && sch.breakdown) || {};
+    var lines = Object.keys(b).map(function (k) {
+      var v = num(b[k], 0);
+      return "· " + (BREAKDOWN_HE[k] || k) + ": " + (v > 0 ? "+" : "") + fmtNumber(v);
+    });
+    return (
+      "ניקוד גבוה יותר = מערכת טובה יותר.\n" +
+      "הוא סכום של רכיבים: העדפת מרצים מוסיפה, וימי לימוד, חורים, " +
+      "פריסה ארוכה וסיום מאוחר מורידים.\n" +
+      (lines.length ? lines.join("\n") + "\n" : "") +
+      "סך הכול: " +
+      fmtNumber(sch ? sch.score : 0)
+    );
+  }
+
+  /**
+   * האם רכיב הניקוד הזה מוצג כאפס בכל אחת מהחלופות.
+   * ההשוואה היא על הטקסט שיוצג ולא על הערך הגולמי: מדד ש-fmtNumber מעגל
+   * ל-"0" בכל החלופות הוא עמודה של אפסים על המסך, ואין מה ללמוד ממנה.
+   */
+  function breakdownAlwaysZero(list, key) {
+    return list.every(function (s) {
+      return fmtNumber(num((s.breakdown || {})[key], 0)) === "0";
+    });
   }
 
   /** סיכום נ"ז למערכת אחת, כולל ספירת הקורסים שאין להם נתון. */

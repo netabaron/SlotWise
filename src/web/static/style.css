@@ -730,6 +730,11 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
 
 .fact-label { font-size: 11px; color: var(--muted); }
 .fact-value { font-size: 16px; font-variant-numeric: tabular-nums; }
+
+/* כיוון הקריאה של המדד. מספר בלי הכיוון הזה — ובעיקר מספר שלילי —
+   אינו אומר לסטודנט/ית אם הוא טוב או רע. */
+.fact-hint { font-size: 10.5px; color: var(--muted); opacity: .85; }
+.fact[title] { cursor: help; }
 .fact--warn { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
 .fact--ok   { border-color: var(--ok-line);   background: var(--ok-bg);   color: var(--ok-ink); }
 
@@ -1027,11 +1032,14 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
 
 .lect-table tbody tr.is-dead > td,
 .lect-table tbody tr[aria-disabled="true"] > td {
-  opacity: .45;
+  opacity: .4;
   text-decoration: line-through;
   text-decoration-color: var(--dead-line);
   text-decoration-thickness: 1.5px;
 }
+
+/* הסיבה עצמה יושבת ב-title של השורה ושל כפתור הנעיצה, ולא בעמודה משלה. */
+.lect-table tbody tr.is-dead { cursor: help; }
 
 .lect-table tbody tr.is-dead:hover > td,
 .lect-table tbody tr[aria-disabled="true"]:hover > td { background: var(--err-bg); }
@@ -1050,25 +1058,55 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
   font-size: 11px;
 }
 
+/* ---- קוד הקבוצה: הקידומת חוזרת בכל שורה, הסיומת היא ההבדל ---- */
+.gid { direction: ltr; unicode-bidi: isolate; }
+.gid-prefix { opacity: .5; font-weight: 400; }
+.gid-suffix { font-weight: 700; }
+
+/* קישור בין קבוצות — סמל אחד במקום משפט שחזר בכל שורה */
+.link-badge {
+  margin-inline-start: .4em;
+  font-size: 11px;
+  cursor: help;
+  /* הסמל אינו טקסט שצריך למתוח עליו קו כשהשורה חסומה */
+  text-decoration: none;
+  display: inline-block;
+}
+
+/* יום ושעה בתא אחד */
+.when-line { display: flex; gap: .45em; align-items: baseline; }
+.when-day { font-weight: 600; }
+
+/* ---- נעיצה: סמל, לא תווית ---- */
+.th-pin,
+.cell-pin { text-align: center; inline-size: 1px; white-space: nowrap; }
+
 .pin-btn {
   font: inherit;
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 3px 10px;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 7px;
   border-radius: 999px;
-  border: 1px solid var(--line-strong);
-  background: var(--panel);
-  color: var(--muted);
+  border: 1px solid transparent;
+  background: transparent;
   cursor: pointer;
+  /* כבוי = מתאר דהוי; דלוק = מלא וצבעוני. ההבדל אינו נשען על צבע בלבד,
+     כי גם המסגרת והרקע משתנים. */
+  filter: grayscale(1);
+  opacity: .45;
+  transition: opacity .12s ease, filter .12s ease;
 }
 
-.pin-btn:hover { border-color: var(--pin-line); color: var(--pin-line); }
+.pin-btn:hover:not(:disabled) { opacity: .9; filter: grayscale(.3); }
 
 .pin-btn[aria-pressed="true"] {
-  background: var(--pin-line);
+  filter: none;
+  opacity: 1;
+  background: var(--pin-bg);
   border-color: var(--pin-line);
-  color: var(--panel);
 }
+
+.pin-btn:disabled { cursor: not-allowed; opacity: .2; }
 
 /* ==========================================================================
    11. שלב 5 — לשוניות, מקרא, והרשת השבועית
@@ -1151,13 +1189,6 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
   font-size: 12.5px;
   background: var(--chip);
   border-block-end: 1px solid var(--line-strong);
-}
-
-.hd .dayname {
-  display: block;
-  font-weight: 400;
-  font-size: 10.5px;
-  color: var(--muted);
 }
 
 /* עמודת השעות נשארת גלויה גם כשגוללים את הימים */
