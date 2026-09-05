@@ -5,12 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex, nofollow">
-<title>SlotWise — מערכת שעות בראודה</title>
+<title>{{ S.meta.title }}</title>
 <link rel="stylesheet" href="/static/style.css">
 <!-- ‏החריג היחיד לכלל "אין קוד בקובץ הזה": סקריפט חוסם, לפני הציור הראשון,
      שמחיל בחירת ערכת צבעים שמורה. עם defer הוא היה רץ אחרי הציור והעמוד
      היה מהבהב בגוון הלא נכון. אין בו לוגיקה של האפליקציה — רק תכונה אחת. -->
 <script src="/static/theme.js"></script>
+<!-- ‏אותו מקור נוסח בדיוק שממנו נבנה ה-HTML שלמעלה, מוזרם ל-app.js.
+     נתונים בלבד — אין כאן לוגיקה, וזה מה ששומר על ההצהרה שבראש הקובץ. -->
+<script>window.STRINGS = {{ S | tojson }};</script>
 </head>
 <body>
 
@@ -135,30 +138,30 @@
 
 <header class="app-header" id="app-header">
   <div class="brand">
-    <h1 class="brand-title">SlotWise</h1>
-    <p class="brand-sub">מערכת שעות בראודה · רץ במחשב הזה בלבד, בלי לשלוח שום דבר החוצה</p>
+    <h1 class="brand-title">{{ S.meta.brand }}</h1>
+    <p class="brand-sub">{{ S.meta.tagline }}</p>
   </div>
 
   <div class="header-side">
     <div class="freshness" id="freshness" role="status" aria-live="polite">
       <span class="fresh-dot" id="freshness-dot" data-state="unknown" aria-hidden="true"></span>
       <span class="fresh-lines">
-        <span class="fresh-text" id="freshness-text">בטעינת נתונים…</span>
+        <span class="fresh-text" id="freshness-text">{{ S.ui.header.freshnessLoading }}</span>
         <span class="fresh-meta" id="freshness-meta"></span>
       </span>
     </div>
     <div class="header-actions">
-      <button type="button" class="btn btn-primary" id="btn-refresh">רענון מהידיעון</button>
-      <button type="button" class="btn btn-outline" id="btn-reparse">בנייה מחדש ללא רשת</button>
-      <button type="button" class="btn btn-quiet" id="btn-log-toggle" aria-expanded="false" aria-controls="scrape-log">יומן</button>
+      <button type="button" class="btn btn-primary" id="btn-refresh">{{ S.ui.header.btnRefresh }}</button>
+      <button type="button" class="btn btn-outline" id="btn-reparse">{{ S.ui.header.btnReparse }}</button>
+      <button type="button" class="btn btn-quiet" id="btn-log-toggle" aria-expanded="false" aria-controls="scrape-log">{{ S.ui.header.btnLog }}</button>
     </div>
-    <div class="theme-toggle" id="theme-toggle" role="radiogroup" aria-label="ערכת צבעים">
+    <div class="theme-toggle" id="theme-toggle" role="radiogroup" aria-label="{{ S.ui.header.themeGroupLabel }}">
       <button type="button" class="theme-btn" role="radio" aria-checked="true"
-              data-theme-choice="system" title="לפי הגדרת מערכת ההפעלה">מערכת</button>
+              data-theme-choice="system" title="{{ S.ui.header.themeSystemTitle }}">{{ S.ui.header.themeSystem }}</button>
       <button type="button" class="theme-btn" role="radio" aria-checked="false"
-              data-theme-choice="light" title="תמיד בהיר">בהיר</button>
+              data-theme-choice="light" title="{{ S.ui.header.themeLightTitle }}">{{ S.ui.header.themeLight }}</button>
       <button type="button" class="theme-btn" role="radio" aria-checked="false"
-              data-theme-choice="dark" title="תמיד כהה">כהה</button>
+              data-theme-choice="dark" title="{{ S.ui.header.themeDarkTitle }}">{{ S.ui.header.themeDark }}</button>
     </div>
 
     <p class="fresh-meta" id="refresh-summary" role="status" aria-live="polite" hidden></p>
@@ -168,24 +171,22 @@
 <!-- ‏סרגל מצוף: מופיע רק אחרי שחולפים על שלב 1, ומחזיק את המידע
      שרוצים לראות בזמן שמשנים העדפות למטה. הוא position: fixed ולא sticky,
      כי הוא צריך להופיע בגלילה ולא במקום שבו הוא יושב ב-DOM. -->
-<div class="sticky-bar" id="sticky-bar" role="region" aria-label="סיכום המערכת הנבחרת">
-  <div class="sticky-tabs" id="sticky-tabs" role="tablist" aria-label="מערכות מוצעות"></div>
+<div class="sticky-bar" id="sticky-bar" role="region" aria-label="{{ S.ui.sticky.regionLabel }}">
+  <div class="sticky-tabs" id="sticky-tabs" role="tablist" aria-label="{{ S.ui.schedule.tabsLabel }}"></div>
   <div class="sticky-facts" id="sticky-facts"></div>
-  <button type="button" class="btn btn-primary btn-sm" id="btn-show-grid">הצג מערכת</button>
+  <button type="button" class="btn btn-primary btn-sm" id="btn-show-grid">{{ S.ui.sticky.btnShowGrid }}</button>
 </div>
 
-<div class="banners" id="banners" role="region" aria-label="הודעות" aria-live="polite"></div>
+<div class="banners" id="banners" role="region" aria-label="{{ S.ui.banners.regionLabel }}" aria-live="polite"></div>
 
 <section class="panel log-panel" id="scrape-log" hidden aria-labelledby="scrape-log-title">
   <div class="log-head">
-    <h2 class="log-title" id="scrape-log-title">יומן משיכת נתונים מהידיעון</h2>
-    <span class="log-phase" id="scrape-phase">ממתין</span>
-    <button type="button" class="btn btn-ghost btn-sm" id="btn-log-close">סגירה</button>
+    <h2 class="log-title" id="scrape-log-title">{{ S.ui.log.title }}</h2>
+    <span class="log-phase" id="scrape-phase">{{ S.ui.log.phaseIdle }}</span>
+    <button type="button" class="btn btn-ghost btn-sm" id="btn-log-close">{{ S.ui.log.close }}</button>
   </div>
   <p class="log-note">
-    משיכת הנתונים מהידיעון פועלת בלי התחברות ובלי חלון דפדפן — אין בה שלב של הזדהות,
-    והעמוד הזה לא מבקש, לא מציג ולא שומר סיסמאות. השורות שלמטה הן פירוט טכני של
-    ההתקדמות, והן נפתחות רק לפי בקשה; הסיכום הקצר מוצג בכותרת העמוד.
+    {{ S.ui.log.note }}
   </p>
   <pre class="log-lines" id="scrape-log-lines" tabindex="0" aria-live="polite"></pre>
 </section>
@@ -198,26 +199,26 @@
       <h2 class="step-title">
         <button type="button" class="step-toggle" id="step-year-toggle"
                 aria-expanded="true" aria-controls="step-year-body">
-          <span class="step-name" id="step-year-title">מסלול, שנה וסמסטר</span>
+          <span class="step-name" id="step-year-title">{{ S.ui.steps.yearTitle }}</span>
           <span class="step-summary" id="step-year-summary"></span>
           <span class="step-caret" aria-hidden="true"></span>
         </button>
       </h2>
-      <p class="step-hint">קובעים אילו קורסים יוצעו.</p>
+      <p class="step-hint">{{ S.ui.steps.yearHint }}</p>
       <p class="step-state" id="step-year-state" aria-live="polite"></p>
     </div>
     <div class="step-body" id="step-year-body">
       <div class="field-row">
         <div class="field">
-          <label class="label" for="select-program">מסלול</label>
+          <label class="label" for="select-program">{{ S.ui.fields.program }}</label>
           <select class="input" id="select-program"></select>
         </div>
         <div class="field">
-          <label class="label" for="select-year">שנת לימודים</label>
+          <label class="label" for="select-year">{{ S.ui.fields.studyYear }}</label>
           <select class="input" id="select-year"></select>
         </div>
         <div class="field">
-          <label class="label" for="select-term">סמסטר</label>
+          <label class="label" for="select-term">{{ S.ui.fields.term }}</label>
           <select class="input" id="select-term"></select>
         </div>
       </div>
@@ -232,30 +233,30 @@
       <h2 class="step-title">
         <button type="button" class="step-toggle" id="step-courses-toggle"
                 aria-expanded="true" aria-controls="step-courses-body">
-          <span class="step-name" id="step-courses-title">קורסים</span>
+          <span class="step-name" id="step-courses-title">{{ S.ui.steps.coursesTitle }}</span>
           <span class="step-summary" id="step-courses-summary"></span>
           <span class="step-caret" aria-hidden="true"></span>
         </button>
       </h2>
-      <p class="step-hint">לסמן מה לומדים. קורסים צמודים נבחרים יחד. אפשר להוסיף כל קורס אחר, כולל חזרה על קורס.</p>
+      <p class="step-hint">{{ S.ui.steps.coursesHint }}</p>
       <p class="step-state" id="step-courses-state" aria-live="polite"></p>
     </div>
     <div class="step-body" id="step-courses-body">
       <div class="courses-toolbar">
         <div class="field field-grow">
-          <label class="label" for="course-search">הוספת קורס מהידיעון</label>
+          <label class="label" for="course-search">{{ S.ui.fields.courseSearch }}</label>
           <input type="search" class="input" id="course-search" autocomplete="off" spellcheck="false"
                  role="combobox" aria-expanded="false" aria-autocomplete="list"
                  aria-controls="course-search-results"
-                 placeholder="קוד או שם קורס — למשל 61753 או אלגוריתמים">
+                 placeholder="{{ S.ui.fields.courseSearchPlaceholder }}">
         </div>
         <div class="credits" id="credits-box">
-          <span class="credits-label">סך נקודות זכות</span>
+          <span class="credits-label">{{ S.ui.fields.creditsLabel }}</span>
           <strong class="credits-value" id="credits-total">0</strong>
           <span class="credits-label" id="credits-unknown" hidden></span>
         </div>
       </div>
-      <ul class="search-results" id="course-search-results" role="listbox" aria-label="תוצאות חיפוש" hidden></ul>
+      <ul class="search-results" id="course-search-results" role="listbox" aria-label="{{ S.ui.fields.searchResultsLabel }}" hidden></ul>
 
       <!-- ‏רשימת ההמלצה של הסמסטר שנבחר בשלב 1: מה סומן מראש, ומה לעשות
            כשצריך להשלים קורס מסמסטר קודם. ההסברים הארוכים יותר (קורסים
@@ -265,7 +266,7 @@
              משפט מחדש בכל ציור. ההצהרה החיה על הסמסטר יושבת ב-#semester-summary. -->
         <p class="note" id="recommended-note"></p>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-restore-recommended" hidden>
-          החזרת הרשימה המומלצת
+          {{ S.ui.fields.restoreRecommended }}
         </button>
       </div>
 
@@ -301,17 +302,17 @@
       <h2 class="step-title">
         <button type="button" class="step-toggle" id="step-days-toggle"
                 aria-expanded="true" aria-controls="step-days-body">
-          <span class="step-name" id="step-days-title">ימי לימוד</span>
+          <span class="step-name" id="step-days-title">{{ S.ui.steps.daysTitle }}</span>
           <span class="step-summary" id="step-days-summary"></span>
           <span class="step-caret" aria-hidden="true"></span>
         </button>
       </h2>
-      <p class="step-hint">כמה ימים להגיע לקמפוס. זה יעד — המינימום האפשרי מוצג לצידו.</p>
+      <p class="step-hint">{{ S.ui.steps.daysHint }}</p>
       <p class="step-state" id="step-days-state" aria-live="polite"></p>
     </div>
     <div class="step-body" id="step-days-body">
       <div class="field">
-        <span class="label" id="days-buttons-label">יעד ימי לימוד</span>
+        <span class="label" id="days-buttons-label">{{ S.ui.fields.daysTargetLabel }}</span>
         <div class="days-row" id="days-buttons" role="radiogroup" aria-labelledby="days-buttons-label">
           <button type="button" class="day-btn" data-days="2" role="radio" aria-checked="false">2</button>
           <button type="button" class="day-btn" data-days="3" role="radio" aria-checked="false">3</button>
@@ -322,28 +323,28 @@
       </div>
 
       <div class="facts" id="days-facts">
-        <span class="fact"><span class="fact-label">יעד</span><strong class="fact-value" id="days-target-label">—</strong></span>
-        <span class="fact"><span class="fact-label">מינימום אפשרי</span><strong class="fact-value" id="min-days-label">—</strong></span>
-        <span class="fact"><span class="fact-label">מערכות אפשריות</span><strong class="fact-value" id="feasible-count-label">—</strong></span>
+        <span class="fact"><span class="fact-label">{{ S.ui.fields.factTarget }}</span><strong class="fact-value" id="days-target-label">—</strong></span>
+        <span class="fact"><span class="fact-label">{{ S.ui.fields.factMinDays }}</span><strong class="fact-value" id="min-days-label">—</strong></span>
+        <span class="fact"><span class="fact-label">{{ S.ui.fields.factFeasible }}</span><strong class="fact-value" id="feasible-count-label">—</strong></span>
       </div>
 
       <p class="inline-warn" id="days-warning" role="status" aria-live="polite" hidden></p>
 
       <details class="advanced" id="advanced-prefs">
-        <summary class="advanced-summary">העדפות נוספות</summary>
+        <summary class="advanced-summary">{{ S.ui.fields.advancedSummary }}</summary>
         <div class="advanced-body">
           <div class="field-row">
             <div class="field">
-              <label class="label" for="input-earliest">לא להתחיל לפני</label>
+              <label class="label" for="input-earliest">{{ S.ui.fields.earliest }}</label>
               <input type="time" class="input" id="input-earliest" step="900">
             </div>
             <div class="field">
-              <label class="label" for="input-latest">לא לסיים אחרי</label>
+              <label class="label" for="input-latest">{{ S.ui.fields.latest }}</label>
               <input type="time" class="input" id="input-latest" step="900">
             </div>
             <div class="field field-check">
               <input type="checkbox" id="chk-forbid-friday">
-              <label for="chk-forbid-friday">בלי יום שישי</label>
+              <label for="chk-forbid-friday">{{ S.ui.fields.noFriday }}</label>
             </div>
           </div>
           <div class="blocked" id="blocked-list"></div>
@@ -358,26 +359,25 @@
       <h2 class="step-title">
         <button type="button" class="step-toggle" id="step-lecturers-toggle"
                 aria-expanded="true" aria-controls="step-lecturers-body">
-          <span class="step-name" id="step-lecturers-title">מרצים</span>
+          <span class="step-name" id="step-lecturers-title">{{ S.ui.steps.lecturersTitle }}</span>
           <span class="step-summary" id="step-lecturers-summary"></span>
           <span class="step-caret" aria-hidden="true"></span>
         </button>
       </h2>
-      <p class="step-hint">לחיצה על שורה מדרגת מרצה. 📌 מקבעת קבוצה. שורה מעומעמת — אין איתה פתרון.</p>
+      <p class="step-hint">{{ S.ui.steps.lecturersHint }}</p>
       <p class="step-state" id="step-lecturers-state" aria-live="polite"></p>
     </div>
     <div class="step-body" id="step-lecturers-body">
       <div class="lect-toolbar">
         <p class="legend-inline">
-          <span class="legend-item"><span class="rank-badge">1</span> העדפה ראשונה</span>
-          <span class="legend-item"><span class="legend-swatch legend-swatch--pin"></span> קבוצה נעוצה</span>
-          <span class="legend-item"><span class="legend-swatch legend-swatch--dead"></span> בחירה שמשאירה בלי פתרון</span>
+          <span class="legend-item"><span class="rank-badge">1</span> {{ S.ui.lecturers.legendRank }}</span>
+          <span class="legend-item"><span class="legend-swatch legend-swatch--pin"></span> {{ S.ui.lecturers.legendPinned }}</span>
+          <span class="legend-item"><span class="legend-swatch legend-swatch--dead"></span> {{ S.ui.lecturers.legendDead }}</span>
         </p>
-        <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-ranking">איפוס הדירוג והנעיצות</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-ranking">{{ S.ui.lecturers.btnClearRanking }}</button>
       </div>
       <p class="note" id="attendance-note">
-        כברירת מחדל לכל רכיב יש חובת נוכחות. כיבוי החובה ברכיב מאפשר לשבץ אותו במקביל לרכיב אחר —
-        ויתור על נוכחות בו — אם זה מקצר את השבוע. כל חפיפה כזו תוצג מעל המערכת.
+        {{ S.ui.lecturers.attendanceNote }}
       </p>
       <div class="lect-courses" id="lecturer-courses"></div>
       <p class="note" id="lecturers-note"></p>
@@ -387,19 +387,19 @@
   <!-- ===================== 5. המערכת ===================== -->
   <section class="step" id="step-schedule" data-step="5" aria-labelledby="step-schedule-title">
     <div class="step-head">
-      <h2 class="step-title" id="step-schedule-title">המערכת</h2>
-      <p class="step-hint">המערכות הטובות ביותר. כל שינוי מעדכן מיד.</p>
+      <h2 class="step-title" id="step-schedule-title">{{ S.ui.steps.scheduleTitle }}</h2>
+      <p class="step-hint">{{ S.ui.steps.scheduleHint }}</p>
       <p class="step-state" id="step-schedule-state" aria-live="polite"></p>
     </div>
     <div class="step-body">
       <div class="sched-toolbar">
-        <div class="tabs" id="schedule-tabs" role="tablist" aria-label="מערכות מוצעות"></div>
-        <button type="button" class="btn btn-ghost btn-sm" id="btn-print">הדפסה</button>
+        <div class="tabs" id="schedule-tabs" role="tablist" aria-label="{{ S.ui.schedule.tabsLabel }}"></div>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-print">{{ S.ui.schedule.btnPrint }}</button>
       </div>
 
       <section class="empty" id="soft-conflicts" hidden role="status" aria-live="polite"
                aria-labelledby="soft-conflicts-title">
-        <h3 class="empty-title" id="soft-conflicts-title">חפיפות מכוונות במערכת הזו</h3>
+        <h3 class="empty-title" id="soft-conflicts-title">{{ S.ui.schedule.softTitle }}</h3>
         <p class="empty-sub" id="soft-conflicts-sub"></p>
         <ul class="reasons" id="soft-conflicts-list"></ul>
       </section>
@@ -407,13 +407,13 @@
       <div class="facts" id="schedule-summary"></div>
       <div class="legend" id="schedule-legend"></div>
 
-      <div class="grid-scroll" id="grid-scroll" tabindex="0" role="group" aria-label="מערכת שבועית">
+      <div class="grid-scroll" id="grid-scroll" tabindex="0" role="group" aria-label="{{ S.ui.schedule.gridLabel }}">
         <div class="grid" id="schedule-grid"></div>
       </div>
 
       <div class="empty" id="schedule-empty" hidden>
-        <h3 class="empty-title">אין מערכת אפשרית עם הבחירות האלה</h3>
-        <p class="empty-sub">להלן מה שחוסם, ומה אפשר לשחרר כדי לפתוח פתרון:</p>
+        <h3 class="empty-title">{{ S.ui.schedule.emptyTitle }}</h3>
+        <p class="empty-sub">{{ S.ui.schedule.emptySub }}</p>
         <ul class="reasons" id="infeasible-reasons"></ul>
         <ul class="suggestions" id="infeasible-suggestions"></ul>
       </div>
@@ -425,7 +425,7 @@
 </main>
 
 <footer class="app-footer">
-  <p>SlotWise · שרת מקומי על 127.0.0.1 בלבד · הנתונים נשמרים במחשב הזה ואינם נשלחים לשום מקום.</p>
+  <p>{{ S.meta.footer }}</p>
 </footer>
 
 <!-- ‏שכבת המערכת. הרשת עצמה נבנית באותה buildGrid ובאותן מחלקות צבע
@@ -435,14 +435,14 @@
   <div class="overlay-panel" role="dialog" aria-modal="true"
        aria-labelledby="grid-overlay-title" tabindex="-1" id="grid-overlay-panel">
     <div class="overlay-head">
-      <h2 class="overlay-title" id="grid-overlay-title">המערכת השבועית</h2>
-      <div class="sticky-tabs" id="overlay-tabs" role="tablist" aria-label="מערכות מוצעות"></div>
+      <h2 class="overlay-title" id="grid-overlay-title">{{ S.ui.schedule.overlayTitle }}</h2>
+      <div class="sticky-tabs" id="overlay-tabs" role="tablist" aria-label="{{ S.ui.schedule.tabsLabel }}"></div>
       <div class="sticky-facts" id="overlay-facts"></div>
-      <button type="button" class="btn btn-ghost btn-sm" id="btn-close-grid">סגירה</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="btn-close-grid">{{ S.ui.schedule.overlayClose }}</button>
     </div>
     <div class="legend" id="overlay-legend"></div>
     <div class="grid-scroll" id="overlay-grid-scroll" tabindex="0" role="group"
-         aria-label="מערכת שבועית">
+         aria-label="{{ S.ui.schedule.gridLabel }}">
       <div class="grid" id="overlay-grid"></div>
     </div>
   </div>
@@ -454,7 +454,7 @@
   <div class="banner banner--info" role="note">
     <span class="banner-icon" aria-hidden="true"></span>
     <span class="banner-text"></span>
-    <button type="button" class="banner-close" aria-label="סגירת ההודעה">×</button>
+    <button type="button" class="banner-close" aria-label="{{ S.ui.banners.close }}">×</button>
   </div>
 </template>
 

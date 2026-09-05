@@ -61,6 +61,8 @@ from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Sequence
 
+import strings as strings_mod
+
 # ייבוא המודל. הפרויקט מוסיף את src/ ל-sys.path (ראו main.py), ולכן הצורה
 # הרגילה היא "from models import ...". ה-fallback קיים רק כדי ש-
 # "from src import store" יעבוד גם הוא.
@@ -219,32 +221,33 @@ def format_hebrew_age(hours: float | None) -> str:
     משמש את התצוגה ("הנתונים עודכנו לאחרונה: ... (לפני 3 שעות)"). הניסוח
     ניטרלי מגדרית לחלוטין — אין כאן פנייה לאף אחד.
     """
+    age = strings_mod.get("server.age", {})
     if hours is None:
-        return "לא ידוע מתי"
+        return age.get("unknown", "")
     if hours < 0:  # חותמת עתידית — שעון שהוזז, או קובץ שנערך ביד
-        return "חותמת זמן עתידית"
+        return age.get("future", "")
     minutes = int(round(hours * 60))
     if minutes < 1:
-        return "עכשיו"
+        return age.get("now", "")
     if minutes < 60:
         if minutes == 1:
-            return "לפני דקה"
+            return age.get("minute", "")
         if minutes == 2:
-            return "לפני שתי דקות"
-        return f"לפני {minutes} דקות"
+            return age.get("twoMinutes", "")
+        return strings_mod.fmt("server.age.minutes", n=minutes)
     whole_hours = int(hours)
     if whole_hours < 24:
         if whole_hours == 1:
-            return "לפני שעה"
+            return age.get("hour", "")
         if whole_hours == 2:
-            return "לפני שעתיים"
-        return f"לפני {whole_hours} שעות"
+            return age.get("twoHours", "")
+        return strings_mod.fmt("server.age.hours", n=whole_hours)
     days = int(hours // 24)
     if days == 1:
-        return "לפני יום"
+        return age.get("day", "")
     if days == 2:
-        return "לפני יומיים"
-    return f"לפני {days} ימים"
+        return age.get("twoDays", "")
+    return strings_mod.fmt("server.age.days", n=days)
 
 
 def content_sha1(text: str | bytes) -> str:
@@ -1804,9 +1807,13 @@ class Store:
         if oldest:
             dt = parse_iso_utc(oldest)
             local = dt.astimezone().strftime("%Y-%m-%d %H:%M") if dt else "?"
-            text = f"הנתונים עודכנו לאחרונה: {local} ({format_hebrew_age(age)})"
+            text = strings_mod.fmt(
+                "server.freshness.lastUpdated",
+                when=local,
+                age=format_hebrew_age(age),
+            )
         else:
-            text = "אין עדיין נתונים במסד — יש להריץ רענון."
+            text = strings_mod.get("server.freshness.empty", "")
         return {
             "newest": newest,
             "oldest": oldest,

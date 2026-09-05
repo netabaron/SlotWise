@@ -79,7 +79,14 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:  # noqa: BLE001 - צינור/מסוף שאי אפשר להגדיר מחדש, וזה בסדר
         pass
 
-from flask import Blueprint, Flask, jsonify, request, send_from_directory  # noqa: E402
+from flask import (  # noqa: E402
+    Blueprint,
+    Flask,
+    jsonify,
+    render_template,
+    request,
+    send_from_directory,
+)
 from werkzeug.exceptions import HTTPException  # noqa: E402
 
 import curriculum as curriculum_mod  # noqa: E402
@@ -88,6 +95,7 @@ import models  # noqa: E402
 import parser as parser_mod  # noqa: E402
 import scheduler as scheduler_mod  # noqa: E402
 import store as store_mod  # noqa: E402
+import strings as strings_mod  # noqa: E402
 
 LOG = logging.getLogger("slotwise.web")
 
@@ -1951,9 +1959,8 @@ def resolve_pins(
                         "code": code,
                         "kind": kind,
                         "group_id": group_id,
-                        "reason": (
-                            f"בקורס {code} אין רכיב מסוג {kind}, ולכן אי אפשר "
-                            f"לנעוץ בו קבוצה. הנעיצה שוחררה."
+                        "reason": strings_mod.fmt(
+                            "server.pins.kindMissing", code=code, kind=kind
                         ),
                     }
                 )
@@ -1964,10 +1971,11 @@ def resolve_pins(
                         "code": code,
                         "kind": kind,
                         "group_id": group_id,
-                        "reason": (
-                            f"קבוצה {group_id} אינה קיימת עוד ברכיב {kind} של קורס "
-                            f"{code} — ייתכן שהנתונים התעדכנו. הנעיצה שוחררה; "
-                            f"יש לבחור קבוצה אחרת ברשימה."
+                        "reason": strings_mod.fmt(
+                            "server.pins.groupMissing",
+                            group=group_id,
+                            kind=kind,
+                            code=code,
                         ),
                     }
                 )
@@ -4266,13 +4274,18 @@ def courses():
         warnings: list[str] = []
         if not _year_matches(year, meta):
             warnings.append(
-                f"הנתונים השמורים הם לשנת {meta.year or '?'}, ולא לשנת {year}. "
-                f"יש להריץ רענון מהידיעון כדי לוודא."
+                strings_mod.fmt(
+                    "server.course.yearMismatch",
+                    stored=meta.year or "?",
+                    wanted=year,
+                )
             )
         meta_json = _meta_to_json(meta, max_age)
         if meta_json["stale"]:
             warnings.append(
-                f"הנתונים של הקורס נשלפו {meta_json['age_text']} ועשויים להיות מיושנים."
+                strings_mod.fmt(
+                    "server.course.staleWarning", age=meta_json["age_text"]
+                )
             )
         facts = course_facts(
             course.code, course=course, stale=course.code in stale_details
@@ -4581,8 +4594,7 @@ def solve():
                 "schedules": [],
                 "reasons": [d["reason"] for d in dropped_pins],
                 "suggestions": [
-                    "יש לבחור קבוצה אחרת ברשימה במקום הנעיצה שאינה קיימת עוד, "
-                    "או לשחרר את הנעיצה כדי לראות שוב את כל האפשרויות."
+                    strings_mod.get("server.infeasible.pinSuggestion", "")
                 ],
                 "elapsed_ms": int((time.perf_counter() - started) * 1000),
             }
@@ -4640,8 +4652,7 @@ def solve():
             suggestions = []
         if applied_pins:
             suggestions.insert(
-                0,
-                "יש לשחרר אחת מהקבוצות הנעוצות — נעיצה אחת יכולה לבדה למנוע כל פתרון.",
+                0, strings_mod.get("server.infeasible.releasePin", "")
             )
         base_common["reasons"] = reasons
         base_common["suggestions"] = suggestions
@@ -5057,16 +5068,30 @@ def create_app(
 
         @app.get("/")
         def index():
-            """הדף היחיד. מוגש כקובץ סטטי — בלי Jinja, כדי ש-JS עם { } ישרוד."""
+            """הדף היחיד, מוגש דרך Jinja.
+
+            עד כאן הוא הוגש כקובץ סטטי, מחשש ש-JavaScript מוטבע עם ``{ }``
+            יתנגש ב-Jinja. הקובץ מצהיר שאין בו קוד מוטבע ואין בו אף רצף
+            ``{{`` / ``{%`` / ``{#``, ולכן החשש אינו רלוונטי — ו-Jinja הוא
+            מה שמאפשר לטקסט הקבוע להגיע מ-``strings.json`` כבר בשרת,
+            בלי הבהוב של כותרות ריקות.
+
+            **אם מוסיפים אי־פעם סקריפט מוטבע לעמוד — יש לעטוף אותו
+            ב-``{% raw %}``**, אחרת Jinja ינסה לפרש אותו.
+            """
+            S = strings_mod.load()
             if (templates_dir / "index.html").is_file():
-                return send_from_directory(str(templates_dir), "index.html")
+                return render_template("index.html", S=S)
+            ui = S.get("ui", {}).get("fallbackPage", {})
+            body = str(ui.get("body", "")).replace(
+                "{api}", "<code>/api</code>"
+            ).replace("{file}", "<code>templates/index.html</code>")
             return (
                 "<!doctype html><html dir=\"rtl\" lang=\"he\"><meta charset=\"utf-8\">"
-                "<title>SlotWise</title>"
+                f"<title>{ui.get('title', '')}</title>"
                 "<body style=\"font-family:system-ui;padding:2rem\">"
-                "<h1>השרת עובד</h1>"
-                "<p>ה-API זמין תחת <code>/api</code>, אבל הקובץ "
-                "<code>templates/index.html</code> עדיין לא קיים.</p>"
+                f"<h1>{ui.get('heading', '')}</h1>"
+                f"<p>{body}</p>"
                 "</body></html>",
                 200,
                 {"Content-Type": "text/html; charset=utf-8"},
