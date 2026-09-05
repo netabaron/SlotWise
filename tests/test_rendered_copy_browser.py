@@ -455,3 +455,117 @@ def test_blocks_do_not_truncate_with_ellipsis(fresh):
              .filter(e => getComputedStyle(e).textOverflow === 'ellipsis').length"""
     )
     assert bad == 0, "יש טקסט שנחתך בשלוש נקודות בתוך הרשת"
+
+
+# ==========================================================================
+# 5. קודי חדר — סדר ויזואלי, לא רק סדר לוגי
+# ==========================================================================
+#: משחזר את סדר התווים **על המסך** לפי מיקומם, ולא לפי textContent.
+#: ‏textContent מחזיר תמיד את הסדר הלוגי, ולכן הוא עיוור בדיוק לתקלה
+#: שהבדיקה הזאת נועדה לתפוס: רצף לטיני שהתהפך בתוך שורה עברית.
+VISUAL_ORDER = """(sel) => {
+  const el = document.querySelector(sel);
+  if (!el) return null;
+  const t = el.firstChild;
+  if (!t || t.nodeType !== 3) return null;
+  const chars = [];
+  for (let i = 0; i < t.data.length; i++) {
+    const r = document.createRange();
+    r.setStart(t, i); r.setEnd(t, i + 1);
+    const box = r.getBoundingClientRect();
+    chars.push([box.x, t.data[i]]);
+  }
+  chars.sort((a, b) => a[0] - b[0]);
+  return { logical: t.data, visual: chars.map(c => c[1]).join('') };
+}"""
+
+
+def test_room_codes_render_in_source_order(fresh):
+    """קוד חדר מוצג בדיוק כפי שהוא שמור, תו אחר תו.
+
+    ‏"709 L" בתוך שורה עברית, בלי כיוון מפורש, מתהפך ל-"L 709": הספרה
+    הפותחת היא תו חלש, וכיוון הרצף נקבע לפי ההקשר ולא לפי התוכן.
+    הבדיקה מודדת מיקומי תווים ולא קוראת את ה-DOM, כי בדיוק שם ההבדל.
+    """
+    _with_schedule(fresh)
+    fresh.wait_for_selector("#schedule-grid .ev .code", timeout=15000)
+    rows = fresh.evaluate(
+        """() => {
+      const out = [];
+      document.querySelectorAll('.ev .code').forEach(function (el) {
+        const t = el.firstChild;
+        if (!t || t.nodeType !== 3) return;
+        const chars = [];
+        for (let i = 0; i < t.data.length; i++) {
+          const r = document.createRange();
+          r.setStart(t, i); r.setEnd(t, i + 1);
+          chars.push([r.getBoundingClientRect().x, t.data[i]]);
+        }
+        chars.sort((a, b) => a[0] - b[0]);
+        out.push({ logical: t.data, visual: chars.map(c => c[1]).join('') });
+      });
+      return out;
+    }"""
+    )
+    assert rows, "לא נמצא אף קוד חדר ברשת"
+    # רק קודים בלי עברית: תו עברי מוצג נכון מימין לשמאל, ולכן שחזור
+    # משמאל-לימין שלו ייראה הפוך גם כשהכול תקין.
+    latin = [r for r in rows if not any("֐" <= c <= "׿" for c in r["logical"])]
+    assert latin, "אין קוד לטיני טהור לבדוק עליו"
+    bad = [r for r in latin if r["visual"] != r["logical"]]
+    assert bad == [], "קודים שהתהפכו: " + "; ".join(
+        "%r מוצג כ-%r" % (r["logical"], r["visual"]) for r in bad
+    )
+
+
+def test_room_codes_are_explicitly_ltr_everywhere(fresh):
+    """כל מקום שבו מופיע קוד: רשת, פאנל וטבלת המרצים."""
+    _with_schedule(fresh)
+    # רשת
+    assert fresh.evaluate(
+        "getComputedStyle(document.querySelector('.ev .code')).direction"
+    ) == "ltr"
+    # פאנל
+    fresh.click("#schedule-grid .ev")
+    fresh.wait_for_timeout(700)
+    panel = fresh.evaluate(
+        """() => [].slice.call(document.querySelectorAll('#meeting-detail .code'))
+             .map(e => [e.getAttribute('dir'), getComputedStyle(e).direction])"""
+    )
+    assert panel, "אין קודים בפאנל"
+    for attr, computed in panel:
+        assert attr == "ltr" and computed == "ltr", f"בפאנל: dir={attr} computed={computed}"
+    fresh.keyboard.press("Escape")
+    fresh.wait_for_timeout(400)
+    # טבלת המרצים
+    for key in ("lecturers",):
+        if fresh.evaluate(
+            "document.getElementById('step-%s').classList.contains('is-collapsed')" % key
+        ):
+            fresh.click("#step-%s-toggle" % key)
+            fresh.wait_for_timeout(600)
+    table = fresh.evaluate(
+        """() => [].slice.call(document.querySelectorAll('.lect-table .code'))
+             .map(e => getComputedStyle(e).direction)"""
+    )
+    assert table and set(table) == {"ltr"}, f"בטבלה: {set(table)}"
+
+
+def test_block_shows_room_and_keeps_font_readable(fresh):
+    """החדר חזר לבלוק, והגופן לא ירד מ-13px."""
+    _with_schedule(fresh)
+    info = fresh.evaluate(
+        """() => {
+      const evs = [].slice.call(document.querySelectorAll('#schedule-grid .ev'));
+      return {
+        total: evs.length,
+        withRoom: evs.filter(e => e.querySelector('.ev-room')).length,
+        fonts: Array.from(new Set(evs.map(e => getComputedStyle(e).fontSize))),
+        kindOnBlock: evs.filter(e => e.querySelector('.ev-kind')).length,
+      };
+    }"""
+    )
+    assert info["withRoom"] > 0, "אף בלוק לא מציג חדר"
+    for f in info["fonts"]:
+        assert float(f.replace("px", "")) >= 13, f"גופן קטן מ-13px בבלוק: {f}"
+    assert info["kindOnBlock"] == 0, "סוג השיעור נשאר בבלוק במקום בפאנל"

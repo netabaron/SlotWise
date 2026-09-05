@@ -323,7 +323,7 @@
       "showAllHours": "הצג את כל השעות",
       "showAllHoursTitle": "הרשת מוצגת לפי טווח השיעורים בפועל. סימון יחזיר את כל היום.",
       "emptyDay": "אין שיעורים",
-      "openDetail": "פרטי השיעור: {name}, {day}׳ {from}–{to}",
+      "openDetail": "פרטי השיעור: {name}, {day}׳ {from}–{to}, חדר {room}",
       "clusterOpen": "שני שיעורים חופפים: {names}. לפתיחת הפרטים",
       "legendOverlap": "מסגרת מקווקוות — חפיפה מכוונת",
       "legendHint": "לחיצה על שיעור פותחת את פרטיו"

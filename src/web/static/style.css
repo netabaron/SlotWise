@@ -1469,14 +1469,17 @@ html.is-modal-open body { overflow: hidden; }
   display: flex;
   flex-direction: column;
   gap: 1px;
-  font-size: 11px;
-  line-height: 1.3;
+  /* ‏13px היא הרצפה לטקסט משני. בלוק שאין בו מקום לשלוש שורות מוותר על
+     החדר — ולא מקטין את הגופן מתחת לרצפה הזאת. */
+  font-size: 13px;
+  line-height: 1.25;
   background: var(--ev-bg, var(--chip));
   border-color: var(--ev-bd, var(--line-strong));
   color: var(--ev-fg, var(--ink));
 }
 
-.ev b { font-size: 11.5px; font-weight: 700; }
+.ev b { font-size: 13px; font-weight: 700; }
+.ev-room { font-weight: 600; }
 .ev span { opacity: .94; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* עשרת גווני הקורסים — אותו מיפוי כמו render.py (c0 .. c9) */
@@ -1933,8 +1936,13 @@ html.is-modal-open body { overflow: hidden; }
 
 /* ---- הבלוק ---- */
 /* ‏<button> ולא <div>, ולכן צריך לאפס את מראה הכפתור ולהשאיר את הפריסה. */
+/* ‏<button> מביא גופן משלו, ולכן צריך לאפס אותו — אבל ‏font: inherit
+   הוא קיצור שדורס גם את ה-font-size שנקבע למעלה, ואז גודל הטקסט בבלוק
+   נקבע במקרה. רק המשפחה יורשת; המידה נשארת מוצהרת במקום אחד. */
 .ev {
-  font: inherit;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.25;
   text-align: start;
   cursor: pointer;
   inline-size: auto;
@@ -1944,8 +1952,6 @@ html.is-modal-open body { overflow: hidden; }
    הבלוק מציג שם, שעה וסוג — והשאר נמצא בפאנל. */
 .ev span { overflow: hidden; text-overflow: clip; white-space: nowrap; }
 .ev b { white-space: normal; overflow: hidden; }
-.ev--short .ev-kind { display: none; }
-.ev-kind { font-size: 10.5px; opacity: .85; }
 
 .ev:hover { filter: brightness(1.06); }
 .ev:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
@@ -2049,4 +2055,20 @@ html.is-modal-open body { overflow: hidden; }
     max-block-size: 70vh;
     overflow: auto;
   }
+}
+
+/* ‏מזהה לטיני בתוך שורה עברית — חדר, קבוצה, קוד קורס.
+   ‏dir="ltr" יושב על האלמנט עצמו (ראו ltrCode ב-app.js); כאן רק הבידוד,
+   כדי שהרצף לא יתערבב עם הטקסט שסביבו. */
+.code {
+  unicode-bidi: isolate;
+  direction: ltr;
+}
+
+/* גם בהדפסה — הדף המודפס הוא המקום שבו קוד חדר הפוך עולה הכי ביוקר. */
+@media print {
+  .code,
+  .cell-time,
+  .cell-group,
+  .gid { direction: ltr; unicode-bidi: isolate; }
 }

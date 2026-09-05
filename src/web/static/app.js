@@ -5107,13 +5107,7 @@
       );
       // ‏<bdi> סביב קוד החדר: "L 706", "EF 506 מע׳", "M 303" הם לטינית
       // בתוך עברית, וסדר התווים שלהם אינו יציב בלי בידוד מפורש.
-      roomCell.appendChild(
-        el("div", {}, [
-          el("bdi", {
-            text: [m.building, m.room].filter(Boolean).join(" ") || "—",
-          }),
-        ])
-      );
+      roomCell.appendChild(el("div", {}, [ltrCode(roomOf(m) || "—")]));
     });
     tr.appendChild(whenCell);
     tr.appendChild(roomCell);
@@ -5335,20 +5329,16 @@
       }
       group.forEach(function (m) {
         var rows = [
-          [T("app.detail.course"), txt(m.name) || nameOf(m.code), m.code],
-          [T("app.detail.kind"), txt(m.kind), ""],
-          [T("app.detail.group"), txt(m.group_id), ""],
+          [T("app.detail.course"), txt(m.name) || nameOf(m.code), m.code, false],
+          [T("app.detail.kind"), txt(m.kind), "", false],
+          [T("app.detail.group"), txt(m.group_id), "", true],
           [
             T("app.detail.lecturer"),
             txt(m.lecturer) || T("app.detail.unknownLecturer"),
             "",
+            false,
           ],
-          [
-            T("app.detail.room"),
-            [txt(m.building), txt(m.room)].filter(Boolean).join(" ") ||
-              T("app.detail.noRoom"),
-            "",
-          ],
+          [T("app.detail.room"), roomOf(m) || T("app.detail.noRoom"), "", true],
           [
             T("app.detail.when"),
             Tf("app.detail.whenValue", {
@@ -5364,9 +5354,13 @@
           dl.appendChild(el("dt", { text: row[0] }));
           // ‏<bdi> סביב כל מזהה לטיני בתוך עברית — "L 706", "EF 506 מע׳",
           // "271060310/1". בלי בידוד הם מסתדרים מחדש בצורה בלתי צפויה.
-          var dd = el("dd", {}, [el("bdi", { text: row[1] })]);
+          var dd = el("dd", {}, [
+            row[3] ? ltrCode(row[1]) : el("span", { text: row[1] }),
+          ]);
           if (row[2]) {
-            dd.appendChild(el("bdi", { class: "detail-code", text: row[2] }));
+            var code = ltrCode(row[2]);
+            setClass(code, "detail-code", true);
+            dd.appendChild(code);
           }
           dl.appendChild(dd);
         });
@@ -6342,6 +6336,26 @@
     return out;
   }
 
+  /** ‏45 דקות: מתחת לזה שלוש שורות בגופן 13px אינן נכנסות לבלוק. */
+  var ROOM_MIN_MINUTES = 45;
+
+  /** ‏"709 L" / "102 M מע'" — בדיוק כפי שהידיעון שמר. */
+  function roomOf(m) {
+    return [txt(m && m.building), txt(m && m.room)].filter(Boolean).join(" ");
+  }
+
+  /**
+   * מזהה לטיני בתוך שורה עברית — קוד חדר, מספר קבוצה, קוד קורס.
+   *
+   * ‏<bdi> לבדו מבודד את הרצף אבל משאיר את כיוונו ל-``dir=auto``, שנקבע
+   * לפי התו החזק הראשון. במחרוזת כמו "709 L" התו הראשון הוא ספרה — חלשה —
+   * ובהקשר ימין-לשמאל הרצף כולו התהפך ל-"L 709". ‏dir="ltr" מפורש קובע
+   * את הכיוון במקום לנחש אותו, ולכן הקוד מוצג בדיוק כפי שהוא שמור.
+   */
+  function ltrCode(text) {
+    return el("bdi", { class: "code", attrs: { dir: "ltr" }, text: txt(text) });
+  }
+
   function buildGrid(root, sch, soft) {
     var meetings = scheduleMeetings(sch);
     var bounds = gridBounds(meetings);
@@ -6448,6 +6462,7 @@
             day: dayLetter(lead.day),
             from: fmtTime(lead.start),
             to: fmtTime(lead.end),
+            room: roomOf(lead) || T("app.detail.noRoom"),
           });
 
       // ‏<button> ולא <div>: הפאנל הוא המקום היחיד שבו נמצאים מספר
@@ -6475,11 +6490,12 @@
             class: "cell-time",
             text: fmtTime(from) + "–" + fmtTime(to),
           }),
-          // סוג השיעור כטקסט — הצבע לבדו אינו מבחין בין הרצאה לתרגול,
-          // ובוודאי לא למי שאינו מבחין בין הגוונים.
-          to - from < 60
-            ? null
-            : el("span", { class: "ev-kind", text: lead.kind }),
+          // החדר הוא מה שמחפשים על הרשת. הוא נשאר בבלוק, ורק בשיעורים
+          // קצרים מ-45 דקות — שבהם שלוש שורות בגופן 13px פשוט לא נכנסות —
+          // הוא יורד. הקטנת הגופן הייתה הפתרון הקל והלא נכון.
+          to - from >= ROOM_MIN_MINUTES && roomOf(lead)
+            ? el("span", { class: "ev-room" }, [ltrCode(roomOf(lead))])
+            : null,
           isCluster
             ? el("span", { class: "ev-badge", text: T("app.grid.clashBadge") })
             : null,

@@ -80,6 +80,19 @@ deuteranopia or protanopia is a palette question, and the palette is contrast-tu
 for both themes already; re-tuning it belongs with the rest of the accessibility
 audit rather than being done twice.
 
+### Room codes read "709 L", not "L 709" — is that the wanted order?
+**Where:** `roomOf()` in `src/web/static/app.js`; source is `meeting.room`.
+**Owner:** open question for the product owner.
+**What was found:** the yedion stores the room as `"709 L"`, `"506 EF"`, `"303 M"`,
+`"102 M מע'"` — number first, building letter after. Measured in the browser by
+character x-position: without isolation that renders visually as `L 709` (reversed);
+with `<bdi dir="ltr">` it renders `709 L`, faithful to the source. So `L 709` — the
+form that was asked for — is the *corrupted* rendering, not the correct one.
+**Decision needed:** display faithfully as `709 L` (current), or reformat to
+`L 709` at display time. The latter is a one-line change in `roomOf()`, but it makes
+the rendered text differ from the stored text, so the character-for-character test
+would have to compare against the reformatted value instead of the source.
+
 ### `KIND_ORDER` and the term codes are displayed but are not copy
 **Where:** `src/web/static/app.js`, the constants block.
 **Owner:** nobody, by design.
