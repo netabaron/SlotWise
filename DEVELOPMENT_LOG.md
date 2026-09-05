@@ -1,4 +1,4 @@
-# Development log — Braude Schedule Builder
+# Development log — SlotWise
 
 What was built, in what order, what broke, and how it was fixed.
 Reconstructed from the session transcripts under `~/.claude/projects/` (session

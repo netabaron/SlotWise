@@ -1,5 +1,5 @@
 """
-render.py — שכבת התצוגה של בונה המערכת (section 6 of SPEC.md).
+render.py — שכבת התצוגה של SlotWise (section 6 of SPEC.md).
 
 שלוש פונקציות ציבוריות:
     render_terminal(sched, courses)              -> טבלה שבועית כטקסט מיושר למסך
@@ -797,7 +797,7 @@ def render_html(
         body.append("</section>")
 
     body.append(
-        '<footer class="noprint">נוצר על ידי Braude Schedule Builder · '
+        '<footer class="noprint">נוצר על ידי SlotWise · '
         "קובץ עצמאי, ללא תלות באינטרנט · להדפסה: Ctrl+P (מערכת אחת בכל עמוד).</footer>"
     )
 

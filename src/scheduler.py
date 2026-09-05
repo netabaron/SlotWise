@@ -1,5 +1,5 @@
 """
-מנוע בניית המערכת — Braude Schedule Builder scheduling engine.
+מנוע בניית המערכת — SlotWise scheduling engine.
 
 זהו הלב של המערכת. התפקיד שלו:
     1. לעבור על כל הצירופים האפשריים של קבוצות (backtracking עם גיזום מוקדם).

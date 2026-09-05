@@ -1,5 +1,5 @@
 """
-cli.py — הזרימה האינטראקטיבית של בונה המערכת (סעיף 7 ב-SPEC.md).
+cli.py — הזרימה האינטראקטיבית של SlotWise (סעיף 7 ב-SPEC.md).
 
 השלבים, בדיוק לפי הסדר שסוכם:
     1. טעינת הפרופיל (data/profile.json) ואישור שנה / סמסטר / מספר ימים רצוי.
@@ -751,7 +751,7 @@ def warn_if_stale(
     if not ask_yes_no(
         "להמשיך בכל זאת עם הנתונים האלה? (continue anyway?)", default=True
     ):
-        print("עצרנו. כדאי להריץ רענון ואז שוב את בונה המערכת. (stopped)")
+        print("עצרנו. כדאי להריץ רענון ואז שוב את SlotWise. (stopped)")
         raise QuitRequested
 
 
@@ -1319,8 +1319,8 @@ def manage_tracking(store, add: list[str], remove: list[str]) -> int:
 def build_arg_parser() -> argparse.ArgumentParser:
     """בונה את מנתח הדגלים של שורת הפקודה. (command-line flags)"""
     ap = argparse.ArgumentParser(
-        prog="schedule-builder",
-        description="בונה מערכת שעות למכללת בראודה (Braude schedule builder)",
+        prog="slotwise",
+        description="בונה מערכת שעות למכללת בראודה (SlotWise)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "דוגמאות (examples):\n"

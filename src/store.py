@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-מסד הנתונים של בונה המערכת — the JSON store behind the auto-refresh.
+מסד הנתונים של SlotWise — the JSON store behind the auto-refresh.
 
 מה המודול הזה עושה
 -------------------

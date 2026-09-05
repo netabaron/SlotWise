@@ -1,5 +1,5 @@
 """
-webapp.py — מפעיל את בונה המערכת בדפדפן. (local web app launcher)
+webapp.py — מפעיל את SlotWise בדפדפן. (local web app launcher)
 
 הרצה:
     python webapp.py                  # פורט 5000 (או הראשון הפנוי מעליו), פתיחת דפדפן
@@ -230,7 +230,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     """בונה את מנתח הדגלים של המפעיל. (launcher flags)"""
     ap = argparse.ArgumentParser(
         prog="webapp",
-        description="בונה המערכת בדפדפן (Braude schedule builder — local web app)",
+        description="SlotWise בדפדפן (local web app)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "דוגמאות (examples):\n"
@@ -311,11 +311,11 @@ def main(argv: list[str] | None = None) -> int:
     url = f"http://{HOST}:{port}"
 
     lines = [
-        "בונה המערכת פועל. יש לפתוח את הכתובת הזאת בדפדפן:",
+        "SlotWise פועל. יש לפתוח את הכתובת הזאת בדפדפן:",
         "",
         f"    {url}",
         "",
-        "(the schedule builder is running — open the URL above)",
+        "(SlotWise is running — open the URL above)",
     ]
     if port != requested:
         lines += [
@@ -327,7 +327,7 @@ def main(argv: list[str] | None = None) -> int:
         "",
         "לעצירה: Ctrl+C בחלון הזה.  (press Ctrl+C here to stop)",
     ]
-    print_box("בונה המערכת — דפדפן  (schedule builder — web)", lines)
+    print_box("SlotWise — דפדפן  (web)", lines)
 
     # ---- פתיחת דפדפן -------------------------------------------------------
     if not args.no_browser:

@@ -1,5 +1,5 @@
 """
-מודל הנתונים של בונה המערכת — Braude Schedule Builder data model.
+מודל הנתונים של SlotWise — SlotWise data model.
 
 זהו החוזה המשותף לכל שאר המודולים. אין לשנות שמות שדות או חתימות.
 This is the shared contract for every other module. Do not rename fields or methods.

@@ -1,4 +1,4 @@
-# Braude Schedule Builder — Interface Spec (authoritative)
+# SlotWise — Interface Spec (authoritative)
 
 Every module implements EXACTLY the signatures below. Do not invent alternates.
 Python 3.14, Windows. Hebrew content everywhere — always open files with `encoding="utf-8"`.

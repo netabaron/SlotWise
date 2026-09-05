@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-‏src/web/api.py — שכבת ה-HTTP של בונה המערכת (the JSON translation layer).
+‏src/web/api.py — שכבת ה-HTTP של SlotWise (the JSON translation layer).
 
 מה הקובץ הזה כן עושה
 --------------------
@@ -89,7 +89,7 @@ import parser as parser_mod  # noqa: E402
 import scheduler as scheduler_mod  # noqa: E402
 import store as store_mod  # noqa: E402
 
-LOG = logging.getLogger("schedule_builder.web")
+LOG = logging.getLogger("slotwise.web")
 
 # ---------------------------------------------------------------------------
 # 1. קבועים
@@ -1045,14 +1045,14 @@ def attendance_info(
 def _config() -> dict[str, Any]:
     from flask import current_app
 
-    return current_app.config["SCHEDULE_BUILDER"]
+    return current_app.config["SLOTWISE"]
 
 
 def _store() -> store_mod.Store:
     """מופע ``Store`` יחיד לכל אפליקציה. הקריאות עצמן חסרות מצב."""
     from flask import current_app
 
-    cache = current_app.extensions.setdefault("schedule_builder", {})
+    cache = current_app.extensions.setdefault("slotwise", {})
     obj = cache.get("store")
     if obj is None:
         obj = store_mod.Store(str(_config()["db_root"]))
@@ -1070,10 +1070,10 @@ def _request_cache() -> dict[str, Any]:
     try:
         from flask import g
 
-        cache = getattr(g, "_schedule_builder_cache", None)
+        cache = getattr(g, "_slotwise_cache", None)
         if cache is None:
             cache = {}
-            g._schedule_builder_cache = cache  # noqa: SLF001 - זה בדיוק ייעודו של g
+            g._slotwise_cache = cache  # noqa: SLF001 - זה בדיוק ייעודו של g
         return cache
     except Exception:  # noqa: BLE001 - אין הקשר בקשה: פשוט בלי מטמון
         return {}
@@ -1096,7 +1096,7 @@ def _curricula() -> dict[str, dict]:
     """
     from flask import current_app
 
-    cache = current_app.extensions.setdefault("schedule_builder", {})
+    cache = current_app.extensions.setdefault("slotwise", {})
     cfg = _config()
     paths = [Path(cfg["curriculum_path"])]
     folder = Path(cfg.get("curricula_dir") or "")
@@ -1152,7 +1152,7 @@ def _default_curriculum() -> dict:
     """
     from flask import current_app
 
-    cache = current_app.extensions.setdefault("schedule_builder", {})
+    cache = current_app.extensions.setdefault("slotwise", {})
     path = Path(_config()["curriculum_path"])
     try:
         stamp = path.stat().st_mtime_ns
@@ -1173,7 +1173,7 @@ def _profile() -> dict:
     """‏data/profile.json — התשובות האמיתיות של הסטודנט/ית. חסר = ``{}``."""
     from flask import current_app
 
-    cache = current_app.extensions.setdefault("schedule_builder", {})
+    cache = current_app.extensions.setdefault("slotwise", {})
     if "profile" not in cache:
         path = Path(_config()["profile_path"])
         data: dict = {}
@@ -4813,7 +4813,7 @@ def scrape_start():
 
     thread = threading.Thread(
         target=_guarded_worker,
-        name="schedule-builder-scrape",
+        name="slotwise-scrape",
         daemon=True,
     )
     _scrape_thread = thread
@@ -5011,7 +5011,7 @@ def create_app(
         static_folder=str(static_dir),
         static_url_path="/static",
     )
-    app.config["SCHEDULE_BUILDER"] = settings
+    app.config["SLOTWISE"] = settings
     app.config["SCRAPE_RUNNER"] = scrape_runner
     app.config["REPARSE_RUNNER"] = reparse_runner
     app.config["COURSE_FETCHER"] = course_fetcher
@@ -5062,7 +5062,7 @@ def create_app(
                 return send_from_directory(str(templates_dir), "index.html")
             return (
                 "<!doctype html><html dir=\"rtl\" lang=\"he\"><meta charset=\"utf-8\">"
-                "<title>בונה המערכת</title>"
+                "<title>SlotWise</title>"
                 "<body style=\"font-family:system-ui;padding:2rem\">"
                 "<h1>השרת עובד</h1>"
                 "<p>ה-API זמין תחת <code>/api</code>, אבל הקובץ "
