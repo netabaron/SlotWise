@@ -22,7 +22,7 @@
     "header": {
       "freshnessLoading": "בטעינת נתונים…",
       "btnRefresh": "עדכן נתונים מהידיעון",
-      "btnReparse": "בנייה מחדש מהקבצים השמורים",
+      "btnReparse": "עבד מחדש את הנתונים השמורים",
       "themeGroupLabel": "ערכת צבעים",
       "themeSystem": "מערכת",
       "themeSystemTitle": "לפי הגדרת מערכת ההפעלה",
@@ -213,9 +213,11 @@
         "failedLegend": "‏✕ — המשיכה של הקורס נכשלה, ולא רק התיישנה.",
         "defaultLabel": "הצג רשימה"
       },
-      "staleSelected": "{count} מהקורסים שבחרת התעדכנו בידיעון מאז החישוב האחרון: {codes}. כדאי לרענן.",
+      "staleSelected": "הנתונים של {count} מהקורסים שבחרת ישנים: {list}. כדאי לעדכן מהידיעון.",
       "staleAction": "עדכן נתונים",
-      "staleQuiet": "הנתונים עודכנו {age}"
+      "staleQuiet": "הנתונים עודכנו {age}",
+      "staleSelectedOne": "הנתונים של אחד מהקורסים שבחרת ישנים: {list}. כדאי לעדכן מהידיעון.",
+      "staleCourse": "{code} {name}"
     },
     "lecturers": {
       "empty": "יש לסמן קורסים בשלב 2 כדי לראות את הקבוצות.",

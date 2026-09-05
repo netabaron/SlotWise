@@ -3309,10 +3309,24 @@
         // באורך מאות קודים שם היא רעש. הרגישות לשינוי בסט נשמרת.
         key: "stale-" + crc32(staleMine.join(",")),
         kind: "warn",
-        text: Tf("app.banners.staleSelected", {
-          count: staleMine.length,
-          codes: staleMine.join(", "),
-        }),
+        // קוד ואז שם הקורס, כמו בשורות החפיפה. קוד לבדו אינו אומר לאיש
+        // איזה קורס זה.
+        text: Tf(
+          staleMine.length === 1
+            ? "app.banners.staleSelectedOne"
+            : "app.banners.staleSelected",
+          {
+            count: staleMine.length,
+            list: staleMine
+              .map(function (code) {
+                return Tf("app.banners.staleCourse", {
+                  code: code,
+                  name: nameOf(code),
+                }).trim();
+              })
+              .join(", "),
+          }
+        ),
         details: {
           label: T("app.banners.stale.detailsLabel"),
           sections: staleSections,
