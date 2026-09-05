@@ -348,6 +348,42 @@ ul { margin: 0; padding: 0; list-style: none; }
 .btn-ghost:hover:not(:disabled) { background: var(--accent-soft); }
 .btn-sm { padding: 5px 11px; font-size: 12.5px; }
 
+/* ---- שלוש דרגות לכפתורי הכותרת ----
+   שלושתם נראו זהים, והם רחוקים מלהיות שקולים: אחד יוצא לרשת ומושך מאות
+   עמודים מהידיעון, השני בונה מחדש ממה שכבר במחשב, והשלישי רק פותח יומן.
+   המראה עוקב אחרי המחיר. ‏btn-ghost נשאר כפי שהוא — הוא בשימוש בעוד
+   כתריסר מקומות בעמוד, ולא הוא הנושא כאן. */
+
+/* ראשי: מילוי מלא. זו הפעולה שבאים בשבילה. */
+.btn-primary { font-weight: 700; }
+
+/* משני: מתאר בלבד. אמיתי, אבל לא מה שמושך את העין ראשון. */
+.btn-outline {
+  background: transparent;
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.btn-outline:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* שלישוני: בלי מסגרת ובלי רקע — קישור שנראה ככפתור רק כשנוגעים בו.
+   הכלל הזה חייב לבוא אחרי ‎.btn:hover‎, שאחרת היה מחזיר לו מסגרת בריחוף. */
+.btn-quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.btn-quiet:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--chip);
+  color: var(--ink);
+}
+
 .field { display: flex; flex-direction: column; gap: 4px; min-inline-size: 0; }
 .field-grow { flex: 1 1 16rem; }
 
