@@ -604,6 +604,8 @@
       // ולכן מפתח חסר פירושו "לא הוכרע" — וזה מה שמתיר לקיפול האוטומטי
       // לפעול פעם אחת בלי לדרוס העדפה שנקבעה ביד.
       collapsed: {},
+      // ‏"הצג את כל השעות" — העדפת תצוגה, נשמרת כמו הקיפול.
+      allHours: false,
     };
   }
 
@@ -689,6 +691,7 @@
     // שכבת המערכת: פתוחה, ולאן להחזיר את הפוקוס בסגירה.
     overlayOpen: false,
     overlayReturnTo: null,
+    detailReturnTo: null,
     // אילו שלבים כבר נשקלו לקיפול אוטומטי — שיקול אחד לכל שלב, לכל טעינה.
     autoCollapsed: Object.create(null),
     // איזה ‏<details> בתוך באנר פתוח כרגע, לפי מפתח הבאנר.
@@ -752,6 +755,7 @@
     if (!base.ranked || typeof base.ranked !== "object") base.ranked = {};
     if (!base.attendance || typeof base.attendance !== "object") base.attendance = {};
     if (!base.collapsed || typeof base.collapsed !== "object") base.collapsed = {};
+    base.allHours = base.allHours === true;
     base.allowSoftConflicts = true;  // גם מצב ישן שנשמר ב-localStorage מיושר
     if (!Array.isArray(base.blocked)) base.blocked = [];
     base.targetDays = clamp(Math.round(num(base.targetDays, 4)), 2, 6);
@@ -2664,6 +2668,10 @@
       : [];
 
     ui.btnBuild = byId("btn-build");
+    ui.detail = byId("meeting-detail");
+    ui.detailBody = byId("meeting-detail-body");
+    ui.btnDetailClose = byId("btn-detail-close");
+    ui.chkAllHours = byId("chk-all-hours");
     ui.compare = byId("compare");
     ui.compareBody = byId("compare-body");
     ui.techDetails = byId("tech-details");
@@ -2869,6 +2877,22 @@
     });
     renderThemeToggle();
 
+    if (ui.btnDetailClose) {
+      ui.btnDetailClose.addEventListener("click", closeMeetingDetail);
+    }
+    if (ui.detail) {
+      ui.detail.addEventListener("keydown", function (ev) {
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          closeMeetingDetail();
+        }
+      });
+    }
+    if (ui.chkAllHours) {
+      ui.chkAllHours.addEventListener("change", function (ev) {
+        setState({ allHours: ev.target.checked === true }, { solve: false });
+      });
+    }
     if (ui.btnBuild) {
       // הכפתור עושה בדיוק את מה שכתוב עליו: מחשב מחדש, ואז לוקח אל התוצאה.
       ui.btnBuild.addEventListener("click", function () {
@@ -5081,8 +5105,14 @@
           el("span", { class: "cell-time", text: fmtTime(m.start) + "–" + fmtTime(m.end) }),
         ])
       );
+      // ‏<bdi> סביב קוד החדר: "L 706", "EF 506 מע׳", "M 303" הם לטינית
+      // בתוך עברית, וסדר התווים שלהם אינו יציב בלי בידוד מפורש.
       roomCell.appendChild(
-        el("div", { text: [m.building, m.room].filter(Boolean).join(" ") || "—" })
+        el("div", {}, [
+          el("bdi", {
+            text: [m.building, m.room].filter(Boolean).join(" ") || "—",
+          }),
+        ])
       );
     });
     tr.appendChild(whenCell);
@@ -5276,6 +5306,95 @@
       table.appendChild(body);
       box.appendChild(el("div", { class: "compare-scroll" }, [table]));
     });
+  }
+
+  /* --- שלב 4: פרטי שיעור ------------------------------------------- */
+
+  /**
+   * פותח את פאנל הפרטים של שיעור (או של אשכול חופף).
+   *
+   * מרגע שהבלוק ברשת מציג שם, שעה וסוג בלבד, זה המקום **היחיד** שבו
+   * מופיעים מספר הקבוצה, המרצה והחדר. לכן:
+   *   * הבלוקים הם ``<button>`` — יש אליהם דרך במקלדת, לא רק בעכבר.
+   *   * הפוקוס עובר לפאנל בפתיחה. קורא מסך מכריז אז את שם הדיאלוג
+   *     ותוכנו; בלי זה הפאנל היה נפתח בשקט ומי שאינו רואה אותו לא היה
+   *     יודע שקרה משהו.
+   *   * ‏Esc סוגר, והפוקוס חוזר לבלוק שממנו נפתח.
+   */
+  function openMeetingDetail(group, isCluster) {
+    if (!ui.detail || !ui.detailBody) return;
+    runtime.detailReturnTo = document.activeElement;
+    rebuild(ui.detailBody, function (box) {
+      if (isCluster) {
+        box.appendChild(
+          el("p", { class: "detail-overlap" }, [
+            el("strong", { text: T("app.detail.overlapTitle") }),
+            el("span", { text: " " + T("app.detail.overlapNote") }),
+          ])
+        );
+      }
+      group.forEach(function (m) {
+        var rows = [
+          [T("app.detail.course"), txt(m.name) || nameOf(m.code), m.code],
+          [T("app.detail.kind"), txt(m.kind), ""],
+          [T("app.detail.group"), txt(m.group_id), ""],
+          [
+            T("app.detail.lecturer"),
+            txt(m.lecturer) || T("app.detail.unknownLecturer"),
+            "",
+          ],
+          [
+            T("app.detail.room"),
+            [txt(m.building), txt(m.room)].filter(Boolean).join(" ") ||
+              T("app.detail.noRoom"),
+            "",
+          ],
+          [
+            T("app.detail.when"),
+            Tf("app.detail.whenValue", {
+              day: dayLetter(m.day),
+              from: fmtTime(m.start),
+              to: fmtTime(m.end),
+            }),
+            "",
+          ],
+        ];
+        var dl = el("dl", { class: "detail-list" });
+        rows.forEach(function (row) {
+          dl.appendChild(el("dt", { text: row[0] }));
+          // ‏<bdi> סביב כל מזהה לטיני בתוך עברית — "L 706", "EF 506 מע׳",
+          // "271060310/1". בלי בידוד הם מסתדרים מחדש בצורה בלתי צפויה.
+          var dd = el("dd", {}, [el("bdi", { text: row[1] })]);
+          if (row[2]) {
+            dd.appendChild(el("bdi", { class: "detail-code", text: row[2] }));
+          }
+          dl.appendChild(dd);
+        });
+        box.appendChild(
+          el("section", { class: "detail-item c" + colorOf(m.code) }, [dl])
+        );
+      });
+    });
+    setHidden(ui.detail, false);
+    try {
+      ui.detail.focus();
+    } catch (e) {
+      /* פוקוס נכשל — הפאנל עדיין פתוח */
+    }
+  }
+
+  function closeMeetingDetail() {
+    if (!ui.detail) return;
+    setHidden(ui.detail, true);
+    var back = runtime.detailReturnTo;
+    runtime.detailReturnTo = null;
+    if (back && back.isConnected && back.offsetParent !== null) {
+      try {
+        back.focus();
+      } catch (e) {
+        /* לא נורא */
+      }
+    }
   }
 
   /* --- שלב 3: מה מבדיל בין המערכות ---------------------------------- */
@@ -5732,6 +5851,7 @@
       });
     }
     setHidden(ui.gridScroll, !sch);
+    if (ui.chkAllHours) ui.chkAllHours.checked = state.allHours === true;
 
     // אין פתרון
     if (ui.empty) {
@@ -6113,6 +6233,17 @@
    */
   function buildLegend(root, sch) {
     if (!sch) return;
+    // הסימון החזותי של חפיפה מכוונת מוסבר כאן. מסגרת מקווקוות בלי מקרא
+    // היא קישוט, לא מידע.
+    var info = softConflictInfo(sch);
+    if (info && info.count > 0) {
+      root.appendChild(
+        el("span", {
+          class: "legend-chip legend-chip--overlap",
+          text: T("app.grid.legendOverlap"),
+        })
+      );
+    }
     var seen = Object.create(null);
     pickList(sch, ["picks"], null).forEach(function (p) {
       var code = txt(p.code);
@@ -6127,49 +6258,133 @@
     });
   }
 
+  /**
+   * טווח השעות של הרשת.
+   *
+   * ברירת המחדל היא מה שמשובץ בפועל, בתוספת חצי שעה מכל צד — יום שנגמר
+   * ב-15:50 לא צריך לצייר עד 20:00. המתג "הצג את כל השעות" מחזיר את היום
+   * המלא, כי יש מי שרוצה לראות גם את מה שפנוי.
+   *
+   * גם כשחוצים, הטווח נגזר מהמפגשים: מערכת שבאמת נמשכת 08:00–20:00 תצויר
+   * במלואה, כולל החור הגדול באמצע. החור הזה **אמיתי**, והסתרתו הייתה
+   * שקר — הקיצוץ מסיר שוליים ריקים, לא זמן שקיים.
+   */
+  function gridBounds(meetings) {
+    if (!meetings.length) {
+      return { start: GRID_DEFAULT_START, end: GRID_DEFAULT_END };
+    }
+    var first = Infinity;
+    var last = -Infinity;
+    meetings.forEach(function (m) {
+      first = Math.min(first, num(m.start, 0));
+      last = Math.max(last, num(m.end, 0));
+    });
+    // הטווח המלא: חלון היום, מורחב אם השיעורים חורגים ממנו.
+    var fullStart = Math.min(GRID_DEFAULT_START, Math.floor(first / 60) * 60);
+    var fullEnd = Math.max(GRID_DEFAULT_END, Math.ceil(last / 60) * 60);
+    if (state.allHours) return { start: fullStart, end: fullEnd };
+
+    // חצי שעה מכל צד, מיושר לחצאי שעה כדי שתוויות השעה יישארו במקומן —
+    // ו**לעולם לא מעבר לטווח המלא**. בלי החסימה הזאת יום שנגמר ב-19:50
+    // היה מקבל ריפוד עד 20:30, כלומר הרשת המקוצצת יוצאת גבוהה מזו של
+    // "הצג את כל השעות", והמתג נראה כאילו הוא עושה את ההפך מהכתוב עליו.
+    return {
+      start: Math.max(fullStart, Math.floor((first - 30) / 30) * 30),
+      end: Math.min(fullEnd, Math.ceil((last + 30) / 30) * 30),
+    };
+  }
+
+  /** באילו ימים אין ולו שיעור אחד. */
+  function emptyDays(meetings) {
+    var used = Object.create(null);
+    meetings.forEach(function (m) {
+      used[num(m.day, 0)] = true;
+    });
+    return DAYS.filter(function (d) {
+      return !used[d];
+    });
+  }
+
+  /**
+   * מקבץ מפגשים חופפים ליחידה אחת.
+   *
+   * שתי עמודות בחצי רוחב אינן קריאות — זו הייתה התוצאה הקודמת. במקומן
+   * בלוק אחד ברוחב מלא עם תג "חפיפה", והפרטים של **שני** השיעורים
+   * נפתחים בפאנל. אשכול נבנה רק כשהחפיפה מכוונת; חפיפה שאינה מכוונת
+   * לא אמורה להתקיים בכלל, ואם היא קיימת עדיף לראות אותה כשתי יחידות.
+   */
+  function clusterMeetings(meetings, soft) {
+    var marks = (soft && soft.marks) || {};
+    var byKey = Object.create(null);
+    meetings.forEach(function (m) {
+      byKey[meetingKey(m)] = m;
+    });
+    var seen = Object.create(null);
+    var out = [];
+    meetings.forEach(function (m) {
+      var key = meetingKey(m);
+      if (seen[key]) return;
+      var group = [m];
+      seen[key] = true;
+      if (txt(marks[key])) {
+        meetings.forEach(function (other) {
+          var ok = meetingKey(other);
+          if (seen[ok]) return;
+          if (other.day !== m.day) return;
+          if (other.start >= m.end || m.start >= other.end) return;
+          if (!txt(marks[ok])) return;
+          seen[ok] = true;
+          group.push(other);
+        });
+      }
+      out.push(group);
+    });
+    return out;
+  }
+
   function buildGrid(root, sch, soft) {
     var meetings = scheduleMeetings(sch);
-    var lanes = assignLanes(meetings);
-    // ---- טווח השעות: לפי מה שמשובץ בפועל, לא לפי חלון קבוע ----
-    // ‏08:00–20:00 היה רצפה שהטווח רק גדל ממנה, ולכן שבוע שנגמר ב-15:50
-    // צייר ארבע שעות ריקות מתחתיו. הטווח נגזר עכשיו מהמפגשים של החלופה
-    // הזאת בלבד — כל לשונית והטווח שלה.
-    var gridStart, gridEnd;
-    if (meetings.length) {
-      var firstStart = Infinity;
-      var lastEnd = -Infinity;
-      meetings.forEach(function (m) {
-        firstStart = Math.min(firstStart, m.start);
-        lastEnd = Math.max(lastEnd, m.end);
-      });
-      // עיגול החוצה לשעה עגולה הוא הריפוד. שעה *נוספת* מעבר לו הייתה
-      // מחזירה בדיוק את מה שהסעיף הזה בא לתקן: שורות ריקות בתחתית
-      // (‏88px, ארבע משבצות) — ובמערכת שנגמרת ב-15:50 זו שעה שלמה של כלום.
-      gridStart = Math.floor(firstStart / 60) * 60;
-      gridEnd = Math.ceil(lastEnd / 60) * 60;
-    } else {
-      // בלי מפגשים אין מה לגזור — חלון ברירת המחדל נשאר, כדי שהרשת
-      // הריקה עדיין תיראה כמו מערכת שבועית ולא כפס דק.
-      gridStart = GRID_DEFAULT_START;
-      gridEnd = GRID_DEFAULT_END;
-    }
+    var bounds = gridBounds(meetings);
+    var gridStart = bounds.start;
+    var gridEnd = bounds.end;
     if (gridEnd <= gridStart) gridEnd = gridStart + 60;
     var slots = Math.ceil((gridEnd - gridStart) / SLOT_MINUTES);
+    var blank = emptyDays(meetings);
+    var blankSet = Object.create(null);
+    blank.forEach(function (d) {
+      blankSet[d] = true;
+    });
 
-    // שורה 1 — כותרות. אות היום בלבד: "יום ה׳" ו"חמישי" זה מתחת לזה
-    // אמרו את אותו הדבר פעמיים והעמיקו את שורת הכותרות בכל עמודה.
+    // יום ריק מצטמצם לרצועה צרה במקום לתפוס עמודה מלאה של כלום. הוא לא
+    // נעלם: המערכת השבועית חייבת להיראות כשבוע, וגם "אין שיעורים ביום ו׳"
+    // הוא מידע.
+    root.style.setProperty(
+      "grid-template-columns",
+      "var(--time-col) " +
+        DAYS.map(function (d) {
+          return blankSet[d] ? "var(--day-empty)" : "minmax(var(--day-min), 1fr)";
+        }).join(" ")
+    );
+
     root.appendChild(el("div", { class: "hd", text: T("app.grid.hourHeader") }));
     DAYS.forEach(function (d) {
       root.appendChild(
-        el("div", {
-          class: "hd",
-          attrs: { title: dayName(d) },
-          text: Tf("app.grid.dayHeader", { day: dayLetter(d) }),
-        })
+        el(
+          "div",
+          {
+            class: "hd" + (blankSet[d] ? " is-empty" : ""),
+            attrs: { title: blankSet[d] ? T("app.grid.emptyDay") : dayName(d) },
+          },
+          [
+            el("span", { text: Tf("app.grid.dayHeader", { day: dayLetter(d) }) }),
+            blankSet[d]
+              ? el("span", { class: "hd-empty", text: T("app.grid.emptyDay") })
+              : null,
+          ]
+        )
       );
     });
 
-    // עמודת השעות + משבצות הרקע
     for (var i = 0; i < slots; i++) {
       var minute = gridStart + i * SLOT_MINUTES;
       var onHour = minute % 60 === 0;
@@ -6183,7 +6398,10 @@
       for (var d = 0; d < DAYS.length; d++) {
         root.appendChild(
           el("div", {
-            class: "slot" + (onHour ? " hour" : ""),
+            class:
+              "slot" +
+              (onHour ? " hour" : "") +
+              (blankSet[DAYS[d]] ? " is-empty" : ""),
             style: {
               "grid-row": String(i + 2),
               "grid-column": String(DAYS[d] + 1),
@@ -6193,65 +6411,80 @@
       }
     }
 
-    // המפגשים עצמם — אחרי המשבצות, כדי שיצוירו מעליהן
-    meetings.forEach(function (m) {
-      var startSlot = Math.floor((m.start - gridStart) / SLOT_MINUTES);
-      var endSlot = Math.ceil((m.end - gridStart) / SLOT_MINUTES);
+    var lanes = assignLanes(meetings);
+    clusterMeetings(meetings, soft).forEach(function (group) {
+      var lead = group[0];
+      var from = group.reduce(function (a, m) {
+        return Math.min(a, num(m.start, 0));
+      }, Infinity);
+      var to = group.reduce(function (a, m) {
+        return Math.max(a, num(m.end, 0));
+      }, 0);
+      var startSlot = Math.floor((from - gridStart) / SLOT_MINUTES);
+      var endSlot = Math.ceil((to - gridStart) / SLOT_MINUTES);
       if (endSlot <= startSlot) endSlot = startSlot + 1;
-      var key = meetingKey(m);
-      var clash = soft && soft.marks ? txt(soft.marks[key]) : "";
-      var summary = [
-        m.name,
-        Tf("app.grid.group", { group: m.group_id }),
-        m.kind,
-        m.lecturer,
-        fmtTime(m.start) + "–" + fmtTime(m.end),
-        m.room,
-        clash ? Tf("app.grid.clashSummary", { list: clash }) : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
+      var isCluster = group.length > 1;
 
       var style = {
         "grid-row": startSlot + 2 + " / " + (endSlot + 2),
-        "grid-column": String(m.day + 1),
+        "grid-column": String(lead.day + 1),
       };
-      var lane = lanes[key];
+      // חלוקת רוחב נשארת רק לחפיפה שאינה מקובצת — כלומר לא-מכוונת.
+      var lane = !isCluster ? lanes[meetingKey(lead)] : null;
       if (lane && lane.lanes > 1) {
-        // חלוקת רוחב בסגנון מוטבע בלבד — style.css לא משתנה בשלב הזה.
         style["margin-inline-start"] =
           ((lane.lane * 100) / lane.lanes).toFixed(2) + "%";
         style["margin-inline-end"] =
           (((lane.lanes - lane.lane - 1) * 100) / lane.lanes).toFixed(2) + "%";
       }
-      if (clash) {
-        style.outline = "2px dashed var(--warn-line, currentColor)";
-        style["outline-offset"] = "-3px";
-      }
 
+      var names = group.map(function (m) {
+        return txt(m.name) || nameOf(m.code);
+      });
+      var label = isCluster
+        ? Tf("app.grid.clusterOpen", { names: names.join(" · ") })
+        : Tf("app.grid.openDetail", {
+            name: names[0],
+            day: dayLetter(lead.day),
+            from: fmtTime(lead.start),
+            to: fmtTime(lead.end),
+          });
+
+      // ‏<button> ולא <div>: הפאנל הוא המקום היחיד שבו נמצאים מספר
+      // הקבוצה, המרצה והחדר, ולכן חייבת להיות אליו דרך במקלדת.
       var block = el(
-        "div",
+        "button",
         {
-          class: "ev c" + colorOf(m.code) + (clash ? " is-soft" : ""),
+          class:
+            "ev c" +
+            colorOf(lead.code) +
+            (isCluster ? " is-soft is-cluster" : "") +
+            (to - from < 60 ? " ev--short" : ""),
           style: style,
-          attrs: { title: summary },
+          attrs: { type: "button", "aria-label": label, title: label },
+          data: { fk: "ev-" + meetingKey(lead) },
+          on: {
+            click: function () {
+              openMeetingDetail(group, isCluster);
+            },
+          },
         },
         [
-          el("b", { text: m.name }),
-          el("span", { class: "cell-time", text: fmtTime(m.start) + "–" + fmtTime(m.end) }),
+          el("b", { text: names.join(" + ") }),
           el("span", {
-            text: Tf("app.grid.kindGroup", { kind: m.kind, group: m.group_id }),
+            class: "cell-time",
+            text: fmtTime(from) + "–" + fmtTime(to),
           }),
+          // סוג השיעור כטקסט — הצבע לבדו אינו מבחין בין הרצאה לתרגול,
+          // ובוודאי לא למי שאינו מבחין בין הגוונים.
+          to - from < 60
+            ? null
+            : el("span", { class: "ev-kind", text: lead.kind }),
+          isCluster
+            ? el("span", { class: "ev-badge", text: T("app.grid.clashBadge") })
+            : null,
         ]
       );
-      if (m.lecturer) block.appendChild(el("span", { text: m.lecturer }));
-      if (m.room) block.appendChild(el("span", { text: m.room }));
-      if (clash) {
-        // הסימון חייב להיות קריא גם בלי צבע ובלי הדפסה בצבע.
-        block.appendChild(
-          el("span", { text: Tf("app.grid.clashBadge", { list: clash }) })
-        );
-      }
       root.appendChild(block);
     });
   }

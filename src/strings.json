@@ -319,7 +319,14 @@
       "group": "קבוצה {group}",
       "kindGroup": "{kind} · קבוצה {group}",
       "clashSummary": "חפיפה מכוונת עם {list}",
-      "clashBadge": "חפיפה מכוונת · {list}"
+      "clashBadge": "חפיפה",
+      "showAllHours": "הצג את כל השעות",
+      "showAllHoursTitle": "הרשת מוצגת לפי טווח השיעורים בפועל. סימון יחזיר את כל היום.",
+      "emptyDay": "אין שיעורים",
+      "openDetail": "פרטי השיעור: {name}, {day}׳ {from}–{to}",
+      "clusterOpen": "שני שיעורים חופפים: {names}. לפתיחת הפרטים",
+      "legendOverlap": "מסגרת מקווקוות — חפיפה מכוונת",
+      "legendHint": "לחיצה על שיעור פותחת את פרטיו"
     },
     "overlap": {
       "meetingSide": "{code} {kind} קב' {group} (יום {day}׳ {start}–{end})",
@@ -620,6 +627,22 @@
       "allSame": "כל המערכות המוצגות זהות בכל הנתונים שמושווים כאן.",
       "lecturersCell": "{hits}/{total}",
       "pick": "בחירת מערכת {n}"
+    },
+    "detail": {
+      "title": "פרטי השיעור",
+      "close": "סגירה",
+      "course": "קורס",
+      "kind": "סוג",
+      "group": "קבוצה",
+      "lecturer": "מרצה",
+      "room": "חדר",
+      "when": "יום ושעה",
+      "note": "הערה",
+      "whenValue": "יום {day}׳ {from}–{to}",
+      "unknownLecturer": "מרצה לא ידוע",
+      "noRoom": "לא צוין חדר",
+      "overlapTitle": "חפיפה מכוונת",
+      "overlapNote": "שני השיעורים האלה משובצים באותו זמן, כי סימנת שאין חובת נוכחות באחד מהם."
     }
   }
 }

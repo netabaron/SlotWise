@@ -70,6 +70,16 @@ as a decision aid. Phase 3 leads with the differentiating label and demotes the
 number whenever the spread across the shown set is 5 points or less. The number
 is still there, and still relative — see the entry above.
 
+### Colour-blind distinguishability of the ten course colours
+**Where:** `--course-0..9` in `src/web/static/style.css`.
+**Owner:** Phase 7 (accessibility).
+**Why not now:** Phase 4 removed the *reliance* on colour — every block states its
+type in words (הרצאה / תרגול / …) and the overlap marker has a legend entry — which
+is what the brief asked for here. Whether the ten hues are separable under
+deuteranopia or protanopia is a palette question, and the palette is contrast-tuned
+for both themes already; re-tuning it belongs with the rest of the accessibility
+audit rather than being done twice.
+
 ### `KIND_ORDER` and the term codes are displayed but are not copy
 **Where:** `src/web/static/app.js`, the constants block.
 **Owner:** nobody, by design.

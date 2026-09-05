@@ -341,3 +341,117 @@ def test_key_screens_carry_hebrew(fresh):
 
 def test_no_javascript_errors(fresh):
     assert fresh.errors == [], "שגיאות JS: " + "; ".join(fresh.errors)
+
+
+# ==========================================================================
+# 4. הרשת: קיצוץ, ימים ריקים, ופאנל הפרטים
+# ==========================================================================
+def _with_schedule(page):
+    """מביא את הדף למצב שבו יש מערכת מצוירת."""
+    page.select_option("#select-year", "3")
+    page.select_option("#select-term", "א")
+    page.wait_for_timeout(3000)
+    page.wait_for_selector("#schedule-grid .ev", timeout=15000)
+
+
+def test_grid_blocks_are_buttons_and_reachable(fresh):
+    """הבלוקים נגישים במקלדת.
+
+    מרגע שהם מציגים שם ושעה בלבד, הפאנל הוא המקום היחיד שבו נמצאים
+    מספר הקבוצה, המרצה והחדר — ולכן דרך עכבר בלבד אליו אינה מספיקה.
+    """
+    _with_schedule(fresh)
+    tags = fresh.evaluate(
+        "[].slice.call(document.querySelectorAll('#schedule-grid .ev'))"
+        ".map(e => e.tagName)"
+    )
+    assert tags and set(tags) == {"BUTTON"}, f"בלוקים שאינם כפתור: {set(tags)}"
+    labels = fresh.evaluate(
+        "[].slice.call(document.querySelectorAll('#schedule-grid .ev'))"
+        ".filter(e => !e.getAttribute('aria-label')).length"
+    )
+    assert labels == 0, "יש בלוק בלי aria-label"
+
+
+def test_detail_panel_opens_by_keyboard_and_announces(fresh):
+    """‏Enter פותח, הפוקוס עובר לדיאלוג, ‏Esc סוגר ומחזיר."""
+    _with_schedule(fresh)
+    fresh.focus("#schedule-grid .ev")
+    fresh.keyboard.press("Enter")
+    fresh.wait_for_timeout(600)
+
+    assert fresh.evaluate("!document.getElementById('meeting-detail').hidden"), (
+        "הפאנל לא נפתח ב-Enter"
+    )
+    # הכרזה = הפוקוס עובר לדיאלוג עם שם נגיש, ולא רק שינוי ויזואלי
+    assert fresh.evaluate("document.activeElement.id === 'meeting-detail'"), (
+        "הפוקוס לא עבר לפאנל — קורא מסך לא יכריז שנפתח משהו"
+    )
+    assert fresh.evaluate(
+        "document.getElementById('meeting-detail').getAttribute('role')"
+    ) == "dialog"
+    assert fresh.evaluate(
+        "!!document.getElementById('meeting-detail').getAttribute('aria-labelledby')"
+    )
+
+    body = fresh.evaluate(
+        "document.getElementById('meeting-detail-body').textContent"
+    )
+    for need in ("קבוצה", "מרצה", "חדר"):
+        assert need in body, f"הפאנל לא מציג {need} — ואין מקום אחר שבו הוא מופיע"
+
+    fresh.keyboard.press("Escape")
+    fresh.wait_for_timeout(500)
+    assert fresh.evaluate("document.getElementById('meeting-detail').hidden")
+    assert fresh.evaluate(
+        "document.activeElement.classList.contains('ev')"
+    ), "הפוקוס לא חזר לבלוק שממנו נפתח"
+
+
+def test_grid_crops_and_toggle_only_ever_grows(fresh):
+    """הקיצוץ לעולם אינו גדול מהטווח המלא.
+
+    זו הייתה תקלה אמיתית: הריפוד של חצי שעה חרג מסוף היום, ולכן הרשת
+    ה"מקוצצת" יצאה גבוהה מזו של "הצג את כל השעות" — מתג שעושה את ההפך
+    ממה שכתוב עליו.
+    """
+    _with_schedule(fresh)
+    height = lambda: fresh.evaluate(
+        "Math.round(document.getElementById('schedule-grid').getBoundingClientRect().height)"
+    )
+    cropped = height()
+    fresh.check("#chk-all-hours")
+    fresh.wait_for_timeout(1500)
+    full = height()
+    assert full >= cropped, f"'כל השעות' ({full}) קטן מהמקוצץ ({cropped})"
+    fresh.uncheck("#chk-all-hours")
+    fresh.wait_for_timeout(1200)
+    assert height() == cropped
+
+
+def test_empty_days_collapse_but_stay_labelled(fresh):
+    """יום בלי שיעורים נעשה צר — ועדיין אומר שהוא ריק."""
+    _with_schedule(fresh)
+    info = fresh.evaluate(
+        """() => {
+      const heads = [].slice.call(document.querySelectorAll('#schedule-grid .hd'));
+      const empty = heads.filter(h => h.classList.contains('is-empty'));
+      return {
+        total: heads.length,
+        empty: empty.length,
+        labelled: empty.filter(h => (h.textContent || '').indexOf('אין שיעורים') !== -1).length,
+      };
+    }"""
+    )
+    assert info["total"] == 7, "שבע כותרות: שעה + שישה ימים"
+    if info["empty"]:
+        assert info["empty"] == info["labelled"], "יום ריק בלי תווית"
+
+
+def test_blocks_do_not_truncate_with_ellipsis(fresh):
+    _with_schedule(fresh)
+    bad = fresh.evaluate(
+        """() => [].slice.call(document.querySelectorAll('#schedule-grid .ev span'))
+             .filter(e => getComputedStyle(e).textOverflow === 'ellipsis').length"""
+    )
+    assert bad == 0, "יש טקסט שנחתך בשלוש נקודות בתוך הרשת"

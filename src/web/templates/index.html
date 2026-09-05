@@ -409,10 +409,28 @@
       </details>
 
       <div class="facts" id="schedule-summary"></div>
-      <div class="legend" id="schedule-legend"></div>
+      <div class="grid-tools">
+        <div class="legend" id="schedule-legend"></div>
+        <label class="grid-toggle" title="{{ S.app.grid.showAllHoursTitle }}">
+          <input type="checkbox" id="chk-all-hours">
+          <span>{{ S.app.grid.showAllHours }}</span>
+        </label>
+      </div>
 
       <div class="grid-scroll" id="grid-scroll" tabindex="0" role="group" aria-label="{{ S.ui.schedule.gridLabel }}">
         <div class="grid" id="schedule-grid"></div>
+      </div>
+
+      <!-- ‏פרטי השיעור. מרגע שהבלוקים ברשת מציגים שם וזמן בלבד, זה
+           המקום היחיד שבו מופיעים מספר הקבוצה, המרצה והחדר — ולכן הוא
+           חייב להיות נגיש במקלדת ולהיות מוכרז בפתיחה, לא רק בלחיצה. -->
+      <div class="detail" id="meeting-detail" hidden role="dialog"
+           aria-labelledby="meeting-detail-title" tabindex="-1">
+        <div class="detail-head">
+          <h3 class="detail-title" id="meeting-detail-title">{{ S.app.detail.title }}</h3>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-detail-close">{{ S.app.detail.close }}</button>
+        </div>
+        <div class="detail-body" id="meeting-detail-body"></div>
       </div>
 
       <div class="empty" id="schedule-empty" hidden>
