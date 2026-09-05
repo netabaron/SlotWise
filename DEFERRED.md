@@ -22,21 +22,22 @@ infeasibility copy wholesale, so the terminology pass lands with it.
 remaining ones are interleaved with logic that Phase 6 rewrites anyway, and
 touching them twice would mean reviewing the same lines twice.
 
-### Duration formatting in the score panel
-**Where:** `fmtSpan()` in `src/web/static/app.js`; call sites in the score panel,
-the sticky bar, the schedule tabs and the overlap heading.
-**Owner:** Phase 2 (the score).
-**Why not now:** Phase 1 unified the *rendered* format on `H:MM` and removed the
-one call site that glued `שעות` onto a clock string. Whether the score panel
-should read `2:30 שעות` or `שעתיים וחצי` is a Phase 2 decision about how the
-facts panel reads, so it is settled there rather than guessed at here.
-
 ### The staleness banner and the header both offer a refresh
 **Where:** `#btn-refresh` in the header, and the banner's `עדכן נתונים` action.
 **Owner:** unassigned — needs a product call.
 **Why not now:** the brief asks for "one refresh button" *and* specifies a button
 inside the banner. Both are implemented; the banner is now rare enough that the
 common screen has exactly one. Flagged so it is a decision and not an oversight.
+
+### The fit score is relative to the five shown, not absolute
+**Where:** `fitScores()` in `src/web/static/app.js`.
+**Owner:** unassigned — needs a product call, possibly never.
+**Why:** there is no absolute maximum to normalise against — `lecturer` is an
+unbounded positive bonus and every other component is a penalty — so 100 can
+only mean "the best of the five returned". The label says so and the tooltip
+spells it out, but two different course selections can both show 100 while being
+nothing alike. If an absolute scale is ever wanted, the scheduler would have to
+expose a theoretical best for the chosen courses.
 
 ### `KIND_ORDER` and the term codes are displayed but are not copy
 **Where:** `src/web/static/app.js`, the constants block.
@@ -52,4 +53,10 @@ so the question is answered once.
 
 ## Closed
 
-*(nothing yet)*
+### Duration formatting in the score panel — closed in Phase 2
+Every duration now goes through `fmtDuration()`, which renders `3:00 שעות` —
+one format, with a unit, in the facts panel, the schedule tabs, the sticky bar
+and the overlap heading. `fmtSpan()` survives only as its internal `H:MM` half.
+Chose `H:MM שעות` over `שעתיים וחצי` because the same helper has to render
+`0:45` and `12:30`, and a worded form needs a special case per magnitude.
+

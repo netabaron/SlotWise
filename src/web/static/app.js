@@ -218,6 +218,17 @@
     return (h < 10 ? "0" : "") + h + ":" + (mm < 10 ? "0" : "") + mm;
   }
 
+  /**
+   * משך כטקסט אחד לכל המסך: ‏"3:00 שעות".
+   *
+   * ‏fmtSpan מחזיר "3:00" בלבד, וזה מספר בלי יחידה — ליד "19:50" של שעת
+   * הסיום אי אפשר לדעת מי מהם משך ומי שעה ביום. היחידה נוספת כאן, פעם
+   * אחת, וכל מקום שמציג משך עובר דרך הפונקציה הזאת.
+   */
+  function fmtDuration(minutes) {
+    return Tf("app.schedule.duration", { span: fmtSpan(minutes) });
+  }
+
   /** 410 -> "6:50". */
   function fmtSpan(minutes) {
     var m = Math.max(0, Math.round(num(minutes, 0)));
@@ -2949,7 +2960,7 @@
         label: T("app.sticky.facts.finish"),
         value: finish === null ? "—" : fmtTime(finish),
       },
-      { label: T("app.sticky.facts.gaps"), value: fmtSpan(sch.gap_minutes) },
+      { label: T("app.sticky.facts.gaps"), value: fmtDuration(sch.gap_minutes) },
     ];
   }
 
@@ -2959,7 +2970,7 @@
       var label = Tf("app.sticky.tabLabel", {
         index: idx + 1,
         days: num(sch.days_count, 0),
-        gap: fmtSpan(sch.gap_minutes),
+        gap: fmtDuration(sch.gap_minutes),
       });
       box.appendChild(
         el("button", {
@@ -5067,6 +5078,77 @@
     return { prefix: "", suffix: s };
   }
 
+  /* --- שלב 5: התאמה, קנסות ומרצים -------------------------------- */
+
+  /**
+   * ‏0..100 ביחס לחמש המערכות המוצגות בלבד, כשהטובה מביניהן היא 100.
+   *
+   * זה ציון **יחסי** ולא מוחלט, ואי אפשר שיהיה אחרת: ``lecturer`` הוא בונוס
+   * ללא תקרה ידועה וכל השאר קנסות, כך שאין ציון מרבי לנרמל אליו. לכן גם
+   * התיאור אומר במפורש "ביחס לחמש המוצגות", והניקוד הגולמי נשאר זמין
+   * במצב ניפוי.
+   *
+   * כשכל המערכות שקולות — וזה המצב הרגיל כשהן נבדלות בקבוצת תרגול אחת —
+   * כולן מקבלות 100, במקום לפרוש הפרש של נקודה על פני 0..100 ולהמציא
+   * הבדל שאינו קיים.
+   */
+  function fitScores(list) {
+    var scores = list.map(function (sch) {
+      return num(sch && sch.score, 0);
+    });
+    if (!scores.length) return [];
+    var best = Math.max.apply(null, scores);
+
+    // הפער נמדד ביחס ל**גודל** הניקוד של הטובה, ולא ביחס לטווח שבין
+    // הטובה לגרועה. מתיחה על פני הטווח נשמעת נכונה עד שמסתכלים במספרים:
+    // חמש מערכות בטווח ‎-75.3..-83.2‎ — הפרש של כ-10% — היו נפרשות ל-
+    // ‎100, 100, 5, 5, 1‎, כלומר מערכת סבירה לגמרי הייתה נקראת "1 מתוך 100".
+    // כאן אותן חמש יוצאות ‎100, 100, 90, 90, 90‎: דומות, וזו האמת.
+    var scale = Math.max(Math.abs(best), 1);
+    return scores.map(function (v) {
+      return clamp(Math.round(100 * (1 - (best - v) / scale)), 0, 100);
+    });
+  }
+
+  /** רק המרכיבים ששוללים נקודות, מהמשפיע ביותר ומטה. */
+  function penaltyList(sch) {
+    var breakdown = (sch && sch.breakdown) || {};
+    var rows = [];
+    Object.keys(breakdown).forEach(function (key) {
+      var value = num(breakdown[key], 0);
+      if (value >= 0) return; // בונוס אינו קנס
+      rows.push({ key: key, value: value, size: Math.abs(value) });
+    });
+    rows.sort(function (a, b) {
+      return b.size - a.size;
+    });
+    return rows;
+  }
+
+  /**
+   * מרצים שדורגו ולא נכנסו למערכת הזו.
+   * ‏lecturer_hits/total מגיעים מהשרת ואומרים כמה — לא מי. השם הוא מה
+   * שמאפשר להחליט אם כדאי לוותר, ולכן הוא נגזר כאן מהבחירה בפועל.
+   */
+  function missingLecturers(sch) {
+    if (!sch) return [];
+    var chosen = Object.create(null);
+    scheduleMeetings(sch).forEach(function (m) {
+      var name = txt(m.lecturer);
+      if (name) chosen[txt(m.code) + "|" + name] = true;
+    });
+    var missing = [];
+    Object.keys(state.ranked || {}).forEach(function (code) {
+      var names = state.ranked[code] || [];
+      if (!names.length) return;
+      var got = names.some(function (name) {
+        return chosen[code + "|" + txt(name)];
+      });
+      if (!got) missing.push(txt(names[0]));
+    });
+    return uniq(missing.filter(Boolean));
+  }
+
   /* --- שלב 5: המערכת ------------------------------------------------- */
 
   function renderScheduleStep() {
@@ -5091,7 +5173,7 @@
               text: Tf("app.schedule.tabLabel", {
                 n: idx + 1,
                 days: num(sch.days_count, 0),
-                gaps: fmtSpan(sch.gap_minutes),
+                gaps: fmtDuration(sch.gap_minutes),
               }),
               on: {
                 click: function () {
@@ -5124,14 +5206,41 @@
         days.sort(function (a, b) {
           return a - b;
         });
-        // ---- המדידות: מה המערכת הזאת עולה בפועל ----
+
+        // ---- ההתאמה, ככותרת אחת ----
+        var fits = fitScores(list);
+        var idx = clamp(state.activeSchedule, 0, Math.max(0, list.length - 1));
+        var fit = fits.length ? fits[idx] : 100;
+        var allTied = fits.length > 1 && fits.every(function (v) {
+          return v === fits[0];
+        });
         box.appendChild(
-          fact(T("app.schedule.factScore"), fmtNumber(sch.score), {
-            hint: T("app.schedule.factScoreHint"),
-            title: scoreTitle(sch),
-          })
+          el("div", { class: "fit" }, [
+            el("span", { class: "fit-label", text: T("app.schedule.fitLabel") }),
+            el("strong", {
+              class: "fit-value ltr",
+              text: Tf("app.schedule.fitValue", { score: fit }),
+            }),
+            el("span", {
+              class: "fit-note",
+              text: allTied
+                ? T("app.schedule.fitTied")
+                : T("app.schedule.fitTitle"),
+            }),
+            DEBUG
+              ? el("span", {
+                  class: "fit-note ltr",
+                  text: Tf("app.schedule.rawScore", {
+                    score: fmtNumber(sch.score),
+                  }),
+                })
+              : null,
+          ])
         );
-        box.appendChild(
+
+        // ---- עובדות: מה המערכת הזאת, בלי שיפוט ----
+        var factsBox = el("div", { class: "facts facts--plain" });
+        factsBox.appendChild(
           fact(
             T("app.schedule.factDays"),
             num(sch.days_count, days.length) +
@@ -5144,34 +5253,98 @@
               ")"
           )
         );
-        box.appendChild(fact(T("app.schedule.factGaps"), fmtSpan(sch.gap_minutes)));
-        box.appendChild(
+        var finish = lastFinishOf(sch);
+        if (finish !== null) {
+          factsBox.appendChild(fact(T("app.schedule.factFinish"), fmtTime(finish)));
+        }
+        factsBox.appendChild(
+          fact(T("app.schedule.factGaps"), fmtDuration(sch.gap_minutes))
+        );
+        factsBox.appendChild(
           fact(
             T("app.schedule.factCredits"),
             creditsText(scheduleCredits(sch), { short: true })
           )
         );
         if (num(sch.lecturer_total, 0) > 0) {
-          box.appendChild(
-            fact(
-              T("app.schedule.factLecturers"),
-              num(sch.lecturer_hits, 0) + "/" + num(sch.lecturer_total, 0)
-            )
-          );
-        }
-
-        // ---- רכיבי הניקוד: רק מה שאין לו מדידה משלו, ורק מה שאינו אפס ----
-        var breakdown = sch.breakdown || {};
-        Object.keys(breakdown).forEach(function (k) {
-          if (BREAKDOWN_HAS_OWN_FACT[k]) return;
-          if (breakdownAlwaysZero(list, k)) return;
-          box.appendChild(
-            fact(BREAKDOWN_HE[k] || k, fmtNumber(breakdown[k]), {
-              hint: T("app.schedule.factBreakdownHint"),
-              title: scoreTitle(sch),
+          var missing = missingLecturers(sch);
+          // שורה שלמה ולא שבב עם תווית: המשפט כבר מכיל את המילים
+          // "מרצים מועדפים", ותווית מעליו הייתה אומרת אותן פעמיים.
+          factsBox.appendChild(
+            el("span", {
+              class: "fact fact--wide",
+              attrs: { title: T("app.score.explain.lecturer") },
+              text: missing.length
+                ? Tf("app.schedule.lecturersMissing", {
+                    hits: num(sch.lecturer_hits, 0),
+                    total: num(sch.lecturer_total, 0),
+                    names: missing.join(", "),
+                  })
+                : Tf("app.schedule.lecturersHits", {
+                    hits: num(sch.lecturer_hits, 0),
+                    total: num(sch.lecturer_total, 0),
+                  }),
             })
           );
+        }
+        box.appendChild(
+          el("section", { class: "panel-block" }, [
+            el("h4", {
+              class: "panel-block-title",
+              text: T("app.schedule.factsTitle"),
+            }),
+            factsBox,
+          ])
+        );
+
+        // ---- מה הוריד מההתאמה: פסים, לא מספרים שליליים ----
+        var penalties = penaltyList(sch).filter(function (row) {
+          return !breakdownAlwaysZero(list, row.key);
         });
+        var penBox = el("div", { class: "penalties" });
+        if (!penalties.length) {
+          penBox.appendChild(
+            el("p", { class: "note", text: T("app.schedule.penaltiesNone") })
+          );
+        } else {
+          var top = penalties[0].size || 1;
+          penalties.forEach(function (row, i) {
+            var label = T("app.score.breakdown." + row.key, row.key);
+            var explain = T("app.score.explain." + row.key, "");
+            var pct = Math.max(4, Math.round((row.size / top) * 100));
+            penBox.appendChild(
+              el(
+                "div",
+                { class: "penalty", attrs: { title: explain } },
+                [
+                  el("span", {
+                    class: "penalty-label",
+                    // ‏הגורם המשפיע ביותר נאמר במילים, לא רק באורך הפס:
+                    // אורך לבדו אינו נגיש למי שלא רואה אותו.
+                    text: i === 0
+                      ? Tf("app.schedule.topPenalty", { label: label })
+                      : label,
+                  }),
+                  el("span", { class: "penalty-track" }, [
+                    el("span", {
+                      class: "penalty-fill",
+                      style: { "inline-size": pct + "%" },
+                    }),
+                  ]),
+                ]
+              )
+            );
+          });
+        }
+        box.appendChild(
+          el("section", { class: "panel-block" }, [
+            el("h4", {
+              class: "panel-block-title",
+              text: T("app.schedule.penaltiesTitle"),
+            }),
+            penBox,
+          ])
+        );
       });
     }
 
@@ -5500,10 +5673,10 @@
     // הזמן, והשורות שמתחתיה נושאות את הפרטים. אין חזרה ביניהן.
     var head = info.minutes > 0
       ? (info.count === 1
-          ? Tf("app.overlap.headOne", { span: fmtSpan(info.minutes) })
+          ? Tf("app.overlap.headOne", { span: fmtDuration(info.minutes) })
           : Tf("app.overlap.headMany", {
               count: info.count,
-              span: fmtSpan(info.minutes),
+              span: fmtDuration(info.minutes),
             }))
       : (info.count === 1
           ? T("app.overlap.headOneNoSpan")

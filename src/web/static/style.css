@@ -1731,3 +1731,96 @@ html.is-modal-open body { overflow: hidden; }
   unicode-bidi: isolate;
   text-align: start;
 }
+
+/* ==========================================================================
+   17. שלב 2 של השכתוב — ההתאמה, והפרדת עובדות מקנסות
+   ========================================================================== */
+
+/* ההתאמה היא הכותרת של הפאנל, לא עוד שבב בשורה. */
+.fit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-inline-start: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+
+.fit-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+.fit-value { font-size: 22px; font-variant-numeric: tabular-nums; }
+.fit-note { font-size: 11.5px; color: var(--muted); flex: 1 1 14rem; min-inline-size: 0; }
+
+/* שני חצאי הפאנל, כל אחד עם כותרת משלו. */
+.panel-block { display: flex; flex-direction: column; gap: 8px; }
+
+.panel-block-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: .01em;
+}
+
+/* עובדות — ניטרליות. אין כאן שיפוט, ולכן אין גם צבע מצב. */
+.facts--plain .fact { background: var(--panel); }
+
+/* קנסות — פס באורך יחסי, ולעולם לא מספר שלילי חשוף. */
+.penalties { display: flex; flex-direction: column; gap: 7px; }
+
+.penalty {
+  display: grid;
+  grid-template-columns: minmax(8rem, 14rem) 1fr;
+  gap: 4px 12px;
+  align-items: center;
+  cursor: help;
+}
+
+.penalty-label { font-size: 12.5px; }
+
+.penalty-track {
+  block-size: 8px;
+  border-radius: 999px;
+  background: var(--chip);
+  overflow: hidden;
+}
+
+.penalty-fill {
+  display: block;
+  block-size: 100%;
+  border-radius: 999px;
+  background: var(--warn-line);
+}
+
+/* ‏הפס הראשון הוא המשפיע ביותר — גם בצבע, וגם במילים שבתווית. */
+.penalty:first-child .penalty-fill { background: var(--dead-line); }
+.penalty:first-child .penalty-label { font-weight: 600; }
+
+@media (max-width: 640px) {
+  .penalty { grid-template-columns: 1fr; }
+}
+
+/* שורת המרצים נושאת משפט שלם, ולכן היא רחבה ובלי תווית נפרדת. */
+.fact--wide {
+  flex: 1 1 100%;
+  font-size: 12.5px;
+  padding: 7px 14px;
+  cursor: help;
+}
+
+/* ‏#schedule-summary נושא class="facts" מהמקור, כלומר שורת שבבים גמישה.
+   מרגע שיש בו שני גושים — עובדות וקנסות — הוא חייב לערום אותם, אחרת
+   שניהם נדחסים לחצי רוחב והפסים נעלמים לגמרי. */
+#schedule-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+}
+
+#schedule-summary .facts--plain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
