@@ -20,6 +20,52 @@
   "use strict";
 
   /* =====================================================================
+   * 0. נוסח
+   * =====================================================================
+   * כל הטקסט שהמשתמש/ת רואים מגיע מ-``src/strings.json``. השרת מזרים אותו
+   * לעמוד כ-``window.STRINGS`` (ראו ‏index.html), ומכאן קוראים אותו בשתי
+   * פונקציות שמחקות בכוונה את ``strings.py`` שבצד השרת — אותו נתיב מנוקד
+   * ואותה הצבת ‎{שם}‎, כדי שאותו מפתח ייקרא אותו דבר בשני הצדדים.
+   * ===================================================================== */
+
+  var STRINGS = window.STRINGS || {};
+
+  /**
+   * שליפה לפי נתיב מנוקד: ``T("app.header.refresh")``.
+   * מפתח חסר מחזיר את ברירת המחדל ולא מפיל ציור — נוסח חסר הוא באג
+   * בתצוגה, לא סיבה להשאיר מסך לבן.
+   */
+  function T(path, fallback) {
+    var node = STRINGS;
+    var parts = String(path).split(".");
+    for (var i = 0; i < parts.length; i++) {
+      if (!node || typeof node !== "object" || !(parts[i] in node)) {
+        return fallback === undefined ? "" : fallback;
+      }
+      node = node[parts[i]];
+    }
+    return node === undefined || node === null
+      ? fallback === undefined
+        ? ""
+        : fallback
+      : node;
+  }
+
+  /**
+   * שליפה + הצבת פרמטרים: ``Tf("app.scrape.refreshing", { count: 6 })``.
+   * המשפט נשמר שלם ב-JSON ולא מפוצל לשברים, כדי שמי שעורך נוסח יראה
+   * משפט ולא פאזל.
+   */
+  function Tf(path, params) {
+    var text = T(path, "");
+    if (typeof text !== "string" || !params) return text;
+    Object.keys(params).forEach(function (key) {
+      text = text.split("{" + key + "}").join(String(params[key]));
+    });
+    return text;
+  }
+
+  /* =====================================================================
    * 1. קבועים
    * ===================================================================== */
 
@@ -55,27 +101,27 @@
   var GRID_DEFAULT_START = 8 * 60; // 08:00
   var GRID_DEFAULT_END = 20 * 60; // 20:00
 
-  var DAY_LETTERS = { 1: "א", 2: "ב", 3: "ג", 4: "ד", 5: "ה", 6: "ו" };
-  var DAY_NAMES = {
-    1: "ראשון",
-    2: "שני",
-    3: "שלישי",
-    4: "רביעי",
-    5: "חמישי",
-    6: "שישי",
-  };
+  var DAY_LETTERS = T("app.terms.dayLetters", {});
+  var DAY_NAMES = T("app.terms.dayNames", {});
   var DAYS = [1, 2, 3, 4, 5, 6];
 
-  /** סדר תצוגה של סוגי רכיב — זהה ל-models.KIND_ORDER. */
+  /**
+   * סדר תצוגה של סוגי רכיב — זהה ל-models.KIND_ORDER.
+   *
+   * המחרוזות האלה **אינן** עוברות ל-strings.json למרות שהן מוצגות על המסך:
+   * הן מגיעות מהשרת בשדה ``kind`` ומשמשות כאן להשוואה, למיון ולמפתח
+   * במפות הנוכחות והנעיצות. עריכת נוסח בקובץ הנוסח הייתה מנתקת בשקט את
+   * ההתאמה לנתונים. אותו נימוק תקף לקודי הסמסטר ("א"/"ב"/"קיץ") שלמטה.
+   */
   var KIND_ORDER = ["הרצאה", "תרגול", "מעבדה", "פרויקט", 'שו"ת', "אחר"];
 
   var TERMS_FALLBACK = [
-    { value: "א", label: "סמסטר א׳ (חורף)" },
-    { value: "ב", label: "סמסטר ב׳ (אביב)" },
-    { value: "קיץ", label: "סמסטר קיץ" },
+    { value: "א", label: T("app.terms.fallbackTerms.winter", "") },
+    { value: "ב", label: T("app.terms.fallbackTerms.spring", "") },
+    { value: "קיץ", label: T("app.terms.fallbackTerms.summer", "") },
   ];
 
-  var YEAR_LABELS = { 1: "שנה א׳", 2: "שנה ב׳", 3: "שנה ג׳", 4: "שנה ד׳" };
+  var YEAR_LABELS = T("app.terms.yearLabels", {});
 
   /**
    * אילו שלבים אפשר לקפל ביד. שלב 5 (המערכת) אינו ברשימה בכוונה: הוא הפלט,
@@ -113,14 +159,7 @@
    * מפתח חסר היה דולף למסך בשמו הפנימי, וכך בדיוק "late_finish" הופיע
    * לסטודנט/ית כתווית.
    */
-  var BREAKDOWN_HE = {
-    lecturer: "מרצים מועדפים",
-    days: "ימי לימוד",
-    gaps: "חורים",
-    compactness: "צפיפות",
-    late_finish: "סיום מאוחר",
-    soft_conflict: "חפיפות מכוונות",
-  };
+  var BREAKDOWN_HE = T("app.score.breakdown", {});
 
   /**
    * רכיבי ניקוד שכבר מוצגים כמדידה משלהם בשורת המדדים.
@@ -134,29 +173,7 @@
     gaps: true,
   };
 
-  var PHASE_HE = {
-    warmup: "פותח סשן מול הידיעון",
-    session: "פותח סשן מול הידיעון",
-    year: "קובע שנת לימודים",
-    verify: "מאמת את השנה שחזרה",
-    store: "שומר למסד",
-    finishing: "מסיים",
-    idle: "ממתין",
-    starting: "מתחיל",
-    login: "ממתין להתחברות ידנית",
-    connected: "מחובר לידיעון",
-    search: "מחפש קורסים",
-    fetch: "מושך עמודים",
-    fetching: "מושך עמודים",
-    parse: "מפענח",
-    parsing: "מפענח",
-    save: "שומר למסד",
-    saving: "שומר למסד",
-    catalog: "מושך קטלוג",
-    done: "הסתיים",
-    failed: "נכשל",
-    needs_login: "נדרשת התחברות",
-  };
+  var PHASE_HE = T("app.phases.names", {});
 
   /* =====================================================================
    * 2. עזרי יסוד
@@ -293,16 +310,24 @@
     }
     if (t === null) return "";
     var secs = Math.max(0, (Date.now() - t) / 1000);
-    if (secs < 60) return "לפני פחות מדקה";
+    if (secs < 60) return T("app.age.lessThanMinute", "");
     var mins = Math.floor(secs / 60);
-    if (mins < 60) return mins === 1 ? "לפני דקה" : "לפני " + mins + " דקות";
+    if (mins < 60)
+      return mins === 1
+        ? T("app.age.oneMinute", "")
+        : Tf("app.age.minutes", { count: mins });
     var hours = Math.floor(mins / 60);
-    if (hours < 24) return hours === 1 ? "לפני שעה" : "לפני " + hours + " שעות";
+    if (hours < 24)
+      return hours === 1
+        ? T("app.age.oneHour", "")
+        : Tf("app.age.hours", { count: hours });
     var days = Math.floor(hours / 24);
-    if (days === 1) return "לפני יום";
-    if (days < 30) return "לפני " + days + " ימים";
+    if (days === 1) return T("app.age.oneDay", "");
+    if (days < 30) return Tf("app.age.days", { count: days });
     var months = Math.floor(days / 30);
-    return months === 1 ? "לפני חודש" : "לפני " + months + " חודשים";
+    return months === 1
+      ? T("app.age.oneMonth", "")
+      : Tf("app.age.months", { count: months });
   }
 
   /** בניית אלמנט. כל טקסט עובר דרך textContent — לעולם לא innerHTML. */
@@ -449,14 +474,18 @@
   /** ‏"קורס אחד" / "3 קורסים" — ניטרלי מגדרית, כמו שאר הטקסטים. */
   function coursesHe(n) {
     var count = Math.max(0, Math.round(num(n, 0)));
-    return count === 1 ? "קורס אחד" : count + " קורסים";
+    return count === 1
+      ? T("app.age.oneCourse", "")
+      : Tf("app.age.manyCourses", { count: count });
   }
 
   /** ‏"קורס אחד ... אינו מעודכן" מול "3 קורסים ... אינם מעודכנים". */
   function notUpdatedHe(n, middle) {
     var count = Math.max(0, Math.round(num(n, 0)));
-    var tail = count === 1 ? " אינו מעודכן" : " אינם מעודכנים";
-    return coursesHe(count) + txt(middle) + tail;
+    return Tf(count === 1 ? "app.age.notUpdatedOne" : "app.age.notUpdatedMany", {
+      courses: coursesHe(count),
+      middle: txt(middle),
+    });
   }
 
   /* =====================================================================
@@ -723,7 +752,7 @@
         if (!res.ok || !data || data.ok === false) {
           var msg =
             (data && (data.error || data.message)) ||
-            "השרת החזיר תשובה לא צפויה (" + res.status + ")";
+            Tf("app.errors.badResponse", { status: res.status });
           var err = new Error(txt(msg));
           err.status = res.status;
           err.detail = data ? data.detail : raw ? raw.slice(0, 400) : "";
@@ -744,8 +773,8 @@
   }
 
   function errorText(err) {
-    if (!err) return "שגיאה לא ידועה";
-    return txt(err.message) || "שגיאה לא ידועה";
+    if (!err) return T("app.errors.unknown", "");
+    return txt(err.message) || T("app.errors.unknown", "");
   }
 
   /** מספרים רצים — תשובה שמגיעה אחרי בקשה חדשה יותר נזרקת. */
@@ -833,7 +862,11 @@
     list.forEach(function (rec) {
       var y = num(rec.year, null);
       if (y === null) return;
-      out.push({ value: y, label: txt(rec.label) || YEAR_LABELS[y] || "שנה " + y });
+      out.push({
+        value: y,
+        label:
+          txt(rec.label) || YEAR_LABELS[y] || Tf("app.year.yearFallback", { year: y }),
+      });
     });
     if (out.length) return out;
 
@@ -847,7 +880,10 @@
       return a - b;
     });
     return years.map(function (y) {
-      return { value: y, label: YEAR_LABELS[y] || "שנה " + y };
+      return {
+        value: y,
+        label: YEAR_LABELS[y] || Tf("app.year.yearFallback", { year: y }),
+      };
     });
   }
 
@@ -857,7 +893,10 @@
     list.forEach(function (rec) {
       var v = txt(rec.term);
       if (!v) return;
-      out.push({ value: v, label: txt(rec.label) || "סמסטר " + v });
+      out.push({
+        value: v,
+        label: txt(rec.label) || Tf("app.year.termFallback", { term: v }),
+      });
     });
     return out.length ? out : TERMS_FALLBACK;
   }
@@ -917,13 +956,9 @@
   }
 
   /** שורה אחת קצרה לכל סיבה. לא באנר, לא פסקה — שורה. */
-  var FALLBACK_NOTE = {
-    "no-curriculum": "תוכנית הלימודים של המחלקה לא טעונה — אפשר לבחור כל קורס מהקטלוג.",
-    "no-list": "רשימת הקורסים של הסמסטר לא נטענה — אפשר לבחור כל קורס מהקטלוג.",
-    "empty-semester": "אין רשימת קורסים לסמסטר הזה — אפשר לבחור כל קורס מהקטלוג.",
-  };
+  var FALLBACK_NOTE = T("app.terms.fallbackNote", {});
 
-  var BROWSE_PLACEHOLDER = 'שם, קוד או תחילית קוד — למשל 110 או חדו"א';
+  var BROWSE_PLACEHOLDER = T("app.catalog.browsePlaceholder");
 
   function semesterCourseByCode(code) {
     for (var i = 0; i < runtime.semesterCourses.length; i++) {
@@ -948,7 +983,7 @@
     if (s && txt(s.name)) return txt(s.name);
     var k = state.known[txt(code)];
     if (k && txt(k.name)) return txt(k.name);
-    return "קורס " + txt(code);
+    return Tf("app.courses.unnamedCourse", { code: txt(code) });
   }
 
   /**
@@ -1028,14 +1063,19 @@
   function creditsText(summary, opts) {
     opts = opts || {};
     var head = summary.known ? fmtNumber(summary.total) : "—";
-    if (opts.unit) head += ' נ"ז';
+    if (opts.unit) head = Tf("app.credits.withUnit", { value: head });
     if (!summary.unknown) return head;
-    return head + " (" + missingCreditsText(summary.unknown, opts.short) + ")";
+    return Tf("app.credits.withMissing", {
+      value: head,
+      missing: missingCreditsText(summary.unknown, opts.short),
+    });
   }
 
   function missingCreditsText(count, short) {
-    if (short) return count + " ללא נתון";
-    return count === 1 ? "קורס אחד ללא נתון" : count + " קורסים ללא נתון";
+    if (short) return Tf("app.credits.missingShort", { count: count });
+    return count === 1
+      ? T("app.credits.missingOne", "")
+      : Tf("app.credits.missingMany", { count: count });
   }
 
   function totalCreditsText(opts) {
@@ -1132,17 +1172,17 @@
     // אנגלית/עברית לפי ציון פסיכומטרי או יע"ל. בסמסטר 1 יש שתי רמות
     // אנגלית באותה רשימה, ורק אחת מהן שייכת לסטודנט/ית מסוימים.
     if (rec.placement === true) {
-      return "קורס השמה — הרמה נקבעת לפי ציון, ויש לבחור את המתאימה";
+      return T("app.courses.alternatives.placement");
     }
     // ‏61179+61180 למי שאין פטור מפיזיקה אקדמית, 61181 למי שיש. אחד מהשניים.
     if (txt(rec.physicsTrack)) {
-      return "מסלול פיזיקה — תלוי בפטור, ויש לבחור מסלול אחד";
+      return T("app.courses.alternatives.physicsTrack");
     }
     // קורס ששייך למסלול התמחות מסוים. חלק מהמחלקות מפצלות סמסטרים לפי
     // מסלול, והכלי אינו יודע באיזה מסלול הסטודנט/ית — באזרחית הוא נקבע
     // לפי ציונים. מציגים, מסבירים, ולא מסמנים.
     if (txt(rec.track)) {
-      return txt(rec.track) + " — קורס של מסלול התמחות, לסימון לפי המסלול שלכם";
+      return Tf("app.courses.alternatives.track", { track: txt(rec.track) });
     }
     return "";
   }
@@ -1325,8 +1365,10 @@
     });
     if (over.length) {
       toast(
-        "אפשר לשבץ עד " + num(runtime.maxCodes, 0) + " קורסים בבת אחת, ולכן לא סומנו: " +
-          over.join(", ") + ". אפשר להוסיף אותם אחרי הסרת קורס אחר.",
+        Tf("app.courses.tooManyCodes", {
+          max: num(runtime.maxCodes, 0),
+          codes: over.join(", "),
+        }),
         "warn"
       );
     }
@@ -1470,12 +1512,12 @@
     if (typeof rec === "boolean") {
       return {
         ok: rec,
-        reason: rec ? "" : "בחירה זו משאירה את המערכת בלי פתרון",
+        reason: rec ? "" : T("app.lecturers.deadEndReason"),
       };
     }
     return {
       ok: rec.ok !== false,
-      reason: txt(rec.reason || "בחירה זו משאירה את המערכת בלי פתרון"),
+      reason: txt(rec.reason || T("app.lecturers.deadEndReason")),
     };
   }
 
@@ -2031,7 +2073,7 @@
     if (!changed) return false;
     saveState();
     // לא למחוק בשקט: הסיבה של השרת נעלמת עם התשובה הבאה.
-    toast(reasons.join(" ") || "נעיצה ששוחררה הוסרה מהבחירה.", "warn");
+    toast(reasons.join(" ") || T("app.toasts.pinReleased"), "warn");
     return true;
   }
 
@@ -2360,7 +2402,9 @@
           var code = runtime.scrape.exit_code;
           toast(
             runtime.scrape.message ||
-              (code === 0 ? "הרענון הסתיים." : "הרענון הסתיים עם שגיאה."),
+              (code === 0
+                ? T("app.toasts.scrapeDone")
+                : T("app.toasts.scrapeFailed")),
             code === 0 ? "ok" : "warn"
           );
           refreshAllData();
@@ -2389,9 +2433,9 @@
         runtime.scrape.exit_code = num(data.exit_code, null);
         runtime.scrape.message = txt(data.message);
         runtime.scrape.summary =
-          txt(data.message) || "הבנייה מחדש מהקבצים השמורים הסתיימה.";
+          txt(data.message) || T("app.scrape.reparseSummary");
         runtime.logShown = 0;
-        toast(txt(data.message) || "הבנייה מחדש הסתיימה.", "ok");
+        toast(txt(data.message) || T("app.toasts.reparseDone"), "ok");
         refreshAllData();
         render();
       })
@@ -2407,7 +2451,7 @@
    * כל שאר הפירוט נשאר ביומן המקופל.
    */
   function refreshSummaryText() {
-    if (runtime.reparseBusy) return "בונה מחדש מהקבצים השמורים…";
+    if (runtime.reparseBusy) return T("app.scrape.reparseRunning");
     var sc = runtime.scrape;
     var codes = pickList(sc, ["codes"], null).map(txt).filter(Boolean);
     var total = num(sc.total, codes.length || null);
@@ -2415,14 +2459,11 @@
     if (sc.running === true) {
       var done = num(sc.done, null);
       if (total !== null) {
-        return (
-          "מרענן " +
-          total +
-          " קורסים…" +
-          (done !== null ? " (" + done + " הושלמו)" : "")
-        );
+        return done !== null
+          ? Tf("app.scrape.refreshingWithDone", { total: total, done: done })
+          : Tf("app.scrape.refreshing", { total: total });
       }
-      return "מרענן נתונים מהידיעון…";
+      return T("app.scrape.refreshingNoCount");
     }
 
     if (txt(sc.summary)) return txt(sc.summary);
@@ -2430,11 +2471,20 @@
     if (num(sc.exit_code, 1) === 0) {
       var updated = num(sc.updated, total);
       var changed = num(sc.changed, null);
-      var line = updated === null ? "הנתונים עודכנו" : "עודכנו " + updated + " קורסים";
-      if (changed !== null) line += ", " + changed + " שינויים";
+      var line =
+        updated === null
+          ? changed === null
+            ? T("app.scrape.doneNoCount")
+            : Tf("app.scrape.doneNoCountWithChanges", { changed: changed })
+          : changed === null
+          ? Tf("app.scrape.doneUpdated", { updated: updated })
+          : Tf("app.scrape.doneUpdatedWithChanges", {
+              updated: updated,
+              changed: changed,
+            });
       return line;
     }
-    return txt(sc.message) || "הרענון הסתיים עם שגיאה — הפירוט ביומן.";
+    return txt(sc.message) || T("app.scrape.failedSeeLog");
   }
 
   function logLineText(entry) {
@@ -2686,7 +2736,7 @@
     if (ui.btnClearRanking) {
       ui.btnClearRanking.addEventListener("click", function () {
         setState({ ranked: {}, pinned: {}, activeSchedule: 0 });
-        toast("הדירוג והנעיצות אופסו.", "ok");
+        toast(T("app.toasts.rankingCleared"), "ok");
       });
     }
 
@@ -2872,22 +2922,23 @@
     if (!sch) return [];
     var finish = lastFinishOf(sch);
     return [
-      { label: "ימים", value: txt(num(sch.days_count, 0)) },
-      { label: "מסיים", value: finish === null ? "—" : fmtTime(finish) },
-      { label: "חורים", value: fmtSpan(sch.gap_minutes) },
+      { label: T("app.sticky.facts.days"), value: txt(num(sch.days_count, 0)) },
+      {
+        label: T("app.sticky.facts.finish"),
+        value: finish === null ? "—" : fmtTime(finish),
+      },
+      { label: T("app.sticky.facts.gaps"), value: fmtSpan(sch.gap_minutes) },
     ];
   }
 
   /** לשונית מוקטנת: המספר בלבד, והתיאור המלא ב-title ו-aria-label. */
   function compactTabs(box, list, prefix) {
     list.forEach(function (sch, idx) {
-      var label =
-        "מערכת " +
-        (idx + 1) +
-        " · " +
-        num(sch.days_count, 0) +
-        " ימים · חורים " +
-        fmtSpan(sch.gap_minutes);
+      var label = Tf("app.sticky.tabLabel", {
+        index: idx + 1,
+        days: num(sch.days_count, 0),
+        gap: fmtSpan(sch.gap_minutes),
+      });
       box.appendChild(
         el("button", {
           class: "sticky-tab",
@@ -3068,7 +3119,7 @@
     return el("div", { class: "banner banner--" + kind, attrs: { role: "note" } }, [
       el("span", { class: "banner-icon", attrs: { "aria-hidden": "true" } }),
       el("span", { class: "banner-text" }),
-      el("button", { class: "banner-close", attrs: { type: "button", "aria-label": "סגירת ההודעה" }, text: "×" }),
+      el("button", { class: "banner-close", attrs: { type: "button", "aria-label": T("app.banners.closeLabel") }, text: "×" }),
     ]);
   }
 
@@ -3081,28 +3132,28 @@
       wanted.push({
         key: "bootstrap-error",
         kind: "error",
-        text: "לא ניתן לטעון נתונים מהשרת: " + runtime.bootstrapError,
+        text: Tf("app.banners.bootstrapError", { error: runtime.bootstrapError }),
       });
     }
     if (runtime.coursesError) {
       wanted.push({
         key: "courses-error",
         kind: "error",
-        text: "טעינת נתוני הקורסים נכשלה: " + runtime.coursesError,
+        text: Tf("app.banners.coursesError", { error: runtime.coursesError }),
       });
     }
     if (runtime.solveError) {
       wanted.push({
         key: "solve-error",
         kind: "error",
-        text: "חישוב המערכת נכשל: " + runtime.solveError,
+        text: Tf("app.banners.solveError", { error: runtime.solveError }),
       });
     }
     if (runtime.semesterError) {
       wanted.push({
         key: "semester-error",
         kind: "error",
-        text: "טעינת קורסי הסמסטר נכשלה: " + runtime.semesterError,
+        text: Tf("app.banners.semesterError", { error: runtime.semesterError }),
       });
     }
 
@@ -3113,10 +3164,7 @@
       wanted.push({
         key: "needs-login",
         kind: "warn",
-        text:
-          "הרענון מדווח שנדרשת התחברות ידנית. בדרך כלל אין בכך צורך — משיכת הנתונים " +
-          "מהידיעון פועלת בלי התחברות כלל. אם ההודעה חוזרת, אפשר לפתוח את היומן " +
-          "ולראות מה נכשל. העמוד הזה לא מבקש, לא מציג ולא שומר סיסמאות.",
+        text: T("app.banners.needsLogin"),
       });
     }
 
@@ -3127,12 +3175,9 @@
       wanted.push({
         key: "fetch-skipped-" + skippedCodes.join(","),
         kind: "info",
-        text:
-          "לא כל הקורסים נמשכו בבקשה הזו, כדי לא להעמיס על שרת המכללה: " +
-          skippedCodes.join(", ") +
-          ". אפשר לבקש את השאר עוד רגע.",
+        text: Tf("app.banners.fetchSkipped", { codes: skippedCodes.join(", ") }),
         action: {
-          label: "משיכת השאר",
+          label: T("app.banners.fetchSkippedAction"),
           run: function () {
             retryAllMissing();
           },
@@ -3168,19 +3213,19 @@
       var ageHours = num(db.age_hours, null);
       var agePhrase =
         ageHours === null
-          ? "לא ידוע מתי הנתונים נמשכו"
-          : "הנתונים נמשכו " + txt(db.age_text);
+          ? T("app.banners.stale.ageUnknown")
+          : Tf("app.banners.stale.age", { age: txt(db.age_text) });
 
       var staleSections = [];
       if (staleMine.length) {
         staleSections.push({
-          title: "מהקורסים שנבחרו (" + staleMine.length + ")",
+          title: Tf("app.banners.stale.sectionMine", { count: staleMine.length }),
           codes: staleMine,
         });
       }
       if (staleOther.length) {
         staleSections.push({
-          title: "קורסים נוספים במסד (" + staleOther.length + ")",
+          title: Tf("app.banners.stale.sectionOther", { count: staleOther.length }),
           codes: staleOther,
         });
       }
@@ -3191,23 +3236,38 @@
         key: "stale-" + crc32(staleCodes.join(",")),
         kind: staleLoud ? "warn" : "muted",
         text: staleLoud
-          ? agePhrase +
-            " · " +
-            notUpdatedHe(staleMine.length, " מהקורסים שנבחרו") +
-            (staleOther.length ? " (ועוד " + staleOther.length + " במסד)" : "")
-          : agePhrase +
-            " · " +
-            notUpdatedHe(staleCodes.length, " במסד") +
-            ", ואף אחד מהם אינו מהקורסים שנבחרו",
+          ? staleOther.length
+            ? Tf("app.banners.stale.mineWithOther", {
+                age: agePhrase,
+                notUpdated: notUpdatedHe(
+                  staleMine.length,
+                  T("app.banners.stale.middleMine")
+                ),
+                other: staleOther.length,
+              })
+            : Tf("app.banners.stale.mine", {
+                age: agePhrase,
+                notUpdated: notUpdatedHe(
+                  staleMine.length,
+                  T("app.banners.stale.middleMine")
+                ),
+              })
+          : Tf("app.banners.stale.otherOnly", {
+              age: agePhrase,
+              notUpdated: notUpdatedHe(
+                staleCodes.length,
+                T("app.banners.stale.middleDb")
+              ),
+            }),
         details: {
-          label: "הצג רשימה",
+          label: T("app.banners.stale.detailsLabel"),
           sections: staleSections,
           failed: failedSet,
           note: db.courses || {},
         },
         action: runtime.scrape.running
           ? null
-          : { label: "רענון מהידיעון", run: startScrape },
+          : { label: T("app.banners.stale.refreshAction"), run: startScrape },
       });
     }
 
@@ -3218,9 +3278,10 @@
         kind: "warn",
         text:
           txt(s.target_message) ||
-          state.targetDays +
-            " ימים אינם אפשריים עם הקורסים האלה — המינימום הוא " +
-            s.min_days,
+          Tf("app.banners.targetDays", {
+            days: state.targetDays,
+            min: s.min_days,
+          }),
       });
     }
     if (s && pickList(s, ["tied_missing"], null).length) {
@@ -3228,12 +3289,9 @@
       wanted.push({
         key: "tied-" + missingTied.join(","),
         kind: "warn",
-        text:
-          "הידיעון רושם את הקורסים האלה כחבילה אחת. חסרים: " +
-          missingTied.join(", ") +
-          ". יש לסמן את כולם יחד, או להוריד את כולם.",
+        text: Tf("app.banners.tiedMissing", { codes: missingTied.join(", ") }),
         action: {
-          label: "הוספת הקורסים החסרים",
+          label: T("app.banners.tiedMissingAction"),
           run: function () {
             var codes = uniq(state.codes.concat(missingTied));
             // הוספה שעוקפת את toggleCourse, ולכן רושמת את המקור בעצמה:
@@ -3260,9 +3318,7 @@
       wanted.push({
         key: "viability-partial",
         kind: "info",
-        text:
-          "בדיקת המבויים הסתומים בוצעה חלקית בגלל כמות הקבוצות. ייתכן שבחירה " +
-          "מסוימת עדיין תוביל למצב בלי פתרון.",
+        text: T("app.banners.viabilityPartial"),
       });
     }
 
@@ -3340,10 +3396,14 @@
             attrs: {
               title: isFailed
                 ? reason
-                  ? "המשיכה נכשלה: " + reason
-                  : "המשיכה של הקורס נכשלה"
+                  ? Tf("app.banners.details.fetchFailedWithReason", {
+                      reason: reason,
+                    })
+                  : T("app.banners.details.fetchFailed")
                 : txt(meta.age_text)
-                ? "נמשך " + txt(meta.age_text)
+                ? Tf("app.banners.details.fetchedAge", {
+                    age: txt(meta.age_text),
+                  })
                 : "",
             },
           })
@@ -3356,14 +3416,14 @@
       body.appendChild(
         el("p", {
           class: "banner-more-legend",
-          text: "‏✕ — המשיכה של הקורס נכשלה, ולא רק התיישנה.",
+          text: T("app.banners.details.failedLegend"),
         })
       );
     }
 
     var summary = el("summary", {
       class: "banner-more-summary",
-      text: txt(spec.label) || "הצג רשימה",
+      text: txt(spec.label) || T("app.banners.details.defaultLabel"),
       data: { fk: "banner-more-" + item.key },
     });
 
@@ -3436,31 +3496,38 @@
     var ageText =
       txt(db.age_text) || agoHebrew(db.newest || db.updated_at || db.fetched_at);
     if (runtime.bootstrapError) {
-      setText(ui.freshText, "אין חיבור לשרת המקומי");
+      setText(ui.freshText, T("app.header.offline"));
     } else if (!boot) {
-      setText(ui.freshText, "בטעינת נתונים…");
+      setText(ui.freshText, T("app.header.loading"));
     } else if (!num(db.count, 0)) {
-      setText(ui.freshText, "אין עדיין נתונים במסד — יש להריץ רענון מהידיעון");
+      setText(ui.freshText, T("app.header.empty"));
     } else {
-      setText(ui.freshText, ageText ? "הנתונים נמשכו " + ageText : txt(db.text));
+      setText(
+        ui.freshText,
+        ageText ? Tf("app.header.fetched", { age: ageText }) : txt(db.text)
+      );
     }
 
     var meta = [];
-    if (num(db.count, null) !== null) meta.push(db.count + " קורסים");
+    if (num(db.count, null) !== null) {
+      meta.push(Tf("app.header.metaCourses", { count: db.count }));
+    }
     var groups = 0;
     runtime.courses.forEach(function (c) {
       groups += c.groups.length;
     });
-    if (groups) meta.push(groups + " קבוצות");
-    if (num(cat.count, null) !== null) meta.push("קטלוג: " + cat.count);
+    if (groups) meta.push(Tf("app.header.metaGroups", { count: groups }));
+    if (num(cat.count, null) !== null) {
+      meta.push(Tf("app.header.metaCatalog", { count: cat.count }));
+    }
     if (txt(state.academicYear)) meta.push(txt(state.academicYear));
     setText(ui.freshMeta, meta.join(" · "));
 
     if (ui.btnRefresh) {
       ui.btnRefresh.disabled = runtime.scrape.running === true;
       ui.btnRefresh.textContent = runtime.scrape.running
-        ? "רענון פועל…"
-        : "רענון מהידיעון";
+        ? T("app.header.refreshRunning")
+        : T("app.header.refreshIdle");
     }
     if (ui.btnReparse) ui.btnReparse.disabled = runtime.reparseBusy === true;
 
@@ -3470,9 +3537,15 @@
     setHidden(ui.refreshSummary, !summaryLine);
 
     var sc = runtime.scrape;
-    var phase = txt(sc.message) || PHASE_HE[txt(sc.phase)] || txt(sc.phase) || "ממתין";
-    if (runtime.reparseBusy) phase = "בונה מחדש מהקבצים השמורים";
-    if (runtime.scrapeError) phase = "שגיאה: " + runtime.scrapeError;
+    var phase =
+      txt(sc.message) ||
+      PHASE_HE[txt(sc.phase)] ||
+      txt(sc.phase) ||
+      T("app.header.phaseIdle");
+    if (runtime.reparseBusy) phase = T("app.header.phaseReparse");
+    if (runtime.scrapeError) {
+      phase = Tf("app.header.phaseError", { error: runtime.scrapeError });
+    }
     setText(ui.logPhase, phase);
 
     // שורות היומן מתווספות בלבד — לא מציירים אותו מחדש בכל רינדור
@@ -3548,29 +3621,36 @@
     ui.selTerm.value = txt(state.term);
 
     var info = semesterInfo(state.semester);
-    var yearLabel = YEAR_LABELS[state.studyYear] || "שנה " + state.studyYear;
+    var yearLabel =
+      YEAR_LABELS[state.studyYear] ||
+      Tf("app.year.yearFallback", { year: state.studyYear });
     if (curriculumSemesterKnown()) {
       var parts = [
         yearLabel,
-        "סמסטר " + txt(state.term),
-        "סמסטר " + txt(state.semester) + " בתוכנית הלימודים",
+        Tf("app.year.summaryTerm", { term: txt(state.term) }),
+        Tf("app.year.summaryPlanSemester", { semester: txt(state.semester) }),
       ];
       if (info && num(info.course_count, 0)) {
-        parts.push(info.course_count + " קורסים מומלצים");
+        parts.push(
+          Tf("app.year.summaryRecommendedCount", { count: info.course_count })
+        );
       }
       setText(ui.semesterSummary, parts.join(" · "));
       setText(ui.yearNote, "");
     } else if (runtime.curriculumAvailable === false) {
       // אין תוכנית טעונה — הבחירה עצמה תקפה, ואסור לדבר על סמסטר
       // בתוכנית שאינה קיימת.
-      setText(ui.semesterSummary, yearLabel + " · סמסטר " + txt(state.term));
+      setText(
+        ui.semesterSummary,
+        yearLabel + " · " + Tf("app.year.summaryTerm", { term: txt(state.term) })
+      );
       setText(ui.yearNote, FALLBACK_NOTE["no-curriculum"]);
     } else {
-      setText(ui.semesterSummary, "אין סמסטר תואם בתוכנית הלימודים");
+      setText(ui.semesterSummary, T("app.year.summaryNoPlan"));
       setText(
         ui.yearNote,
         txt(runtime.bootstrap && runtime.bootstrap.summer_note) ||
-          "לצירוף הזה אין רשימת קורסים בתוכנית. אפשר להוסיף קורסים דרך החיפוש בידיעון."
+          T("app.year.noPlanNote")
       );
     }
   }
@@ -3624,8 +3704,9 @@
     });
     if (family.length > 1) {
       toast(
-        (checked ? "נוספו יחד: " : "הוסרו יחד: ") + family.join(", ") +
-          " — הידיעון רושם אותם כחבילה אחת.",
+        Tf(checked ? "app.courses.tiedToastAdded" : "app.courses.tiedToastRemoved", {
+          courses: family.join(", "),
+        }),
         "info"
       );
     }
@@ -3708,8 +3789,8 @@
             el("p", {
               class: "note",
               text: runtime.ready
-                ? "אין קורסים להצגה בסמסטר הזה. אפשר להוסיף קורס דרך תיבת החיפוש."
-                : "טוען…",
+                ? T("app.courses.emptySemester")
+                : T("app.courses.loading"),
             })
           );
         }
@@ -3737,16 +3818,10 @@
     if (ui.coursesNote) {
       var notes = [];
       tiedFamilies().forEach(function (family) {
-        notes.push(
-          "הידיעון רושם את " +
-            family.join(", ") +
-            " כחבילה אחת: סימון של אחד מסמן את כולם, וביטול של אחד מבטל את כולם."
-        );
+        notes.push(Tf("app.courses.tiedNote", { courses: family.join(", ") }));
       });
       if (!catalogFallbackActive()) {
-        notes.push(
-          "אפשר להוסיף כל קורס אחר מהידיעון דרך תיבת החיפוש — כולל חזרה על קורס מסמסטר קודם, שהוא מקרה רגיל לגמרי."
-        );
+        notes.push(T("app.courses.addAnyNote"));
       }
       setText(ui.coursesNote, notes.join(" "));
     }
@@ -3773,11 +3848,13 @@
     // ושורות בלי קוד. הניסוח השני היה מצהיר על מספר שאיש לא אמר.
     var parts = [
       state.autoCodes.length
-        ? "סומנו מראש " + state.autoCodes.length +
-          " קורסים מתוך תוכנית הלימודים לסמסטר " + sem + "."
+        ? Tf("app.courses.recommended.preselected", {
+            count: state.autoCodes.length,
+            semester: sem,
+          })
         : // קורה כשכל הסמסטר הוא חלופות — למשל סמסטר 8 בהנדסת חשמל, שכולו
           // שלושה מסלולי תכן הנדסי שבוחרים אחד מהם.
-          "בסמסטר " + sem + " התוכנית מציעה רק קורסים לבחירה, ולכן לא סומן דבר מראש.",
+          Tf("app.courses.recommended.allElectives", { semester: sem }),
     ];
     var alternatives = runtime.semesterCourses.filter(function (rec) {
       return !!alternativeReason(rec);
@@ -3792,24 +3869,24 @@
       );
       parts.push(
         tracks.length
-          ? "קורסי מסלולי ההתמחות (" + tracks.join(", ") + ") וקורסי חלופה לא סומנו — " +
-            "הכלי אינו יודע באיזה מסלול אתם, ויש לסמן את הקורסים של המסלול שלכם."
-          : "קורסי חלופה — השמה או מסלול פיזיקה — לא סומנו, ויש לבחור את המתאים."
+          ? Tf("app.courses.recommended.tracksNote", { tracks: tracks.join(", ") })
+          : T("app.courses.recommended.alternativesNote")
       );
     }
     if (state.autoDropped.length) {
-      parts.push("בוטלו: " + state.autoDropped.join(", ") + ".");
+      parts.push(
+        Tf("app.courses.recommended.dropped", {
+          codes: state.autoDropped.join(", "),
+        })
+      );
     }
-    parts.push(
-      "צריך להשלים קורס מסמסטר קודם? אפשר לחפש אותו בתיבה שלמעלה ולהוסיף אותו לרשימה."
-    );
+    parts.push(T("app.courses.recommended.catchUpHint"));
     // ‏הסתייגות, לא תקלה: מספר הנ"ז שחולץ מהשנתון אינו שווה לסה"כ שהשנתון
     // עצמו מדפיס לסמסטר הזה. לפעמים המסמך הוא שאינו מסתדר. עדיף לומר זאת
     // מאשר להציג רשימה בביטחון שאינו קיים.
     if (runtime.semesterReconciles === false) {
       parts.push(
-        "שימו לב: סכום הנ\"ז ברשימה הזאת אינו תואם לסה\"כ המודפס בשנתון לסמסטר הזה, " +
-          "ולכן כדאי לוודא אותה מול הידיעון." +
+        T("app.courses.recommended.creditsMismatch") +
           (runtime.semesterNote ? " " + runtime.semesterNote : "")
       );
     }
@@ -3831,33 +3908,31 @@
     if (!have && (runtime.fetching[c] || (selected && (runtime.coursesBusy || !runtime.ready)))) {
       return {
         state: "loading",
-        tag: "טוען נתונים…",
+        tag: T("app.courses.status.loadingTag"),
         tagClass: "",
-        text: "טוען נתונים מהידיעון — זה לוקח שנייה-שתיים ואינו דורש התחברות.",
+        text: T("app.courses.status.loadingText"),
         retry: false,
       };
     }
     if (name === "unavailable") {
       return {
         state: "unavailable",
-        tag: "אין נתונים",
+        tag: T("app.courses.status.unavailableTag"),
         tagClass: "tag--warn",
-        text:
-          (reason ||
-            "הידיעון לא החזיר נתוני קבוצות לקורס הזה — ייתכן שהוא אינו נפתח בסמסטר הזה.") +
-          " אפשר לנסות שוב, או להסיר את הקורס מהבחירה.",
+        text: Tf("app.courses.status.unavailableText", {
+          reason: reason || T("app.courses.status.unavailableReason"),
+        }),
         retry: true,
       };
     }
     if (name === "skipped") {
       return {
         state: "skipped",
-        tag: "נדחה לרגע",
+        tag: T("app.courses.status.skippedTag"),
         tagClass: "tag--warn",
-        text:
-          (reason ||
-            "הקורס לא נמשך בבקשה הזו כדי לא להעמיס על שרת המכללה (עד 12 משיכות בכל פעם).") +
-          " אפשר לנסות שוב עוד רגע.",
+        text: Tf("app.courses.status.skippedText", {
+          reason: reason || T("app.courses.status.skippedReason"),
+        }),
         retry: true,
       };
     }
@@ -3865,7 +3940,7 @@
       return name === "fetched"
         ? {
             state: "fetched",
-            tag: "נמשך מהידיעון עכשיו",
+            tag: T("app.courses.status.fetchedTag"),
             tagClass: "",
             text: "",
             retry: false,
@@ -3876,17 +3951,17 @@
       if (hasDataHint) return { state: "ready", tag: "", tagClass: "", text: "", retry: false };
       return {
         state: "none",
-        tag: "אין נתונים עדיין",
+        tag: T("app.courses.status.noneTag"),
         tagClass: "tag--warn",
-        text: "הנתונים של הקורס עדיין לא נמשכו. סימון הקורס ימשוך אותם מהידיעון אוטומטית, בלי התחברות.",
+        text: T("app.courses.status.noneText"),
         retry: false,
       };
     }
     return {
       state: "pending",
-      tag: "אין נתונים",
+      tag: T("app.courses.status.pendingTag"),
       tagClass: "tag--warn",
-      text: "אין עדיין נתוני קבוצות לקורס הזה. אפשר לבקש משיכה נוספת מהידיעון.",
+      text: T("app.courses.status.pendingText"),
       retry: true,
     };
   }
@@ -3894,9 +3969,9 @@
   function retryButton(code, label) {
     return el("button", {
       class: "btn btn-ghost btn-sm",
-      attrs: { type: "button", title: "ניסיון נוסף למשוך את הקורס מהידיעון" },
+      attrs: { type: "button", title: T("app.courses.retryTitle") },
       data: { fk: "retry-" + txt(code) },
-      text: label || "ניסיון חוזר",
+      text: label || T("app.courses.retryButton"),
       on: {
         click: function (ev) {
           // הכרטיס עצמו הוא <label>; בלי העצירה הזו הלחיצה הייתה גם מבטלת סימון.
@@ -3970,14 +4045,24 @@
     ]);
 
     var hours = [];
-    if (num(rec.he, 0)) hours.push("הרצאה " + fmtNumber(rec.he));
-    if (num(rec.te, 0)) hours.push("תרגול " + fmtNumber(rec.te));
-    if (num(rec.ma, 0)) hours.push("מעבדה " + fmtNumber(rec.ma));
-    if (num(rec.pr, 0)) hours.push("פרויקט " + fmtNumber(rec.pr));
+    if (num(rec.he, 0)) {
+      hours.push(Tf("app.courses.hours.lecture", { n: fmtNumber(rec.he) }));
+    }
+    if (num(rec.te, 0)) {
+      hours.push(Tf("app.courses.hours.tutorial", { n: fmtNumber(rec.te) }));
+    }
+    if (num(rec.ma, 0)) {
+      hours.push(Tf("app.courses.hours.lab", { n: fmtNumber(rec.ma) }));
+    }
+    if (num(rec.pr, 0)) {
+      hours.push(Tf("app.courses.hours.project", { n: fmtNumber(rec.pr) }));
+    }
     // ‏SPEC §3: "—" ולא "0" — 86% מהקטלוג אינו בתוכנית, ואין לו נ"ז שמורות.
-    var meta = [fmtCredits(rec.credits) + ' נ"ז'];
+    var meta = [Tf("app.courses.creditsUnit", { credits: fmtCredits(rec.credits) })];
     if (hours.length) meta.push(hours.join(" · "));
-    if (rec.prereq && rec.prereq.length) meta.push("קדם: " + rec.prereq.join(", "));
+    if (rec.prereq && rec.prereq.length) {
+      meta.push(Tf("app.courses.prereq", { list: rec.prereq.join(", ") }));
+    }
     main.appendChild(el("span", { class: "course-meta", text: meta.join(" | ") }));
     if (txt(rec.note)) {
       main.appendChild(el("span", { class: "course-meta", text: txt(rec.note) }));
@@ -3991,7 +4076,9 @@
       tags.appendChild(
         el("span", {
           class: "tag " + (rec.in_curriculum ? "tag--in-plan" : "tag--out-plan"),
-          text: rec.in_curriculum ? "בתוכנית הלימודים" : "מהקטלוג",
+          text: rec.in_curriculum
+            ? T("app.courses.tags.inCurriculum")
+            : T("app.courses.tags.fromCatalog"),
         })
       );
     } else if (isExtra) {
@@ -3999,17 +4086,22 @@
         el("span", {
           class: "tag tag--out-plan",
           text: rec.fromSemester
-            ? "מסמסטר " + rec.fromSemester + " בתוכנית"
-            : "מחוץ לסמסטר הזה",
+            ? Tf("app.courses.tags.fromSemester", { semester: rec.fromSemester })
+            : T("app.courses.tags.outsideSemester"),
         })
       );
     } else {
       tags.appendChild(
-        el("span", { class: "tag tag--in-plan", text: "בתוכנית-סמסטר " + txt(state.semester) })
+        el("span", {
+          class: "tag tag--in-plan",
+          text: Tf("app.courses.tags.inPlanSemester", { semester: txt(state.semester) }),
+        })
       );
     }
     if (isTied(code)) {
-      tags.appendChild(el("span", { class: "tag tag--tied", text: "קורס צמוד" }));
+      tags.appendChild(
+        el("span", { class: "tag tag--tied", text: T("app.courses.tags.tied") })
+      );
     }
     if (altReason) {
       tags.appendChild(
@@ -4017,12 +4109,14 @@
           class: "tag tag--warn",
           // בקורס של מסלול התמחות שם המסלול הוא המידע השימושי; בשאר
           // החלופות אין שם קצר, ו"חלופה" הוא מה שיש לומר.
-          text: txt(rec.track) ? txt(rec.track) : "חלופה — לבחירה ידנית",
+          text: txt(rec.track) ? txt(rec.track) : T("app.courses.tags.alternative"),
         })
       );
     }
     if (unavailable) {
-      tags.appendChild(el("span", { class: "tag tag--dead", text: "לא נפתח בסמסטר" }));
+      tags.appendChild(
+        el("span", { class: "tag tag--dead", text: T("app.courses.tags.notOffered") })
+      );
     }
 
     // ‏SPEC_V2 §1: אף קורס לא נשאר עם "אין נתונים" בלי הסבר ובלי דרך קדימה.
@@ -4061,7 +4155,7 @@
       "label",
       {
         class: cls,
-        attrs: { title: unavailable ? "הקורס לא נפתח בסמסטר הזה" : "" },
+        attrs: { title: unavailable ? T("app.courses.notOfferedTitle") : "" },
         style: { "--course-idx": String(colorOf(code)) },
       },
       [box, main]
@@ -4083,25 +4177,29 @@
     rebuild(ui.searchResults, function (box) {
       if (!runtime.catalogQuery) return;
       if (runtime.catalogBusy) {
-        box.appendChild(el("li", { text: "מחפש…" }));
+        box.appendChild(el("li", { text: T("app.search.searching") }));
         return;
       }
       if (runtime.catalogError) {
-        box.appendChild(el("li", { text: "החיפוש נכשל: " + runtime.catalogError }));
+        box.appendChild(
+          el("li", { text: Tf("app.search.failed", { error: runtime.catalogError }) })
+        );
         return;
       }
       if (!results.length) {
-        box.appendChild(el("li", { text: "לא נמצאו קורסים מתאימים." }));
+        box.appendChild(el("li", { text: T("app.search.noResults") }));
         return;
       }
       var selected = selectedSet();
       results.forEach(function (rec) {
         var already = selected[rec.code] === true;
         var tag = rec.in_curriculum
-          ? "[בתוכנית" +
-            (rec.curriculum_semester ? "-סמסטר " + rec.curriculum_semester : "") +
-            "]"
-          : "[מחוץ לתוכנית]";
+          ? rec.curriculum_semester
+            ? Tf("app.search.tags.inPlanSemester", {
+                semester: rec.curriculum_semester,
+              })
+            : T("app.search.tags.inPlan")
+          : T("app.search.tags.outOfPlan");
         var li = el(
           "li",
           {
@@ -4133,7 +4231,9 @@
           ]
         );
         if (already) {
-          li.appendChild(el("span", { class: "tag", text: "כבר נבחר" }));
+          li.appendChild(
+            el("span", { class: "tag", text: T("app.search.alreadySelected") })
+          );
         }
         box.appendChild(li);
       });
@@ -4195,14 +4295,17 @@
     var groups = (isTracks ? data.tracks : data.clusters) || {};
     setText(
       ui.electivesTitle,
-      isTracks ? "מסלולי התמחות" : "אשכולות קורסי בחירה"
+      isTracks ? T("app.electives.titleTracks") : T("app.electives.titleClusters")
     );
     // הכלל אינו קוסמטי: אשכול = אחד מכל קבוצה, מסלול = בוחרים מסלול אחד.
     setText(ui.electivesRule, txt(isTracks ? data.track_rule : data.cluster_rule));
     // שנה מוצגת תמיד — גם כשהמסמך לא ציין אותה, ואז נאמר בדיוק את זה.
     setText(
       ui.electivesSource,
-      "מקור: פרק השנתון של " + txt(data.program) + " · " + txt(data.year_text)
+      Tf("app.electives.source", {
+        program: txt(data.program),
+        year: txt(data.year_text),
+      })
     );
 
     rebuild(ui.electivesGroups, function (box) {
@@ -4213,7 +4316,10 @@
         wrap.appendChild(
           el("h4", {
             class: "electives-group-title",
-            text: name + " (" + courses.length + ")",
+            text: Tf("app.electives.groupTitle", {
+              name: name,
+              count: courses.length,
+            }),
           })
         );
         var list = el("div", { class: "course-list" });
@@ -4261,14 +4367,17 @@
     if (!active) return;
 
     var note = FALLBACK_NOTE[reason] || FALLBACK_NOTE["empty-semester"];
-    if (catalogBrowseBroken()) note += " החיפוש בקטלוג לא זמין — אפשר להוסיף קורס בתיבת החיפוש שלמעלה.";
+    if (catalogBrowseBroken()) note += " " + T("app.catalog.browseUnavailable");
     setText(ui.browseNote, note);
 
     if (ui.browseList) {
       rebuild(ui.browseList, function (list) {
         if (runtime.browseError) {
           list.appendChild(
-            el("p", { class: "note", text: "החיפוש בקטלוג נכשל: " + runtime.browseError })
+            el("p", {
+              class: "note",
+              text: Tf("app.catalog.browseFailed", { error: runtime.browseError }),
+            })
           );
           return;
         }
@@ -4277,10 +4386,10 @@
             el("p", {
               class: "note",
               text: runtime.browseBusy
-                ? "טוען מהקטלוג…"
+                ? T("app.catalog.loading")
                 : runtime.browseQuery
-                ? "לא נמצא קורס מתאים בקטלוג."
-                : "הקטלוג ריק — יש להריץ רענון מהידיעון.",
+                ? T("app.catalog.noResults")
+                : T("app.catalog.empty"),
             })
           );
           return;
@@ -4294,13 +4403,15 @@
 
     var bits = [];
     if (runtime.browseResults.length) {
-      bits.push("מוצגים " + runtime.browseResults.length + " קורסים");
-      if (
+      bits.push(
         runtime.browseTotal !== null &&
-        runtime.browseTotal > runtime.browseResults.length
-      ) {
-        bits.push("מתוך " + runtime.browseTotal + " — אפשר לצמצם בחיפוש");
-      }
+          runtime.browseTotal > runtime.browseResults.length
+          ? Tf("app.catalog.showingOfTotal", {
+              count: runtime.browseResults.length,
+              total: runtime.browseTotal,
+            })
+          : Tf("app.catalog.showing", { count: runtime.browseResults.length })
+      );
     }
     setText(ui.browseState, bits.join(" "));
   }
@@ -4346,13 +4457,16 @@
       btn.setAttribute(
         "title",
         minDays !== null && n < minDays
-          ? n + " ימים אינם אפשריים עם הקורסים האלה — המינימום הוא " + minDays
+          ? Tf("app.days.targetImpossibleTitle", { days: n, min: minDays })
           : ""
       );
     });
 
-    setText(ui.daysTarget, state.targetDays + " ימים");
-    setText(ui.minDays, minDays === null ? "—" : minDays + " ימים");
+    setText(ui.daysTarget, Tf("app.days.daysCount", { days: state.targetDays }));
+    setText(
+      ui.minDays,
+      minDays === null ? "—" : Tf("app.days.daysCount", { days: minDays })
+    );
     setText(
       ui.feasibleCount,
       runtime.solve ? String(num(s.feasible_count, 0)) : "—"
@@ -4368,9 +4482,10 @@
         setText(
           ui.daysWarning,
           txt(s.target_message) ||
-            state.targetDays +
-              " ימים אינם אפשריים עם הקורסים האלה — המינימום הוא " +
-              minDays
+            Tf("app.days.targetImpossible", {
+              days: state.targetDays,
+              min: minDays,
+            })
         );
         setHidden(ui.daysWarning, false);
       } else {
@@ -4392,17 +4507,15 @@
       rebuild(ui.blockedList, function (box) {
         state.blocked.forEach(function (win, i) {
           var day = Math.round(num(win[0], 0));
-          var label =
-            "יום " +
-            dayLetter(day) +
-            "׳ " +
-            fmtTime(win[1]) +
-            "–" +
-            fmtTime(win[2]);
+          var label = Tf("app.days.blockedWindow", {
+            day: dayLetter(day),
+            from: fmtTime(win[1]),
+            to: fmtTime(win[2]),
+          });
           box.appendChild(
             el("button", {
               class: "tag",
-              attrs: { type: "button", title: "הסרת החסימה" },
+              attrs: { type: "button", title: T("app.days.removeBlocked") },
               data: { fk: "blocked-" + i },
               text: label + " ✕",
               on: {
@@ -4464,7 +4577,7 @@
       rebuild(ui.lectCourses, function (box) {
         if (!state.codes.length) {
           box.appendChild(
-            el("p", { class: "note", text: "יש לסמן קורסים בשלב 2 כדי לראות את הקבוצות." })
+            el("p", { class: "note", text: T("app.lecturers.empty") })
           );
           return;
         }
@@ -4477,22 +4590,20 @@
         if (missing.length) {
           var warnBox = el("div", { class: "lect-course" }, [
             el("div", { class: "lect-course-head" }, [
-              el("span", { class: "lect-course-title", text: "קורסים בלי נתוני קבוצות" }),
+              el("span", { class: "lect-course-title", text: T("app.lecturers.missing.title") }),
             ]),
           ]);
           missing.forEach(function (rec) {
             var line = el("div", { class: "field-row" }, [
               el("span", {
                 class: "note",
-                text:
-                  rec.code +
-                  " " +
-                  (rec.name || nameOf(rec.code)) +
-                  " — " +
-                  (rec.reason ||
-                    "הידיעון לא החזיר נתוני קבוצות לקורס הזה בסמסטר הנוכחי."),
+                text: Tf("app.lecturers.missing.line", {
+                  code: rec.code,
+                  name: rec.name || nameOf(rec.code),
+                  reason: rec.reason || T("app.lecturers.missing.reasonDefault"),
+                }),
               }),
-              retryButton(rec.code, "ניסיון חוזר מהידיעון"),
+              retryButton(rec.code, T("app.lecturers.retry")),
             ]);
             warnBox.appendChild(line);
           });
@@ -4507,15 +4618,14 @@
             var wrap = el("div", { class: "field-row" }, [
               el("span", {
                 class: "note",
-                text:
-                  code +
-                  " " +
-                  nameOf(code) +
-                  " — " +
-                  (st.text || "טוען נתונים מהידיעון…"),
+                text: Tf("app.lecturers.pending.line", {
+                  code: code,
+                  name: nameOf(code),
+                  status: st.text || T("app.lecturers.pending.status"),
+                }),
               }),
             ]);
-            if (st.retry) wrap.appendChild(retryButton(code, "ניסיון חוזר מהידיעון"));
+            if (st.retry) wrap.appendChild(retryButton(code, T("app.lecturers.retry")));
             box.appendChild(wrap);
             return;
           }
@@ -4528,13 +4638,13 @@
 
     if (ui.lectNote) {
       var bits = [];
-      if (rankedCount()) bits.push(rankedCount() + " מרצים מדורגים");
-      if (pinCount()) bits.push(pinCount() + " קבוצות נעוצות");
+      if (rankedCount()) bits.push(Tf("app.lecturers.note.ranked", { count: rankedCount() }));
+      if (pinCount()) bits.push(Tf("app.lecturers.note.pinned", { count: pinCount() }));
       setText(
         ui.lectNote,
         bits.length
-          ? bits.join(" · ") + ". כל שינוי כאן מחשב את המערכת מחדש מיד."
-          : "אפשר לדלג על השלב הזה — בלי העדפות המנוע בוחר לפי הימים והחורים בלבד."
+          ? Tf("app.lecturers.note.summary", { bits: bits.join(" · ") })
+          : T("app.lecturers.note.skip")
       );
     }
   }
@@ -4555,7 +4665,7 @@
 
     var extra = "";
     if (off.length) {
-      extra = " ללא חובת נוכחות: " + off.join(", ") + ".";
+      extra = Tf("app.lecturers.attendanceNoteTail", { list: off.join(", ") });
     }
     setText(ui.attendanceNote, txt(ui.attendanceNoteBase) + extra);
   }
@@ -4564,20 +4674,28 @@
     var code = course.code;
     var idx = colorOf(code);
 
-    var metaBits = [fmtCredits(creditsOf(code)) + ' נ"ז', course.groups.length + " קבוצות"];
+    var metaBits = [
+      Tf("app.lecturers.meta.credits", { credits: fmtCredits(creditsOf(code)) }),
+      Tf("app.lecturers.meta.groups", { count: course.groups.length }),
+    ];
     var fresh = course.freshness || {};
     if (txt(fresh.age_text)) {
-      metaBits.push((fresh.stale === true ? "נתונים ישנים · " : "") + txt(fresh.age_text));
+      metaBits.push(
+        fresh.stale === true
+          ? Tf("app.lecturers.meta.stale", { age: txt(fresh.age_text) })
+          : txt(fresh.age_text)
+      );
     }
     var ranked = state.ranked[code] || [];
     if (ranked.length) {
       metaBits.push(
-        "עדיפות: " +
-          ranked
+        Tf("app.lecturers.meta.priority", {
+          list: ranked
             .map(function (name, i) {
               return i + 1 + ". " + name;
             })
-            .join(" · ")
+            .join(" · "),
+        })
       );
     }
 
@@ -4603,14 +4721,14 @@
     var table = el("table", { class: "lect-table" }, [
       el("thead", {}, [
         el("tr", {}, [
-          el("th", { text: "קבוצה" }),
-          el("th", { text: "סוג" }),
-          el("th", { text: "מרצה" }),
+          el("th", { text: T("app.lecturers.table.group") }),
+          el("th", { text: T("app.lecturers.table.kind") }),
+          el("th", { text: T("app.lecturers.table.lecturer") }),
           // יום ושעה בתא אחד: הם נקראים תמיד יחד, ושתי עמודות נפרדות
           // רק הרחיבו את הטבלה.
-          el("th", { text: "יום ושעה" }),
-          el("th", { text: "חדר" }),
-          el("th", { class: "th-pin", text: "נעיצה" }),
+          el("th", { text: T("app.lecturers.table.when") }),
+          el("th", { text: T("app.lecturers.table.room") }),
+          el("th", { class: "th-pin", text: T("app.lecturers.table.pin") }),
         ]),
       ]),
     ]);
@@ -4650,21 +4768,16 @@
           {
             class: "field field-check",
             attrs: {
-              title:
-                "כשאין חובת נוכחות, המנוע רשאי לשבץ את הרכיב הזה במקביל לרכיב אחר — " +
-                "בתנאי שהמתג הכללי למעלה דלוק.",
+              title: T("app.lecturers.attendance.toggleTitle"),
             },
           },
-          [input, el("span", { text: "חובת נוכחות · " + kind })]
+          [input, el("span", { text: Tf("app.lecturers.attendance.label", { kind: kind }) })]
         )
       );
 
       var note = attendanceNoteFor(course, kind);
       if (note) {
-        hints.push(
-          kind + ": הידיעון כותב “" + note + "”. לכן ברירת המחדל כאן היא חובת נוכחות — " +
-            "ועדיין אפשר לשנות אותה ידנית."
-        );
+        hints.push(Tf("app.lecturers.attendance.hint", { kind: kind, note: note }));
       }
     });
 
@@ -4680,12 +4793,12 @@
       box.appendChild(
         el("p", {
           class: "note",
-          text:
-            "ללא חובת נוכחות: " +
-            off.join(", ") +
-            (state.allowSoftConflicts
-              ? " — המנוע רשאי לשבץ אותם במקביל לרכיב אחר, וכל חפיפה כזו תוצג בשלב 5."
-              : " — כדי שחפיפה אכן תותר יש להדליק גם את המתג הכללי שלמעלה."),
+          text: Tf(
+            state.allowSoftConflicts
+              ? "app.lecturers.attendance.offSoft"
+              : "app.lecturers.attendance.offStrict",
+            { list: off.join(", ") }
+          ),
         })
       );
     }
@@ -4712,9 +4825,11 @@
         title: dead
           ? via.reason
           : isPinned
-          ? "קבוצה נעוצה — לחיצה על “נעוץ” משחררת"
+          ? T("app.lecturers.row.pinnedTitle")
           : txt(group.lecturer)
-          ? "לחיצה " + (rank ? "מסירה את" : "מוסיפה את") + " " + group.lecturer + " מסדר העדיפויות"
+          ? Tf(rank ? "app.lecturers.row.rankRemove" : "app.lecturers.row.rankAdd", {
+              lecturer: group.lecturer,
+            })
           : "",
         "aria-disabled": dead ? "true" : null,
       },
@@ -4732,7 +4847,7 @@
     // והקידומת החוזרת מעומעמת, כדי שהעין תמצא את ההבדל במקום לספור ספרות.
     var parts = groupIdParts(gid);
     var idCell = el("td", { class: "cell-group" }, [
-      el("span", { class: "gid", attrs: { title: "קבוצה " + gid } }, [
+      el("span", { class: "gid", attrs: { title: Tf("app.lecturers.row.groupTitle", { gid: gid }) } }, [
         parts.prefix ? el("span", { class: "gid-prefix", text: parts.prefix }) : null,
         el("span", { class: "gid-suffix", text: parts.suffix }),
       ]),
@@ -4744,8 +4859,10 @@
       // ‏"משויכת ל-271030210/1 ועוד 2" חזר בכל שורה כמעט ותפס עמודה שלמה.
       // סמל אחד עם תיאור אומר את אותו הדבר בלי לדחוף את הטבלה.
       var linked = group.linked_to;
-      var linkedLabel = "משויכת ל" + (linked.length === 1 ? "קבוצה " : "קבוצות ") +
-        linked.join(", ");
+      var linkedLabel = Tf(
+        linked.length === 1 ? "app.lecturers.row.linkedOne" : "app.lecturers.row.linkedMany",
+        { list: linked.join(", ") }
+      );
       idCell.appendChild(
         el("span", {
           class: "link-badge",
@@ -4764,7 +4881,7 @@
       lectCell.appendChild(el("span", { class: "rank-badge", text: String(rank) }));
     }
     lectCell.appendChild(
-      el("span", { text: txt(group.lecturer) || "מרצה לא ידוע" })
+      el("span", { text: txt(group.lecturer) || T("app.lecturers.row.unknownLecturer") })
     );
     tr.appendChild(lectCell);
 
@@ -4772,7 +4889,7 @@
     var whenCell = el("td");
     var roomCell = el("td");
     if (!group.meetings.length) {
-      whenCell.appendChild(el("div", { text: "ללא מפגשים" }));
+      whenCell.appendChild(el("div", { text: T("app.lecturers.row.noMeetings") }));
       roomCell.appendChild(el("div", { text: "—" }));
     }
     group.meetings.forEach(function (m) {
@@ -4780,7 +4897,10 @@
       // ל-LTR, אחרת "12:50–15:50" היה מתהפך לצד האות.
       whenCell.appendChild(
         el("div", { class: "when-line" }, [
-          el("span", { class: "when-day", text: dayLetter(m.day) + "׳" }),
+          el("span", {
+            class: "when-day",
+            text: Tf("app.lecturers.dayCell", { day: dayLetter(m.day) }),
+          }),
           el("span", { class: "cell-time", text: fmtTime(m.start) + "–" + fmtTime(m.end) }),
         ])
       );
@@ -4796,8 +4916,8 @@
     // נגיש למקלדת ככפתור רגיל, ו-aria-label נושא את המשמעות המלאה — כולל
     // מספר הקבוצה, כי "נעיצה" לבדה אינה אומרת של מה.
     var pinLabel = dead
-      ? "לא ניתן לנעוץ את קבוצה " + gid + " — " + txt(via.reason)
-      : (isPinned ? "שחרור הנעיצה מקבוצה " : "נעיצת קבוצה ") + gid;
+      ? Tf("app.lecturers.row.pinDead", { gid: gid, reason: txt(via.reason) })
+      : Tf(isPinned ? "app.lecturers.row.pinRelease" : "app.lecturers.row.pinAdd", { gid: gid });
     var pinBtn = el("button", {
       class: "pin-btn",
       attrs: {
@@ -4859,13 +4979,11 @@
                 "aria-selected": idx === state.activeSchedule ? "true" : "false",
               },
               data: { fk: "tab-" + idx },
-              text:
-                "מערכת " +
-                (idx + 1) +
-                " · " +
-                num(sch.days_count, 0) +
-                " ימים · חורים " +
-                fmtSpan(sch.gap_minutes),
+              text: Tf("app.schedule.tabLabel", {
+                n: idx + 1,
+                days: num(sch.days_count, 0),
+                gaps: fmtSpan(sch.gap_minutes),
+              }),
               on: {
                 click: function () {
                   setState({ activeSchedule: idx }, { solve: false });
@@ -4899,14 +5017,14 @@
         });
         // ---- המדידות: מה המערכת הזאת עולה בפועל ----
         box.appendChild(
-          fact("ניקוד", fmtNumber(sch.score), {
-            hint: "גבוה = טוב יותר",
+          fact(T("app.schedule.factScore"), fmtNumber(sch.score), {
+            hint: T("app.schedule.factScoreHint"),
             title: scoreTitle(sch),
           })
         );
         box.appendChild(
           fact(
-            "ימים",
+            T("app.schedule.factDays"),
             num(sch.days_count, days.length) +
               " (" +
               days
@@ -4917,12 +5035,17 @@
               ")"
           )
         );
-        box.appendChild(fact("חורים", fmtSpan(sch.gap_minutes)));
-        box.appendChild(fact('נ"ז', creditsText(scheduleCredits(sch), { short: true })));
+        box.appendChild(fact(T("app.schedule.factGaps"), fmtSpan(sch.gap_minutes)));
+        box.appendChild(
+          fact(
+            T("app.schedule.factCredits"),
+            creditsText(scheduleCredits(sch), { short: true })
+          )
+        );
         if (num(sch.lecturer_total, 0) > 0) {
           box.appendChild(
             fact(
-              "מרצים מועדפים",
+              T("app.schedule.factLecturers"),
               num(sch.lecturer_hits, 0) + "/" + num(sch.lecturer_total, 0)
             )
           );
@@ -4935,7 +5058,7 @@
           if (breakdownAlwaysZero(list, k)) return;
           box.appendChild(
             fact(BREAKDOWN_HE[k] || k, fmtNumber(breakdown[k]), {
-              hint: "רכיב בניקוד",
+              hint: T("app.schedule.factBreakdownHint"),
               title: scoreTitle(sch),
             })
           );
@@ -4968,7 +5091,7 @@
             var reasons = pickList(s, ["reasons"], null);
             if (!reasons.length) {
               box.appendChild(
-                el("li", { text: "השרת לא החזיר הסבר מפורט." })
+                el("li", { text: T("app.schedule.noReasons") })
               );
             }
             reasons.forEach(function (r) {
@@ -4994,11 +5117,11 @@
                     class: "btn btn-ghost btn-sm",
                     attrs: { type: "button" },
                     data: { fk: "unpin-all" },
-                    text: "שחרור כל הנעיצות",
+                    text: T("app.schedule.unpinAll"),
                     on: {
                       click: function () {
                         setState({ pinned: {}, activeSchedule: 0 });
-                        toast("כל הנעיצות שוחררו.", "ok");
+                        toast(T("app.schedule.unpinAllToast"), "ok");
                       },
                     },
                   }),
@@ -5014,23 +5137,19 @@
     if (ui.scheduleNote) {
       var note = "";
       if (!state.codes.length) {
-        note = "יש לסמן לפחות קורס אחד בשלב 2.";
+        note = T("app.schedule.noteNoCourses");
       } else if (runtime.solveBusy && !s) {
-        note = "מחשב…";
+        note = T("app.schedule.noteSolving");
       } else if (runtime.solveError) {
-        note = "החישוב נכשל: " + runtime.solveError;
+        note = Tf("app.schedule.noteFailed", { error: runtime.solveError });
       } else if (s && !infeasible) {
         note =
-          "נמצאו " +
-          feasible +
-          " מערכות אפשריות; מוצגות " +
-          list.length +
-          " המובילות." +
+          Tf("app.schedule.noteFound", { found: feasible, shown: list.length }) +
           (s.counts_truncated === true
-            ? " הספירה נעצרה במכסה — ייתכן שיש עוד."
+            ? " " + T("app.schedule.noteTruncated")
             : "") +
           (num(s.elapsed_ms, null) !== null
-            ? " (חישוב: " + num(s.elapsed_ms, 0) + " מ״ש)"
+            ? " " + Tf("app.schedule.noteElapsed", { ms: num(s.elapsed_ms, 0) })
             : "");
       }
       setText(ui.scheduleNote, note);
@@ -5063,14 +5182,10 @@
       var v = num(b[k], 0);
       return "· " + (BREAKDOWN_HE[k] || k) + ": " + (v > 0 ? "+" : "") + fmtNumber(v);
     });
-    return (
-      "ניקוד גבוה יותר = מערכת טובה יותר.\n" +
-      "הוא סכום של רכיבים: העדפת מרצים מוסיפה, וימי לימוד, חורים, " +
-      "פריסה ארוכה וסיום מאוחר מורידים.\n" +
-      (lines.length ? lines.join("\n") + "\n" : "") +
-      "סך הכול: " +
-      fmtNumber(sch ? sch.score : 0)
-    );
+    return Tf("app.schedule.scoreTitle", {
+      total: fmtNumber(sch ? sch.score : 0),
+      lines: lines.length ? lines.join("\n") + "\n" : "",
+    });
   }
 
   /**
@@ -5140,34 +5255,35 @@
   }
 
   function meetingSide(m) {
-    return (
-      m.code +
-      " " +
-      m.kind +
-      " קב' " +
-      m.group_id +
-      " (יום " +
-      dayLetter(m.day) +
-      "׳ " +
-      fmtTime(m.start) +
-      "–" +
-      fmtTime(m.end) +
-      ")"
-    );
+    return Tf("app.overlap.meetingSide", {
+      code: m.code,
+      kind: m.kind,
+      group: m.group_id,
+      day: dayLetter(m.day),
+      start: fmtTime(m.start),
+      end: fmtTime(m.end),
+    });
   }
 
   function meetingShort(m) {
-    return m.code + " " + m.kind + " קב' " + m.group_id;
+    return Tf("app.overlap.meetingShort", {
+      code: m.code,
+      kind: m.kind,
+      group: m.group_id,
+    });
   }
 
   function softConflictLine(a, b) {
     var optional = [];
     if (!attendanceRequired(a.code, a.kind)) optional.push(a.code + " " + a.kind);
     if (!attendanceRequired(b.code, b.kind)) optional.push(b.code + " " + b.kind);
-    var tail = optional.length
-      ? " — נבחר בהנחה שאין חובת נוכחות ב-" + optional.join(" וב-") + "."
-      : " — יש לוודא שאפשר לוותר על הנוכחות באחד מהשניים.";
-    return "חפיפה מכוונת: " + meetingSide(a) + " מול " + meetingSide(b) + tail;
+    return optional.length
+      ? Tf("app.overlap.lineOptional", {
+          a: meetingSide(a),
+          b: meetingSide(b),
+          optional: optional.join(T("app.overlap.optionalJoin")),
+        })
+      : Tf("app.overlap.lineRequired", { a: meetingSide(a), b: meetingSide(b) });
   }
 
   /**
@@ -5250,13 +5366,12 @@
       return;
     }
     var head =
-      (info.count === 1
-        ? "במערכת הזו יש חפיפה מכוונת אחת"
-        : "במערכת הזו יש " + info.count + " חפיפות מכוונות") +
-      " — שני רכיבים באותו זמן. זה התאפשר רק משום שסומן שאין חובת נוכחות באחד הצדדים, " +
-      "ומשמעותו ויתור בפועל על הנוכחות באחד מהם.";
+      info.count === 1
+        ? T("app.overlap.headOne")
+        : Tf("app.overlap.headMany", { count: info.count });
     if (info.minutes > 0) {
-      head += " סך זמן החפיפה: " + fmtSpan(info.minutes) + " שעות.";
+      head +=
+        " " + Tf("app.overlap.totalMinutes", { span: fmtSpan(info.minutes) });
     }
     setText(ui.softSub, head);
     rebuild(ui.softList, function (box) {
@@ -5365,13 +5480,13 @@
 
     // שורה 1 — כותרות. אות היום בלבד: "יום ה׳" ו"חמישי" זה מתחת לזה
     // אמרו את אותו הדבר פעמיים והעמיקו את שורת הכותרות בכל עמודה.
-    root.appendChild(el("div", { class: "hd", text: "שעה" }));
+    root.appendChild(el("div", { class: "hd", text: T("app.grid.hourHeader") }));
     DAYS.forEach(function (d) {
       root.appendChild(
         el("div", {
           class: "hd",
           attrs: { title: dayName(d) },
-          text: "יום " + dayLetter(d) + "׳",
+          text: Tf("app.grid.dayHeader", { day: dayLetter(d) }),
         })
       );
     });
@@ -5409,12 +5524,12 @@
       var clash = soft && soft.marks ? txt(soft.marks[key]) : "";
       var summary = [
         m.name,
-        "קבוצה " + m.group_id,
+        Tf("app.grid.group", { group: m.group_id }),
         m.kind,
         m.lecturer,
         fmtTime(m.start) + "–" + fmtTime(m.end),
         m.room,
-        clash ? "חפיפה מכוונת עם " + clash : "",
+        clash ? Tf("app.grid.clashSummary", { list: clash }) : "",
       ]
         .filter(Boolean)
         .join(" · ");
@@ -5446,14 +5561,18 @@
         [
           el("b", { text: m.name }),
           el("span", { class: "cell-time", text: fmtTime(m.start) + "–" + fmtTime(m.end) }),
-          el("span", { text: m.kind + " · קבוצה " + m.group_id }),
+          el("span", {
+            text: Tf("app.grid.kindGroup", { kind: m.kind, group: m.group_id }),
+          }),
         ]
       );
       if (m.lecturer) block.appendChild(el("span", { text: m.lecturer }));
       if (m.room) block.appendChild(el("span", { text: m.room }));
       if (clash) {
         // הסימון חייב להיות קריא גם בלי צבע ובלי הדפסה בצבע.
-        block.appendChild(el("span", { text: "חפיפה מכוונת · " + clash }));
+        block.appendChild(
+          el("span", { text: Tf("app.grid.clashBadge", { list: clash }) })
+        );
       }
       root.appendChild(block);
     });
@@ -5505,39 +5624,44 @@
         // (תוכנית קצרה מ-8 סמסטרים, קיץ, או אין תוכנית כלל).
         locked: false,
         complete: !!txt(state.term),
-        text: txt(state.term)
-          ? (YEAR_LABELS[state.studyYear] || "") +
-            " · סמסטר " +
-            txt(state.term) +
-            (curriculumSemesterKnown()
-              ? " · סמסטר " + txt(state.semester) + " בתוכנית"
-              : "")
-          : "יש לבחור שנה וסמסטר",
+        text: !txt(state.term)
+          ? T("app.steps.year.empty")
+          : curriculumSemesterKnown()
+          ? Tf("app.steps.year.selectedWithCurriculum", {
+              year: YEAR_LABELS[state.studyYear] || "",
+              term: txt(state.term),
+              semester: txt(state.semester),
+            })
+          : Tf("app.steps.year.selected", {
+              year: YEAR_LABELS[state.studyYear] || "",
+              term: txt(state.term),
+            }),
       },
       {
         key: "courses",
         locked: false,
         complete: hasCodes,
         text: hasCodes
-          ? state.codes.length +
-            " קורסים · " +
-            totalCreditsText({ unit: true, short: true })
+          ? Tf("app.steps.courses.selected", {
+              count: state.codes.length,
+              credits: totalCreditsText({ unit: true, short: true }),
+            })
           : catalogFallbackActive()
-          ? "יש לבחור קורסים מהקטלוג"
-          : "יש לסמן קורסים",
+          ? T("app.steps.courses.emptyCatalog")
+          : T("app.steps.courses.empty"),
       },
       {
         key: "days",
         locked: !hasCodes,
         complete: hasCodes && !!s,
         text: !hasCodes
-          ? "ממתין לבחירת קורסים"
-          : "יעד " +
-            state.targetDays +
-            " ימים" +
-            (s && num(s.min_days, null) !== null
-              ? " · מינימום אפשרי " + s.min_days
-              : ""),
+          ? T("app.steps.days.waitingForCourses")
+          : s && num(s.min_days, null) !== null
+          ? Tf("app.steps.days.targetWithMin", {
+              target: state.targetDays,
+              min: s.min_days,
+            })
+          : Tf("app.steps.days.target", { target: state.targetDays }),
       },
       {
         key: "lecturers",
@@ -5546,33 +5670,36 @@
         // שני החלקים נאמרים תמיד, גם כשהם אפס: כשהשלב מקופל זו כל האמירה
         // שנשארת עליו, ו"ללא נעיצות" הוא מידע — היעדרו אינו.
         text: !hasData
-          ? "ממתין לנתוני הקבוצות"
-          : (rankedCount() === 0
-              ? "בלי העדפות מרצים"
-              : rankedCount() === 1
-              ? "העדפה אחת"
-              : rankedCount() + " העדפות") +
-            " · " +
-            (pinCount() === 0
-              ? "ללא נעיצות"
-              : pinCount() === 1
-              ? "נעיצה אחת"
-              : pinCount() + " נעיצות"),
+          ? T("app.steps.lecturers.waitingForData")
+          : Tf("app.steps.lecturers.summary", {
+              ranked:
+                rankedCount() === 0
+                  ? T("app.steps.lecturers.ranked.none")
+                  : rankedCount() === 1
+                  ? T("app.steps.lecturers.ranked.one")
+                  : Tf("app.steps.lecturers.ranked.many", { count: rankedCount() }),
+              pins:
+                pinCount() === 0
+                  ? T("app.steps.lecturers.pins.none")
+                  : pinCount() === 1
+                  ? T("app.steps.lecturers.pins.one")
+                  : Tf("app.steps.lecturers.pins.many", { count: pinCount() }),
+            }),
       },
       {
         key: "schedule",
         locked: !hasCodes,
         complete: list.length > 0,
         text: !hasCodes
-          ? "ממתין לבחירת קורסים"
+          ? T("app.steps.schedule.waitingForCourses")
           : list.length
-          ? "מוצגת מערכת " +
-            (clamp(state.activeSchedule, 0, list.length - 1) + 1) +
-            " מתוך " +
-            list.length
+          ? Tf("app.steps.schedule.showing", {
+              index: clamp(state.activeSchedule, 0, list.length - 1) + 1,
+              total: list.length,
+            })
           : runtime.solveBusy
-          ? "מחשב…"
-          : "אין מערכת אפשרית עם הבחירות הנוכחיות",
+          ? T("app.steps.schedule.solving")
+          : T("app.steps.schedule.none"),
       },
     ];
 

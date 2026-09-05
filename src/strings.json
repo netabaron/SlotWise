@@ -12,14 +12,12 @@
     "",
     "שינוי מפתח (ולא ערך) מחייב שינוי מקביל בקוד שקורא אותו."
   ],
-
   "meta": {
     "title": "SlotWise — מערכת שעות בראודה",
     "brand": "SlotWise",
     "tagline": "מערכת שעות בראודה · רץ במחשב הזה בלבד, בלי לשלוח שום דבר החוצה",
     "footer": "SlotWise · שרת מקומי על 127.0.0.1 בלבד · הנתונים נשמרים במחשב הזה ואינם נשלחים לשום מקום."
   },
-
   "ui": {
     "header": {
       "freshnessLoading": "בטעינת נתונים…",
@@ -34,24 +32,20 @@
       "themeDark": "כהה",
       "themeDarkTitle": "תמיד כהה"
     },
-
     "sticky": {
       "regionLabel": "סיכום המערכת הנבחרת",
       "btnShowGrid": "הצג מערכת"
     },
-
     "banners": {
       "regionLabel": "הודעות",
       "close": "סגירת ההודעה"
     },
-
     "log": {
       "title": "יומן משיכת נתונים מהידיעון",
       "phaseIdle": "ממתין",
       "close": "סגירה",
       "note": "משיכת הנתונים מהידיעון פועלת בלי התחברות ובלי חלון דפדפן — אין בה שלב של הזדהות, והעמוד הזה לא מבקש, לא מציג ולא שומר סיסמאות. השורות שלמטה הן פירוט טכני של ההתקדמות, והן נפתחות רק לפי בקשה; הסיכום הקצר מוצג בכותרת העמוד."
     },
-
     "steps": {
       "yearTitle": "מסלול, שנה וסמסטר",
       "yearHint": "קובעים אילו קורסים יוצעו.",
@@ -64,7 +58,6 @@
       "scheduleTitle": "המערכת",
       "scheduleHint": "המערכות הטובות ביותר. כל שינוי מעדכן מיד."
     },
-
     "fields": {
       "program": "מסלול",
       "studyYear": "שנת לימודים",
@@ -83,7 +76,6 @@
       "latest": "לא לסיים אחרי",
       "noFriday": "בלי יום שישי"
     },
-
     "lecturers": {
       "legendRank": "העדפה ראשונה",
       "legendPinned": "קבוצה נעוצה",
@@ -91,7 +83,6 @@
       "btnClearRanking": "איפוס הדירוג והנעיצות",
       "attendanceNote": "כברירת מחדל לכל רכיב יש חובת נוכחות. כיבוי החובה ברכיב מאפשר לשבץ אותו במקביל לרכיב אחר — ויתור על נוכחות בו — אם זה מקצר את השבוע. כל חפיפה כזו תוצג מעל המערכת."
     },
-
     "schedule": {
       "tabsLabel": "מערכות מוצעות",
       "btnPrint": "הדפסה",
@@ -102,14 +93,12 @@
       "overlayTitle": "המערכת השבועית",
       "overlayClose": "סגירה"
     },
-
     "fallbackPage": {
       "title": "SlotWise",
       "heading": "השרת עובד",
       "body": "ה-API זמין תחת {api}, אבל הקובץ {file} עדיין לא קיים."
     }
   },
-
   "server": {
     "age": {
       "unknown": "לא ידוע מתי",
@@ -143,6 +132,412 @@
     "infeasible": {
       "pinSuggestion": "יש לבחור קבוצה אחרת ברשימה במקום הנעיצה שאינה קיימת עוד, או לשחרר את הנעיצה כדי לראות שוב את כל האפשרויות.",
       "releasePin": "יש לשחרר אחת מהקבוצות הנעוצות — נעיצה אחת יכולה לבדה למנוע כל פתרון."
+    }
+  },
+  "app": {
+    "days": {
+      "daysCount": "{days} ימים",
+      "targetImpossible": "{days} ימים אינם אפשריים עם הקורסים האלה — המינימום הוא {min}",
+      "targetImpossibleTitle": "{days} ימים אינם אפשריים עם הקורסים האלה — המינימום הוא {min}",
+      "blockedWindow": "יום {day}׳ {from}–{to}",
+      "removeBlocked": "הסרת החסימה"
+    },
+    "header": {
+      "offline": "אין חיבור לשרת המקומי",
+      "loading": "בטעינת נתונים…",
+      "empty": "אין עדיין נתונים במסד — יש להריץ רענון מהידיעון",
+      "fetched": "הנתונים נמשכו {age}",
+      "metaCourses": "{count} קורסים",
+      "metaGroups": "{count} קבוצות",
+      "metaCatalog": "קטלוג: {count}",
+      "refreshRunning": "רענון פועל…",
+      "refreshIdle": "רענון מהידיעון",
+      "phaseIdle": "ממתין",
+      "phaseReparse": "בונה מחדש מהקבצים השמורים",
+      "phaseError": "שגיאה: {error}"
+    },
+    "scrape": {
+      "refreshing": "מרענן {total} קורסים…",
+      "refreshingWithDone": "מרענן {total} קורסים… ({done} הושלמו)",
+      "refreshingNoCount": "מרענן נתונים מהידיעון…",
+      "doneNoCount": "הנתונים עודכנו",
+      "doneNoCountWithChanges": "הנתונים עודכנו, {changed} שינויים",
+      "doneUpdated": "עודכנו {updated} קורסים",
+      "doneUpdatedWithChanges": "עודכנו {updated} קורסים, {changed} שינויים",
+      "failedSeeLog": "הרענון הסתיים עם שגיאה — הפירוט ביומן.",
+      "reparseRunning": "בונה מחדש מהקבצים השמורים…",
+      "reparseSummary": "הבנייה מחדש מהקבצים השמורים הסתיימה."
+    },
+    "toasts": {
+      "pinReleased": "נעיצה ששוחררה הוסרה מהבחירה.",
+      "scrapeDone": "הרענון הסתיים.",
+      "scrapeFailed": "הרענון הסתיים עם שגיאה.",
+      "reparseDone": "הבנייה מחדש הסתיימה.",
+      "rankingCleared": "הדירוג והנעיצות אופסו."
+    },
+    "banners": {
+      "closeLabel": "סגירת ההודעה",
+      "bootstrapError": "לא ניתן לטעון נתונים מהשרת: {error}",
+      "coursesError": "טעינת נתוני הקורסים נכשלה: {error}",
+      "solveError": "חישוב המערכת נכשל: {error}",
+      "semesterError": "טעינת קורסי הסמסטר נכשלה: {error}",
+      "needsLogin": "הרענון מדווח שנדרשת התחברות ידנית. בדרך כלל אין בכך צורך — משיכת הנתונים מהידיעון פועלת בלי התחברות כלל. אם ההודעה חוזרת, אפשר לפתוח את היומן ולראות מה נכשל. העמוד הזה לא מבקש, לא מציג ולא שומר סיסמאות.",
+      "fetchSkipped": "לא כל הקורסים נמשכו בבקשה הזו, כדי לא להעמיס על שרת המכללה: {codes}. אפשר לבקש את השאר עוד רגע.",
+      "fetchSkippedAction": "משיכת השאר",
+      "stale": {
+        "ageUnknown": "לא ידוע מתי הנתונים נמשכו",
+        "age": "הנתונים נמשכו {age}",
+        "mine": "{age} · {notUpdated}",
+        "mineWithOther": "{age} · {notUpdated} (ועוד {other} במסד)",
+        "otherOnly": "{age} · {notUpdated}, ואף אחד מהם אינו מהקורסים שנבחרו",
+        "middleMine": " מהקורסים שנבחרו",
+        "middleDb": " במסד",
+        "sectionMine": "מהקורסים שנבחרו ({count})",
+        "sectionOther": "קורסים נוספים במסד ({count})",
+        "detailsLabel": "הצג רשימה",
+        "refreshAction": "רענון מהידיעון"
+      },
+      "targetDays": "{days} ימים אינם אפשריים עם הקורסים האלה — המינימום הוא {min}",
+      "tiedMissing": "הידיעון רושם את הקורסים האלה כחבילה אחת. חסרים: {codes}. יש לסמן את כולם יחד, או להוריד את כולם.",
+      "tiedMissingAction": "הוספת הקורסים החסרים",
+      "viabilityPartial": "בדיקת המבויים הסתומים בוצעה חלקית בגלל כמות הקבוצות. ייתכן שבחירה מסוימת עדיין תוביל למצב בלי פתרון.",
+      "details": {
+        "fetchFailedWithReason": "המשיכה נכשלה: {reason}",
+        "fetchFailed": "המשיכה של הקורס נכשלה",
+        "fetchedAge": "נמשך {age}",
+        "failedLegend": "‏✕ — המשיכה של הקורס נכשלה, ולא רק התיישנה.",
+        "defaultLabel": "הצג רשימה"
+      }
+    },
+    "lecturers": {
+      "empty": "יש לסמן קורסים בשלב 2 כדי לראות את הקבוצות.",
+      "retry": "ניסיון חוזר מהידיעון",
+      "missing": {
+        "title": "קורסים בלי נתוני קבוצות",
+        "line": "{code} {name} — {reason}",
+        "reasonDefault": "הידיעון לא החזיר נתוני קבוצות לקורס הזה בסמסטר הנוכחי."
+      },
+      "pending": {
+        "line": "{code} {name} — {status}",
+        "status": "טוען נתונים מהידיעון…"
+      },
+      "note": {
+        "ranked": "{count} מרצים מדורגים",
+        "pinned": "{count} קבוצות נעוצות",
+        "summary": "{bits}. כל שינוי כאן מחשב את המערכת מחדש מיד.",
+        "skip": "אפשר לדלג על השלב הזה — בלי העדפות המנוע בוחר לפי הימים והחורים בלבד."
+      },
+      "attendanceNoteTail": " ללא חובת נוכחות: {list}.",
+      "meta": {
+        "credits": "{credits} נ\"ז",
+        "groups": "{count} קבוצות",
+        "stale": "נתונים ישנים · {age}",
+        "priority": "עדיפות: {list}"
+      },
+      "table": {
+        "group": "קבוצה",
+        "kind": "סוג",
+        "lecturer": "מרצה",
+        "when": "יום ושעה",
+        "room": "חדר",
+        "pin": "נעיצה"
+      },
+      "attendance": {
+        "toggleTitle": "כשאין חובת נוכחות, המנוע רשאי לשבץ את הרכיב הזה במקביל לרכיב אחר — בתנאי שהמתג הכללי למעלה דלוק.",
+        "label": "חובת נוכחות · {kind}",
+        "hint": "{kind}: הידיעון כותב “{note}”. לכן ברירת המחדל כאן היא חובת נוכחות — ועדיין אפשר לשנות אותה ידנית.",
+        "offSoft": "ללא חובת נוכחות: {list} — המנוע רשאי לשבץ אותם במקביל לרכיב אחר, וכל חפיפה כזו תוצג בשלב 5.",
+        "offStrict": "ללא חובת נוכחות: {list} — כדי שחפיפה אכן תותר יש להדליק גם את המתג הכללי שלמעלה."
+      },
+      "row": {
+        "pinnedTitle": "קבוצה נעוצה — לחיצה על “נעוץ” משחררת",
+        "rankAdd": "לחיצה מוסיפה את {lecturer} מסדר העדיפויות",
+        "rankRemove": "לחיצה מסירה את {lecturer} מסדר העדיפויות",
+        "groupTitle": "קבוצה {gid}",
+        "linkedOne": "משויכת לקבוצה {list}",
+        "linkedMany": "משויכת לקבוצות {list}",
+        "unknownLecturer": "מרצה לא ידוע",
+        "noMeetings": "ללא מפגשים",
+        "pinDead": "לא ניתן לנעוץ את קבוצה {gid} — {reason}",
+        "pinRelease": "שחרור הנעיצה מקבוצה {gid}",
+        "pinAdd": "נעיצת קבוצה {gid}"
+      },
+      "deadEndReason": "בחירה זו משאירה את המערכת בלי פתרון",
+      "dayCell": "{day}׳"
+    },
+    "schedule": {
+      "tabLabel": "מערכת {n} · {days} ימים · חורים {gaps}",
+      "factScore": "ניקוד",
+      "factScoreHint": "גבוה = טוב יותר",
+      "factDays": "ימים",
+      "factGaps": "חורים",
+      "factCredits": "נ\"ז",
+      "factLecturers": "מרצים מועדפים",
+      "factBreakdownHint": "רכיב בניקוד",
+      "scoreTitle": "ניקוד גבוה יותר = מערכת טובה יותר.\nהוא סכום של רכיבים: העדפת מרצים מוסיפה, וימי לימוד, חורים, פריסה ארוכה וסיום מאוחר מורידים.\n{lines}סך הכול: {total}",
+      "noReasons": "השרת לא החזיר הסבר מפורט.",
+      "unpinAll": "שחרור כל הנעיצות",
+      "unpinAllToast": "כל הנעיצות שוחררו.",
+      "noteNoCourses": "יש לסמן לפחות קורס אחד בשלב 2.",
+      "noteSolving": "מחשב…",
+      "noteFailed": "החישוב נכשל: {error}",
+      "noteFound": "נמצאו {found} מערכות אפשריות; מוצגות {shown} המובילות.",
+      "noteTruncated": "הספירה נעצרה במכסה — ייתכן שיש עוד.",
+      "noteElapsed": "(חישוב: {ms} מ״ש)"
+    },
+    "grid": {
+      "hourHeader": "שעה",
+      "dayHeader": "יום {day}׳",
+      "group": "קבוצה {group}",
+      "kindGroup": "{kind} · קבוצה {group}",
+      "clashSummary": "חפיפה מכוונת עם {list}",
+      "clashBadge": "חפיפה מכוונת · {list}"
+    },
+    "overlap": {
+      "meetingSide": "{code} {kind} קב' {group} (יום {day}׳ {start}–{end})",
+      "meetingShort": "{code} {kind} קב' {group}",
+      "lineOptional": "חפיפה מכוונת: {a} מול {b} — נבחר בהנחה שאין חובת נוכחות ב-{optional}.",
+      "lineRequired": "חפיפה מכוונת: {a} מול {b} — יש לוודא שאפשר לוותר על הנוכחות באחד מהשניים.",
+      "optionalJoin": " וב-",
+      "headOne": "במערכת הזו יש חפיפה מכוונת אחת — שני רכיבים באותו זמן. זה התאפשר רק משום שסומן שאין חובת נוכחות באחד הצדדים, ומשמעותו ויתור בפועל על הנוכחות באחד מהם.",
+      "headMany": "במערכת הזו יש {count} חפיפות מכוונות — שני רכיבים באותו זמן. זה התאפשר רק משום שסומן שאין חובת נוכחות באחד הצדדים, ומשמעותו ויתור בפועל על הנוכחות באחד מהם.",
+      "totalMinutes": "סך זמן החפיפה: {span} שעות."
+    },
+    "search": {
+      "searching": "מחפש…",
+      "failed": "החיפוש נכשל: {error}",
+      "noResults": "לא נמצאו קורסים מתאימים.",
+      "alreadySelected": "כבר נבחר",
+      "tags": {
+        "inPlan": "[בתוכנית]",
+        "inPlanSemester": "[בתוכנית-סמסטר {semester}]",
+        "outOfPlan": "[מחוץ לתוכנית]"
+      }
+    },
+    "catalog": {
+      "browsePlaceholder": "שם, קוד או תחילית קוד — למשל 110 או חדו\"א",
+      "browseUnavailable": "החיפוש בקטלוג לא זמין — אפשר להוסיף קורס בתיבת החיפוש שלמעלה.",
+      "browseFailed": "החיפוש בקטלוג נכשל: {error}",
+      "loading": "טוען מהקטלוג…",
+      "noResults": "לא נמצא קורס מתאים בקטלוג.",
+      "empty": "הקטלוג ריק — יש להריץ רענון מהידיעון.",
+      "showing": "מוצגים {count} קורסים",
+      "showingOfTotal": "מוצגים {count} קורסים מתוך {total} — אפשר לצמצם בחיפוש"
+    },
+    "electives": {
+      "titleTracks": "מסלולי התמחות",
+      "titleClusters": "אשכולות קורסי בחירה",
+      "source": "מקור: פרק השנתון של {program} · {year}",
+      "groupTitle": "{name} ({count})"
+    },
+    "sticky": {
+      "facts": {
+        "days": "ימים",
+        "finish": "מסיים",
+        "gaps": "חורים"
+      },
+      "tabLabel": "מערכת {index} · {days} ימים · חורים {gap}"
+    },
+    "steps": {
+      "year": {
+        "empty": "יש לבחור שנה וסמסטר",
+        "selected": "{year} · סמסטר {term}",
+        "selectedWithCurriculum": "{year} · סמסטר {term} · סמסטר {semester} בתוכנית"
+      },
+      "courses": {
+        "selected": "{count} קורסים · {credits}",
+        "emptyCatalog": "יש לבחור קורסים מהקטלוג",
+        "empty": "יש לסמן קורסים"
+      },
+      "days": {
+        "waitingForCourses": "ממתין לבחירת קורסים",
+        "target": "יעד {target} ימים",
+        "targetWithMin": "יעד {target} ימים · מינימום אפשרי {min}"
+      },
+      "lecturers": {
+        "waitingForData": "ממתין לנתוני הקבוצות",
+        "summary": "{ranked} · {pins}",
+        "ranked": {
+          "none": "בלי העדפות מרצים",
+          "one": "העדפה אחת",
+          "many": "{count} העדפות"
+        },
+        "pins": {
+          "none": "ללא נעיצות",
+          "one": "נעיצה אחת",
+          "many": "{count} נעיצות"
+        }
+      },
+      "schedule": {
+        "waitingForCourses": "ממתין לבחירת קורסים",
+        "showing": "מוצגת מערכת {index} מתוך {total}",
+        "solving": "מחשב…",
+        "none": "אין מערכת אפשרית עם הבחירות הנוכחיות"
+      }
+    },
+    "terms": {
+      "dayLetters": {
+        "1": "א",
+        "2": "ב",
+        "3": "ג",
+        "4": "ד",
+        "5": "ה",
+        "6": "ו"
+      },
+      "dayNames": {
+        "1": "ראשון",
+        "2": "שני",
+        "3": "שלישי",
+        "4": "רביעי",
+        "5": "חמישי",
+        "6": "שישי"
+      },
+      "yearLabels": {
+        "1": "שנה א׳",
+        "2": "שנה ב׳",
+        "3": "שנה ג׳",
+        "4": "שנה ד׳"
+      },
+      "fallbackTerms": {
+        "winter": "סמסטר א׳ (חורף)",
+        "spring": "סמסטר ב׳ (אביב)",
+        "summer": "סמסטר קיץ"
+      },
+      "fallbackNote": {
+        "no-curriculum": "תוכנית הלימודים של המחלקה לא טעונה — אפשר לבחור כל קורס מהקטלוג.",
+        "no-list": "רשימת הקורסים של הסמסטר לא נטענה — אפשר לבחור כל קורס מהקטלוג.",
+        "empty-semester": "אין רשימת קורסים לסמסטר הזה — אפשר לבחור כל קורס מהקטלוג."
+      }
+    },
+    "score": {
+      "breakdown": {
+        "lecturer": "מרצים מועדפים",
+        "days": "ימי לימוד",
+        "gaps": "חורים",
+        "compactness": "צפיפות",
+        "late_finish": "סיום מאוחר",
+        "soft_conflict": "חפיפות מכוונות"
+      }
+    },
+    "phases": {
+      "names": {
+        "warmup": "פותח סשן מול הידיעון",
+        "session": "פותח סשן מול הידיעון",
+        "year": "קובע שנת לימודים",
+        "verify": "מאמת את השנה שחזרה",
+        "store": "שומר למסד",
+        "finishing": "מסיים",
+        "idle": "ממתין",
+        "starting": "מתחיל",
+        "login": "ממתין להתחברות ידנית",
+        "connected": "מחובר לידיעון",
+        "search": "מחפש קורסים",
+        "fetch": "מושך עמודים",
+        "fetching": "מושך עמודים",
+        "parse": "מפענח",
+        "parsing": "מפענח",
+        "save": "שומר למסד",
+        "saving": "שומר למסד",
+        "catalog": "מושך קטלוג",
+        "done": "הסתיים",
+        "failed": "נכשל",
+        "needs_login": "נדרשת התחברות"
+      }
+    },
+    "age": {
+      "lessThanMinute": "לפני פחות מדקה",
+      "oneMinute": "לפני דקה",
+      "minutes": "לפני {count} דקות",
+      "oneHour": "לפני שעה",
+      "hours": "לפני {count} שעות",
+      "oneDay": "לפני יום",
+      "days": "לפני {count} ימים",
+      "oneMonth": "לפני חודש",
+      "months": "לפני {count} חודשים",
+      "oneCourse": "קורס אחד",
+      "manyCourses": "{count} קורסים",
+      "notUpdatedOne": "{courses}{middle} אינו מעודכן",
+      "notUpdatedMany": "{courses}{middle} אינם מעודכנים"
+    },
+    "errors": {
+      "badResponse": "השרת החזיר תשובה לא צפויה ({status})",
+      "unknown": "שגיאה לא ידועה"
+    },
+    "credits": {
+      "withUnit": "{value} נ\"ז",
+      "withMissing": "{value} ({missing})",
+      "missingShort": "{count} ללא נתון",
+      "missingOne": "קורס אחד ללא נתון",
+      "missingMany": "{count} קורסים ללא נתון"
+    },
+    "year": {
+      "yearFallback": "שנה {year}",
+      "termFallback": "סמסטר {term}",
+      "summaryTerm": "סמסטר {term}",
+      "summaryPlanSemester": "סמסטר {semester} בתוכנית הלימודים",
+      "summaryRecommendedCount": "{count} קורסים מומלצים",
+      "summaryNoPlan": "אין סמסטר תואם בתוכנית הלימודים",
+      "noPlanNote": "לצירוף הזה אין רשימת קורסים בתוכנית. אפשר להוסיף קורסים דרך החיפוש בידיעון."
+    },
+    "courses": {
+      "loading": "טוען…",
+      "emptySemester": "אין קורסים להצגה בסמסטר הזה. אפשר להוסיף קורס דרך תיבת החיפוש.",
+      "tiedNote": "הידיעון רושם את {courses} כחבילה אחת: סימון של אחד מסמן את כולם, וביטול של אחד מבטל את כולם.",
+      "tiedToastAdded": "נוספו יחד: {courses} — הידיעון רושם אותם כחבילה אחת.",
+      "tiedToastRemoved": "הוסרו יחד: {courses} — הידיעון רושם אותם כחבילה אחת.",
+      "addAnyNote": "אפשר להוסיף כל קורס אחר מהידיעון דרך תיבת החיפוש — כולל חזרה על קורס מסמסטר קודם, שהוא מקרה רגיל לגמרי.",
+      "creditsUnit": "{credits} נ\"ז",
+      "prereq": "קדם: {list}",
+      "notOfferedTitle": "הקורס לא נפתח בסמסטר הזה",
+      "retryButton": "ניסיון חוזר",
+      "retryTitle": "ניסיון נוסף למשוך את הקורס מהידיעון",
+      "hours": {
+        "lecture": "הרצאה {n}",
+        "tutorial": "תרגול {n}",
+        "lab": "מעבדה {n}",
+        "project": "פרויקט {n}"
+      },
+      "tags": {
+        "inCurriculum": "בתוכנית הלימודים",
+        "fromCatalog": "מהקטלוג",
+        "fromSemester": "מסמסטר {semester} בתוכנית",
+        "outsideSemester": "מחוץ לסמסטר הזה",
+        "inPlanSemester": "בתוכנית-סמסטר {semester}",
+        "tied": "קורס צמוד",
+        "alternative": "חלופה — לבחירה ידנית",
+        "notOffered": "לא נפתח בסמסטר"
+      },
+      "alternatives": {
+        "placement": "קורס השמה — הרמה נקבעת לפי ציון, ויש לבחור את המתאימה",
+        "physicsTrack": "מסלול פיזיקה — תלוי בפטור, ויש לבחור מסלול אחד",
+        "track": "{track} — קורס של מסלול התמחות, לסימון לפי המסלול שלכם"
+      },
+      "status": {
+        "loadingTag": "טוען נתונים…",
+        "loadingText": "טוען נתונים מהידיעון — זה לוקח שנייה-שתיים ואינו דורש התחברות.",
+        "unavailableTag": "אין נתונים",
+        "unavailableReason": "הידיעון לא החזיר נתוני קבוצות לקורס הזה — ייתכן שהוא אינו נפתח בסמסטר הזה.",
+        "unavailableText": "{reason} אפשר לנסות שוב, או להסיר את הקורס מהבחירה.",
+        "skippedTag": "נדחה לרגע",
+        "skippedReason": "הקורס לא נמשך בבקשה הזו כדי לא להעמיס על שרת המכללה (עד 12 משיכות בכל פעם).",
+        "skippedText": "{reason} אפשר לנסות שוב עוד רגע.",
+        "fetchedTag": "נמשך מהידיעון עכשיו",
+        "noneTag": "אין נתונים עדיין",
+        "noneText": "הנתונים של הקורס עדיין לא נמשכו. סימון הקורס ימשוך אותם מהידיעון אוטומטית, בלי התחברות.",
+        "pendingTag": "אין נתונים",
+        "pendingText": "אין עדיין נתוני קבוצות לקורס הזה. אפשר לבקש משיכה נוספת מהידיעון."
+      },
+      "recommended": {
+        "preselected": "סומנו מראש {count} קורסים מתוך תוכנית הלימודים לסמסטר {semester}.",
+        "allElectives": "בסמסטר {semester} התוכנית מציעה רק קורסים לבחירה, ולכן לא סומן דבר מראש.",
+        "tracksNote": "קורסי מסלולי ההתמחות ({tracks}) וקורסי חלופה לא סומנו — הכלי אינו יודע באיזה מסלול אתם, ויש לסמן את הקורסים של המסלול שלכם.",
+        "alternativesNote": "קורסי חלופה — השמה או מסלול פיזיקה — לא סומנו, ויש לבחור את המתאים.",
+        "dropped": "בוטלו: {codes}.",
+        "catchUpHint": "צריך להשלים קורס מסמסטר קודם? אפשר לחפש אותו בתיבה שלמעלה ולהוסיף אותו לרשימה.",
+        "creditsMismatch": "שימו לב: סכום הנ\"ז ברשימה הזאת אינו תואם לסה\"כ המודפס בשנתון לסמסטר הזה, ולכן כדאי לוודא אותה מול הידיעון."
+      },
+      "unnamedCourse": "קורס {code}",
+      "tooManyCodes": "אפשר לשבץ עד {max} קורסים בבת אחת, ולכן לא סומנו: {codes}. אפשר להוסיף אותם אחרי הסרת קורס אחר."
     }
   }
 }
