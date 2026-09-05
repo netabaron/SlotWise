@@ -5022,6 +5022,12 @@ def create_app(
         static_folder=str(static_dir),
         static_url_path="/static",
     )
+    # ‏StrictUndefined: ‏{{ S.ui.missing }} יזרוק במקום לרנדר מחרוזת ריקה.
+    # בלי זה מפתח שגוי בתבנית יוצא ככפתור ריק — שנראה כמו עיצוב, לא כמו
+    # באג, וזה בדיוק המצב שאפשר לשלוח בלי לשים לב.
+    from jinja2 import StrictUndefined
+
+    app.jinja_env.undefined = StrictUndefined
     app.config["SLOTWISE"] = settings
     app.config["SCRAPE_RUNNER"] = scrape_runner
     app.config["REPARSE_RUNNER"] = reparse_runner
@@ -5065,6 +5071,7 @@ def create_app(
         return response
 
     if serve_ui:
+        _strings_stamp: dict[str, float] = {}
 
         @app.get("/")
         def index():
@@ -5079,7 +5086,13 @@ def create_app(
             **אם מוסיפים אי־פעם סקריפט מוטבע לעמוד — יש לעטוף אותו
             ב-``{% raw %}``**, אחרת Jinja ינסה לפרש אותו.
             """
-            S = strings_mod.load()
+            # ‏טוענים מחדש אם קובץ הנוסח השתנה מאז. ``strings.py`` מחזיק
+            # מטמון לכל חיי התהליך, ובשרת פיתוח שרץ שעות זה אומר שעריכת
+            # נוסח — או הוספת strings.json מלכתחילה — לא מגיעה למסך, והדף
+            # יוצא עם טקסט ריק בלי שום רמז לסיבה.
+            stamp = strings_mod.mtime()
+            S = strings_mod.load(refresh=stamp != _strings_stamp.get("mtime"))
+            _strings_stamp["mtime"] = stamp
             if (templates_dir / "index.html").is_file():
                 return render_template("index.html", S=S)
             ui = S.get("ui", {}).get("fallbackPage", {})

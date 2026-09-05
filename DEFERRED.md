@@ -10,6 +10,21 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
+### A missing string used to be invisible
+**Where:** `T()` in `app.js`, Jinja rendering in `api.py`, `strings.py:load()`.
+**Owner:** closed — fixed the moment it was found, not deferred.
+**What happened:** the score panel shipped with every label blank and the penalty
+bars showing `compactness` / `gaps` / `soft_conflict`. Root cause on the reporter's
+machine was a stale copy of the strings tree; the *reason it could ship* was that a
+missing key degraded silently — to `""` at some call sites and to the key name at
+others. 545 of 548 tests passed on that page.
+**Now:** `T()` logs a console error, collects the key in `window.slotwise
+.missingStrings()`, and renders `⟦path⟧` which `markMissingStrings()` outlines in
+red. Jinja runs with `StrictUndefined`. `strings.py` raises on an empty or
+section-less tree and reloads when the file's mtime changes, so a long-running dev
+server cannot serve yesterday's copy. `tests/test_rendered_copy_browser.py` asserts
+in a real browser that no label is empty and no raw key reaches the screen.
+
 ### `רכיב` still appears in server-generated text
 **Where:** `src/strings.json` → `server.pins.kindMissing`, `server.pins.groupMissing`
 are fixed, but the infeasibility reasons and suggestions built in

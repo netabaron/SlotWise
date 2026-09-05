@@ -1824,3 +1824,21 @@ html.is-modal-open body { overflow: hidden; }
   flex-wrap: wrap;
   gap: 8px 10px;
 }
+
+/* ==========================================================================
+   18. נוסח חסר — נראה כתקלה, לא כעיצוב
+   ========================================================================== */
+
+/* ‏T() מחזיר ⟦path⟧ למפתח חסר, ו-markMissingStrings() ב-app.js מסמן את
+   האלמנט שמכיל אותו. הכלל הזה עושה את התקלה בלתי אפשרית לפספוס: עד כה
+   נוסח חסר נראה כתווית ריקה או כמילה "compactness", ושתיהן נקראות כמו
+   עיצוב — כך אפשר היה לשלוח עמוד שלם בלי שאיש ישים לב. */
+.missing-string {
+  outline: 2px dashed var(--dead-line);
+  background: var(--err-bg);
+  color: var(--err-ink);
+  font-family: ui-monospace, "Consolas", monospace;
+  font-size: 11px;
+  direction: ltr;
+  unicode-bidi: isolate;
+}

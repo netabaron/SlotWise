@@ -37,24 +37,67 @@
   var DEBUG = /[?&]debug=1(&|$)/.test(window.location.search);
 
   /**
+   * מפתחות נוסח שלא נמצאו. נאסף כדי שבדיקה בדפדפן תוכל לשאול את העמוד
+   * "מה חסר לך", במקום לנחש מהמראה.
+   */
+  var MISSING_STRINGS = [];
+
+  /**
+   * ‏מקור הנוסח לא הגיע בכלל — כלומר ``window.STRINGS`` ריק. זו לא תקלה
+   * של מפתח בודד אלא של כל העמוד, והיא מקבלת הודעה משלה כי היא זו
+   * שקורית בפועל כששרת ישן עדיין רץ או שהדפדפן מגיש index.html מהמטמון.
+   */
+  var STRINGS_EMPTY =
+    !STRINGS || typeof STRINGS !== "object" || !Object.keys(STRINGS).length;
+  if (STRINGS_EMPTY && window.console) {
+    window.console.error(
+      "[SlotWise] window.STRINGS ריק — אף טקסט בממשק לא ייטען. " +
+        "בדרך כלל זה שרת שעלה לפני שהנוסח נוסף (strings.py מחזיק מטמון " +
+        "לכל חיי התהליך) או index.html מהמטמון של הדפדפן. " +
+        "יש להפעיל מחדש את השרת ולטעון מחדש בלי מטמון."
+    );
+  }
+
+  /**
+   * רושם מפתח חסר: פעם אחת ליומן, ולתוך ``MISSING_STRINGS``.
+   *
+   * למה בקול רם: עד כאן מפתח חסר יצא כמחרוזת ריקה בחלק מהקריאות וכשם
+   * המפתח באחרות, ושתי הצורות נראות על המסך כמו עיצוב — תווית ריקה או
+   * המילה "compactness". דף שלם יכול היה להישלח ככה בלי שאיש ישים לב.
+   */
+  function missingString(path) {
+    if (MISSING_STRINGS.indexOf(path) === -1) {
+      MISSING_STRINGS.push(path);
+      if (window.console) {
+        window.console.error("[SlotWise] מפתח נוסח חסר: " + path);
+      }
+    }
+  }
+
+  /**
    * שליפה לפי נתיב מנוקד: ``T("app.header.refresh")``.
-   * מפתח חסר מחזיר את ברירת המחדל ולא מפיל ציור — נוסח חסר הוא באג
-   * בתצוגה, לא סיבה להשאיר מסך לבן.
+   *
+   * מפתח חסר **אינו** מוחזר בשקט. הוא נרשם ליומן, נצבר ל-MISSING_STRINGS,
+   * ומוחזר מסומן — ``⟦app.header.refresh⟧`` — כדי שייראה על המסך כתקלה
+   * ולא כטקסט. ``fallback`` מפורש עדיין מכובד, לשימושים שבהם היעדר ערך
+   * הוא מצב לגיטימי.
    */
   function T(path, fallback) {
     var node = STRINGS;
     var parts = String(path).split(".");
     for (var i = 0; i < parts.length; i++) {
       if (!node || typeof node !== "object" || !(parts[i] in node)) {
-        return fallback === undefined ? "" : fallback;
+        node = undefined;
+        break;
       }
       node = node[parts[i]];
     }
-    return node === undefined || node === null
-      ? fallback === undefined
-        ? ""
-        : fallback
-      : node;
+    if (node === undefined || node === null) {
+      if (fallback !== undefined) return fallback;
+      missingString(path);
+      return "\u27E6" + path + "\u27E7";
+    }
+    return node;
   }
 
   /**
@@ -63,8 +106,9 @@
    * משפט ולא פאזל.
    */
   function Tf(path, params) {
-    var text = T(path, "");
-    if (typeof text !== "string" || !params) return text;
+    var text = T(path);
+    if (typeof text !== "string") return text;
+    if (!params) return text;
     Object.keys(params).forEach(function (key) {
       text = text.split("{" + key + "}").join(String(params[key]));
     });
@@ -3564,6 +3608,7 @@
     renderStepStates();
     renderStickyBar();
     renderTechDetails();
+    markMissingStrings();
     // אחרי שלב 5 — הוא זה שמחשב את המערכת הפעילה, והשכבה מציגה אותה.
     renderGridOverlay();
   }
@@ -6044,6 +6089,32 @@
     }
   }
 
+  /**
+   * מסמן ויזואלית כל אלמנט שנותר בו מפתח נוסח חסר.
+   *
+   * ‏T() כבר מחזיר ⟦path⟧ ורושם ליומן, אבל מחרוזת בתוך טקסט עדיין יכולה
+   * להיקרא כמו תוכן. כאן היא מקבלת מסגרת אדומה, וגם ``document.title``
+   * מקבל סימן — כדי שגם צילום מסך יסגיר את התקלה.
+   */
+  function markMissingStrings() {
+    var marked = document.querySelectorAll(".missing-string");
+    for (var i = 0; i < marked.length; i++) {
+      setClass(marked[i], "missing-string", false);
+    }
+    if (!MISSING_STRINGS.length && !STRINGS_EMPTY) return;
+    var walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+    var node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeValue && node.nodeValue.indexOf("⟦") !== -1) {
+        if (node.parentElement) setClass(node.parentElement, "missing-string", true);
+      }
+    }
+  }
+
   /* =====================================================================
    * 11. הפעלה
    * ===================================================================== */
@@ -6070,6 +6141,13 @@
 
   // ידית קטנה לניפוי מהקונסולה — לא נדרשת לתפעול.
   window.slotwise = {
+    // ‏מה שבדיקת הדפדפן שואלת: אילו מפתחות נוסח לא נמצאו.
+    missingStrings: function () {
+      return MISSING_STRINGS.slice();
+    },
+    stringsEmpty: function () {
+      return STRINGS_EMPTY;
+    },
     getState: function () {
       return deepCopy(state);
     },

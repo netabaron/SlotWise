@@ -35,17 +35,41 @@ STRINGS_PATH = Path(__file__).resolve().parent / "strings.json"
 _CACHE: dict[str, Any] | None = None
 
 
+#: הענפים שחייבים להיות שם. חסר אחד מהם — הקובץ אינו הקובץ שאנחנו חושבים.
+REQUIRED_SECTIONS = ("meta", "ui", "server", "app")
+
+
 def load(refresh: bool = False) -> dict[str, Any]:
     """העץ המלא. נטען פעם אחת ונשמר במטמון.
 
     ``refresh=True`` קורא מחדש מהדיסק — שימושי בפיתוח, כשמשנים נוסח
     ולא רוצים להפעיל את השרת מחדש.
+
+    עץ ריק או חסר-ענפים הוא **שגיאה**, לא מצב. עמוד שכל הטקסט בו ריק
+    נראה כמו עיצוב גרוע ולא כמו תקלה, וכך אפשר לשלוח אותו בלי לשים לב;
+    חריגה כאן עוצרת את זה בשרת, במקום להגיע למסך.
     """
     global _CACHE
     if _CACHE is None or refresh:
         with io.open(STRINGS_PATH, encoding="utf-8") as fh:
-            _CACHE = json.load(fh)
+            data = json.load(fh)
+        if not isinstance(data, dict) or not data:
+            raise RuntimeError(f"{STRINGS_PATH} ריק או אינו אובייקט JSON")
+        missing = [k for k in REQUIRED_SECTIONS if not data.get(k)]
+        if missing:
+            raise RuntimeError(
+                f"{STRINGS_PATH} חסרים בו הענפים: {', '.join(missing)}"
+            )
+        _CACHE = data
     return _CACHE
+
+
+def mtime() -> float:
+    """חותמת הזמן של קובץ הנוסח, לזיהוי מטמון מיושן בתהליך ארוך־חיים."""
+    try:
+        return STRINGS_PATH.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def get(path: str, default: str = "") -> Any:
