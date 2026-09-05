@@ -18,6 +18,14 @@ bars showing `compactness` / `gaps` / `soft_conflict`. Root cause on the reporte
 machine was a stale copy of the strings tree; the *reason it could ship* was that a
 missing key degraded silently — to `""` at some call sites and to the key name at
 others. 545 of 548 tests passed on that page.
+**Root cause, confirmed:** `app.js` is a static file, so the browser always
+gets the current one — but `strings.py` read `strings.json` into a module-level
+`_CACHE` once per process. A `webapp.py` server started before the `app.*` branch
+was written kept serving a tree of only `meta`/`ui`/`server` for its whole life.
+New client, frozen server copy: every `ui.*` string rendered (Jinja, server side)
+and every `app.*` lookup failed. Reproduced and fixed; the hot-reload is verified
+by editing `strings.json` under a running server and seeing the change served
+without a restart.
 **Now:** `T()` logs a console error, collects the key in `window.slotwise
 .missingStrings()`, and renders `⟦path⟧` which `markMissingStrings()` outlines in
 red. Jinja runs with `StrictUndefined`. `strings.py` raises on an empty or
