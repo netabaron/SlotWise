@@ -280,7 +280,7 @@
       "pinHelp": "נעיצה מחייבת את המערכת לכלול דווקא את הקבוצה הזו"
     },
     "schedule": {
-      "tabLabel": "מערכת {n} · {days} ימים · זמן המתנה {gaps}",
+      "tabLabel": "מערכת {n} · {label}",
       "factScore": "ניקוד",
       "factScoreHint": "גבוה = טוב יותר",
       "factDays": "ימים",
@@ -371,7 +371,8 @@
         "finish": "שעת סיום",
         "gaps": "זמן המתנה"
       },
-      "tabLabel": "מערכת {index} · {days} ימים · זמן המתנה {gap}"
+      "tabLabel": "מערכת {index} · {label}",
+      "selectorLabel": "מערכת:"
     },
     "steps": {
       "year": {
@@ -592,6 +593,33 @@
       "logTitle": "יומן משיכת נתונים מהידיעון",
       "failureDetails": "פרטים על התקלה",
       "noLog": "אין עדיין שורות ביומן."
+    },
+    "compare": {
+      "bestGaps": "הכי מעט המתנה",
+      "bestFinish": "מסתיימת הכי מוקדם",
+      "bestDays": "הכי מעט ימים",
+      "allLecturers": "כל המרצים המועדפים",
+      "mostLecturers": "הכי הרבה מרצים מועדפים",
+      "daysLabel": "{days} ימי לימוד",
+      "bestOverall": "ההתאמה הגבוהה ביותר",
+      "sameAs": "דומה למערכת {n}, בהבדל של קבוצת {kind} אחת",
+      "sameAsMany": "דומה למערכת {n}, בהבדל של {count} קבוצות",
+      "identical": "זהה למערכת {n} בכל הנתונים",
+      "title": "מה ההבדל?",
+      "tableLabel": "השוואה בין המערכות המוצעות",
+      "rowSchedule": "מערכת",
+      "rowLabel": "מה מייחד",
+      "rowFit": "התאמה",
+      "rowDays": "ימים",
+      "rowFinish": "שעת סיום",
+      "rowGaps": "זמן המתנה",
+      "rowCredits": "נ\"ז",
+      "rowLecturers": "מרצים מועדפים",
+      "differs": "שורה זו נבדלת בין המערכות",
+      "same": "זהה בכל המערכות",
+      "allSame": "כל המערכות המוצגות זהות בכל הנתונים שמושווים כאן.",
+      "lecturersCell": "{hits}/{total}",
+      "pick": "בחירת מערכת {n}"
     }
   }
 }

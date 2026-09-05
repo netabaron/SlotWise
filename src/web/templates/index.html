@@ -171,6 +171,8 @@
      שרוצים לראות בזמן שמשנים העדפות למטה. הוא position: fixed ולא sticky,
      כי הוא צריך להופיע בגלילה ולא במקום שבו הוא יושב ב-DOM. -->
 <div class="sticky-bar" id="sticky-bar" role="region" aria-label="{{ S.ui.sticky.regionLabel }}">
+  <!-- ‏חמישה עיגולים ממוספרים בלי מילה אחת לידם אינם ניתנים לניחוש. -->
+  <span class="sticky-selector-label">{{ S.app.sticky.selectorLabel }}</span>
   <div class="sticky-tabs" id="sticky-tabs" role="tablist" aria-label="{{ S.ui.schedule.tabsLabel }}"></div>
   <div class="sticky-facts" id="sticky-facts"></div>
   <button type="button" class="btn btn-outline btn-sm" id="btn-show-grid">{{ S.ui.sticky.btnShowGrid }}</button>
@@ -400,6 +402,11 @@
         <p class="empty-sub" id="soft-conflicts-sub"></p>
         <ul class="reasons" id="soft-conflicts-list"></ul>
       </section>
+
+      <details class="compare" id="compare">
+        <summary class="compare-summary">{{ S.app.compare.title }}</summary>
+        <div class="compare-body" id="compare-body"></div>
+      </details>
 
       <div class="facts" id="schedule-summary"></div>
       <div class="legend" id="schedule-legend"></div>

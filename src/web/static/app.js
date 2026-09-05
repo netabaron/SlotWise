@@ -95,7 +95,10 @@
     if (node === undefined || node === null) {
       if (fallback !== undefined) return fallback;
       missingString(path);
-      return "\u27E6" + path + "\u27E7";
+      // \u05D1\u05E4\u05D9\u05EA\u05D5\u05D7 \u05D4\u05EA\u05E7\u05DC\u05D4 \u05D6\u05D5\u05E2\u05E7\u05EA; \u05D1\u05DE\u05E6\u05D1 \u05E8\u05D2\u05D9\u05DC \u05D4\u05D9\u05D0 \u05E0\u05E9\u05D0\u05E8\u05EA \u05D1\u05D9\u05D5\u05DE\u05DF \u05D1\u05DC\u05D1\u05D3. \u05E1\u05D8\u05D5\u05D3\u05E0\u05D8/\u05D9\u05EA
+      // \u05E9\u05D1\u05D0\u05D5 \u05DC\u05D1\u05E0\u05D5\u05EA \u05DE\u05E2\u05E8\u05DB\u05EA \u05D0\u05D9\u05E0\u05DD \u05E6\u05E8\u05D9\u05DB\u05D9\u05DD \u05DC\u05E8\u05D0\u05D5\u05EA \u05E9\u05DD \u05E9\u05DC \u05DE\u05E4\u05EA\u05D7 \u05E4\u05E0\u05D9\u05DE\u05D9 \u2014 \u05D6\u05D4 \u05DE\u05D1\u05D4\u05D9\u05DC,
+      // \u05D5\u05D0\u05D9\u05DF \u05DC\u05D4\u05DD \u05DE\u05D4 \u05DC\u05E2\u05E9\u05D5\u05EA \u05E2\u05DD \u05D4\u05DE\u05D9\u05D3\u05E2.
+      return DEBUG ? "\u27E6" + path + "\u27E7" : "";
     }
     return node;
   }
@@ -2661,6 +2664,8 @@
       : [];
 
     ui.btnBuild = byId("btn-build");
+    ui.compare = byId("compare");
+    ui.compareBody = byId("compare-body");
     ui.techDetails = byId("tech-details");
     ui.techFacts = byId("tech-facts");
     ui.attendanceOff = byId("attendance-off");
@@ -2995,26 +3000,27 @@
   }
 
   /** שלוש העובדות שהסרגל מחזיק. אותן עובדות בדיוק גם בשכבה. */
-  function stickyFacts(sch) {
-    if (!sch) return [];
-    var finish = lastFinishOf(sch);
-    return [
-      { label: T("app.sticky.facts.days"), value: txt(num(sch.days_count, 0)) },
-      {
-        label: T("app.sticky.facts.finish"),
-        value: finish === null ? "—" : fmtTime(finish),
-      },
-      { label: T("app.sticky.facts.gaps"), value: fmtDuration(sch.gap_minutes) },
-    ];
+  /**
+   * מה שהסרגל המצוף מחזיק: לא סטטיסטיקה.
+   *
+   * ‏"ימים 5 · שעת סיום 19:50 · זמן המתנה 3:00" הופיע גם כאן וגם בפאנל
+   * שמתחת, ובשתי הלשוניות היה זהה — כלומר לא עזר לבחור ולא הוסיף מידע.
+   * במקומו: מה מייחד את המערכת שנבחרה.
+   */
+  function stickyLabel(list, idx) {
+    if (!list.length) return "";
+    var labels = differentiators(list);
+    return labels[clamp(idx, 0, labels.length - 1)] || "";
   }
 
   /** לשונית מוקטנת: המספר בלבד, והתיאור המלא ב-title ו-aria-label. */
+  /** לשונית מוקטנת: המספר בלבד, והתיאור המבדיל ב-title וב-aria-label. */
   function compactTabs(box, list, prefix) {
+    var labels = differentiators(list);
     list.forEach(function (sch, idx) {
       var label = Tf("app.sticky.tabLabel", {
         index: idx + 1,
-        days: num(sch.days_count, 0),
-        gap: fmtDuration(sch.gap_minutes),
+        label: labels[idx],
       });
       box.appendChild(
         el("button", {
@@ -3030,7 +3036,6 @@
           text: String(idx + 1),
           on: {
             click: function () {
-              // ‏solve:false — בחירת חלופה אינה שינוי קלט, ואין מה לפתור מחדש.
               setState({ activeSchedule: idx }, { solve: false });
             },
           },
@@ -3105,7 +3110,10 @@
     }
     if (ui.stickyFacts) {
       rebuild(ui.stickyFacts, function (box) {
-        factChips(box, sch);
+        var label = stickyLabel(list, state.activeSchedule);
+        if (label) {
+          box.appendChild(el("span", { class: "sticky-label", text: label }));
+        }
       });
     }
   }
@@ -3125,7 +3133,10 @@
     }
     if (ui.overlayFacts) {
       rebuild(ui.overlayFacts, function (box) {
-        factChips(box, sch);
+        var label = stickyLabel(list, state.activeSchedule);
+        if (label) {
+          box.appendChild(el("span", { class: "sticky-label", text: label }));
+        }
       });
     }
     if (ui.overlayLegend) {
@@ -3607,6 +3618,7 @@
     renderScheduleStep();
     renderStepStates();
     renderStickyBar();
+    renderCompare();
     renderTechDetails();
     markMissingStrings();
     // אחרי שלב 5 — הוא זה שמחשב את המערכת הפעילה, והשכבה מציגה אותה.
@@ -5123,6 +5135,306 @@
     return { prefix: "", suffix: s };
   }
 
+  /**
+   * טבלת "מה ההבדל?" — חמש המערכות מול העובדות שמשוות ביניהן.
+   *
+   * שני כללים שבלעדיהם הטבלה חסרת ערך:
+   *   1. **לכל תא יש ערך.** צביעה בלבד אומרת "כאן שונה" בלי לומר במה,
+   *      וטבלה של גוונים אינה עוזרת לבחור.
+   *   2. שורה שכל ערכיה זהים מעומעמת, ושורה שנבדלת מודגשת — כדי שהעין
+   *      תלך ישר למקום היחיד שבו ההחלטה נמצאת.
+   * וכשאין שום הבדל, נאמר זאת במפורש במקום להציג חמש שורות זהות.
+   */
+  function renderCompare() {
+    if (!ui.compareBody) return;
+    var list = schedules();
+    setHidden(ui.compare, list.length < 2);
+    if (list.length < 2) return;
+
+    var facts = list.map(scheduleFacts);
+    var fits = fitScores(list);
+    var labels = differentiators(list);
+
+    var rows = [
+      {
+        key: "label",
+        title: T("app.compare.rowLabel"),
+        cell: function (i) {
+          return labels[i];
+        },
+      },
+      {
+        key: "fit",
+        title: T("app.compare.rowFit"),
+        cell: function (i) {
+          return Tf("app.schedule.fitValue", { score: fits[i] });
+        },
+      },
+      {
+        key: "days",
+        title: T("app.compare.rowDays"),
+        cell: function (i) {
+          return String(facts[i].days);
+        },
+      },
+      {
+        key: "finish",
+        title: T("app.compare.rowFinish"),
+        cell: function (i) {
+          return facts[i].finish ? fmtTime(facts[i].finish) : "—";
+        },
+      },
+      {
+        key: "gaps",
+        title: T("app.compare.rowGaps"),
+        cell: function (i) {
+          return fmtDuration(facts[i].gaps);
+        },
+      },
+      {
+        key: "credits",
+        title: T("app.compare.rowCredits"),
+        cell: function (i) {
+          return fmtNumber(facts[i].credits);
+        },
+      },
+      {
+        key: "lecturers",
+        title: T("app.compare.rowLecturers"),
+        cell: function (i) {
+          return facts[i].lecturerTotal
+            ? Tf("app.compare.lecturersCell", {
+                hits: facts[i].lecturers,
+                total: facts[i].lecturerTotal,
+              })
+            : "—";
+        },
+      },
+    ];
+
+    rows.forEach(function (row) {
+      var values = list.map(function (_, i) {
+        return row.cell(i);
+      });
+      row.values = values;
+      row.varies = uniq(values).length > 1;
+    });
+
+    var anyVaries = rows.some(function (row) {
+      return row.key !== "label" && row.varies;
+    });
+
+    rebuild(ui.compareBody, function (box) {
+      if (!anyVaries) {
+        box.appendChild(
+          el("p", { class: "note", text: T("app.compare.allSame") })
+        );
+      }
+      var table = el("table", {
+        class: "compare-table",
+        attrs: { "aria-label": T("app.compare.tableLabel") },
+      });
+      var head = el("tr", {}, [
+        el("th", { attrs: { scope: "col" }, text: T("app.compare.rowSchedule") }),
+      ]);
+      list.forEach(function (_, i) {
+        head.appendChild(
+          el("th", {
+            class: i === state.activeSchedule ? "is-active" : "",
+            attrs: { scope: "col" },
+            text: String(i + 1),
+          })
+        );
+      });
+      table.appendChild(el("thead", {}, [head]));
+
+      var body = el("tbody");
+      rows.forEach(function (row) {
+        var tr = el("tr", { class: row.varies ? "varies" : "same" }, [
+          el("th", {
+            attrs: {
+              scope: "row",
+              title: row.varies
+                ? T("app.compare.differs")
+                : T("app.compare.same"),
+            },
+            text: row.title,
+          }),
+        ]);
+        row.values.forEach(function (value, i) {
+          tr.appendChild(
+            el("td", {
+              class:
+                (i === state.activeSchedule ? "is-active " : "") +
+                (row.varies ? "is-diff" : "is-same"),
+              text: value,
+            })
+          );
+        });
+        body.appendChild(tr);
+      });
+      table.appendChild(body);
+      box.appendChild(el("div", { class: "compare-scroll" }, [table]));
+    });
+  }
+
+  /* --- שלב 3: מה מבדיל בין המערכות ---------------------------------- */
+
+  /**
+   * העובדות שמשוות ביניהן. כל מה שאחריו נגזר מכאן, כדי שהטבלה, התוויות
+   * וההחלטה "האם יש בכלל הבדל" יסתמכו על אותה רשימה בדיוק.
+   */
+  function scheduleFacts(sch) {
+    var finish = lastFinishOf(sch);
+    var credits = scheduleCredits(sch);
+    return {
+      days: num(sch && sch.days_count, 0),
+      finish: finish === null ? 0 : finish,
+      gaps: num(sch && sch.gap_minutes, 0),
+      credits: num(credits && credits.total, 0),
+      lecturers: num(sch && sch.lecturer_hits, 0),
+      lecturerTotal: num(sch && sch.lecturer_total, 0),
+    };
+  }
+
+  /** ‏{"61756|תרגול": "271060310/1", …} — הקבוצות שנבחרו בפועל. */
+  function schedulePicks(sch) {
+    var map = Object.create(null);
+    pickList(sch, ["picks"], null).forEach(function (p) {
+      map[txt(p.code) + "|" + txt(p.kind)] = txt(p.group_id);
+    });
+    return map;
+  }
+
+  /** באילו רכיבים שתי מערכות בחרו קבוצה אחרת. */
+  function pickDiff(a, b) {
+    var pa = schedulePicks(a);
+    var pb = schedulePicks(b);
+    var keys = uniq(Object.keys(pa).concat(Object.keys(pb)));
+    return keys
+      .filter(function (k) {
+        return pa[k] !== pb[k];
+      })
+      .map(function (k) {
+        return { code: k.split("|")[0], kind: k.split("|")[1] || "" };
+      });
+  }
+
+  /**
+   * תווית שמבדילה כל מערכת מהאחרות — **נגזרת ממה שבאמת שונה**, ולא
+   * מרשימה קבועה.
+   *
+   * הסדר: קודם מחפשים עובדה שבה המערכת הזאת טובה מכולן ויחידה בכך. אם
+   * אין — ואם מספר הימים בכלל משתנה בין המערכות — אומרים כמה ימים היא.
+   * ואם היא זהה לגמרי לאחרת בכל העובדות, זה מה שנאמר, יחד עם מה שכן
+   * שונה ביניהן (קבוצת תרגול אחת, למשל). להמציא הבדל שאינו קיים גרוע
+   * מלהודות שאין.
+   */
+  function differentiators(list) {
+    var facts = list.map(scheduleFacts);
+    var fits = fitScores(list);
+
+    function uniqueBest(key, better) {
+      var best = null;
+      facts.forEach(function (f) {
+        if (best === null || better(f[key], best)) best = f[key];
+      });
+      var holders = [];
+      facts.forEach(function (f, i) {
+        if (f[key] === best) holders.push(i);
+      });
+      return holders.length === 1 ? holders[0] : -1;
+    }
+
+    var lower = function (v, best) {
+      return v < best;
+    };
+    var higher = function (v, best) {
+      return v > best;
+    };
+
+    var labels = list.map(function () {
+      return "";
+    });
+    var claim = function (idx, text) {
+      if (idx >= 0 && !labels[idx]) labels[idx] = text;
+    };
+
+    // כל המרצים המועדפים — החזק ביותר, כי הוא בקשה מפורשת של הסטודנט/ית.
+    facts.forEach(function (f, i) {
+      if (f.lecturerTotal > 0 && f.lecturers === f.lecturerTotal) {
+        var others = facts.filter(function (g, j) {
+          return j !== i && g.lecturers === g.lecturerTotal;
+        });
+        if (!others.length) claim(i, T("app.compare.allLecturers"));
+      }
+    });
+    claim(uniqueBest("lecturers", higher), T("app.compare.mostLecturers"));
+    claim(uniqueBest("days", lower), T("app.compare.bestDays"));
+    claim(uniqueBest("finish", lower), T("app.compare.bestFinish"));
+    claim(uniqueBest("gaps", lower), T("app.compare.bestGaps"));
+
+    // ‏**קודם** התאומות. מערכת שזהה לקודמת בכל העובדות אינה "4 ימי
+    // לימוד" — זו תווית שגם הקודמת נושאת, ושתי לשוניות עם אותו טקסט הן
+    // בדיוק חוסר ההבחנה שהשלב הזה בא לתקן. אומרים שהיא דומה, ומה כן שונה.
+    facts.forEach(function (f, i) {
+      if (labels[i]) return;
+      var twin = -1;
+      for (var j = 0; j < i; j++) {
+        if (sameFacts(facts[j], f)) {
+          twin = j;
+          break;
+        }
+      }
+      if (twin === -1) return;
+      var diff = pickDiff(list[twin], list[i]);
+      if (!diff.length) {
+        labels[i] = Tf("app.compare.identical", { n: twin + 1 });
+      } else if (diff.length === 1) {
+        labels[i] = Tf("app.compare.sameAs", {
+          n: twin + 1,
+          kind: diff[0].kind || T("app.compare.rowSchedule"),
+        });
+      } else {
+        labels[i] = Tf("app.compare.sameAsMany", {
+          n: twin + 1,
+          count: diff.length,
+        });
+      }
+    });
+
+    // ומה שנשאר: אם מספר הימים בכלל משתנה בין המערכות, הוא ההבדל
+    // הקריא ביותר. אחרת — ההתאמה הגבוהה ביותר, או מספר הימים כגיבוי.
+    var daysVary =
+      uniq(
+        facts.map(function (f) {
+          return f.days;
+        })
+      ).length > 1;
+    var bestFit = fits.length ? Math.max.apply(null, fits) : 0;
+    facts.forEach(function (f, i) {
+      if (labels[i]) return;
+      if (daysVary) {
+        labels[i] = Tf("app.compare.daysLabel", { days: f.days });
+      } else if (fits[i] === bestFit) {
+        labels[i] = T("app.compare.bestOverall");
+      } else {
+        labels[i] = Tf("app.compare.daysLabel", { days: f.days });
+      }
+    });
+    return labels;
+  }
+
+  function sameFacts(a, b) {
+    return (
+      a.days === b.days &&
+      a.finish === b.finish &&
+      a.gaps === b.gaps &&
+      a.credits === b.credits &&
+      a.lecturers === b.lecturers
+    );
+  }
+
   /* --- שלב 5: התאמה, קנסות ומרצים -------------------------------- */
 
   /**
@@ -5204,6 +5516,7 @@
 
     // לשוניות
     if (ui.tabs) {
+      var tabLabels = differentiators(list);
       rebuild(ui.tabs, function (box) {
         list.forEach(function (sch, idx) {
           box.appendChild(
@@ -5215,10 +5528,11 @@
                 "aria-selected": idx === state.activeSchedule ? "true" : "false",
               },
               data: { fk: "tab-" + idx },
+              // מה שמבדיל אותה, ולא "5 ימים · זמן המתנה 3:00" שחוזר זהה
+              // בכל לשונית ולכן אינו עוזר לבחור.
               text: Tf("app.schedule.tabLabel", {
                 n: idx + 1,
-                days: num(sch.days_count, 0),
-                gaps: fmtDuration(sch.gap_minutes),
+                label: tabLabels[idx],
               }),
               on: {
                 click: function () {
@@ -5259,8 +5573,18 @@
         var allTied = fits.length > 1 && fits.every(function (v) {
           return v === fits[0];
         });
+        // כשכל המערכות בטווח של כמה נקודות, המספר אינו מה שבוחרים לפיו —
+        // התווית המבדילה היא. אז היא מובילה, והציון נסוג למשני.
+        var spread = fits.length
+          ? Math.max.apply(null, fits) - Math.min.apply(null, fits)
+          : 0;
+        var close = spread <= 5;
+        var myLabel = differentiators(list)[idx] || "";
         box.appendChild(
-          el("div", { class: "fit" }, [
+          el("div", { class: "fit" + (close ? " fit--close" : "") }, [
+            close && myLabel
+              ? el("strong", { class: "fit-headline", text: myLabel })
+              : null,
             el("span", { class: "fit-label", text: T("app.schedule.fitLabel") }),
             el("strong", {
               class: "fit-value ltr",
@@ -6101,6 +6425,9 @@
     for (var i = 0; i < marked.length; i++) {
       setClass(marked[i], "missing-string", false);
     }
+    // הסימון הוויזואלי הוא כלי פיתוח. במצב רגיל אין מסגרות אדומות
+    // על המסך — רק שורה ביומן.
+    if (!DEBUG) return;
     if (!MISSING_STRINGS.length && !STRINGS_EMPTY) return;
     var walker = document.createTreeWalker(
       document.body,

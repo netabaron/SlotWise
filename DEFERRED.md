@@ -62,6 +62,14 @@ spells it out, but two different course selections can both show 100 while being
 nothing alike. If an absolute scale is ever wanted, the scheduler would have to
 expose a theoretical best for the chosen courses.
 
+### The fit number is not the thing to choose on
+**Where:** `fitScores()` / the `.fit` block in `src/web/static/app.js`.
+**Owner:** informational — Phase 3 worked around it, no action pending.
+**Why:** with five schedules inside a few points the score is honest but useless
+as a decision aid. Phase 3 leads with the differentiating label and demotes the
+number whenever the spread across the shown set is 5 points or less. The number
+is still there, and still relative — see the entry above.
+
 ### `KIND_ORDER` and the term codes are displayed but are not copy
 **Where:** `src/web/static/app.js`, the constants block.
 **Owner:** nobody, by design.

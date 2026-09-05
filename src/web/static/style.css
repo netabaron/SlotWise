@@ -1842,3 +1842,85 @@ html.is-modal-open body { overflow: hidden; }
   direction: ltr;
   unicode-bidi: isolate;
 }
+
+/* ==========================================================================
+   19. שלב 3 — מה מבדיל בין המערכות
+   ========================================================================== */
+
+/* התווית המבדילה, כשהמערכות קרובות מדי בציון כדי שהציון יעזור. */
+.fit--close .fit-value { font-size: 15px; color: var(--muted); font-weight: 600; }
+.fit--close .fit-label { order: 2; }
+.fit--close .fit-value { order: 3; }
+.fit--close .fit-note  { order: 4; }
+
+.fit-headline {
+  order: 1;
+  flex: 1 1 100%;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+/* בסרגל המצוף ובשכבה — מה מייחד, במקום סטטיסטיקה שחוזרת מתחת. */
+.sticky-label { font-size: 12.5px; font-weight: 600; }
+
+/* ---- טבלת ההשוואה ---- */
+.compare {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  padding: 4px 12px;
+}
+
+.compare-summary { cursor: pointer; font-size: 12.5px; font-weight: 600; padding: 7px 2px; }
+.compare-body { padding-block: 8px 12px; }
+.compare-scroll { overflow-x: auto; }
+
+.compare-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.compare-table th,
+.compare-table td {
+  padding: 6px 10px;
+  text-align: start;
+  border-block-end: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.compare-table thead th {
+  font-size: 11.5px;
+  color: var(--muted);
+  background: var(--chip);
+}
+
+.compare-table tbody th {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* ‏שורה שנבדלת בין המערכות היא המקום היחיד שבו ההחלטה נמצאת — ולכן
+   היא מודגשת, ושורה שזהה בכולן נסוגה. לכל תא יש ערך בשני המקרים:
+   צביעה לבדה אומרת "כאן שונה" בלי לומר במה. */
+.compare-table tr.same td,
+.compare-table tr.same th { opacity: .5; }
+
+.compare-table td.is-diff {
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+
+/* המערכת שמוצגת כרגע — עמודה מסומנת, כדי לדעת על מה מסתכלים. */
+.compare-table .is-active { outline: 1px solid var(--accent); outline-offset: -1px; }
+.compare-table thead th.is-active { color: var(--accent); font-weight: 700; }
+
+/* ‏"מערכת:" לפני העיגולים — בלעדיה חמישה מספרים בשורה אינם אומרים דבר. */
+.sticky-selector-label {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}

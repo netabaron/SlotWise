@@ -97,15 +97,35 @@ def browser():
             instance.close()
 
 
-@pytest.fixture()
-def fresh(browser, server):
-    """טעינה נקייה: אין ‏localStorage, בדיוק כמו כניסה ראשונה."""
+def _open(browser, url):
     ctx = browser.new_context()
     p = ctx.new_page()
     p.errors = []  # type: ignore[attr-defined]
     p.on("pageerror", lambda e: p.errors.append(str(e)))  # type: ignore[attr-defined]
-    p.goto(server)
+    p.goto(url)
     p.wait_for_timeout(4000)
+    return ctx, p
+
+
+@pytest.fixture()
+def fresh(browser, server):
+    """טעינה נקייה, בדיוק כמו כניסה ראשונה: אין ‏localStorage ואין ?debug."""
+    ctx, p = _open(browser, server)
+    try:
+        yield p
+    finally:
+        ctx.close()
+
+
+@pytest.fixture()
+def dev(browser, server):
+    """אותה טעינה, במצב ניפוי.
+
+    הסימן ⟦…⟧ והמסגרת האדומה קיימים **רק** ב-?debug=1: סטודנט/ית לא
+    אמורים לראות שם מפתח פנימי. לכן סריקת הסימנים רצה כאן, ואילו הרישום
+    ב-``missingStrings()`` נבדק גם בטעינה הרגילה.
+    """
+    ctx, p = _open(browser, server + "?debug=1")
     try:
         yield p
     finally:
@@ -138,71 +158,71 @@ def test_app_branch_is_whole(fresh):
 # ==========================================================================
 # 2. סריקת ה-DOM לאורך הזרימה
 # ==========================================================================
-def test_no_missing_keys_on_first_render(fresh):
+def test_no_missing_keys_on_first_render(dev):
     """הציור הראשון, בלי מצב שמור — המסך שרואים בכניסה."""
-    hits = scan(fresh, "first-render")
+    hits = scan(dev, "first-render")
     assert hits == [], "מפתחות חסרים בציור הראשון:\n  " + "\n  ".join(hits)
 
 
-def test_no_missing_keys_while_stepping_through(fresh):
+def test_no_missing_keys_while_stepping_through(dev):
     """צועדים בזרימה, וסורקים בכל שלב.
 
     כל שלב מצייר מצבים אחרים — רשימת קורסים, תוצאות חיפוש, טבלאות
     הקבוצות, פאנל הניקוד, הרשת, השכבה — ולכל אחד מהם נוסח משלו.
     """
     hits: list[str] = []
-    hits += scan(fresh, "load")
+    hits += scan(dev, "load")
 
-    fresh.select_option("#select-year", "3")
-    fresh.select_option("#select-term", "א")
-    fresh.wait_for_timeout(2500)
-    hits += scan(fresh, "year+term")
+    dev.select_option("#select-year", "3")
+    dev.select_option("#select-term", "א")
+    dev.wait_for_timeout(2500)
+    hits += scan(dev, "year+term")
 
-    fresh.fill("#course-search", "61753")
-    fresh.wait_for_timeout(1500)
-    hits += scan(fresh, "search")
+    dev.fill("#course-search", "61753")
+    dev.wait_for_timeout(1500)
+    hits += scan(dev, "search")
     try:
-        fresh.click("#course-search-results li >> nth=0")
-        fresh.wait_for_timeout(2500)
-        hits += scan(fresh, "course-added")
+        dev.click("#course-search-results li >> nth=0")
+        dev.wait_for_timeout(2500)
+        hits += scan(dev, "course-added")
     except Exception:
         pass
 
     for key in ("courses", "days", "lecturers"):
         try:
-            if fresh.evaluate(
+            if dev.evaluate(
                 "document.getElementById('step-%s')"
                 ".classList.contains('is-collapsed')" % key
             ):
-                fresh.click("#step-%s-toggle" % key)
-                fresh.wait_for_timeout(500)
+                dev.click("#step-%s-toggle" % key)
+                dev.wait_for_timeout(500)
         except Exception:
             pass
-    fresh.wait_for_timeout(1200)
-    hits += scan(fresh, "steps-expanded")
+    dev.wait_for_timeout(1200)
+    hits += scan(dev, "steps-expanded")
 
     try:
-        fresh.click('.day-btn[data-days="3"]')
-        fresh.wait_for_timeout(2000)
-        hits += scan(fresh, "days-3")
+        dev.click('.day-btn[data-days="3"]')
+        dev.wait_for_timeout(2000)
+        hits += scan(dev, "days-3")
     except Exception:
         pass
 
     try:
-        fresh.evaluate("document.getElementById('tech-details').open = true")
-        fresh.wait_for_timeout(400)
-        hits += scan(fresh, "tech-details")
+        dev.evaluate("document.getElementById('tech-details').open = true")
+        dev.wait_for_timeout(400)
+        hits += scan(dev, "tech-details")
     except Exception:
         pass
 
     try:
-        fresh.evaluate("window.scrollTo(0, 1200)")
-        fresh.wait_for_timeout(600)
-        fresh.click("#btn-show-grid")
-        fresh.wait_for_timeout(1200)
-        hits += scan(fresh, "overlay")
-        fresh.keyboard.press("Escape")
-        fresh.wait_for_timeout(500)
+        dev.evaluate("window.scrollTo(0, 1200)")
+        dev.wait_for_timeout(600)
+        dev.click("#btn-show-grid")
+        dev.wait_for_timeout(1200)
+        hits += scan(dev, "overlay")
+        dev.keyboard.press("Escape")
+        dev.wait_for_timeout(500)
     except Exception:
         pass
 
