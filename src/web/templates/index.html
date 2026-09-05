@@ -7,6 +7,10 @@
 <meta name="robots" content="noindex, nofollow">
 <title>SlotWise — מערכת שעות בראודה</title>
 <link rel="stylesheet" href="/static/style.css">
+<!-- ‏החריג היחיד לכלל "אין קוד בקובץ הזה": סקריפט חוסם, לפני הציור הראשון,
+     שמחיל בחירת ערכת צבעים שמורה. עם defer הוא היה רץ אחרי הציור והעמוד
+     היה מהבהב בגוון הלא נכון. אין בו לוגיקה של האפליקציה — רק תכונה אחת. -->
+<script src="/static/theme.js"></script>
 </head>
 <body>
 
@@ -148,6 +152,15 @@
       <button type="button" class="btn btn-ghost" id="btn-reparse">בנייה מחדש ללא רשת</button>
       <button type="button" class="btn btn-ghost" id="btn-log-toggle" aria-expanded="false" aria-controls="scrape-log">יומן</button>
     </div>
+    <div class="theme-toggle" id="theme-toggle" role="radiogroup" aria-label="ערכת צבעים">
+      <button type="button" class="theme-btn" role="radio" aria-checked="true"
+              data-theme-choice="system" title="לפי הגדרת מערכת ההפעלה">מערכת</button>
+      <button type="button" class="theme-btn" role="radio" aria-checked="false"
+              data-theme-choice="light" title="תמיד בהיר">בהיר</button>
+      <button type="button" class="theme-btn" role="radio" aria-checked="false"
+              data-theme-choice="dark" title="תמיד כהה">כהה</button>
+    </div>
+
     <p class="fresh-meta" id="refresh-summary" role="status" aria-live="polite" hidden></p>
   </div>
 </header>

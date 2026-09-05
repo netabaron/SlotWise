@@ -7,8 +7,12 @@
       רק גופני מערכת. האפליקציה עובדת גם בלי חיבור לאינטרנט.
       No external requests at all: no @import, no CDN, no webfonts.
    2. כל צבע מוגדר קודם כטוקן על ‎:root‎ (מצב בהיר מלא), ורק אחר כך נדרס
-      בתוך ‎@media (prefers-color-scheme: dark)‎. אין צבע שקיים רק במצב אחד.
-      Every colour is defined on bare :root first; the dark block ONLY overrides tokens.
+      בגוש הכהה. אין צבע שקיים רק במצב אחד.
+      Every colour is defined on bare :root first; the dark blocks ONLY override tokens.
+      יש **שני** גושים כהים והם חייבים להישאר זהים: אחד למצב "לפי המערכת"
+      (בתוך ‎prefers-color-scheme‎) ואחד לבחירה מפורשת בכהה (‎[data-theme]‎).
+      ‏CSS אינו יודע לצרף תנאי מדיה ותנאי סלקטור לכלל אחד, ולכן זו כפילות
+      מכוונת — משנים בשניהם או בכלל לא.
    3. כיווניות: ‎dir="rtl"‎ על ‎<html>‎. משתמשים במאפיינים לוגיים
       (inline-start / inline-end) כדי שהפריסה תהיה נכונה מימין לשמאל.
    ========================================================================== */
@@ -75,8 +79,11 @@
 /* ==========================================================================
    2. מצב כהה — דריסת טוקנים בלבד, שום כלל חדש
    ========================================================================== */
+/* ‏א. "לפי המערכת": חל רק כשאין בחירה מפורשת בבהיר.
+   בלי ‎:not([data-theme="light"])‎ הגוש הזה היה גובר על בחירת "בהיר"
+   של מי שמערכת ההפעלה שלו כהה — שתי הדרגות זהות (0,1,0), והמאוחר מנצח. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #11151b;
     --panel: #1a2028;
     --panel-2: #20272f;
@@ -116,6 +123,53 @@
     --course-9: #123f3b;  --course-9-bd: #2f7f77;  --course-9-fg: #ccfbf1;
   }
 }
+
+/* ‏ב. בחירה מפורשת בכהה. עותק זהה לגוש שמעליו — ראו כלל 2 בראש הקובץ. */
+:root[data-theme="dark"] {
+  --bg: #11151b;
+  --panel: #1a2028;
+  --panel-2: #20272f;
+  --chip: #222a34;
+  --ink: #e6eaf1;
+  --muted: #a8b3c2;
+  --line: #2a323d;
+  --line-strong: #3d4855;
+
+  --accent: #93c0f6;
+  --accent-ink: #0f1620;
+  --accent-soft: #1e2c40;
+  --focus: #93c0f6;
+
+  --info-bg: #17263b;  --info-line: #3d5f8e;  --info-ink: #bcd6f7;
+  --ok-bg:   #12331f;  --ok-line:   #3d7a55;  --ok-ink:   #9de8bb;
+  --warn-bg: #3a2b0c;  --warn-line: #8a6a21;  --warn-ink: #ffd894;
+  --err-bg:  #3d1219;  --err-line:  #8a3a45;  --err-ink:  #ffb3bc;
+
+  --pin-bg: #12331f;
+  --pin-line: #4fae7c;
+  --tie-line: #a48ce0;
+  --dead-line: #d4707c;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 8px 24px rgba(0, 0, 0, .38);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .5);
+
+  --course-0: #1d3557;  --course-0-bd: #4b7bb5;  --course-0-fg: #dbeafe;
+  --course-1: #17402a;  --course-1-bd: #3f8a5c;  --course-1-fg: #dcfce7;
+  --course-2: #453413;  --course-2-bd: #8f7124;  --course-2-fg: #fef3c7;
+  --course-3: #4a1f2a;  --course-3-bd: #94505f;  --course-3-fg: #ffe4e6;
+  --course-4: #2e2557;  --course-4-bd: #6455a6;  --course-4-fg: #ede9fe;
+  --course-5: #123e4a;  --course-5-bd: #2f8296;  --course-5-fg: #cffafe;
+  --course-6: #2b3d16;  --course-6-bd: #61812c;  --course-6-fg: #ecfccb;
+  --course-7: #472a14;  --course-7-bd: #8e5a2b;  --course-7-fg: #ffedd5;
+  --course-8: #43164a;  --course-8-bd: #8f4499;  --course-8-fg: #fae8ff;
+  --course-9: #123f3b;  --course-9-bd: #2f7f77;  --course-9-fg: #ccfbf1;
+}
+
+/* ‏color-scheme קובע את הגוון של פקדי המערכת עצמם — תיבות בחירה, שדה
+   השעה, פסי הגלילה. בלי זה בחירה מפורשת הייתה צובעת את העמוד ומשאירה
+   את הפקדים בגוון ההפוך. */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }
 
 /* ==========================================================================
    3. בסיס
@@ -234,6 +288,36 @@ ul { margin: 0; padding: 0; list-style: none; }
 .fresh-dot[data-state="empty"] { background: var(--dead-line); border-color: var(--dead-line); }
 
 .header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---- בורר ערכת הצבעים: שלושה מצבים בפקד אחד ---- */
+.theme-toggle {
+  display: flex;
+  flex: none;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+}
+
+.theme-btn {
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 11px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.theme-btn:hover { color: var(--ink); }
+
+.theme-btn[aria-checked="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
 
 /* ==========================================================================
    5. כפתורים ושדות

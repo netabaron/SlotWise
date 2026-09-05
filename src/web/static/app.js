@@ -34,6 +34,15 @@
   var STORAGE_KEY = "braude_schedule_builder_v1";
   var STORAGE_SCHEMA = 1;
 
+  /**
+   * ערכת הצבעים. מפתח נפרד מ-``STORAGE_KEY`` בכוונה: זו העדפת תצוגה ולא
+   * חלק מהבחירה הסמסטריאלית, ואיפוס של האחת לא אמור לגרור את השנייה.
+   * ‏static/theme.js קורא את אותו מפתח לפני הציור הראשון — שינוי כאן מחייב
+   * שינוי גם שם.
+   */
+  var THEME_KEY = "slotwise_theme";
+  var THEME_CHOICES = ["system", "light", "dark"];
+
   var SOLVE_DEBOUNCE_MS = 150;
   var SEARCH_DEBOUNCE_MS = 250;
   /** כמה שורות קטלוג להביא בכל עיון. מספיק כדי לגלול, מעט מספיק כדי לטעון מיד. */
@@ -2534,6 +2543,11 @@
     ui.softSub = byId("soft-conflicts-sub");
     ui.softList = byId("soft-conflicts-list");
 
+    ui.themeToggle = byId("theme-toggle");
+    ui.themeButtons = ui.themeToggle
+      ? Array.prototype.slice.call(ui.themeToggle.querySelectorAll("[data-theme-choice]"))
+      : [];
+
     ui.stickyBar = byId("sticky-bar");
     ui.stickyTabs = byId("sticky-tabs");
     ui.stickyFacts = byId("sticky-facts");
@@ -2725,6 +2739,14 @@
       });
     });
 
+    ui.themeButtons.forEach(function (btn) {
+      btn.dataset.fk = "theme-" + txt(btn.dataset.themeChoice);
+      btn.addEventListener("click", function () {
+        applyTheme(txt(btn.dataset.themeChoice));
+      });
+    });
+    renderThemeToggle();
+
     if (ui.btnShowGrid) {
       ui.btnShowGrid.addEventListener("click", openGridOverlay);
     }
@@ -2758,6 +2780,49 @@
   /** האם השלב מקופל כרגע. מפתח חסר = פרוס. */
   function stepCollapsed(key) {
     return state.collapsed[key] === true;
+  }
+
+  /* =====================================================================
+   * 8א. ערכת הצבעים
+   * ===================================================================== */
+
+  /**
+   * הבחירה השמורה. "מערכת" נשמר כהיעדר ערך ולא כמחרוזת: כך אין מצב שבו
+   * מפתח ישן קובע משהו אחר ממה ש-``theme.js`` יודע לקרוא, וכך גם שינוי של
+   * מערכת ההפעלה בזמן שהעמוד פתוח נתפס בלי מאזין — פשוט אין תכונה שדורסת
+   * את ‎prefers-color-scheme‎.
+   */
+  function readTheme() {
+    var saved = null;
+    try {
+      saved = window.localStorage.getItem(THEME_KEY);
+    } catch (e) {
+      /* אחסון חסום — נשארים על "מערכת" */
+    }
+    return saved === "light" || saved === "dark" ? saved : "system";
+  }
+
+  function applyTheme(choice) {
+    var next = THEME_CHOICES.indexOf(choice) === -1 ? "system" : choice;
+    var root = document.documentElement;
+    try {
+      if (next === "system") window.localStorage.removeItem(THEME_KEY);
+      else window.localStorage.setItem(THEME_KEY, next);
+    } catch (e) {
+      /* אחסון חסום — הבחירה תחול על הסשן הזה בלבד */
+    }
+    if (next === "system") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", next);
+    renderThemeToggle();
+  }
+
+  function renderThemeToggle() {
+    if (!ui.themeButtons || !ui.themeButtons.length) return;
+    var current = readTheme();
+    ui.themeButtons.forEach(function (btn) {
+      var mine = txt(btn.dataset.themeChoice);
+      btn.setAttribute("aria-checked", mine === current ? "true" : "false");
+    });
   }
 
   /* =====================================================================
