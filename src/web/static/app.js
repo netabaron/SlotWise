@@ -606,6 +606,9 @@
       collapsed: {},
       // ‏"הצג את כל השעות" — העדפת תצוגה, נשמרת כמו הקיפול.
       allHours: false,
+      // באילו סעיפים המשתמש/ת באמת בחרו משהו. ‏✓ ירוק שמופיע תמיד
+      // אינו אומר דבר; זה מה שמבדיל בחירה מברירת מחדל.
+      touched: {},
     };
   }
 
@@ -756,6 +759,7 @@
     if (!base.attendance || typeof base.attendance !== "object") base.attendance = {};
     if (!base.collapsed || typeof base.collapsed !== "object") base.collapsed = {};
     base.allHours = base.allHours === true;
+    if (!base.touched || typeof base.touched !== "object") base.touched = {};
     base.allowSoftConflicts = true;  // גם מצב ישן שנשמר ב-localStorage מיושר
     if (!Array.isArray(base.blocked)) base.blocked = [];
     base.targetDays = clamp(Math.round(num(base.targetDays, 4)), 2, 6);
@@ -1477,6 +1481,7 @@
 
   /** מפתח חסר = חובה, בדיוק כמו בשרת — ולכן "חובה" נשמר כמחיקה. */
   function setAttendance(code, kind, required) {
+    markTouched("lecturers");
     var att = deepCopy(state.attendance) || {};
     var c = txt(code);
     var k = txt(kind);
@@ -2668,6 +2673,7 @@
       : [];
 
     ui.btnBuild = byId("btn-build");
+    ui.progress = byId("steps-progress");
     ui.detail = byId("meeting-detail");
     ui.detailBody = byId("meeting-detail-body");
     ui.btnDetailClose = byId("btn-detail-close");
@@ -2731,6 +2737,7 @@
   function wireEvents() {
     if (ui.selProgram) {
       ui.selProgram.addEventListener("change", function () {
+        markTouched("year");
         // מספר הסמסטר נגזר מלוח הסמסטרים של המסלול, ולכן הוא חייב להיגזר
         // מחדש כאן. בלי זה מסלול שאין לו תוכנית כלל היה ממשיך להצהיר
         // "סמסטר 5 בתוכנית הלימודים" שנשאר מהמסלול הקודם.
@@ -2782,12 +2789,14 @@
       var n = clamp(Math.round(num(btn.dataset.days, 4)), 2, 6);
       btn.dataset.fk = "day-" + n;
       btn.addEventListener("click", function () {
+        markTouched("days");
         setState({ targetDays: n, activeSchedule: 0 });
       });
     });
 
     if (ui.chkFriday) {
       ui.chkFriday.addEventListener("change", function () {
+        markTouched("days");
         setState({ forbidFriday: ui.chkFriday.checked, activeSchedule: 0 });
       });
     }
@@ -2931,6 +2940,18 @@
         { capture: true, passive: true }
       );
     });
+  }
+
+  /**
+   * רושם שסעיף נבחר בפועל.
+   *
+   * ‏✓ שמופיע על כל הסעיפים מהרגע הראשון אינו סימן אלא קישוט. מכאן:
+   * מתאר ריק = ברירת מחדל, ‏✓ = נבחר, ‏! = יש בעיה.
+   */
+  function markTouched(key) {
+    if (state.touched[key]) return;
+    state.touched[key] = true;
+    saveState();
   }
 
   /** האם השלב מקופל כרגע. מפתח חסר = פרוס. */
@@ -3241,6 +3262,7 @@
   }
 
   function onYearTermChange() {
+    markTouched("year");
     var y = clamp(
       Math.round(num(ui.selYear ? ui.selYear.value : state.studyYear, state.studyYear)),
       1,
@@ -3641,6 +3663,7 @@
     renderLecturersStep();
     renderScheduleStep();
     renderStepStates();
+    renderProgress();
     renderStickyBar();
     renderCompare();
     renderTechDetails();
@@ -3804,17 +3827,19 @@
       YEAR_LABELS[state.studyYear] ||
       Tf("app.year.yearFallback", { year: state.studyYear });
     if (curriculumSemesterKnown()) {
-      var parts = [
-        yearLabel,
-        Tf("app.year.summaryTerm", { term: txt(state.term) }),
-        Tf("app.year.summaryPlanSemester", { semester: txt(state.semester) }),
-      ];
-      if (info && num(info.course_count, 0)) {
-        parts.push(
-          Tf("app.year.summaryRecommendedCount", { count: info.course_count })
-        );
-      }
-      setText(ui.semesterSummary, parts.join(" · "));
+      // ‏השנה והסמסטר כבר מופיעים בשורת המצב של הסעיף — שהיא גם שורת
+      // הסיכום כשהוא מקופל. השבב הזה אמר בדיוק את אותו הדבר שורה מתחת,
+      // ולכן הוא נושא רק את מה שאין שם: לאיזה סמסטר בתוכנית זה מתורגם,
+      // וכמה קורסים מומלצים בו.
+      setText(
+        ui.semesterSummary,
+        info && num(info.course_count, 0)
+          ? Tf("app.year.summaryPlan", {
+              n: txt(state.semester),
+              count: info.course_count,
+            })
+          : Tf("app.year.summaryPlanNoCount", { n: txt(state.semester) })
+      );
       setText(ui.yearNote, "");
     } else if (runtime.curriculumAvailable === false) {
       // אין תוכנית טעונה — הבחירה עצמה תקפה, ואסור לדבר על סמסטר
@@ -3845,6 +3870,7 @@
   }
 
   function toggleCourse(code, checked) {
+    markTouched("courses");
     var family = tiedGroupFor(code);
     var set = selectedSet();
     var order = state.codes.slice();
@@ -4725,6 +4751,7 @@
   }
 
   function toggleLecturer(code, lecturer) {
+    markTouched("lecturers");
     var name = txt(lecturer);
     if (!name) return;
     var ranked = deepCopy(state.ranked);
@@ -4738,6 +4765,7 @@
   }
 
   function togglePin(code, kind, groupId) {
+    markTouched("lecturers");
     var pinned = deepCopy(state.pinned);
     var byKind = pinned[code] || {};
     if (txt(byKind[kind]) === txt(groupId)) delete byKind[kind];
@@ -6339,9 +6367,33 @@
   /** ‏45 דקות: מתחת לזה שלוש שורות בגופן 13px אינן נכנסות לבלוק. */
   var ROOM_MIN_MINUTES = 45;
 
-  /** ‏"709 L" / "102 M מע'" — בדיוק כפי שהידיעון שמר. */
-  function roomOf(m) {
+  /**
+   * קוד חדר לתצוגה: ‏"709 L" -> "L 709".
+   *
+   * הידיעון שומר מספר ואז אות בניין, ואיש בבראודה לא אומר חדר ככה.
+   * ההיפוך נעשה **בתצוגה בלבד** — הערך השמור אינו משתנה, וכל השוואה
+   * מול הנתונים חייבת להשתמש בו ולא במה שמופיע על המסך.
+   *
+   * מה שאחרי הקוד נשאר במקומו: ‏"102 M מע'" -> "M 102 מע'".
+   * מחרוזת שאינה בתבנית הזאת מוחזרת כמות שהיא — עדיף להציג משהו לא
+   * מהופך מאשר לנחש.
+   */
+  var ROOM_RE = /^(\d+)\s+([A-Za-z]+)(.*)$/;
+
+  function formatRoom(raw) {
+    var text = txt(raw).trim();
+    var m = ROOM_RE.exec(text);
+    return m ? m[2] + " " + m[1] + m[3] : text;
+  }
+
+  /** הערך השמור, בלי היפוך — למי שצריך להשוות מול הנתונים. */
+  function rawRoomOf(m) {
     return [txt(m && m.building), txt(m && m.room)].filter(Boolean).join(" ");
+  }
+
+  /** הערך להצגה. */
+  function roomOf(m) {
+    return formatRoom(rawRoomOf(m));
   }
 
   /**
@@ -6508,6 +6560,87 @@
   /* --- מצב חמשת השלבים ------------------------------------------------ */
 
   /**
+   * מצב סעיף אחד: ‏"default" / "chosen" / "conflict".
+   *
+   * ‏conflict גובר תמיד — הגדרה שאי אפשר לקיים היא הדבר היחיד שדורש
+   * פעולה, ולכן היא צריכה להיראות אחרת גם מסעיף שנבחר וגם מסעיף שלא.
+   */
+  function sectionState(key) {
+    var s = runtime.solve;
+    var conflict = false;
+    if (key === "days") {
+      conflict = !!(s && s.target_reachable === false);
+    } else if (key === "courses") {
+      conflict =
+        pickList(s || {}, ["tied_missing"], null).length > 0 ||
+        runtime.notOffered.length > 0;
+    } else if (key === "lecturers") {
+      conflict = pinCount() > 0 && !!s && schedules().length === 0;
+    }
+    if (conflict) return "conflict";
+    return state.touched[key] ? "chosen" : "default";
+  }
+
+  /**
+   * שורת המצב שמעל הסעיפים.
+   *
+   * לא ממוספרת בכוונה: הסעיפים נפתחים בכל סדר, ומספור היה מבטיח רצף
+   * שאינו קיים — ומרמז שסעיף שלא נגעו בו הוא משימה פתוחה, בעוד שברירת
+   * המחדל היא תשובה לגיטימית לגמרי.
+   */
+  function renderProgress() {
+    if (!ui.progress) return;
+    var keys = COLLAPSIBLE_STEPS;
+    var states = keys.map(sectionState);
+    rebuild(ui.progress, function (box) {
+      keys.forEach(function (key, i) {
+        var name = T("app.steps." + key + "Title", "");
+        if (!name) name = T("ui.steps." + key + "Title", key);
+        var st = states[i];
+        var label =
+          st === "conflict"
+            ? Tf("app.progress.conflict", { name: name })
+            : st === "chosen"
+            ? Tf("app.progress.chosen", { name: name })
+            : Tf("app.progress.untouched", { name: name });
+        box.appendChild(
+          el("button", {
+            class: "progress-chip is-" + st,
+            attrs: {
+              type: "button",
+              title: label,
+              "aria-label": Tf("app.progress.jump", { name: name }),
+            },
+            data: { fk: "progress-" + key },
+            text: name,
+            on: {
+              click: function () {
+                var node = ui.steps[key];
+                if (!node) return;
+                if (stepCollapsed(key)) {
+                  state.collapsed[key] = false;
+                  runtime.autoCollapsed[key] = true;
+                  setState({ collapsed: state.collapsed }, { solve: false });
+                }
+                if (node.scrollIntoView) node.scrollIntoView({ block: "start" });
+              },
+            },
+          })
+        );
+      });
+      box.appendChild(
+        el("span", {
+          class: "progress-hint",
+          text:
+            states.indexOf("conflict") !== -1
+              ? T("app.progress.hintConflict")
+              : T("app.progress.hintDefault"),
+        })
+      );
+    });
+  }
+
+  /**
    * מקפל שלבים שכבר היו מוכנים כשהגענו לעמוד.
    *
    * שלושה תנאים, וכולם נחוצים:
@@ -6551,14 +6684,10 @@
         // (תוכנית קצרה מ-8 סמסטרים, קיץ, או אין תוכנית כלל).
         locked: false,
         complete: !!txt(state.term),
+        // שנה וסמסטר בלבד. התרגום לסמסטר בתוכנית הלימודים יושב בשבב
+        // שמתחת, ואמירתו כאן שוב הייתה אותה שורה פעמיים במרחק שורה.
         text: !txt(state.term)
           ? T("app.steps.year.empty")
-          : curriculumSemesterKnown()
-          ? Tf("app.steps.year.selectedWithCurriculum", {
-              year: YEAR_LABELS[state.studyYear] || "",
-              term: txt(state.term),
-              semester: txt(state.semester),
-            })
           : Tf("app.steps.year.selected", {
               year: YEAR_LABELS[state.studyYear] || "",
               term: txt(state.term),
@@ -6647,8 +6776,18 @@
       }
       // שלב נעול הוא ריק ממילא, ואין טעם לקפל אותו.
       var collapsed = stepCollapsed(step.key) && !step.locked;
+      var mark = COLLAPSIBLE_STEPS.indexOf(step.key) === -1
+        ? null
+        : sectionState(step.key);
       setClass(node, "is-locked", step.locked);
-      setClass(node, "is-complete", step.complete && !step.locked);
+      setClass(node, "is-default", mark === "default" && !step.locked);
+      setClass(node, "is-conflict", mark === "conflict" && !step.locked);
+      // ‏✓ ירוק רק כשבאמת נבחר משהו — ולא על כל סעיף מהרגע הראשון.
+      setClass(
+        node,
+        "is-complete",
+        (mark === "chosen" || mark === null) && step.complete && !step.locked
+      );
       setClass(node, "is-active", isActive);
       setClass(node, "is-collapsed", collapsed);
       var toggle = ui.stepToggles[step.key];
@@ -6717,6 +6856,8 @@
 
   // ידית קטנה לניפוי מהקונסולה — לא נדרשת לתפעול.
   window.slotwise = {
+    // ‏היפוך קוד החדר, חשוף לבדיקה: "709 L" -> "L 709".
+    formatRoom: formatRoom,
     // ‏מה שבדיקת הדפדפן שואלת: אילו מפתחות נוסח לא נמצאו.
     missingStrings: function () {
       return MISSING_STRINGS.slice();

@@ -182,6 +182,11 @@
 
 <main class="steps" id="steps">
 
+  <!-- ‏שורת מצב, לא שורת התקדמות ממוספרת. הסעיפים נפתחים בכל סדר,
+       ומספור היה מבטיח רצף שאינו קיים. כל שבב אומר באיזה מצב הסעיף
+       ומקפיץ אליו. -->
+  <nav class="progress" id="steps-progress" aria-label="{{ S.app.progress.label }}"></nav>
+
   <!-- ===================== 1. שנה וסמסטר ===================== -->
   <section class="step" id="step-year" data-step="1" aria-labelledby="step-year-title">
     <div class="step-head">
@@ -198,15 +203,15 @@
     </div>
     <div class="step-body" id="step-year-body">
       <div class="field-row">
-        <div class="field">
+        <div class="field field--lg">
           <label class="label" for="select-program">{{ S.ui.fields.program }}</label>
           <select class="input" id="select-program"></select>
         </div>
-        <div class="field">
+        <div class="field field--sm">
           <label class="label" for="select-year">{{ S.ui.fields.studyYear }}</label>
           <select class="input" id="select-year"></select>
         </div>
-        <div class="field">
+        <div class="field field--md">
           <label class="label" for="select-term">{{ S.ui.fields.term }}</label>
           <select class="input" id="select-term"></select>
         </div>

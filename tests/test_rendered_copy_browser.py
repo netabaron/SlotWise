@@ -480,12 +480,32 @@ VISUAL_ORDER = """(sel) => {
 }"""
 
 
-def test_room_codes_render_in_source_order(fresh):
-    """קוד חדר מוצג בדיוק כפי שהוא שמור, תו אחר תו.
+def test_room_code_reformatting(fresh):
+    """‏"709 L" נכנס, "L 709" יוצא.
 
-    ‏"709 L" בתוך שורה עברית, בלי כיוון מפורש, מתהפך ל-"L 709": הספרה
-    הפותחת היא תו חלש, וכיוון הרצף נקבע לפי ההקשר ולא לפי התוכן.
-    הבדיקה מודדת מיקומי תווים ולא קוראת את ה-DOM, כי בדיוק שם ההבדל.
+    הידיעון שומר מספר ואז אות בניין; אף אחד בבראודה לא אומר חדר ככה,
+    ולכן ההיפוך נעשה בתצוגה. הערך השמור אינו משתנה.
+    """
+    cases = [
+        ("709 L", "L 709"),
+        ("506 EF", "EF 506"),
+        ("303 M", "M 303"),
+        ("102 M מע'", "M 102 מע'"),
+        ("205 M מע' רשתות", "M 205 מע' רשתות"),
+        ("סמינר", "סמינר"),
+        ("", ""),
+    ]
+    for raw, want in cases:
+        got = fresh.evaluate("v => window.slotwise.formatRoom(v)", raw)
+        assert got == want, f"{raw!r} -> {got!r}, ציפינו ל-{want!r}"
+
+
+def test_room_codes_render_in_display_order(fresh):
+    """‏הסדר **על המסך** שווה לערך המוצג, תו אחר תו.
+
+    לא לערך השמור: הוא "709 L", והתצוגה היא "L 709". מה שנבדק כאן הוא
+    שהרצף אינו מתהפך שוב בגלל ההקשר העברי שסביבו — ולכן המדידה היא של
+    מיקומי תווים, ולא של textContent שמחזיר תמיד סדר לוגי.
     """
     _with_schedule(fresh)
     fresh.wait_for_selector("#schedule-grid .ev .code", timeout=15000)
@@ -502,7 +522,7 @@ def test_room_codes_render_in_source_order(fresh):
           chars.push([r.getBoundingClientRect().x, t.data[i]]);
         }
         chars.sort((a, b) => a[0] - b[0]);
-        out.push({ logical: t.data, visual: chars.map(c => c[1]).join('') });
+        out.push({ shown: t.data, visual: chars.map(c => c[1]).join('') });
       });
       return out;
     }"""
@@ -510,11 +530,17 @@ def test_room_codes_render_in_source_order(fresh):
     assert rows, "לא נמצא אף קוד חדר ברשת"
     # רק קודים בלי עברית: תו עברי מוצג נכון מימין לשמאל, ולכן שחזור
     # משמאל-לימין שלו ייראה הפוך גם כשהכול תקין.
-    latin = [r for r in rows if not any("֐" <= c <= "׿" for c in r["logical"])]
+    latin = [r for r in rows if not any("֐" <= c <= "׿" for c in r["shown"])]
     assert latin, "אין קוד לטיני טהור לבדוק עליו"
-    bad = [r for r in latin if r["visual"] != r["logical"]]
+    bad = [r for r in latin if r["visual"] != r["shown"]]
     assert bad == [], "קודים שהתהפכו: " + "; ".join(
-        "%r מוצג כ-%r" % (r["logical"], r["visual"]) for r in bad
+        "%r מוצג כ-%r" % (r["shown"], r["visual"]) for r in bad
+    )
+    # ומה שמוצג הוא באמת הצורה ההפוכה: אות ואז מספר.
+    import re as _re
+
+    assert any(_re.match(r"^[A-Za-z]+ \d", r["shown"]) for r in latin), (
+        "אף קוד לא מוצג בצורה 'אות מספר' — ההיפוך לתצוגה לא קרה"
     )
 
 
@@ -569,3 +595,63 @@ def test_block_shows_room_and_keeps_font_readable(fresh):
     for f in info["fonts"]:
         assert float(f.replace("px", "")) >= 13, f"גופן קטן מ-13px בבלוק: {f}"
     assert info["kindOnBlock"] == 0, "סוג השיעור נשאר בבלוק במקום בפאנל"
+
+
+# ==========================================================================
+# 6. מצב הסעיפים — ✓ שאומר משהו
+# ==========================================================================
+def test_section_marks_are_stateful(fresh):
+    """‏○ בברירת מחדל, ‏✓ אחרי בחירה, ‏! כשיש קונפליקט.
+
+    ‏✓ ירוק שמופיע על כל סעיף מהרגע הראשון אינו נושא מידע.
+    """
+    marks = lambda: fresh.evaluate(
+        """() => [].slice.call(document.querySelectorAll('.progress-chip'))
+             .map(e => e.className.replace('progress-chip ', ''))"""
+    )
+    assert set(marks()) == {"is-default"}, "בטעינה נקייה הכול אמור להיות ברירת מחדל"
+
+    fresh.select_option("#select-year", "3")
+    fresh.select_option("#select-term", "א")
+    fresh.wait_for_timeout(3000)
+    assert marks()[0] == "is-chosen", "אחרי בחירת שנה וסמסטר הסעיף אמור להיות 'נבחר'"
+
+    fresh.click('.day-btn[data-days="2"]')
+    fresh.wait_for_timeout(2500)
+    assert "is-conflict" in marks(), "יעד ימים בלתי אפשרי אמור להופיע כקונפליקט"
+    assert fresh.evaluate(
+        "document.getElementById('step-days').classList.contains('is-conflict')"
+    )
+
+
+def test_progress_row_is_not_numbered(fresh):
+    """שורת מצב, לא רצף ממוספר.
+
+    הסעיפים נפתחים בכל סדר; מספור היה מבטיח רצף שאינו קיים.
+    """
+    chips = fresh.evaluate(
+        """() => [].slice.call(document.querySelectorAll('.progress-chip'))
+             .map(e => e.textContent.trim())"""
+    )
+    assert len(chips) == 4
+    import re as _re
+
+    for c in chips:
+        assert not _re.match(r"^\s*[1-9]\s*[.·]", c), f"שבב ממוספר: {c!r}"
+
+
+def test_semester_line_is_not_duplicated(fresh):
+    """‏השנה והסמסטר נאמרים פעם אחת."""
+    fresh.select_option("#select-year", "3")
+    fresh.select_option("#select-term", "א")
+    fresh.wait_for_timeout(3000)
+    state = fresh.evaluate(
+        "(document.getElementById('step-year-state')||{}).textContent || ''"
+    )
+    chip = fresh.evaluate(
+        "(document.getElementById('semester-summary')||{}).textContent || ''"
+    )
+    assert "שנה" in state, "שורת המצב אמורה לשאת את השנה"
+    assert "שנה" not in chip, f"השבב חוזר על השנה: {chip!r}"
+    assert "בתוכנית" in chip, "השבב אמור לשאת את התרגום לסמסטר בתוכנית"
+    assert "בתוכנית" not in state, f"שורת המצב חוזרת על הסמסטר בתוכנית: {state!r}"

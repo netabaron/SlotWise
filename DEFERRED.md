@@ -80,18 +80,34 @@ deuteranopia or protanopia is a palette question, and the palette is contrast-tu
 for both themes already; re-tuning it belongs with the rest of the accessibility
 audit rather than being done twice.
 
-### Room codes read "709 L", not "L 709" — is that the wanted order?
-**Where:** `roomOf()` in `src/web/static/app.js`; source is `meeting.room`.
-**Owner:** open question for the product owner.
-**What was found:** the yedion stores the room as `"709 L"`, `"506 EF"`, `"303 M"`,
-`"102 M מע'"` — number first, building letter after. Measured in the browser by
-character x-position: without isolation that renders visually as `L 709` (reversed);
-with `<bdi dir="ltr">` it renders `709 L`, faithful to the source. So `L 709` — the
-form that was asked for — is the *corrupted* rendering, not the correct one.
-**Decision needed:** display faithfully as `709 L` (current), or reformat to
-`L 709` at display time. The latter is a one-line change in `roomOf()`, but it makes
-the rendered text differ from the stored text, so the character-for-character test
-would have to compare against the reformatted value instead of the source.
+### Displayed room text no longer equals the stored room text
+**Where:** `formatRoom()` / `roomOf()` vs `rawRoomOf()` in `src/web/static/app.js`.
+**Owner:** standing constraint — read this before matching a room anywhere.
+**What:** the yedion stores `"709 L"` — number then building letter. Nobody at
+Braude says a room that way, so the interface reverses it for display: `roomOf()`
+returns `"L 709"`, `"M 102 מע'"`, `"EF 506"`.
+
+**Consequence, and the reason this entry exists:** rendered room text and stored
+room text are now different strings. Anything that ever compares, searches,
+filters, groups or de-duplicates a room **must use `rawRoomOf()`** — the stored
+form — never the text on screen or `textContent` scraped from the DOM. Only
+display goes through `roomOf()`.
+
+The reversal is display-only and deliberate: it was measured, not assumed. Without
+bidi isolation `"709 L"` renders visually as `L 709` by accident, which is the same
+string the reformatting now produces on purpose — so isolation plus reformatting
+are both required, and removing either one is caught by
+`tests/test_rendered_copy_browser.py`.
+
+### Middle-dot meta strings are still used on more than one line per card
+**Where:** course cards in step 2, the lecturer panel header, the sticky bar.
+**Owner:** unassigned — partially addressed in Phase 5.
+**Why not finished:** Phase 5 removed the worst case (the year/term/semester line
+said the same thing twice, one line apart) and trimmed the step state to a single
+dot. The remaining ones — `3 נ"ז · 6 קבוצות · עודכן לפני 48 דקות` on a course
+panel — each carry three genuinely different facts, and splitting them into rows
+costs vertical space that Phase 8 will be fighting for on a phone. Worth revisiting
+with the mobile layout rather than guessing at it now.
 
 ### `KIND_ORDER` and the term codes are displayed but are not copy
 **Where:** `src/web/static/app.js`, the constants block.

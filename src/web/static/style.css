@@ -2072,3 +2072,74 @@ html.is-modal-open body { overflow: hidden; }
   .cell-group,
   .gid { direction: ltr; unicode-bidi: isolate; }
 }
+
+/* ==========================================================================
+   21. שלב 5 — מצב הסעיפים, שורת המצב, ורוחב שדות
+   ========================================================================== */
+
+/* ---- הסימון על הסעיף: שלושה מצבים, לא אחד ---- */
+/* ‏✓ ירוק שמופיע על כל סעיף מהרגע הראשון אינו נושא מידע. מתאר ריק =
+   ברירת מחדל, ‏✓ = נבחר, ‏! = יש בעיה שדורשת החלטה. */
+.step.is-default .step-title::before {
+  content: counter(step);
+  background: transparent;
+  border-color: var(--line-strong);
+  color: var(--muted);
+}
+
+.step.is-conflict .step-title::before {
+  content: "!";
+  background: var(--warn-bg);
+  border-color: var(--warn-line);
+  color: var(--warn-ink);
+}
+
+.step.is-conflict { border-color: var(--warn-line); }
+
+/* ---- שורת המצב שמעל הסעיפים ---- */
+.progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  padding: 0 clamp(12px, 3vw, 28px);
+  max-inline-size: 1180px;
+  margin: 0 auto 4px;
+}
+
+.progress-chip {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.progress-chip::before { margin-inline-end: .4em; }
+.progress-chip.is-default::before { content: "○"; }
+.progress-chip.is-chosen::before  { content: "✓"; }
+.progress-chip.is-conflict::before { content: "!"; font-weight: 800; }
+
+.progress-chip.is-chosen {
+  border-color: var(--ok-line);
+  background: var(--ok-bg);
+  color: var(--ok-ink);
+}
+
+.progress-chip.is-conflict {
+  border-color: var(--warn-line);
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+}
+
+.progress-chip:hover { border-color: var(--accent); }
+.progress-hint { font-size: 11.5px; color: var(--muted); }
+
+/* ---- שדות לפי תוכן, לא ברוחב מלא ---- */
+.field--sm { flex: 0 1 8rem; }
+.field--md { flex: 0 1 13rem; }
+.field--lg { flex: 0 1 22rem; }
