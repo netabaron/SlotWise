@@ -29,6 +29,22 @@
     #btn-reparse         "בנייה מחדש ללא רשת"  ->  POST /api/reparse
     #btn-log-toggle      מציג/מסתיר את #scrape-log (יש לעדכן aria-expanded)
 
+  סרגל מצוף ושכבת המערכת / sticky bar + grid overlay
+    #sticky-bar          ‏position: fixed בראש העמוד. מקבל class "is-visible"
+                         רק אחרי שגוללים מעבר ל-#step-year (IntersectionObserver),
+                         ורק כשיש מערכת להציג. גובה מרבי ~60px.
+    #sticky-tabs         לשוניות מוקטנות (המספר בלבד; התיאור המלא ב-title)
+    #sticky-facts        ימים · מסיים · חורים, עבור המערכת הפעילה
+    #btn-show-grid       "הצג מערכת" -> פותח את #grid-overlay
+    #grid-overlay        רקע מוחשך. hidden כברירת מחדל.
+    #grid-overlay-panel  ‏role=dialog aria-modal, tabindex=-1 (מקבל פוקוס בפתיחה).
+                         הפוקוס לכוד בתוכו, ו-Esc/סגירה/לחיצה על הרקע מחזירים
+                         אותו ל-#btn-show-grid.
+    #overlay-tabs #overlay-facts #overlay-legend #overlay-grid
+                         אותן לשוניות ואותה רשת בדיוק כמו בשלב 5 — אותה
+                         ‏buildGrid ואותן מחלקות צבע ‎.c0..c9‎. מיכל אחר, לא ציור אחר.
+    ‏html.is-modal-open   נועל את גלילת העמוד מאחורי השכבה.
+
   הודעות / messages
     #banners             באנרים מתמשכים (נתונים ישנים, יעד ימים בלתי אפשרי)
     #toasts              הודעות חולפות
@@ -136,6 +152,15 @@
   </div>
 </header>
 
+<!-- ‏סרגל מצוף: מופיע רק אחרי שחולפים על שלב 1, ומחזיק את המידע
+     שרוצים לראות בזמן שמשנים העדפות למטה. הוא position: fixed ולא sticky,
+     כי הוא צריך להופיע בגלילה ולא במקום שבו הוא יושב ב-DOM. -->
+<div class="sticky-bar" id="sticky-bar" role="region" aria-label="סיכום המערכת הנבחרת">
+  <div class="sticky-tabs" id="sticky-tabs" role="tablist" aria-label="מערכות מוצעות"></div>
+  <div class="sticky-facts" id="sticky-facts"></div>
+  <button type="button" class="btn btn-primary btn-sm" id="btn-show-grid">הצג מערכת</button>
+</div>
+
 <div class="banners" id="banners" role="region" aria-label="הודעות" aria-live="polite"></div>
 
 <section class="panel log-panel" id="scrape-log" hidden aria-labelledby="scrape-log-title">
@@ -153,13 +178,6 @@
 </section>
 
 <main class="steps" id="steps">
-
-  <!-- ‏שתי עמודות מעל 1100px (ראו style.css §13): העמודה הזאת היא
-       הימנית — שם מתחילים לקרוא — והמערכת נדבקת משמאלה. מתחת לרוחב
-       הזה שתי העטיפות הן display: contents, כלומר אין להן קופסה
-       והפריסה חוזרת בדיוק לעמודה אחת. תוכן העטיפות לא הוזח פנימה
-       בכוונה: הן שכבת פריסה בלבד, וההזחה הייתה מסתירה את השינוי. -->
-  <div class="steps-config" id="steps-config">
 
   <!-- ===================== 1. שנה וסמסטר ===================== -->
   <section class="step" id="step-year" data-step="1" aria-labelledby="step-year-title">
@@ -353,10 +371,6 @@
     </div>
   </section>
 
-  </div>
-
-  <div class="steps-result" id="steps-result">
-
   <!-- ===================== 5. המערכת ===================== -->
   <section class="step" id="step-schedule" data-step="5" aria-labelledby="step-schedule-title">
     <div class="step-head">
@@ -395,13 +409,31 @@
     </div>
   </section>
 
-  </div>
-
 </main>
 
 <footer class="app-footer">
   <p>בונה המערכת · שרת מקומי על 127.0.0.1 בלבד · הנתונים נשמרים במחשב הזה ואינם נשלחים לשום מקום.</p>
 </footer>
+
+<!-- ‏שכבת המערכת. הרשת עצמה נבנית באותה buildGrid ובאותן מחלקות צבע
+     כמו בשלב 5 — זו החלפת מיכל, לא ציור אחר. ‏hidden כברירת מחדל;
+     ‏Esc, כפתור הסגירה ולחיצה על הרקע סוגרים, והפוקוס חוזר לכפתור. -->
+<div class="overlay-backdrop" id="grid-overlay" hidden>
+  <div class="overlay-panel" role="dialog" aria-modal="true"
+       aria-labelledby="grid-overlay-title" tabindex="-1" id="grid-overlay-panel">
+    <div class="overlay-head">
+      <h2 class="overlay-title" id="grid-overlay-title">המערכת השבועית</h2>
+      <div class="sticky-tabs" id="overlay-tabs" role="tablist" aria-label="מערכות מוצעות"></div>
+      <div class="sticky-facts" id="overlay-facts"></div>
+      <button type="button" class="btn btn-ghost btn-sm" id="btn-close-grid">סגירה</button>
+    </div>
+    <div class="legend" id="overlay-legend"></div>
+    <div class="grid-scroll" id="overlay-grid-scroll" tabindex="0" role="group"
+         aria-label="מערכת שבועית">
+      <div class="grid" id="overlay-grid"></div>
+    </div>
+  </div>
+</div>
 
 <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 

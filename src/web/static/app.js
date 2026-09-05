@@ -574,6 +574,11 @@
     // ‏האם המשתמש/ת כבר נגעו במשהו בעמוד. הקיפול האוטומטי פועל רק לפני
     // הנגיעה הראשונה: שלב שנסגר מתחת לאצבע באמצע עבודה הוא הפרעה, לא עזרה.
     userActed: false,
+    // האם גללנו מעבר לשלב 1 — התנאי להופעת הסרגל המצוף.
+    pastFirstStep: false,
+    // שכבת המערכת: פתוחה, ולאן להחזיר את הפוקוס בסגירה.
+    overlayOpen: false,
+    overlayReturnTo: null,
     // אילו שלבים כבר נשקלו לקיפול אוטומטי — שיקול אחד לכל שלב, לכל טעינה.
     autoCollapsed: Object.create(null),
     // איזה ‏<details> בתוך באנר פתוח כרגע, לפי מפתח הבאנר.
@@ -2521,6 +2526,18 @@
     ui.softSub = byId("soft-conflicts-sub");
     ui.softList = byId("soft-conflicts-list");
 
+    ui.stickyBar = byId("sticky-bar");
+    ui.stickyTabs = byId("sticky-tabs");
+    ui.stickyFacts = byId("sticky-facts");
+    ui.btnShowGrid = byId("btn-show-grid");
+    ui.overlay = byId("grid-overlay");
+    ui.overlayPanel = byId("grid-overlay-panel");
+    ui.overlayTabs = byId("overlay-tabs");
+    ui.overlayFacts = byId("overlay-facts");
+    ui.overlayLegend = byId("overlay-legend");
+    ui.overlayGrid = byId("overlay-grid");
+    ui.btnCloseGrid = byId("btn-close-grid");
+
     ui.steps = {
       year: byId("step-year"),
       courses: byId("step-courses"),
@@ -2700,6 +2717,23 @@
       });
     });
 
+    if (ui.btnShowGrid) {
+      ui.btnShowGrid.addEventListener("click", openGridOverlay);
+    }
+    if (ui.btnCloseGrid) {
+      ui.btnCloseGrid.addEventListener("click", closeGridOverlay);
+    }
+    if (ui.overlay) {
+      // לחיצה על הרקע בלבד — לא על הפאנל עצמו.
+      ui.overlay.addEventListener("mousedown", function (ev) {
+        if (ev.target === ui.overlay) closeGridOverlay();
+      });
+    }
+    if (ui.overlayPanel) {
+      ui.overlayPanel.addEventListener("keydown", overlayKeydown);
+    }
+    watchStickyBar();
+
     // נגיעה ראשונה כלשהי בעמוד מכבה את הקיפול האוטומטי. ``capture`` כדי
     // שגם לחיצה שנעצרת בדרך תיספר, ו-``passive`` כדי לא לעכב גלילה.
     ["pointerdown", "keydown", "change"].forEach(function (evt) {
@@ -2716,6 +2750,218 @@
   /** האם השלב מקופל כרגע. מפתח חסר = פרוס. */
   function stepCollapsed(key) {
     return state.collapsed[key] === true;
+  }
+
+  /* =====================================================================
+   * 8ב. סרגל מצוף ושכבת המערכת
+   * ===================================================================== */
+
+  /**
+   * הסרגל מופיע רק אחרי שחולפים על שלב 1.
+   * ‏IntersectionObserver ולא מאזין scroll: הוא לא מריץ קוד בכל פיקסל של
+   * גלילה, וזה משנה בעמוד שיש בו רשת של מאות תאים.
+   */
+  function watchStickyBar() {
+    var first = ui.steps && ui.steps.year;
+    if (!first || !ui.stickyBar) return;
+    if (typeof window.IntersectionObserver !== "function") {
+      // דפדפן בלי IO — הסרגל פשוט מוצג תמיד. עדיף מאשר שלא יופיע כלל.
+      runtime.pastFirstStep = true;
+      renderStickyBar();
+      return;
+    }
+    var io = new window.IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          // ‏"חלפנו" = השלב כולו מעל קצה המסך העליון, ולא מתחת לו.
+          runtime.pastFirstStep =
+            !entry.isIntersecting && entry.boundingClientRect.bottom <= 0;
+        });
+        renderStickyBar();
+      },
+      { threshold: 0 }
+    );
+    io.observe(first);
+  }
+
+  /** שעת הסיום המאוחרת ביותר במערכת, בדקות. ‏null כשאין מפגשים. */
+  function lastFinishOf(sch) {
+    var latest = null;
+    scheduleMeetings(sch).forEach(function (m) {
+      var end = num(m.end, null);
+      if (end !== null && (latest === null || end > latest)) latest = end;
+    });
+    return latest;
+  }
+
+  /** שלוש העובדות שהסרגל מחזיק. אותן עובדות בדיוק גם בשכבה. */
+  function stickyFacts(sch) {
+    if (!sch) return [];
+    var finish = lastFinishOf(sch);
+    return [
+      { label: "ימים", value: txt(num(sch.days_count, 0)) },
+      { label: "מסיים", value: finish === null ? "—" : fmtTime(finish) },
+      { label: "חורים", value: fmtSpan(sch.gap_minutes) },
+    ];
+  }
+
+  /** לשונית מוקטנת: המספר בלבד, והתיאור המלא ב-title ו-aria-label. */
+  function compactTabs(box, list, prefix) {
+    list.forEach(function (sch, idx) {
+      var label =
+        "מערכת " +
+        (idx + 1) +
+        " · " +
+        num(sch.days_count, 0) +
+        " ימים · חורים " +
+        fmtSpan(sch.gap_minutes);
+      box.appendChild(
+        el("button", {
+          class: "sticky-tab",
+          attrs: {
+            type: "button",
+            role: "tab",
+            "aria-selected": idx === state.activeSchedule ? "true" : "false",
+            "aria-label": label,
+            title: label,
+          },
+          data: { fk: prefix + idx },
+          text: String(idx + 1),
+          on: {
+            click: function () {
+              // ‏solve:false — בחירת חלופה אינה שינוי קלט, ואין מה לפתור מחדש.
+              setState({ activeSchedule: idx }, { solve: false });
+            },
+          },
+        })
+      );
+    });
+  }
+
+  function factChips(box, sch) {
+    stickyFacts(sch).forEach(function (f) {
+      box.appendChild(
+        el("span", { class: "sticky-fact" }, [
+          el("span", { class: "sticky-fact-label", text: f.label }),
+          el("strong", { class: "sticky-fact-value ltr", text: f.value }),
+        ])
+      );
+    });
+  }
+
+  function renderStickyBar() {
+    if (!ui.stickyBar) return;
+    var list = schedules();
+    var sch = activeSchedule();
+    // אין מה לסכם לפני שיש פתרון, וגם לא בראש העמוד.
+    var show = runtime.pastFirstStep === true && list.length > 0 && !!sch;
+    setClass(ui.stickyBar, "is-visible", show);
+    if (!show) return;
+    if (ui.stickyTabs) {
+      rebuild(ui.stickyTabs, function (box) {
+        compactTabs(box, list, "bar-tab-");
+      });
+    }
+    if (ui.stickyFacts) {
+      rebuild(ui.stickyFacts, function (box) {
+        factChips(box, sch);
+      });
+    }
+  }
+
+  function renderGridOverlay() {
+    if (!ui.overlay || !runtime.overlayOpen) return;
+    var list = schedules();
+    var sch = activeSchedule();
+    if (!sch) {
+      closeGridOverlay();
+      return;
+    }
+    if (ui.overlayTabs) {
+      rebuild(ui.overlayTabs, function (box) {
+        compactTabs(box, list, "ov-tab-");
+      });
+    }
+    if (ui.overlayFacts) {
+      rebuild(ui.overlayFacts, function (box) {
+        factChips(box, sch);
+      });
+    }
+    if (ui.overlayLegend) {
+      rebuild(ui.overlayLegend, function (box) {
+        buildLegend(box, sch);
+      });
+    }
+    if (ui.overlayGrid) {
+      rebuild(ui.overlayGrid, function (box) {
+        buildGrid(box, sch, softConflictInfo(sch));
+      });
+    }
+  }
+
+  /** כל מה שאפשר להעביר אליו פוקוס בתוך השכבה, בסדר מסמך. */
+  function focusableIn(root) {
+    if (!root) return [];
+    var nodes = root.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    return Array.prototype.filter.call(nodes, function (n) {
+      return !n.disabled && n.offsetParent !== null;
+    });
+  }
+
+  /** ‏Esc סוגר, ו-Tab מסתובב בתוך השכבה במקום לברוח לעמוד שמאחוריה. */
+  function overlayKeydown(ev) {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeGridOverlay();
+      return;
+    }
+    if (ev.key !== "Tab") return;
+    var items = focusableIn(ui.overlayPanel);
+    if (!items.length) return;
+    var first = items[0];
+    var last = items[items.length - 1];
+    var active = document.activeElement;
+    if (ev.shiftKey && (active === first || active === ui.overlayPanel)) {
+      ev.preventDefault();
+      last.focus();
+    } else if (!ev.shiftKey && active === last) {
+      ev.preventDefault();
+      first.focus();
+    }
+  }
+
+  function openGridOverlay() {
+    if (!ui.overlay || runtime.overlayOpen) return;
+    if (!activeSchedule()) return;
+    runtime.overlayReturnTo = document.activeElement;
+    runtime.overlayOpen = true;
+    setHidden(ui.overlay, false);
+    setClass(document.documentElement, "is-modal-open", true);
+    renderGridOverlay();
+    // הפוקוס נכנס לפאנל עצמו: קורא מסך מכריז את שם הדיאלוג, ומשם Tab
+    // מתחיל מהפקד הראשון שבתוכו.
+    if (ui.overlayPanel) ui.overlayPanel.focus();
+  }
+
+  function closeGridOverlay() {
+    if (!ui.overlay || !runtime.overlayOpen) return;
+    runtime.overlayOpen = false;
+    setHidden(ui.overlay, true);
+    setClass(document.documentElement, "is-modal-open", false);
+    var back = runtime.overlayReturnTo;
+    runtime.overlayReturnTo = null;
+    // חזרה לכפתור שפתח — ובלי שהוא נעלם בינתיים, לכפתור שבסרגל.
+    var target =
+      back && back.isConnected && back.offsetParent !== null ? back : ui.btnShowGrid;
+    if (target) {
+      try {
+        target.focus();
+      } catch (e) {
+        /* פוקוס נכשל — לא סיבה להשאיר את השכבה פתוחה */
+      }
+    }
   }
 
   function onYearTermChange() {
@@ -3092,6 +3338,9 @@
     renderLecturersStep();
     renderScheduleStep();
     renderStepStates();
+    renderStickyBar();
+    // אחרי שלב 5 — הוא זה שמחשב את המערכת הפעילה, והשכבה מציגה אותה.
+    renderGridOverlay();
   }
 
   /* --- כותרת: טריות, כפתורים, יומן ---------------------------------- */
@@ -4624,19 +4873,7 @@
     // מקרא הצבעים
     if (ui.legend) {
       rebuild(ui.legend, function (box) {
-        if (!sch) return;
-        var seen = Object.create(null);
-        pickList(sch, ["picks"], null).forEach(function (p) {
-          var code = txt(p.code);
-          if (seen[code]) return;
-          seen[code] = true;
-          box.appendChild(
-            el("span", {
-              class: "legend-chip c" + colorOf(code),
-              text: code + " " + (txt(p.name) || nameOf(code)),
-            })
-          );
-        });
+        buildLegend(box, sch);
       });
     }
 
@@ -5004,26 +5241,65 @@
     return out;
   }
 
+  /**
+   * מקרא הצבעים. משותף לשלב 5 ולשכבה — אותה פונקציית ``colorOf``, ולכן
+   * אותו גוון לאותו קוד קורס בשני המקומות ובקובץ שנוצר במסוף.
+   */
+  function buildLegend(root, sch) {
+    if (!sch) return;
+    var seen = Object.create(null);
+    pickList(sch, ["picks"], null).forEach(function (p) {
+      var code = txt(p.code);
+      if (seen[code]) return;
+      seen[code] = true;
+      root.appendChild(
+        el("span", {
+          class: "legend-chip c" + colorOf(code),
+          text: code + " " + (txt(p.name) || nameOf(code)),
+        })
+      );
+    });
+  }
+
   function buildGrid(root, sch, soft) {
     var meetings = scheduleMeetings(sch);
     var lanes = assignLanes(meetings);
-    var gridStart = GRID_DEFAULT_START;
-    var gridEnd = GRID_DEFAULT_END;
-    meetings.forEach(function (m) {
-      gridStart = Math.min(gridStart, Math.floor(m.start / 60) * 60);
-      gridEnd = Math.max(gridEnd, Math.ceil(m.end / 60) * 60);
-    });
+    // ---- טווח השעות: לפי מה שמשובץ בפועל, לא לפי חלון קבוע ----
+    // ‏08:00–20:00 היה רצפה שהטווח רק גדל ממנה, ולכן שבוע שנגמר ב-15:50
+    // צייר ארבע שעות ריקות מתחתיו. הטווח נגזר עכשיו מהמפגשים של החלופה
+    // הזאת בלבד — כל לשונית והטווח שלה.
+    var gridStart, gridEnd;
+    if (meetings.length) {
+      var firstStart = Infinity;
+      var lastEnd = -Infinity;
+      meetings.forEach(function (m) {
+        firstStart = Math.min(firstStart, m.start);
+        lastEnd = Math.max(lastEnd, m.end);
+      });
+      // עיגול החוצה לשעה עגולה הוא הריפוד. שעה *נוספת* מעבר לו הייתה
+      // מחזירה בדיוק את מה שהסעיף הזה בא לתקן: שורות ריקות בתחתית
+      // (‏88px, ארבע משבצות) — ובמערכת שנגמרת ב-15:50 זו שעה שלמה של כלום.
+      gridStart = Math.floor(firstStart / 60) * 60;
+      gridEnd = Math.ceil(lastEnd / 60) * 60;
+    } else {
+      // בלי מפגשים אין מה לגזור — חלון ברירת המחדל נשאר, כדי שהרשת
+      // הריקה עדיין תיראה כמו מערכת שבועית ולא כפס דק.
+      gridStart = GRID_DEFAULT_START;
+      gridEnd = GRID_DEFAULT_END;
+    }
     if (gridEnd <= gridStart) gridEnd = gridStart + 60;
     var slots = Math.ceil((gridEnd - gridStart) / SLOT_MINUTES);
 
-    // שורה 1 — כותרות
+    // שורה 1 — כותרות. אות היום בלבד: "יום ה׳" ו"חמישי" זה מתחת לזה
+    // אמרו את אותו הדבר פעמיים והעמיקו את שורת הכותרות בכל עמודה.
     root.appendChild(el("div", { class: "hd", text: "שעה" }));
     DAYS.forEach(function (d) {
       root.appendChild(
-        el("div", { class: "hd" }, [
-          el("span", { text: "יום " + dayLetter(d) + "׳" }),
-          el("span", { class: "dayname", text: dayName(d) }),
-        ])
+        el("div", {
+          class: "hd",
+          attrs: { title: dayName(d) },
+          text: "יום " + dayLetter(d) + "׳",
+        })
       );
     });
 

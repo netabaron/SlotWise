@@ -524,6 +524,131 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
 }
 
 /* ==========================================================================
+   6ב. סרגל מצוף ושכבת המערכת
+   ========================================================================== */
+
+/* ‏fixed ולא sticky: הסרגל צריך להופיע *בגלילה*, לא במקום שבו הוא יושב
+   ב-DOM. ‏visibility (ולא display) כדי שההחלקה פנימה תוכל לרוץ — וגם כדי
+   שכשהוא מוסתר הוא יוצא מסדר ה-Tab ומעץ הנגישות. */
+.sticky-bar {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 55;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px var(--gap);
+  /* ~‏52px: הריפוד ועוד שורת פקדים אחת. */
+  padding: 8px clamp(12px, 3vw, 28px);
+  background: var(--panel);
+  border-block-end: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  transform: translateY(-100%);
+  visibility: hidden;
+  transition: transform .18s ease, visibility .18s;
+}
+
+.sticky-bar.is-visible { transform: none; visibility: visible; }
+
+.sticky-tabs {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.sticky-tab {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  inline-size: 1.9rem;
+  block-size: 1.9rem;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.sticky-tab:hover { border-color: var(--accent); }
+
+.sticky-tab[aria-selected="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.sticky-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: baseline;
+  /* הסרגל לא גדל: העובדות נחתכות לפני שהכפתור נדחף מהמסך. */
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+.sticky-fact { display: inline-flex; gap: .4em; align-items: baseline; white-space: nowrap; }
+.sticky-fact-label { font-size: 11px; color: var(--muted); }
+.sticky-fact-value { font-size: 13.5px; font-variant-numeric: tabular-nums; }
+
+.sticky-bar .btn { flex: none; }
+
+/* ---- שכבת המערכת ---- */
+.overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(8px, 2vw, 24px);
+  background: rgba(0, 0, 0, .55);
+}
+
+.overlay-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  inline-size: min(1400px, 100%);
+  /* גובה מרבי + min-block-size: 0 בילדים = הרשת גוללת בתוך השכבה
+     במקום לגלוש ממנה. כאן, בניגוד לעמוד עצמו, זו גלילה אחת וברורה. */
+  max-block-size: 100%;
+  padding: 14px clamp(12px, 2vw, 20px) 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.overlay-panel:focus { outline: none; }
+
+.overlay-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px var(--gap);
+  align-items: center;
+}
+
+.overlay-title { font-size: 16px; flex: none; }
+.overlay-head .btn { margin-inline-start: auto; }
+
+.overlay-panel > .legend { flex: none; }
+
+.overlay-panel > .grid-scroll {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* נעילת הגלילה מאחורי השכבה */
+html.is-modal-open,
+html.is-modal-open body { overflow: hidden; }
+
+/* ==========================================================================
    7. השלבים — מראה אשף ממוספר
    ========================================================================== */
 .steps {
@@ -1291,61 +1416,8 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
 }
 
 /* ==========================================================================
-   13. רוחב המסך — עמודה אחת, ושתי עמודות כשיש מקום
+   13. מסכים צרים — הרשת נשארת קריאה ונגללת בתוך המיכל שלה
    ========================================================================== */
-
-/* שכבת הפריסה בלבד. ‏display: contents פירושו שאין לעטיפות קופסה משלהן,
-   ולכן מתחת ל-1100px חמשת השלבים הם ילדיו הישירים של ‎.steps‎ בדיוק כמו
-   קודם — אותה עמודה אחת, בלי שום כלל שצריך לבטל. */
-.steps-config,
-.steps-result { display: contents; }
-
-/* ---- מעל 1100px: האשף מימין, המערכת נדבקת משמאל ----
-
-   ‏screen ולא כל סוגי המדיה: רוחב של דף A4 לרוחב הוא כ-1122px, ובלי
-   ההגבלה הזאת הפריסה הדו-עמודתית הייתה חלה גם בהדפסה — שם ממילא מודפס
-   שלב 5 בלבד, וסעיף 15 מסתיר את השאר.
-
-   ‏dir="rtl" עושה את עמודה 1 לימנית, ושם יושב האשף: שם מתחילים לקרוא,
-   ובזכות זה סדר ה-DOM (‏1..4 ואז 5) זהה לסדר שעל המסך — דבר שחשוב
-   למקלדת ולקורא מסך בדיוק כמו לעין. */
-@media screen and (min-width: 1101px) {
-  .steps {
-    display: grid;
-    grid-template-columns: minmax(0, 25rem) minmax(0, 1fr);
-    /* בלי start שתי העמודות היו נמתחות לגובה הגבוהה מביניהן,
-       ואז ל-sticky אין מרחק להידבק בתוכו. */
-    align-items: start;
-    max-inline-size: 1560px;
-  }
-
-  .steps-config {
-    grid-column: 1;
-    min-inline-size: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-  }
-
-  /* אין כאן ‎max-block-size‎ ואין גלילה פנימית: הרשת מוצגת בגובהה המלא,
-     והפאנל נדבק כמו שהוא. גלילה מקוננת בתוך פאנל דביק מבלבלת במשטח מגע,
-     ומיכל חסום בגובהו היה פשוט חותך את שעות אחר הצהריים בלי דרך להגיע
-     אליהן. המחיר הזמני: במסך נמוך תחתית הפאנל יורדת אל מתחת לקצה בזמן
-     שהוא דבוק — עד שהרשת תיחתך לטווח השעות שבפועל. */
-  .steps-result {
-    grid-column: 2;
-    min-inline-size: 0;
-    display: block;
-    align-self: start;
-    position: sticky;
-    inset-block-start: 12px;
-    /* רצפה נמוכה יותר לעמודת יום: בעמודה אחת יש לרשת את כל רוחב העמוד,
-       כאן פחות. זו רצפה בלבד — כשיש מקום העמודות ממשיכות להתרחב. */
-    --day-min: 7.5rem;
-  }
-}
-
-/* ---- מסכים צרים — הרשת נשארת קריאה ונגללת בתוך המיכל שלה ---- */
 @media (max-width: 640px) {
   :root { --slot-h: 20px; --time-col: 3.6rem; --day-min: 7.5rem; }
   .app-header { padding-block: 12px; }
@@ -1406,12 +1478,20 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
 
   body { background: #ffffff; font-size: 11.5px; }
 
+  /* הדפסה בזמן שהשכבה פתוחה: בלי זה נעילת הגלילה הייתה חותכת את הדף
+     אחרי העמוד הראשון. */
+  html.is-modal-open,
+  html.is-modal-open body { overflow: visible !important; }
+
   .busy-bar,
   .app-header,
   .banners,
   .log-panel,
   .toasts,
   .app-footer,
+  /* אלה אמצעי מסך. הדף המודפס הוא הרשת של שלב 5, כמו קודם. */
+  .sticky-bar,
+  .overlay-backdrop,
   #step-year,
   #step-courses,
   #step-days,
