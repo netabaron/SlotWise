@@ -1662,3 +1662,72 @@ html.is-modal-open body { overflow: hidden; }
     print-color-adjust: exact;
   }
 }
+
+/* ==========================================================================
+   16. שלב 1 של השכתוב — פעולה ראשית, פרטים טכניים, חובת נוכחות
+   ========================================================================== */
+
+/* הפעולה הראשית היחידה של מסך ההגדרות. */
+.build-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px var(--gap);
+  align-items: baseline;
+  padding: 0 clamp(12px, 3vw, 28px);
+  max-inline-size: 1180px;
+  margin-inline: auto;
+}
+
+.btn-build { font-size: 15px; padding: 10px 22px; }
+
+/* ‏"פרטים טכניים" — מקופל, שקט, ובתחתית. */
+.tech-details {
+  max-inline-size: 1180px;
+  margin: 0 auto 24px;
+  padding: 0 clamp(12px, 3vw, 28px);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.tech-summary { cursor: pointer; font-weight: 600; padding: 6px 2px; }
+.tech-body { display: flex; flex-direction: column; gap: 10px; padding-block: 8px; }
+
+.tech-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tech-facts:empty { display: none; }
+
+/* השיעורים שוויתרו בהם על נוכחות — רשימה, לא זנב פסיקים בסוף פסקה. */
+.attendance-off {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  padding: 8px 12px;
+}
+
+.attendance-off-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-block-end: 4px;
+}
+
+.attendance-off-list { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.attendance-off-list li { padding-inline-start: 0; }
+
+/* שורות יומן בתוך באנר תקלה — מקוצרות, ניתנות לגלילה, וקריאות. */
+.banner-more-log {
+  margin: 0;
+  max-block-size: 12rem;
+  overflow: auto;
+  font-family: ui-monospace, "Consolas", "Courier New", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+}

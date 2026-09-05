@@ -151,9 +151,8 @@
       </span>
     </div>
     <div class="header-actions">
-      <button type="button" class="btn btn-primary" id="btn-refresh">{{ S.ui.header.btnRefresh }}</button>
-      <button type="button" class="btn btn-outline" id="btn-reparse">{{ S.ui.header.btnReparse }}</button>
-      <button type="button" class="btn btn-quiet" id="btn-log-toggle" aria-expanded="false" aria-controls="scrape-log">{{ S.ui.header.btnLog }}</button>
+      <button type="button" class="btn btn-outline" id="btn-refresh">{{ S.ui.header.btnRefresh }}</button>
+      <button type="button" class="btn btn-quiet" id="btn-reparse">{{ S.ui.header.btnReparse }}</button>
     </div>
     <div class="theme-toggle" id="theme-toggle" role="radiogroup" aria-label="{{ S.ui.header.themeGroupLabel }}">
       <button type="button" class="theme-btn" role="radio" aria-checked="true"
@@ -174,22 +173,10 @@
 <div class="sticky-bar" id="sticky-bar" role="region" aria-label="{{ S.ui.sticky.regionLabel }}">
   <div class="sticky-tabs" id="sticky-tabs" role="tablist" aria-label="{{ S.ui.schedule.tabsLabel }}"></div>
   <div class="sticky-facts" id="sticky-facts"></div>
-  <button type="button" class="btn btn-primary btn-sm" id="btn-show-grid">{{ S.ui.sticky.btnShowGrid }}</button>
+  <button type="button" class="btn btn-outline btn-sm" id="btn-show-grid">{{ S.ui.sticky.btnShowGrid }}</button>
 </div>
 
 <div class="banners" id="banners" role="region" aria-label="{{ S.ui.banners.regionLabel }}" aria-live="polite"></div>
-
-<section class="panel log-panel" id="scrape-log" hidden aria-labelledby="scrape-log-title">
-  <div class="log-head">
-    <h2 class="log-title" id="scrape-log-title">{{ S.ui.log.title }}</h2>
-    <span class="log-phase" id="scrape-phase">{{ S.ui.log.phaseIdle }}</span>
-    <button type="button" class="btn btn-ghost btn-sm" id="btn-log-close">{{ S.ui.log.close }}</button>
-  </div>
-  <p class="log-note">
-    {{ S.ui.log.note }}
-  </p>
-  <pre class="log-lines" id="scrape-log-lines" tabindex="0" aria-live="polite"></pre>
-</section>
 
 <main class="steps" id="steps">
 
@@ -376,13 +363,23 @@
         </p>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-ranking">{{ S.ui.lecturers.btnClearRanking }}</button>
       </div>
-      <p class="note" id="attendance-note">
-        {{ S.ui.lecturers.attendanceNote }}
-      </p>
+      <p class="note" id="attendance-note">{{ S.ui.lecturers.attendanceNote }}</p>
+      <details class="advanced" id="attendance-what">
+        <summary class="advanced-summary">{{ S.ui.lecturers.attendanceWhat }}</summary>
+        <p class="note advanced-body">{{ S.ui.lecturers.attendanceWhatBody }}</p>
+      </details>
+      <div class="attendance-off" id="attendance-off"></div>
       <div class="lect-courses" id="lecturer-courses"></div>
       <p class="note" id="lecturers-note"></p>
     </div>
   </section>
+
+  <!-- ‏הפעולה הראשית היחידה במסך ההגדרות. היא מחשבת מחדש ומגלגלת אל
+       התוצאה — כלומר עושה בדיוק את מה שכתוב עליה. -->
+  <div class="build-row" id="build-row">
+    <button type="button" class="btn btn-primary btn-build" id="btn-build">{{ S.ui.actions.build }}</button>
+    <p class="note">{{ S.ui.actions.buildHint }}</p>
+  </div>
 
   <!-- ===================== 5. המערכת ===================== -->
   <section class="step" id="step-schedule" data-step="5" aria-labelledby="step-schedule-title">
@@ -399,7 +396,7 @@
 
       <section class="empty" id="soft-conflicts" hidden role="status" aria-live="polite"
                aria-labelledby="soft-conflicts-title">
-        <h3 class="empty-title" id="soft-conflicts-title">{{ S.ui.schedule.softTitle }}</h3>
+        <h3 class="empty-title" id="soft-conflicts-title" aria-live="polite"></h3>
         <p class="empty-sub" id="soft-conflicts-sub"></p>
         <ul class="reasons" id="soft-conflicts-list"></ul>
       </section>
@@ -423,6 +420,23 @@
   </section>
 
 </main>
+
+<!-- ‏כל מה שהוא פירוט למפתח/ת ולא החלטה של הסטודנט/ית: ספירות, זמני
+     חישוב, ויומן המשיכה. מקופל, ובתחתית. ‏?debug=1 פותח אותו מראש. -->
+<details class="tech-details" id="tech-details">
+  <summary class="tech-summary">{{ S.app.tech.title }}</summary>
+  <div class="tech-body">
+    <ul class="tech-facts" id="tech-facts"></ul>
+    <section class="panel log-panel" id="scrape-log" aria-labelledby="scrape-log-title">
+      <div class="log-head">
+        <h2 class="log-title" id="scrape-log-title">{{ S.app.tech.logTitle }}</h2>
+        <span class="log-phase" id="scrape-phase">{{ S.ui.log.phaseIdle }}</span>
+      </div>
+      <p class="log-note">{{ S.ui.log.note }}</p>
+      <pre class="log-lines" id="scrape-log-lines" tabindex="0" aria-live="polite"></pre>
+    </section>
+  </div>
+</details>
 
 <footer class="app-footer">
   <p>{{ S.meta.footer }}</p>

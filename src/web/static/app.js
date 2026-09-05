@@ -31,6 +31,12 @@
   var STRINGS = window.STRINGS || {};
 
   /**
+   * ‏?debug=1 מחזיר למסך את מה שנועד למפתח/ת: ספירות, זמני חישוב
+   * וספירת הקטלוג. בלעדיו הם יושבים מקופלים תחת "פרטים טכניים".
+   */
+  var DEBUG = /[?&]debug=1(&|$)/.test(window.location.search);
+
+  /**
    * שליפה לפי נתיב מנוקד: ``T("app.header.refresh")``.
    * מפתח חסר מחזיר את ברירת המחדל ולא מפיל ציור — נוסח חסר הוא באג
    * בתצוגה, לא סיבה להשאיר מסך לבן.
@@ -2590,6 +2596,7 @@
     ui.suggestions = byId("infeasible-suggestions");
     ui.scheduleNote = byId("schedule-note");
     ui.softBox = byId("soft-conflicts");
+    ui.softTitle = byId("soft-conflicts-title");
     ui.softSub = byId("soft-conflicts-sub");
     ui.softList = byId("soft-conflicts-list");
 
@@ -2597,6 +2604,11 @@
     ui.themeButtons = ui.themeToggle
       ? Array.prototype.slice.call(ui.themeToggle.querySelectorAll("[data-theme-choice]"))
       : [];
+
+    ui.btnBuild = byId("btn-build");
+    ui.techDetails = byId("tech-details");
+    ui.techFacts = byId("tech-facts");
+    ui.attendanceOff = byId("attendance-off");
 
     ui.stickyBar = byId("sticky-bar");
     ui.stickyTabs = byId("sticky-tabs");
@@ -2797,6 +2809,16 @@
     });
     renderThemeToggle();
 
+    if (ui.btnBuild) {
+      // הכפתור עושה בדיוק את מה שכתוב עליו: מחשב מחדש, ואז לוקח אל התוצאה.
+      ui.btnBuild.addEventListener("click", function () {
+        doSolve();
+        var target = ui.steps && ui.steps.schedule;
+        if (target && target.scrollIntoView) {
+          target.scrollIntoView({ block: "start" });
+        }
+      });
+    }
     if (ui.btnShowGrid) {
       ui.btnShowGrid.addEventListener("click", openGridOverlay);
     }
@@ -2970,6 +2992,46 @@
           el("strong", { class: "sticky-fact-value ltr", text: f.value }),
         ])
       );
+    });
+  }
+
+  /**
+   * מה שנועד למפתח/ת ולא לסטודנט/ית: כמה מערכות נמצאו, כמה זמן לקח החישוב,
+   * גודל הקטלוג ושנת הלימודים. מקופל בתחתית העמוד, ונפתח מראש עם ?debug=1.
+   */
+  function renderTechDetails() {
+    if (!ui.techFacts) return;
+    if (ui.techDetails && DEBUG) ui.techDetails.open = true;
+    var s = runtime.solve;
+    var boot = runtime.bootstrap;
+    var cat = (boot && boot.catalog) || {};
+    var bits = [];
+    if (s && num(s.feasible_count, null) !== null) {
+      bits.push(Tf("app.tech.found", { found: num(s.feasible_count, 0) }));
+      if (s.counts_truncated === true) bits.push(T("app.tech.truncated"));
+    }
+    if (s && num(s.elapsed_ms, null) !== null) {
+      bits.push(Tf("app.tech.elapsed", { ms: num(s.elapsed_ms, 0) }));
+    }
+    var db = (boot && boot.db) || {};
+    if (num(db.count, null) !== null) {
+      bits.push(Tf("app.header.metaCourses", { count: db.count }));
+    }
+    var groups = 0;
+    runtime.courses.forEach(function (c) {
+      groups += c.groups.length;
+    });
+    if (groups) bits.push(Tf("app.header.metaGroups", { count: groups }));
+    if (num(cat.count, null) !== null) {
+      bits.push(Tf("app.tech.catalog", { count: cat.count }));
+    }
+    if (txt(state.academicYear)) {
+      bits.push(Tf("app.tech.academicYear", { year: txt(state.academicYear) }));
+    }
+    rebuild(ui.techFacts, function (box) {
+      bits.forEach(function (line) {
+        box.appendChild(el("li", { text: line }));
+      });
     });
   }
 
@@ -3190,75 +3252,67 @@
     // ‏failed ⊆ stale **תמיד**. הצגת שתיהן זו לצד זו הייתה חוזרת על רוב
     // הקודים פעמיים; כאן יש רשימה מאוחדת אחת, וכשל מסומן בתוכה בסימן.
     // החלוקה הפנימית היא לפי מה שנוגע לסטודנט/ית — לא לפי סוג התקלה.
+    // ‏רגע אחד שבו היומן מפסיק להיות פירוט טכני: כשהרענון נכשל. אז הוא
+    // התשובה לשאלה "למה", ולכן הוא נפתח כאן ולא בתחתית העמוד.
+    if (runtime.scrape.phase === "failed" || txt(runtime.scrapeError)) {
+      var failLines = pickList(runtime.scrape, ["log"], null)
+        .map(txt)
+        .filter(Boolean)
+        .slice(-12);
+      wanted.push({
+        key: "scrape-failed",
+        kind: "error",
+        text:
+          txt(runtime.scrape.error) ||
+          txt(runtime.scrapeError) ||
+          T("app.toasts.scrapeFailed"),
+        details: failLines.length
+          ? {
+              label: T("app.tech.failureDetails"),
+              lines: failLines,
+            }
+          : null,
+        action: runtime.scrape.running
+          ? null
+          : { label: T("app.banners.staleAction"), run: startScrape },
+      });
+    }
+
     var db = (runtime.bootstrap && runtime.bootstrap.db) || {};
     var staleCodes = uniq(pickList(db, ["stale"], null).map(txt).filter(Boolean));
     var failedSet = Object.create(null);
     uniq(pickList(db, ["failed"], null).map(txt).filter(Boolean)).forEach(function (c) {
       failedSet[c] = true;
     });
+    // ‏באנר **רק** כשקורס שנבחר בפועל מושפע. מסד ישן שאף קורס נבחר אינו
+    // מושפע ממנו אינו הודעה שדורשת החלטה — הוא שורת מצב, והיא כבר בכותרת.
+    var staleMine = [];
     if (staleCodes.length) {
       var chosenSet = Object.create(null);
       state.codes.forEach(function (c) {
         chosenSet[txt(c)] = true;
       });
-      var staleMine = staleCodes.filter(function (c) {
+      staleMine = staleCodes.filter(function (c) {
         return chosenSet[c];
       });
-      var staleOther = staleCodes.filter(function (c) {
-        return !chosenSet[c];
-      });
-      // רועש רק כשזה נוגע למערכת שמוצגת בפועל. קטלוג בן חודשיים שאף קורס
-      // ממנו לא נבחר אינו סיבה לצעוק על מסך שלם.
-      var staleLoud = staleMine.length > 0;
-      var ageHours = num(db.age_hours, null);
-      var agePhrase =
-        ageHours === null
-          ? T("app.banners.stale.ageUnknown")
-          : Tf("app.banners.stale.age", { age: txt(db.age_text) });
-
-      var staleSections = [];
-      if (staleMine.length) {
-        staleSections.push({
+    }
+    if (staleMine.length) {
+      var staleSections = [
+        {
           title: Tf("app.banners.stale.sectionMine", { count: staleMine.length }),
           codes: staleMine,
-        });
-      }
-      if (staleOther.length) {
-        staleSections.push({
-          title: Tf("app.banners.stale.sectionOther", { count: staleOther.length }),
-          codes: staleOther,
-        });
-      }
+        },
+      ];
 
       wanted.push({
         // ‏crc32 ולא רשימת הקודים עצמה: המפתח נכנס גם ל-data-fk, ומחרוזת
         // באורך מאות קודים שם היא רעש. הרגישות לשינוי בסט נשמרת.
-        key: "stale-" + crc32(staleCodes.join(",")),
-        kind: staleLoud ? "warn" : "muted",
-        text: staleLoud
-          ? staleOther.length
-            ? Tf("app.banners.stale.mineWithOther", {
-                age: agePhrase,
-                notUpdated: notUpdatedHe(
-                  staleMine.length,
-                  T("app.banners.stale.middleMine")
-                ),
-                other: staleOther.length,
-              })
-            : Tf("app.banners.stale.mine", {
-                age: agePhrase,
-                notUpdated: notUpdatedHe(
-                  staleMine.length,
-                  T("app.banners.stale.middleMine")
-                ),
-              })
-          : Tf("app.banners.stale.otherOnly", {
-              age: agePhrase,
-              notUpdated: notUpdatedHe(
-                staleCodes.length,
-                T("app.banners.stale.middleDb")
-              ),
-            }),
+        key: "stale-" + crc32(staleMine.join(",")),
+        kind: "warn",
+        text: Tf("app.banners.staleSelected", {
+          count: staleMine.length,
+          codes: staleMine.join(", "),
+        }),
         details: {
           label: T("app.banners.stale.detailsLabel"),
           sections: staleSections,
@@ -3267,7 +3321,7 @@
         },
         action: runtime.scrape.running
           ? null
-          : { label: T("app.banners.stale.refreshAction"), run: startScrape },
+          : { label: T("app.banners.staleAction"), run: startScrape },
       });
     }
 
@@ -3376,12 +3430,24 @@
    */
   function bannerDetails(item) {
     var spec = item.details;
-    if (!spec || !spec.sections || !spec.sections.length) return null;
+    if (!spec) return null;
+    var hasSections = spec.sections && spec.sections.length;
+    var hasLines = spec.lines && spec.lines.length;
+    if (!hasSections && !hasLines) return null;
 
     var body = el("div", { class: "banner-more-body" });
+
+    // שורות יומן גולמיות — לתקלות. אין כאן שבבי קודים, רק טקסט.
+    if (hasLines) {
+      var pre = el("pre", { class: "banner-more-log" });
+      spec.lines.forEach(function (line) {
+        pre.appendChild(el("div", { text: txt(line) }));
+      });
+      body.appendChild(pre);
+    }
     var anyFailed = false;
 
-    spec.sections.forEach(function (section) {
+    (spec.sections || []).forEach(function (section) {
       body.appendChild(el("p", { class: "banner-more-title", text: section.title }));
       var wrap = el("div", { class: "code-chips" });
       section.codes.forEach(function (code) {
@@ -3472,6 +3538,7 @@
     renderScheduleStep();
     renderStepStates();
     renderStickyBar();
+    renderTechDetails();
     // אחרי שלב 5 — הוא זה שמחשב את המערכת הפעילה, והשכבה מציגה אותה.
     renderGridOverlay();
   }
@@ -3508,19 +3575,25 @@
       );
     }
 
+    // שורת מצב אחת ותו לא. כל הספירות — כמה קורסים במסד, כמה קבוצות,
+    // גודל הקטלוג, שנת הלימודים — הן פירוט טכני: הן מתארות את המסד ולא
+    // את הבחירה של הסטודנט/ית, ו-"431 קורסים" ליד שם הקורס שלה מטעה.
+    // מקומן ב"פרטים טכניים" שבתחתית, או בכותרת רק עם ?debug=1.
     var meta = [];
-    if (num(db.count, null) !== null) {
-      meta.push(Tf("app.header.metaCourses", { count: db.count }));
+    if (DEBUG) {
+      if (num(db.count, null) !== null) {
+        meta.push(Tf("app.header.metaCourses", { count: db.count }));
+      }
+      var groups = 0;
+      runtime.courses.forEach(function (c) {
+        groups += c.groups.length;
+      });
+      if (groups) meta.push(Tf("app.header.metaGroups", { count: groups }));
+      if (num(cat.count, null) !== null) {
+        meta.push(Tf("app.tech.catalog", { count: cat.count }));
+      }
+      if (txt(state.academicYear)) meta.push(txt(state.academicYear));
     }
-    var groups = 0;
-    runtime.courses.forEach(function (c) {
-      groups += c.groups.length;
-    });
-    if (groups) meta.push(Tf("app.header.metaGroups", { count: groups }));
-    if (num(cat.count, null) !== null) {
-      meta.push(Tf("app.header.metaCatalog", { count: cat.count }));
-    }
-    if (txt(state.academicYear)) meta.push(txt(state.academicYear));
     setText(ui.freshMeta, meta.join(" · "));
 
     if (ui.btnRefresh) {
@@ -4653,21 +4726,41 @@
    * המשפט שמתחת למתג הכללי. הוא לא מחליף את ההסבר הקבוע שב-index.html אלא
    * מוסיף לו את המצב הנוכחי — כדי שלא ייווצר מצב שבו מתג דלוק ושום דבר לא קורה.
    */
+  /**
+   * השיעורים שוויתרו בהם על חובת נוכחות — כרשימה, לא כמשפט.
+   * קודם היה זה זנב פסיקים של "קוד סוג" בסוף פסקה; שם קורס וסוג שיעור
+   * בשורה נפרדת הם מה שאפשר באמת לסרוק בעין.
+   */
   function renderAttendanceNote() {
-    if (!ui.attendanceNote) return;
-    var off = [];
+    if (!ui.attendanceOff) return;
+    var rows = [];
     runtime.courses.forEach(function (course) {
       var kinds = kindsOf(course);
       optionalKindsOf(course.code).forEach(function (kind) {
-        if (kinds.indexOf(kind) !== -1) off.push(course.code + " " + kind);
+        if (kinds.indexOf(kind) === -1) return;
+        rows.push(
+          Tf("app.lecturers.attendance.offRow", {
+            course: txt(course.name) || nameOf(course.code),
+            kind: kind,
+          })
+        );
       });
     });
-
-    var extra = "";
-    if (off.length) {
-      extra = Tf("app.lecturers.attendanceNoteTail", { list: off.join(", ") });
-    }
-    setText(ui.attendanceNote, txt(ui.attendanceNoteBase) + extra);
+    setHidden(ui.attendanceOff, rows.length === 0);
+    rebuild(ui.attendanceOff, function (box) {
+      if (!rows.length) return;
+      box.appendChild(
+        el("p", {
+          class: "attendance-off-title",
+          text: T("app.lecturers.attendance.offTitle"),
+        })
+      );
+      var list = el("ul", { class: "attendance-off-list" });
+      rows.forEach(function (line) {
+        list.appendChild(el("li", { text: line }));
+      });
+      box.appendChild(list);
+    });
   }
 
   function coursePanel(course) {
@@ -4680,11 +4773,9 @@
     ];
     var fresh = course.freshness || {};
     if (txt(fresh.age_text)) {
-      metaBits.push(
-        fresh.stale === true
-          ? Tf("app.lecturers.meta.stale", { age: txt(fresh.age_text) })
-          : txt(fresh.age_text)
-      );
+      // ‏"עודכן לפני 48 דקות" ולא "לפני 48 דקות": זה זמן המשיכה האחרונה
+      // *של הקורס הזה*, ובלי הפועל אי אפשר לדעת של מה המספר.
+      metaBits.push(Tf("app.lecturers.courseAge", { age: txt(fresh.age_text) }));
     }
     var ranked = state.ranked[code] || [];
     if (ranked.length) {
@@ -4728,7 +4819,11 @@
           // רק הרחיבו את הטבלה.
           el("th", { text: T("app.lecturers.table.when") }),
           el("th", { text: T("app.lecturers.table.room") }),
-          el("th", { class: "th-pin", text: T("app.lecturers.table.pin") }),
+          el("th", {
+            class: "th-pin",
+            text: T("app.lecturers.table.pin"),
+            attrs: { title: T("app.lecturers.pinHelp") },
+          }),
         ]),
       ]),
     ]);
@@ -5143,14 +5238,8 @@
       } else if (runtime.solveError) {
         note = Tf("app.schedule.noteFailed", { error: runtime.solveError });
       } else if (s && !infeasible) {
-        note =
-          Tf("app.schedule.noteFound", { found: feasible, shown: list.length }) +
-          (s.counts_truncated === true
-            ? " " + T("app.schedule.noteTruncated")
-            : "") +
-          (num(s.elapsed_ms, null) !== null
-            ? " " + Tf("app.schedule.noteElapsed", { ms: num(s.elapsed_ms, 0) })
-            : "");
+        // כמה מערכות נמצאו בסך הכול וכמה זמן לקח החישוב הם פירוט טכני.
+        note = Tf("app.schedule.noteShown", { shown: list.length });
       }
       setText(ui.scheduleNote, note);
     }
@@ -5273,17 +5362,44 @@
     });
   }
 
+  /** ‏"61753 אלגוריתמים (הרצאה)" — קוד, שם, ואז סוג השיעור. */
+  function overlapSide(m) {
+    return Tf("app.overlap.side", {
+      code: txt(m.code),
+      name: txt(m.name) || nameOf(m.code),
+      kind: txt(m.kind),
+    });
+  }
+
+  /**
+   * שורה אחת לכל חפיפה: מי מול מי, מתי, ולמה זה הותר.
+   * הכותרת שמעל כבר אומרת שמדובר בחפיפות מכוונות, ולכן השורה לא חוזרת
+   * על כך, ומקדישה את המקום לשמות הקורסים ולסיבה.
+   */
   function softConflictLine(a, b) {
     var optional = [];
-    if (!attendanceRequired(a.code, a.kind)) optional.push(a.code + " " + a.kind);
-    if (!attendanceRequired(b.code, b.kind)) optional.push(b.code + " " + b.kind);
-    return optional.length
-      ? Tf("app.overlap.lineOptional", {
-          a: meetingSide(a),
-          b: meetingSide(b),
-          optional: optional.join(T("app.overlap.optionalJoin")),
+    if (!attendanceRequired(a.code, a.kind)) {
+      optional.push(txt(a.name) || nameOf(a.code));
+    }
+    if (!attendanceRequired(b.code, b.kind)) {
+      optional.push(txt(b.name) || nameOf(b.code));
+    }
+    var why = optional.length
+      ? Tf("app.overlap.whyOptional", {
+          names: optional.join(T("app.overlap.whyJoin")),
         })
-      : Tf("app.overlap.lineRequired", { a: meetingSide(a), b: meetingSide(b) });
+      : T("app.overlap.whyUnknown");
+    // חלון החפיפה עצמו, לא טווח המפגש: זה מה שבאמת מתנגש.
+    var from = Math.max(num(a.start, 0), num(b.start, 0));
+    var to = Math.min(num(a.end, 0), num(b.end, 0));
+    return Tf("app.overlap.row", {
+      a: overlapSide(a),
+      b: overlapSide(b),
+      day: dayLetter(a.day),
+      from: fmtTime(from),
+      to: fmtTime(to),
+      why: why,
+    });
   }
 
   /**
@@ -5315,8 +5431,15 @@
       }
     }
 
-    var lines = [];
-    var report = sch.soft_conflict_report;
+    // ‏השורות נבנות כאן, מהזוגות עצמם — ולא מ-``soft_conflict_report``.
+    // הדיווח מהשרת הוא פרוזה שנכתבה למסוף: קודים בלי שם הקורס, "180 דקות",
+    // ומקף רגיל במקום מקף שעות. כאן יש את שם הקורס, את חלון החפיפה עצמו
+    // ואת הסיבה שהיא הותרה. הדיווח נשאר כגיבוי בלבד, למקרה שהשרת ראה
+    // חפיפה שהזיהוי כאן לא ראה.
+    var lines = pairs.map(function (pair) {
+      return softConflictLine(pair[0], pair[1]);
+    });
+    var report = lines.length ? null : sch.soft_conflict_report;
     if (typeof report === "string") {
       // הדיווח מהשרת עשוי להימשך על כמה שורות מוזחות; מאחדים אותן לפריט אחד.
       report.split("\n").forEach(function (raw) {
@@ -5339,12 +5462,6 @@
         })
         .filter(Boolean);
     }
-    if (!lines.length) {
-      lines = pairs.map(function (pair) {
-        return softConflictLine(pair[0], pair[1]);
-      });
-    }
-
     var reported = num(sch.soft_conflicts, null);
     return {
       count: reported === null ? pairs.length : Math.max(reported, pairs.length),
@@ -5365,15 +5482,20 @@
       if (ui.softList) clear(ui.softList);
       return;
     }
-    var head =
-      info.count === 1
-        ? T("app.overlap.headOne")
-        : Tf("app.overlap.headMany", { count: info.count });
-    if (info.minutes > 0) {
-      head +=
-        " " + Tf("app.overlap.totalMinutes", { span: fmtSpan(info.minutes) });
-    }
-    setText(ui.softSub, head);
+    // ‏"חפיפה מכוונת אחת (2:00 שעות)" — הכותרת נושאת את הספירה ואת סך
+    // הזמן, והשורות שמתחתיה נושאות את הפרטים. אין חזרה ביניהן.
+    var head = info.minutes > 0
+      ? (info.count === 1
+          ? Tf("app.overlap.headOne", { span: fmtSpan(info.minutes) })
+          : Tf("app.overlap.headMany", {
+              count: info.count,
+              span: fmtSpan(info.minutes),
+            }))
+      : (info.count === 1
+          ? T("app.overlap.headOneNoSpan")
+          : Tf("app.overlap.headManyNoSpan", { count: info.count }));
+    setText(ui.softTitle, head);
+    setText(ui.softSub, "");
     rebuild(ui.softList, function (box) {
       info.lines.forEach(function (line) {
         box.appendChild(el("li", { text: line }));
