@@ -67,6 +67,29 @@ from playwright.sync_api import sync_playwright
 # קבועים — כתובות ומחרוזות עברית שמופיעות בדף
 # --------------------------------------------------------------------------
 
+#: הסימנים של דף ההשהיה של הידיעון, והרצפה שמתחתיה שום דף אינו דף.
+#: זהים ל-yedion_http — שני המסלולים כותבים לאותה תיקייה, ולכן שניהם
+#: חייבים לסרב לאותם גופים. ‏158 תווים של "יותר מידי שאילתות" שנשמרו
+#: מעל דמפ תקין מוחקים אותו בשקט.
+BLOCKED_MARKERS: tuple[str, ...] = (
+    "השהיית גישה זמנית",
+    "יותר מידי שאילתות",
+    "יותר מדי שאילתות",
+)
+MIN_REAL_PAGE_CHARS = 500
+
+
+def looks_like_a_page(html: str) -> tuple[bool, str]:
+    """האם מה שחזר הוא בכלל דף. מחזיר (כן/לא, הסיבה אם לא)."""
+    text = str(html or "")
+    for marker in BLOCKED_MARKERS:
+        if marker in text:
+            return False, f"דף השהיה ({marker!r})"
+    if len(text.strip()) < MIN_REAL_PAGE_CHARS:
+        return False, f"{len(text.strip()):,} תווים בלבד"
+    return True, ""
+
+
 #: שורש הפרויקט — משמש כדי לפתור נתיבים יחסיים כמו "data/raw" בלי תלות ב-cwd.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -725,6 +748,26 @@ class BraudeScraper:
             html = page.content()
         except PlaywrightError as exc:
             html = f"<!-- failed to read page content: {exc} -->"
+
+        # הגנה לעומק, בדיוק כמו מחסום ה-host שמעליה: דמפ תקין לעולם אינו
+        # נדרס בגוף שאינו דף. ‏dump_page רץ לפני האימות בכוונה ("קודם
+        # לדיסק"), ולכן הבדיקה חייבת לשבת כאן ולא רק אצל הקוראים.
+        ok, why = looks_like_a_page(html)
+        if not ok:
+            try:
+                shed = self.raw_dir / "blocked"
+                shed.mkdir(parents=True, exist_ok=True)
+                stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+                (shed / f"{code}_{stamp}.html").write_text(
+                    html, encoding="utf-8", errors="replace"
+                )
+            except OSError:
+                pass
+            self._log(
+                f"לא נשמר: מה שחזר עבור {code} אינו דף ({why}). הדמפ הקודם "
+                "נשמר כמו שהוא. (refused to overwrite a good dump)"
+            )
+            return None
 
         # encoding="utf-8" חובה — הידיעון כולו בעברית.
         html_path.write_text(html, encoding="utf-8", errors="replace")

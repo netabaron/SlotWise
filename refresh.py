@@ -106,6 +106,15 @@ DB_ROOT = PROJECT_ROOT / "data" / "db"
 BROWSER_PROFILE_DIR = PROJECT_ROOT / "data" / ".browser_profile"
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 
+#: כמה כישלונות **בקשה** רצופים לפני שעוצרים את הריצה כולה.
+#:
+#: לגרוד הלאה אחרי חמישה כישלונות ברצף זה לא נחישות אלא רעש: ב-2026-09-06
+#: ריצה שנחסמה המשיכה דרך הקטלוג כולו, ‏243 קורסים "נכשלו", ו-171 דמפים
+#: תקינים נדרסו בדף השהיה. עצירה משאירה את הנתונים הטובים במקומם ואומרת
+#: מה קרה; המשך גורר את כולם למטה.
+MAX_CONSECUTIVE_FAILURES = 5
+
+
 # ---------------------------------------------------------------------------
 # קודי יציאה — החוזה מול המתזמן. (exit codes: the scheduler's contract)
 # ---------------------------------------------------------------------------
@@ -339,6 +348,20 @@ def is_year_problem(exc: BaseException) -> bool:
         return True
     text = str(exc)
     return "wrong academic year" in text or "מצהיר על שנת" in text
+
+
+def is_throttled(exc: BaseException) -> bool:
+    """האם השרת אמר לנו במפורש להאט?
+
+    כמו שנה שגויה, זה כשל **גלובלי**: הידיעון מגביל לפי IP ולשעה, ולכן
+    הקורס הבא ייחסם בדיוק כמו הנוכחי. ההבדל בין לזהות את זה ובין לא הוא
+    ההבדל בין ריצה שנעצרת אחרי חמישה קורסים ובין ריצה שגוררת 243 קורסים
+    למטה ודורסת 171 דמפים תקינים — מה שקרה ב-2026-09-06.
+    """
+    if type(exc).__name__ == "ThrottledError":
+        return True
+    text = str(exc)
+    return "השהיית גישה" in text or "throttled" in text.lower()
 
 
 def looks_like_network(exc: BaseException) -> bool:
@@ -1110,6 +1133,9 @@ PASS_NEEDS_LOGIN = "needs_login"     # אפשרי אך ורק במסלול --bro
 PASS_YEAR_ERROR = "year_error"
 PASS_NETWORK = "network"
 PASS_CATALOG_ONLY = "catalog_only"
+#: הריצה נעצרה באמצע: השרת חסם, או שנכשלנו יותר מדי פעמים ברצף.
+#: להבדיל מ-PASS_ERROR, מה שכבר נשלף **נשמר** — עצירה אינה ביטול.
+PASS_ABORTED = "aborted"
 PASS_ERROR = "error"
 
 
@@ -1248,6 +1274,7 @@ def refresh_courses(
     """מרענן את הקורסים ברשימה, אחד-אחד ובנימוס. מחזיר (תוצאה, סיבה)."""
     names, credits = curriculum_hints(catalog)
     total = len(targets)
+    consecutive = 0
 
     for index, code in enumerate(targets, start=1):
         if index > 1 and delay_s > 0:
@@ -1282,14 +1309,38 @@ def refresh_courses(
             if session_gone:
                 record["skipped"].extend(targets[index:])
                 return PASS_NEEDS_LOGIN, "session expired mid-run"
+
+            # חסימה היא הוראה מפורשת של השרת להאט. להמשיך לבקש זה גם חסר
+            # תועלת וגם לא מנומס, ולכן עוצרים כאן ולא אחרי עוד מאתיים קודים.
+            if is_throttled(exc):
+                record["skipped"].extend(targets[index:])
+                log("הידיעון חסם את הגישה — עוצר את הריצה כאן.")
+                return PASS_ABORTED, "throttled by the yedion"
+
+            # רק כישלוני **בקשה** נספרים כאן — רשת, חסימה, סשן. כישלון
+            # פענוח מטופל למטה ואינו נוגע במונה.
+            consecutive += 1
+            if consecutive >= MAX_CONSECUTIVE_FAILURES:
+                record["skipped"].extend(targets[index:])
+                log(
+                    f"{consecutive} כישלונות ברצף — עוצר. "
+                    f"{len(targets) - index} קודים לא נוסו."
+                )
+                return PASS_ABORTED, f"{consecutive} consecutive failures"
             continue
 
         if not outcome["ok"]:
+            # כישלון **פענוח**, לא כישלון בקשה: הדף הגיע, אומת, ונשמר כמו
+            # שצריך — הפרסר פשוט לא הבין אותו. זה מצב של קורס בודד ולא של
+            # השרת, ולכן הוא אינו סופר לכיוון המפסק. הריצה הראשונה אחרי
+            # התיקון נעצרה בדיוק כך: חמישה קורסים מפקולטה אחרת שהפרסר לא
+            # מכיר, ו-115 קודים תקינים לא נוסו בלי סיבה.
             mark_course_failed(store_mod, store_obj, code, outcome["error"])
             record["failed"].append({"code": code, "error": outcome["error"]})
             log(f"תקלה בקורס {code}: {outcome['error']}")
             continue
 
+        consecutive = 0
         record["refreshed"].append(code)
         if outcome["not_offered"]:
             record["not_offered"].append(code)
@@ -1771,6 +1822,29 @@ def cmd_refresh(args: argparse.Namespace) -> int:
             )
         )
         return finish(STATUS_ERROR, EXIT_ERROR, reason)
+
+    if outcome == PASS_ABORTED:
+        done_n = len(record["refreshed"])
+        left = len(record["skipped"])
+        print(
+            banner(
+                [
+                    "הריצה נעצרה באמצע. (run stopped early)",
+                    "",
+                    f"רועננו {done_n} קורסים; {left} לא נוסו.",
+                    "",
+                    "מה שכבר נשלף נשמר, ומה שלא נוסה נשאר כמו שהיה — אף דמפ",
+                    "תקין לא נדרס. עצירה כאן היא הכוונה: להמשיך לבקש אחרי",
+                    "חסימה רק מאריך אותה.",
+                    "",
+                    f"סיבה: {reason}",
+                    "",
+                    "כדאי להמתין שעה ולהריץ שוב; רק מה שחסר יישלף.",
+                ],
+                ch="!",
+            )
+        )
+        return finish(STATUS_PARTIAL, EXIT_PARTIAL, reason)
 
     if outcome == PASS_ERROR:
         print(banner(["תקלה בהתחלת השליפה — FETCH DID NOT START", "", str(reason)], ch="!"))

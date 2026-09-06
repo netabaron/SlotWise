@@ -160,6 +160,11 @@ _DETAILS_PAGE_MARKERS: tuple[str, ...] = (
 #: מתחת לזה זה כבר לא דף. הדפים האמיתיים הם 17–26KB.
 _DETAILS_MIN_CHARS = 1024
 
+#: הרצפה לכל תשובה שהיא, כולל דף תוצאות. דף ההשהיה של הידיעון הוא 158
+#: תווים; דף תוצאות אמיתי, גם של קורס שאינו נפתח, אינו מתקרב לזה. גוף
+#: קטן מכאן אינו תשובה — הוא תקלה שהתחפשה לאחת, ואסור לשמור אותו.
+_MIN_REAL_PAGE_CHARS = 500
+
 #: המסך היחיד שכן חסום לאנונימיים. משמש **רק** ל-POST של החלפת השנה,
 #: שעובד גם בלי הזדהות אחרי בקשת החימום.
 PRGNAME_ENTER_SEARCH = "Enter_Search"
@@ -1031,6 +1036,33 @@ class YedionHTTP:
         """
         if self.raw_dir is None:
             return None
+
+        # הגנה לעומק. הקוראים אמורים לבדוק לפני שהם מגיעים לכאן, אבל זו
+        # נקודת הכתיבה **היחידה**, וכאן עובר הגבול שאחריו נתונים טובים
+        # נמחקים. דמפ קיים לעולם אינו נדרס בגוף שאינו דף.
+        text = str(html or "")
+        plain = _html.unescape(text)
+        blocked = next((m for m in _THROTTLE_MARKERS if m in plain), "")
+        runt = len(text.strip()) < _MIN_REAL_PAGE_CHARS
+        if blocked or runt:
+            why = f"דף השהיה ({blocked!r})" if blocked else f"{len(text.strip()):,} תווים"
+            # נשמר להתחקות — בתיקייה נפרדת, כדי ש-glob של "<code>_*.html"
+            # ב-data/raw לא ימצא אותו ולא יחשוב שזה דף אמיתי.
+            try:
+                shed = self.raw_dir / "blocked"
+                shed.mkdir(parents=True, exist_ok=True)
+                stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+                (shed / f"{name}_{stamp}.html").write_text(
+                    text, encoding="utf-8", errors="replace"
+                )
+            except OSError:
+                pass
+            self._emit(
+                f"לא נשמר: מה שחזר עבור {name} אינו דף ({why}). הדמפ הקודם נשמר "
+                "כמו שהוא. (refused to overwrite a good dump with a non-page)"
+            )
+            return None
+
         path = self.raw_dir / f"{name}_{self._next_index(name)}.html"
         try:
             self.raw_dir.mkdir(parents=True, exist_ok=True)
@@ -1042,6 +1074,35 @@ class YedionHTTP:
         self.dumps.append(path)
         self._emit(f"נשמר HTML גולמי: {path}")
         return path
+
+    def _assert_not_throttled(self, what: str, html: str) -> None:
+        """גוף שאינו תשובה — דף השהיה או גוף זעיר. תמיד לפני ``dump_html``.
+
+        זו הבדיקה שחסרה ל-``fetch_course``. ב-2026-09-06 רצה שליפה שנחסמה
+        באמצע, ‏171 מתוך 623 הדמפים ב-data/raw נדרסו ב-158 התווים של דף
+        ההשהיה, ושתי בדיקות שקוראות משם דפים אמיתיים התחילו לדלג על עצמן
+        בשקט. ‏``fetch_details`` היה מוגן; ‏``fetch_course`` לא, ורק בגלל
+        שהבדיקה נכתבה במסלול אחד ולא הוצאה החוצה.
+
+        Raises:
+            ThrottledError: להמתין ולנסות שוב — ובשום אופן לא לשמור.
+        """
+        text = str(html or "")
+        plain = _html.unescape(text)
+        for marker in _THROTTLE_MARKERS:
+            if marker in plain:
+                raise ThrottledError(
+                    f"{what}: הידיעון החזיר דף השהיית גישה ולא את הדף המבוקש — "
+                    "חרגנו מקצב השאילתות. הדף לא נשמר ולא פוענח. כדאי להמתין "
+                    "ולהגדיל את delay_s. (throttled by the yedion; response withheld)"
+                )
+        if len(text.strip()) < _MIN_REAL_PAGE_CHARS:
+            raise ThrottledError(
+                f"{what}: חזרו {len(text.strip()):,} תווים בלבד — קצר מכדי להיות "
+                f"דף כלשהו (הרצפה היא {_MIN_REAL_PAGE_CHARS}). מתייחסים לזה כתקלה "
+                "זמנית ולא כתשובה, ולא שומרים כלום. "
+                "(runt response; treated as a temporary failure)"
+            )
 
     def _assert_details_payload(self, what: str, html: str) -> None:
         """
@@ -1366,7 +1427,9 @@ class YedionHTTP:
 
         html = self._request("GET", course_url(clean), what=f"קורס {clean}")
 
-        # חוק ברזל: קודם לדיסק, אחר כך פירסור (כולל אימות השנה, שמפרסר גם הוא).
+        # חוק ברזל: קודם לדיסק, אחר כך פירסור — אבל רק אם מה שחזר הוא בכלל
+        # דף. גוף השהיה שנשמר דורס דמפ תקין, ו-reparse.py יפענח אותו כדף ריק.
+        self._assert_not_throttled(f"קורס {clean}", html)
         self.dump_html(clean, html)
         self._assert_page_year(f"קורס {clean}", html)
 
