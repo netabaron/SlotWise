@@ -106,6 +106,16 @@ DB_ROOT = PROJECT_ROOT / "data" / "db"
 BROWSER_PROFILE_DIR = PROJECT_ROOT / "data" / ".browser_profile"
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 
+#: אחרי כמה ימים בלי שליפה מוצלחת קורס מפסיק להיות "ניסיון שנכשל" ומתחיל
+#: להיות תקלה שצריך לטפל בה.
+#:
+#: קורס שנכשל היום יצליח כנראה מחר — לא צריך להקים רעש על כל כישלון. אבל
+#: קורס שנכשל שלושה ימים ברצף לא ייתקן מעצמו, והמצב הגרוע הוא בדיוק זה
+#: שקרה כאן: הריענון היומי ממשיך לרוץ, מדווח "נכשל" בשורה אחת בין מאות,
+#: והנתונים של אותו קורס מתיישנים בשקט שבועות. שלושה ימים הם גם הסף שאחריו
+#: אפשר להיות בטוחים שזו לא תקלת רשת חולפת.
+STALE_FAILURE_DAYS = 3
+
 #: כמה כישלונות **בקשה** רצופים לפני שעוצרים את הריצה כולה.
 #:
 #: לגרוד הלאה אחרי חמישה כישלונות ברצף זה לא נחישות אלא רעש: ב-2026-09-06
@@ -533,6 +543,44 @@ def build_course_meta(store_mod, **values):
         names = set(values)
     kwargs = {key: val for key, val in values.items() if key in names}
     return store_mod.CourseMeta(**kwargs)
+
+
+def stale_failures(store_mod, store_obj, failed: list[dict]) -> list[dict]:
+    """אילו מהכישלונות של הריצה הזאת אינם חדשים.
+
+    המדד הוא **מתי הייתה השליפה המוצלחת האחרונה**, ולא מונה ניסיונות:
+    ``mark_course_failed`` משמר את ``fetched_at`` של ההצלחה האחרונה בדיוק
+    כדי שאפשר יהיה לשאול את זה. לכן אין צורך במצב חדש שנשמר לדיסק, והמדידה
+    נכונה גם כשהריענון רץ פעמיים ביום או מדלג על יום.
+
+    קורס שאין לו ``fetched_at`` כלל מעולם לא נשלף בהצלחה — הוא נכלל תמיד.
+    """
+    out: list[dict] = []
+    for item in failed:
+        code = str(item.get("code", ""))
+        if not code:
+            continue
+        try:
+            _course, meta = store_obj.load_course(code)
+        except Exception:  # noqa: BLE001 - היעדר רשומה אינו שובר דיווח
+            meta = None
+        stamp = str(meta_field(meta, "fetched_at", "") or "")
+        days = None
+        if stamp:
+            try:
+                hours = store_mod.age_hours_since(stamp)
+                days = None if hours is None else hours / 24.0
+            except Exception:  # noqa: BLE001
+                days = None
+        if days is None or days >= STALE_FAILURE_DAYS:
+            out.append(
+                {
+                    "code": code,
+                    "days": None if days is None else round(days, 1),
+                    "error": str(item.get("error", "")),
+                }
+            )
+    return out
 
 
 def meta_field(meta: object, name: str, default=None):
@@ -1620,6 +1668,7 @@ def cmd_refresh(args: argparse.Namespace) -> int:
         "failed": [],
         "not_offered": [],
         "skipped": [],
+        "stale": [],
         "changes": {},
         "changes_count": 0,
     }
@@ -1862,6 +1911,13 @@ def cmd_refresh(args: argparse.Namespace) -> int:
         return finish(STATUS_OK, EXIT_OK, "catalog only")
 
     # -------------------------------------------------- 4. סיכום אנושי
+    # מי מהכישלונות כבר אינו חדש. נמדד כאן, לפני ההדפסה והיומן, כדי
+    # שהמידע יישמר ב-refresh_log.jsonl וניתן יהיה לשאול אותו אחר כך.
+    try:
+        record["stale"] = stale_failures(store_mod, store_obj, record["failed"])
+    except Exception as exc:  # noqa: BLE001 - דיווח לא מפיל ריצה
+        log(f"אזהרה: חישוב הכישלונות הישנים נכשל ({type(exc).__name__}: {exc}).")
+
     print_summary(record, catalog_age)
 
     failed = record["failed"]
@@ -1933,7 +1989,37 @@ def print_summary(record: dict, catalog_age: float | None) -> None:
     )
     changes_total = sum(len(v) for v in record["changes"].values())
     lines.append(f"שינויים שזוהו: {changes_total}")
+    stale = record.get("stale") or []
+    if stale:
+        lines.append(f"נכשלים כבר {STALE_FAILURE_DAYS}+ ימים: {len(stale)} — ראי למטה")
     print(banner(lines))
+
+    # --- כישלונות שאינם חדשים ---
+    # כישלון של יום אחד הוא רעש; כישלון שנמשך הוא תקלה. בלי ההפרדה הזאת
+    # שניהם נראים אותו דבר בשורת הסיכום, והשני נבלע בראשון.
+    if stale:
+        never = [s for s in stale if s["days"] is None]
+        old = sorted((s for s in stale if s["days"] is not None),
+                     key=lambda s: -s["days"])
+        stale_lines = [
+            "קורסים שנכשלים כבר כמה ימים — NOT A NEW FAILURE",
+            "",
+            f"אלה נכשלו גם היום, ולא נשלפו בהצלחה כבר {STALE_FAILURE_DAYS} ימים",
+            "או יותר. ריענון חוזר לא יתקן אותם מעצמו.",
+            "",
+        ]
+        for s in old[:20]:
+            stale_lines.append(f"• {s['code']} — {s['days']:g} ימים · {s['error'][:70]}")
+        for s in never[:20]:
+            stale_lines.append(f"• {s['code']} — מעולם לא נשלף · {s['error'][:70]}")
+        if len(stale) > 40:
+            stale_lines.append(f"…ועוד {len(stale) - 40}")
+        stale_lines += [
+            "",
+            "לניסיון ממוקד:  python refresh.py --codes "
+            + ",".join(s["code"] for s in stale[:12]),
+        ]
+        print(banner(stale_lines, ch="!"))
 
     # --- השינויים: בקול, לא רק ביומן ---
     if record["changes"]:

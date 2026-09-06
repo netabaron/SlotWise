@@ -221,3 +221,86 @@ def test_a_throttle_stops_immediately(monkeypatch):
     assert result == refresh_mod.PASS_ABORTED
     assert "throttled" in reason
     assert len(record["attempted"]) == 1, "המשכנו לבקש אחרי שהשרת חסם"
+
+
+# ==========================================================================
+# 5. כישלון שנמשך ימים אינו אותו דבר ככישלון של היום
+# ==========================================================================
+class _Meta:
+    def __init__(self, fetched_at: str) -> None:
+        self.fetched_at = fetched_at
+
+
+class _Store:
+    """חנות מדומה: קוד -> חותמת השליפה המוצלחת האחרונה."""
+
+    def __init__(self, stamps: dict) -> None:
+        self.stamps = stamps
+
+    def load_course(self, code):
+        if code not in self.stamps:
+            raise KeyError(code)
+        return object(), _Meta(self.stamps[code])
+
+
+def _store_mod():
+    import src.store as store_mod
+
+    return store_mod
+
+
+def _stamp(days_ago: float) -> str:
+    import datetime as dt
+
+    when = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days_ago)
+    return when.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_a_failure_from_today_is_not_reported_as_stale():
+    """כישלון של יום אחד הוא רעש — קורס שנשלף אתמול יצליח כנראה מחר."""
+    import refresh as refresh_mod
+
+    store = _Store({"61756": _stamp(0.5)})
+    out = refresh_mod.stale_failures(
+        _store_mod(), store, [{"code": "61756", "error": "network"}]
+    )
+    assert out == []
+
+
+def test_a_failure_that_has_lasted_days_is_reported():
+    import refresh as refresh_mod
+
+    store = _Store({"61756": _stamp(9)})
+    out = refresh_mod.stale_failures(
+        _store_mod(), store, [{"code": "61756", "error": "throttled"}]
+    )
+    assert len(out) == 1
+    assert out[0]["code"] == "61756"
+    assert out[0]["days"] >= refresh_mod.STALE_FAILURE_DAYS
+
+
+def test_a_course_never_fetched_successfully_is_always_reported():
+    """אין ``fetched_at`` — אין ממה להתיישן, ואין גם נתונים."""
+    import refresh as refresh_mod
+
+    store = _Store({"99999": ""})
+    out = refresh_mod.stale_failures(
+        _store_mod(), store, [{"code": "99999", "error": "parse returned no course"}]
+    )
+    assert len(out) == 1 and out[0]["days"] is None
+
+
+def test_a_code_with_no_record_at_all_is_reported_not_skipped():
+    import refresh as refresh_mod
+
+    out = refresh_mod.stale_failures(
+        _store_mod(), _Store({}), [{"code": "12345", "error": "network"}]
+    )
+    assert len(out) == 1 and out[0]["days"] is None
+
+
+def test_the_threshold_is_days_not_runs():
+    """הסף נמדד בימים, ולכן הוא נכון גם כשהריענון רץ פעמיים ביום."""
+    import refresh as refresh_mod
+
+    assert 1 <= refresh_mod.STALE_FAILURE_DAYS <= 7
