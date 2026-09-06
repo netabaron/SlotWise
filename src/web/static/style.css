@@ -1469,8 +1469,8 @@ html.is-modal-open body { overflow: hidden; }
   display: flex;
   flex-direction: column;
   gap: 1px;
-  /* ‏13px היא הרצפה לטקסט משני. בלוק שאין בו מקום לשלוש שורות מוותר על
-     החדר — ולא מקטין את הגופן מתחת לרצפה הזאת. */
+  /* ‏13px היא רצפת הגופן בבלוק. בלוק שאין בו מקום מוותר על שורה שלמה,
+     לפי הסדר שב-fitBlocks — ולא מקטין את הטקסט מתחת לרצפה הזאת. */
   font-size: 13px;
   line-height: 1.25;
   background: var(--ev-bg, var(--chip));
@@ -1479,6 +1479,11 @@ html.is-modal-open body { overflow: hidden; }
 }
 
 .ev b { font-size: 13px; font-weight: 700; }
+
+/* ‏שורות הבלוק אינן מתכווצות. בלי זה בלוק נמוך דוחס את הילדים שלו במקום
+   לגלוש, ‏scrollHeight נשאר שווה ל-clientHeight, ‏fitBlocks אינו רואה
+   דבר — והשם והסוג נחתכים לרוחב השורה במקום שהחדר והשעה ירדו לפי הסדר. */
+.ev > * { flex-shrink: 0; }
 .ev-room { font-weight: 600; }
 .ev span { opacity: .94; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -1572,11 +1577,16 @@ html.is-modal-open body { overflow: hidden; }
 }
 
 /* ==========================================================================
-   15. הדפסה — רק המערכת השבועית, עמוד אחד
+   15. הדפסה — הרשת בלבד
    ========================================================================== */
+/* ‏margin: 0 ואחריו ריפוד פנימי, ולא שוליים ב-@page: כשיש שוליים, הדפדפן
+   מצייר בתוכם כותרת עליונה ותחתונה משלו — תאריך, כתובת הדף ומספור. אין
+   ‏CSS שמכבה אותן, אבל בלי שוליים אין להן מקום להיכתב בו. הריפוד מחזיר
+   את המרווח הוויזואלי, ובו־בזמן הוא זה שנבלע בשוליים שהמדפסת לא יכולה
+   להדפיס — במקום שהמערכת עצמה תיחתך. */
 @page {
   size: A4 landscape;
-  margin: 10mm;
+  margin: 0;
 }
 
 @media print {
@@ -1599,30 +1609,39 @@ html.is-modal-open body { overflow: hidden; }
     --day-min: 0;
   }
 
-  body { background: #ffffff; font-size: 11.5px; }
+  body { background: #ffffff; font-size: 11.5px; padding: 8mm; }
 
   /* הדפסה בזמן שהשכבה פתוחה: בלי זה נעילת הגלילה הייתה חותכת את הדף
      אחרי העמוד הראשון. */
   html.is-modal-open,
   html.is-modal-open body { overflow: visible !important; }
 
-  .busy-bar,
-  .app-header,
-  .banners,
-  .log-panel,
-  .toasts,
-  .app-footer,
-  /* אלה אמצעי מסך. הדף המודפס הוא הרשת של שלב 5, כמו קודם. */
-  .sticky-bar,
-  .overlay-backdrop,
-  #step-year,
-  #step-courses,
-  #step-days,
-  #step-lecturers,
-  .sched-toolbar,
-  .step-hint,
-  .step-state,
-  #schedule-note { display: none !important; }
+  /* ‏על הנייר: הרשת, ושורת כותרת אחת מעליה. שום דבר אחר.
+     ניקוד, לשוניות, אזהרת חפיפה, אריחי העובדות, פירוק הקנסות, שבבי
+     הקורסים והמקרא הם כולם עזרי **החלטה**. אחרי שההחלטה התקבלה,
+     מדפיסים את המערכת שנבחרה — לא את הדרך אליה.
+
+     היתר, לא איסור. הגרסה הקודמת מנתה מזהים להסתרה, וכך כל אלמנט חדש
+     דלף אל הנייר בשקט: שורת ההתקדמות וכפתור הבנייה היו כל תוכנו של
+     העמוד המודפס הראשון, והמערכת עצמה התחילה בעמוד השני. רשימה
+     שמתארת מה **כן** מודפס אינה יכולה לשכוח. */
+  body > *:not(.steps) { display: none !important; }
+  .steps > *:not(#step-schedule) { display: none !important; }
+  #step-schedule > .step-head { display: none !important; }
+  #step-schedule > .step-body > *:not(#grid-scroll):not(#print-head) {
+    display: none !important;
+  }
+
+  /* שורת הכותרת: שם המערכת ותאריך, שורה אחת.
+     ‏#id ולא .class: כלל ההסתרה למסך יושב בהמשך הקובץ, ובמפורש שווה לו
+     ‏(0,1,0) — הוא היה מנצח בסדר. עוצמה גבוהה יותר, לא הסתמכות על מיקום. */
+  #print-head {
+    display: block;
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #000;
+  }
 
   .steps { padding: 0; gap: 0; max-inline-size: none; }
 
@@ -1948,15 +1967,22 @@ html.is-modal-open body { overflow: hidden; }
   inline-size: auto;
 }
 
-/* ‏"אם זה לא נכנס, זה לא שייך לבלוק": אין יותר חיתוך בשלוש נקודות.
-   הבלוק מציג שם, שעה וסוג — והשאר נמצא בפאנל. */
+/* ‏"אם זה לא נכנס, זה לא שייך לבלוק": אין חיתוך בשלוש נקודות. שורה
+   שאין לה מקום יורדת כולה, לפי הסדר שב-fitBlocks — ולא נחתכת באמצע.
+   שעה שנקטעה ל-"10:30–12:2" נראית שלמה, וזה בדיוק מה שהופך אותה למסוכנת:
+   חדר "F 506" הוא חדר קיים אחר. לכן ארבע השורות נשברות ולא נחתכות. */
 .ev span { overflow: hidden; text-overflow: clip; white-space: nowrap; }
-.ev b { white-space: normal; overflow: hidden; }
+.ev b,
+.ev .ev-kind,
+.ev .cell-time,
+.ev .ev-lect,
+.ev .ev-room { white-space: normal; overflow-wrap: anywhere; }
 
 .ev:hover { filter: brightness(1.06); }
 .ev:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
-/* אשכול חופף — בלוק אחד ברוחב מלא, עם תג בפינה. */
+/* תג החפיפה. הוא יושב על כל אחד משני הבלוקים בחצי הרוחב — לא על
+   בלוק ממוזג, שכבר אינו קיים. */
 .ev-badge {
   align-self: flex-start;
   font-size: 10px;
@@ -1967,6 +1993,10 @@ html.is-modal-open body { overflow: hidden; }
   color: var(--warn-ink);
   border: 1px solid var(--warn-line);
 }
+
+/* שורת הכותרת של הדף המודפס — קיימת רק על הנייר. על המסך אותו מידע
+   כבר נמצא בלשוניות ובכותרת הסעיף. */
+.print-head { display: none; }
 
 /* ---- יום ריק ---- */
 .hd.is-empty,
@@ -2143,3 +2173,48 @@ html.is-modal-open body { overflow: hidden; }
 .field--sm { flex: 0 1 8rem; }
 .field--md { flex: 0 1 13rem; }
 .field--lg { flex: 0 1 22rem; }
+
+/* ==========================================================================
+   22. תיקוני שלב 4 — סוג השיעור בבלוק, וחפיפה כשני חצאים
+   ========================================================================== */
+
+/* סוג השיעור: שורה קצרה משלו. הוא מהדברים הראשונים שמחפשים על הרשת,
+   והוא גם מה שמבדיל הרצאה מתרגול כשהצבע מציין את הקורס בלבד.
+
+   ‏.ev .ev-kind ולא .ev-kind: הכלל .ev span הוא (0,1,1) ומנצח מחלקה
+   בודדת בכל סדר, ולכן ה-opacity כאן לא היה חל כלל. */
+.ev .ev-kind {
+  font-size: 11.5px;
+  font-weight: 600;
+  opacity: .9;
+}
+
+/* שם המרצה, מלא. ‏13px כמו החדר והשעה ולא קטן מהם: מבין שלוש השורות
+   שיכולות לרדת הוא האחרון שיורד, ולכן אין סיבה שיהיה הקשה ביותר לקריאה.
+   שם ארוך נשבר לשתי שורות — עדיף מקוצר. */
+.ev .ev-lect { font-size: 13px; opacity: .82; }
+
+/* ‏fitBlocks מסתיר שורות שאינן נכנסות, לפי הסדר: חדר, שעה, מרצה.
+   ‏[hidden] כבר display:none גלובלית — הכלל כאן רק מתעד את הסדר. */
+.ev .ev-drop-1[hidden],
+.ev .ev-drop-2[hidden],
+.ev .ev-drop-3[hidden] { display: none !important; }
+
+/* חפיפה מכוונת: שני בלוקים זה לצד זה, כל אחד בחצי רוחב, ולכל אחד
+   המסגרת המקווקוות שלו. מיזוג לבלוק אחד הסתיר אילו קורסים מתנגשים. */
+.ev.is-soft {
+  outline: 2px dashed var(--warn-line);
+  outline-offset: -3px;
+}
+
+/* בהדפסה סוג השיעור נשאר — הוא לא קישוט מסך.
+
+   ‏!important על ה-opacity, ולא סתם עוצמה גבוהה: על המסך שלוש שורות
+   הבלוק מוחוורות בכוונה כדי שהשם יבלוט, אבל דיו חיוור על נייר לבן הוא
+   פשוט טקסט שקשה לקרוא. על הנייר הכול נדפס מלא. */
+@media print {
+  .ev .ev-kind { display: block !important; }
+  .ev .ev-kind,
+  .ev .ev-lect,
+  .ev span { opacity: 1 !important; }
+}

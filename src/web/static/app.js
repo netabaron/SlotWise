@@ -2674,6 +2674,7 @@
 
     ui.btnBuild = byId("btn-build");
     ui.progress = byId("steps-progress");
+    ui.printHead = byId("print-head");
     ui.detail = byId("meeting-detail");
     ui.detailBody = byId("meeting-detail-body");
     ui.btnDetailClose = byId("btn-detail-close");
@@ -3193,6 +3194,7 @@
       rebuild(ui.overlayGrid, function (box) {
         buildGrid(box, sch, softConflictInfo(sch));
       });
+      fitBlocks(ui.overlayGrid);
     }
   }
 
@@ -5333,7 +5335,7 @@
   /* --- שלב 4: פרטי שיעור ------------------------------------------- */
 
   /**
-   * פותח את פאנל הפרטים של שיעור (או של אשכול חופף).
+   * פותח את פאנל הפרטים של שיעור (או של שני צדדיה של חפיפה מכוונת).
    *
    * מרגע שהבלוק ברשת מציג שם, שעה וסוג בלבד, זה המקום **היחיד** שבו
    * מופיעים מספר הקבוצה, המרצה והחדר. לכן:
@@ -5343,11 +5345,11 @@
    *     יודע שקרה משהו.
    *   * ‏Esc סוגר, והפוקוס חוזר לבלוק שממנו נפתח.
    */
-  function openMeetingDetail(group, isCluster) {
+  function openMeetingDetail(group, isOverlap) {
     if (!ui.detail || !ui.detailBody) return;
     runtime.detailReturnTo = document.activeElement;
     rebuild(ui.detailBody, function (box) {
-      if (isCluster) {
+      if (isOverlap) {
         box.appendChild(
           el("p", { class: "detail-overlap" }, [
             el("strong", { text: T("app.detail.overlapTitle") }),
@@ -5655,9 +5657,12 @@
     var feasible = s ? num(s.feasible_count, list.length) : null;
     var infeasible = !!s && list.length === 0;
 
+    // אותן תוויות משמשות את הלשוניות ואת שורת הכותרת של ההדפסה:
+    // הנייר צריך לומר איזו מערכת זו באותן מילים שבהן היא נבחרה.
+    var tabLabels = differentiators(list);
+
     // לשוניות
     if (ui.tabs) {
-      var tabLabels = differentiators(list);
       rebuild(ui.tabs, function (box) {
         list.forEach(function (sch, idx) {
           box.appendChild(
@@ -5871,9 +5876,26 @@
         if (!sch) return;
         buildGrid(box, sch, soft);
       });
+      // אחרי הפריסה, לא לפניה: רק עכשיו ידוע אם הטקסט באמת נכנס.
+      fitBlocks(ui.grid);
     }
     setHidden(ui.gridScroll, !sch);
     if (ui.chkAllHours) ui.chkAllHours.checked = state.allHours === true;
+
+    // שורת הכותרת של הדף המודפס. מוסתרת על המסך, ולכן היא נבנית תמיד
+    // ואינה תלויה במצב כלשהו — הדפסה יכולה להתחיל בכל רגע.
+    if (ui.printHead) {
+      var idx = num(state.activeSchedule, 0);
+      ui.printHead.textContent = sch
+        ? Tf("app.grid.printHead", {
+            name: Tf("app.schedule.tabLabel", {
+              n: idx + 1,
+              label: tabLabels[idx] || "",
+            }),
+            date: todayLabel(),
+          })
+        : "";
+    }
 
     // אין פתרון
     if (ui.empty) {
@@ -6328,46 +6350,6 @@
   }
 
   /**
-   * מקבץ מפגשים חופפים ליחידה אחת.
-   *
-   * שתי עמודות בחצי רוחב אינן קריאות — זו הייתה התוצאה הקודמת. במקומן
-   * בלוק אחד ברוחב מלא עם תג "חפיפה", והפרטים של **שני** השיעורים
-   * נפתחים בפאנל. אשכול נבנה רק כשהחפיפה מכוונת; חפיפה שאינה מכוונת
-   * לא אמורה להתקיים בכלל, ואם היא קיימת עדיף לראות אותה כשתי יחידות.
-   */
-  function clusterMeetings(meetings, soft) {
-    var marks = (soft && soft.marks) || {};
-    var byKey = Object.create(null);
-    meetings.forEach(function (m) {
-      byKey[meetingKey(m)] = m;
-    });
-    var seen = Object.create(null);
-    var out = [];
-    meetings.forEach(function (m) {
-      var key = meetingKey(m);
-      if (seen[key]) return;
-      var group = [m];
-      seen[key] = true;
-      if (txt(marks[key])) {
-        meetings.forEach(function (other) {
-          var ok = meetingKey(other);
-          if (seen[ok]) return;
-          if (other.day !== m.day) return;
-          if (other.start >= m.end || m.start >= other.end) return;
-          if (!txt(marks[ok])) return;
-          seen[ok] = true;
-          group.push(other);
-        });
-      }
-      out.push(group);
-    });
-    return out;
-  }
-
-  /** ‏45 דקות: מתחת לזה שלוש שורות בגופן 13px אינן נכנסות לבלוק. */
-  var ROOM_MIN_MINUTES = 45;
-
-  /**
    * קוד חדר לתצוגה: ‏"709 L" -> "L 709".
    *
    * הידיעון שומר מספר ואז אות בניין, ואיש בבראודה לא אומר חדר ככה.
@@ -6477,26 +6459,26 @@
       }
     }
 
+    // ‏בלוק לכל מפגש. חפיפה מכוונת חוזרת להיות שתי עמודות בחצי רוחב:
+    // מיזוג לבלוק אחד הסתיר **אילו** שני קורסים מתנגשים, וזו בדיוק
+    // השאלה שעומדת להכרעה. מה שהפך את החצאים לבלתי קריאים היה עומס
+    // הטקסט, והוא ירד — לא הרוחב.
     var lanes = assignLanes(meetings);
-    clusterMeetings(meetings, soft).forEach(function (group) {
-      var lead = group[0];
-      var from = group.reduce(function (a, m) {
-        return Math.min(a, num(m.start, 0));
-      }, Infinity);
-      var to = group.reduce(function (a, m) {
-        return Math.max(a, num(m.end, 0));
-      }, 0);
+    var marks = (soft && soft.marks) || {};
+    meetings.forEach(function (m) {
+      var key = meetingKey(m);
+      var from = num(m.start, 0);
+      var to = num(m.end, 0);
       var startSlot = Math.floor((from - gridStart) / SLOT_MINUTES);
       var endSlot = Math.ceil((to - gridStart) / SLOT_MINUTES);
       if (endSlot <= startSlot) endSlot = startSlot + 1;
-      var isCluster = group.length > 1;
+      var clash = txt(marks[key]);
 
       var style = {
         "grid-row": startSlot + 2 + " / " + (endSlot + 2),
-        "grid-column": String(lead.day + 1),
+        "grid-column": String(m.day + 1),
       };
-      // חלוקת רוחב נשארת רק לחפיפה שאינה מקובצת — כלומר לא-מכוונת.
-      var lane = !isCluster ? lanes[meetingKey(lead)] : null;
+      var lane = lanes[key];
       if (lane && lane.lanes > 1) {
         style["margin-inline-start"] =
           ((lane.lane * 100) / lane.lanes).toFixed(2) + "%";
@@ -6504,57 +6486,180 @@
           (((lane.lanes - lane.lane - 1) * 100) / lane.lanes).toFixed(2) + "%";
       }
 
-      var names = group.map(function (m) {
-        return txt(m.name) || nameOf(m.code);
+      var name = txt(m.name) || nameOf(m.code);
+      var room = roomOf(m);
+      var lecturer = txt(m.lecturer);
+      var label = Tf("app.grid.openDetail", {
+        name: name,
+        day: dayLetter(m.day),
+        from: fmtTime(from),
+        to: fmtTime(to),
+        room: room || T("app.detail.noRoom"),
       });
-      var label = isCluster
-        ? Tf("app.grid.clusterOpen", { names: names.join(" · ") })
-        : Tf("app.grid.openDetail", {
-            name: names[0],
-            day: dayLetter(lead.day),
-            from: fmtTime(lead.start),
-            to: fmtTime(lead.end),
-            room: roomOf(lead) || T("app.detail.noRoom"),
+      if (clash) {
+        var others = overlapPartners(m, meetings, marks)
+          .slice(1)
+          .map(function (o) {
+            return txt(o.name) || nameOf(o.code);
           });
+        // הצד השני בשם ולא בקוד: מי שמאזין לדף שומע את אותו מידע שמי
+        // שרואה אותו מקבל משני הבלוקים זה לצד זה.
+        label +=
+          " · " +
+          Tf("app.grid.clashSummary", {
+            list: others.length ? others.join(", ") : clash,
+          });
+      }
 
-      // ‏<button> ולא <div>: הפאנל הוא המקום היחיד שבו נמצאים מספר
-      // הקבוצה, המרצה והחדר, ולכן חייבת להיות אליו דרך במקלדת.
+      // ‏<button> ולא <div>: מספר הקבוצה והמרצה נמצאים רק בפאנל, ולכן
+      // חייבת להיות אליו דרך במקלדת.
       var block = el(
         "button",
         {
-          class:
-            "ev c" +
-            colorOf(lead.code) +
-            (isCluster ? " is-soft is-cluster" : "") +
-            (to - from < 60 ? " ev--short" : ""),
+          class: "ev c" + colorOf(m.code) + (clash ? " is-soft" : ""),
           style: style,
           attrs: { type: "button", "aria-label": label, title: label },
-          data: { fk: "ev-" + meetingKey(lead) },
+          data: { fk: "ev-" + key },
           on: {
             click: function () {
-              openMeetingDetail(group, isCluster);
+              // החפיפה נפתחת עם שני הצדדים, גם כשלוחצים על אחד מהם.
+              openMeetingDetail(overlapPartners(m, meetings, marks), !!clash);
             },
           },
         },
         [
-          el("b", { text: names.join(" + ") }),
+          // סדר הירידה קבוע, מהמוותר ביותר: מרצה, חדר, שעה. שם הקורס
+          // וסוג השיעור לעולם אינם יורדים — הם מה שמזהה את הבלוק.
+          el("b", { text: name }),
+          el("span", { class: "ev-kind", text: txt(m.kind) }),
           el("span", {
-            class: "cell-time",
+            class: "cell-time ev-drop-2",
             text: fmtTime(from) + "–" + fmtTime(to),
           }),
-          // החדר הוא מה שמחפשים על הרשת. הוא נשאר בבלוק, ורק בשיעורים
-          // קצרים מ-45 דקות — שבהם שלוש שורות בגופן 13px פשוט לא נכנסות —
-          // הוא יורד. הקטנת הגופן הייתה הפתרון הקל והלא נכון.
-          to - from >= ROOM_MIN_MINUTES && roomOf(lead)
-            ? el("span", { class: "ev-room" }, [ltrCode(roomOf(lead))])
+          room
+            ? el("span", { class: "ev-room ev-drop-1" }, [ltrCode(room)])
             : null,
-          isCluster
-            ? el("span", { class: "ev-badge", text: T("app.grid.clashBadge") })
+          // השם המלא, ונשבר לשתי שורות אם צריך. קיצור ל"ד״ר סוקולובסקי"
+          // חוסך שורה אבל מוחק בדיוק את מה שמבדיל בין שני מרצים באותו
+          // שם משפחה — וזה מה שבוחרים לפיו.
+          lecturer
+            ? el("span", { class: "ev-lect ev-drop-3", text: lecturer })
+            : null,
+          clash
+            ? el("span", {
+                class: "ev-badge ev-drop-1",
+                text: T("app.grid.clashBadge"),
+              })
             : null,
         ]
       );
       root.appendChild(block);
     });
+  }
+
+  /** תאריך היום כ-‏"5.9.2026" — הסדר שבו כותבים תאריך בעברית. */
+  function todayLabel() {
+    var d = new Date();
+    return d.getDate() + "." + (d.getMonth() + 1) + "." + d.getFullYear();
+  }
+
+  /** מפגש, ואיתו מי שחופף לו בכוונה — כדי שהפאנל יראה את שני הצדדים. */
+  function overlapPartners(m, meetings, marks) {
+    if (!txt(marks[meetingKey(m)])) return [m];
+    return [m].concat(
+      meetings.filter(function (other) {
+        if (other === m) return false;
+        if (other.day !== m.day) return false;
+        if (other.start >= m.end || m.start >= other.end) return false;
+        return !!txt(marks[meetingKey(other)]);
+      })
+    );
+  }
+
+  /**
+   * דרגות הירידה, לפי הסדר שבו הן יורדות: חדר, שעה, מרצה.
+   *
+   * המרצה יורד אחרון מבין השלושה. החדר הוא קוד קצר שאפשר לשלוף מהפאנל
+   * או פשוט לחפש בבניין; המרצה הוא מה שבוחרים לפיו, ולכן הוא שווה יותר
+   * מהשניים האחרים גם כשהמקום נגמר.
+   */
+  var DROP_ORDER = ["ev-drop-1", "ev-drop-2", "ev-drop-3"];
+
+  function setDropped(block, cls, dropped) {
+    var parts = block.querySelectorAll("." + cls);
+    for (var j = 0; j < parts.length; j++) parts[j].hidden = dropped;
+  }
+
+  /**
+   * מוריד שורות מבלוק שאין בו מקום — ורק אחרי שהפריסה כבר קרתה, כי רק
+   * אז ידוע אם הטקסט באמת נכנס. שם ארוך בעמודה בחצי רוחב נשבר לשתי
+   * שורות, ואי אפשר לדעת זאת מראש מתוך משך השיעור בלבד.
+   *
+   * הסדר קבוע: קודם החדר, אחר כך השעה. שם הקורס וסוג השיעור נשארים תמיד
+   * — בלעדיהם הבלוק אינו מזהה את עצמו, וזו כל מטרתו.
+   */
+  function fitBlocks(root) {
+    if (!root) return;
+    var blocks = root.querySelectorAll(".ev");
+    for (var i = 0; i < blocks.length; i++) {
+      var block = blocks[i];
+      // איפוס לפני מדידה. אחרת שורה שירדה בחלון צר לא הייתה חוזרת
+      // כשהוא מתרחב, והמצב הקודם היה נמדד כאילו הוא הטבעי.
+      for (var r = 0; r < DROP_ORDER.length; r++) {
+        setDropped(block, DROP_ORDER[r], false);
+      }
+      for (var t = 0; t < DROP_ORDER.length; t++) {
+        if (block.scrollHeight <= block.clientHeight) break;
+        setDropped(block, DROP_ORDER[t], true);
+      }
+    }
+  }
+
+  //: ‏A4 לרוחב: הצד הקצר הוא 210 מ"מ, וזה גובה העמוד המודפס. ‏@page
+  //: מכריז בדיוק על הגודל הזה, ולכן זה לא ניחוש. נייר Letter גבוה מעט
+  //: יותר, כך שההנחה שמרנית.
+  var PRINT_PAGE_PX = (210 * 96) / 25.4;
+  var SLOT_H_PRINT = 17;
+  var SLOT_H_PRINT_MIN = 12;
+
+  /**
+   * מקטין את גובה המשבצת עד שהמערכת נכנסת לעמוד אחד.
+   *
+   * רשת שנשפכת לעמוד שני נשברת באמצע שעה, ושורת כותרות הימים נשארת
+   * מאחור — כלומר ההמשך מודפס בלי לומר איזו עמודה היא איזה יום. אין
+   * דרך ב-CSS לחזור על שורת כותרות ברשת grid: ‏thead עושה זאת בטבלה,
+   * ‏position: fixed אינו חוזר בעמודים נוספים ב-Chrome. לכן הפתרון אינו
+   * לנהל את השבירה אלא לא להגיע אליה.
+   *
+   * עד 12px בלבד. מתחת לזה הבלוקים מפסידים גם את השעה, ועמוד אחד שקשה
+   * לקרוא אינו שיפור על שני עמודים קריאים — ואז עדיף לוותר על ההקטנה
+   * מאשר לשלם בקריאות בלי לקבל את העמוד בתמורה.
+   */
+  function fitGridToPage() {
+    var root = document.documentElement;
+    root.style.removeProperty("--slot-h");
+    if (!ui.grid || !ui.grid.firstChild) return;
+    if (!window.matchMedia || !window.matchMedia("print").matches) return;
+    for (var h = SLOT_H_PRINT; h >= SLOT_H_PRINT_MIN; h--) {
+      root.style.setProperty("--slot-h", h + "px");
+      if (document.body.scrollHeight <= PRINT_PAGE_PX) return;
+    }
+    // לא נכנס גם במינימום — מחזירים את הגובה המלא ונותנים לו להתחלק.
+    root.style.removeProperty("--slot-h");
+  }
+
+  /**
+   * מודד מחדש את שתי הרשתות.
+   *
+   * הרוחב קובע כמה שורות נכנסות בבלוק, וההדפסה מקטינה את גובה המשבצת
+   * מ-22px ל-17px — שתי הסיבות שבגללן שורה שנכנסת על המסך אינה נכנסת על
+   * הנייר. בלי המדידה החוזרת החישוב היה קופא ברוחב שבו נטען הדף.
+   */
+  function refitBlocks() {
+    // סדר: קודם גובה המשבצת (משנה את גובה כל בלוק), ורק אז מה נכנס בו.
+    fitGridToPage();
+    fitBlocks(ui.grid);
+    fitBlocks(ui.overlayGrid);
   }
 
   /* --- מצב חמשת השלבים ------------------------------------------------ */
@@ -6834,6 +6939,21 @@
    * 11. הפעלה
    * ===================================================================== */
 
+  /** מדידה חוזרת בשינוי רוחב ובמעבר להדפסה. */
+  function wireRefit() {
+    var timer = 0;
+    window.addEventListener("resize", function () {
+      clearTimeout(timer);
+      timer = setTimeout(refitBlocks, 120);
+    });
+    // ‏matchMedia ולא beforeprint: כשהאירוע הזה נורה גיליון ההדפסה כבר
+    // חל, ולכן המדידה היא של הנייר. ב-beforeprint היא עדיין של המסך.
+    if (!window.matchMedia) return;
+    var mq = window.matchMedia("print");
+    if (mq.addEventListener) mq.addEventListener("change", refitBlocks);
+    else if (mq.addListener) mq.addListener(refitBlocks);
+  }
+
   function boot() {
     runtime.restored = loadState();
     // לאיזה סמסטר הבחירה השמורה שייכת. האימוץ החד-פעמי ב-
@@ -6843,6 +6963,7 @@
     runtime.adoptSemester = runtime.restored ? txt(state.semester) : "";
     cacheElements();
     wireEvents();
+    wireRefit();
     refreshColorMap();
     render();
     fetchBootstrap();

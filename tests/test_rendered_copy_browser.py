@@ -577,24 +577,271 @@ def test_room_codes_are_explicitly_ltr_everywhere(fresh):
     assert table and set(table) == {"ltr"}, f"בטבלה: {set(table)}"
 
 
-def test_block_shows_room_and_keeps_font_readable(fresh):
-    """החדר חזר לבלוק, והגופן לא ירד מ-13px."""
+def test_block_shows_name_kind_time_and_room(fresh):
+    """הבלוק נושא שם, סוג, שעה וחדר — והגופן אינו יורד מ-13px.
+
+    סוג השיעור הוא מהדברים הראשונים שמחפשים על הרשת, והצבע מציין את
+    הקורס ולא את הסוג — בלי המילה אי אפשר להבחין בין הרצאה לתרגול.
+    """
     _with_schedule(fresh)
     info = fresh.evaluate(
         """() => {
       const evs = [].slice.call(document.querySelectorAll('#schedule-grid .ev'));
+      const vis = e => !!e && !e.hidden;
       return {
         total: evs.length,
-        withRoom: evs.filter(e => e.querySelector('.ev-room')).length,
+        withName: evs.filter(e => (e.querySelector('b') || {}).textContent).length,
+        withKind: evs.filter(e => vis(e.querySelector('.ev-kind'))).length,
+        withRoom: evs.filter(e => vis(e.querySelector('.ev-room'))).length,
         fonts: Array.from(new Set(evs.map(e => getComputedStyle(e).fontSize))),
-        kindOnBlock: evs.filter(e => e.querySelector('.ev-kind')).length,
       };
     }"""
     )
+    assert info["total"] > 0
+    # שם וסוג לעולם אינם יורדים.
+    assert info["withName"] == info["total"], "בלוק בלי שם קורס"
+    assert info["withKind"] == info["total"], "בלוק בלי סוג שיעור"
     assert info["withRoom"] > 0, "אף בלוק לא מציג חדר"
     for f in info["fonts"]:
         assert float(f.replace("px", "")) >= 13, f"גופן קטן מ-13px בבלוק: {f}"
-    assert info["kindOnBlock"] == 0, "סוג השיעור נשאר בבלוק במקום בפאנל"
+
+
+def test_block_shows_the_full_lecturer_name(fresh):
+    """שם המרצה על הבלוק הוא השם המלא, אות באות — לא מקוצר.
+
+    ‏"ד״ר סוקולובסקי" לבדו מוחק את מה שמבדיל בין שני מרצים באותו שם
+    משפחה, וזה בדיוק מה שבוחרים לפיו. שם ארוך נשבר לשתי שורות.
+    """
+    _with_schedule(fresh)
+    rows = fresh.evaluate(LINES, "#schedule-grid")
+    shown = [r["lectText"].strip() for r in rows if r["lect"]]
+    assert shown, "אף בלוק לא מציג מרצה"
+    # מקור האמת: שם המרצה יושב על ה-pick, לא על המפגש הבודד.
+    full = fresh.evaluate(
+        """() => ((window.slotwise.getRuntime().solve.schedules || [])[0] || {picks: []})
+             .picks.map(p => p.lecturer).filter(Boolean)"""
+    )
+    assert full, "אין שמות מרצים בנתונים"
+    for name in shown:
+        assert name in full, f"שם על הבלוק שאינו זהה למקור: {name!r}"
+
+
+#: מודד את **השורות** בתוך הבלוק, לא את הבלוק.
+#:
+#: זו לא קפדנות יתר. ‏.ev הוא ``display:flex; flex-direction:column``, ולכן
+#: בלוק נמוך מדי דוחס את ילדיו במקום לגלוש: ‏scrollHeight שלו נשאר שווה
+#: ל-clientHeight גם כשהשם והסוג נחתכים בפנים. בדיקה שמדדה את המכל עברה
+#: תמיד — ולא בגלל שהכול נכנס, אלא בגלל שאין דבר שהיא יכולה לראות.
+LINES = """(sel) => {
+  const vis = e => !!e && !e.hidden && getComputedStyle(e).display !== 'none';
+  return [].slice.call(document.querySelectorAll(sel + ' .ev')).map(e => {
+    const parts = {
+      name: e.querySelector('b'), kind: e.querySelector('.ev-kind'),
+      time: e.querySelector('.cell-time'), room: e.querySelector('.ev-room'),
+      lect: e.querySelector('.ev-lect'),
+    };
+    const cut = [];
+    Object.keys(parts).forEach(k => {
+      const el = parts[k];
+      if (!vis(el)) return;
+      const dh = el.scrollHeight - el.clientHeight;
+      const dw = el.scrollWidth - el.clientWidth;
+      if (dh > 1 || dw > 1) cut.push(k + (dh > 1 ? ' גובה+' + dh : '')
+                                       + (dw > 1 ? ' רוחב+' + dw : ''));
+    });
+    // ‏"קיים אבל מוסתר" (ירד) שונה מ"לא קיים" (אין נתון). בלי ההבחנה
+    // הזאת בלוק בלי חדר או בלי מרצה נספר כהפרת סדר.
+    return {
+      name: parts.name ? parts.name.textContent : '',
+      kind: vis(parts.kind), time: vis(parts.time), room: vis(parts.room),
+      lect: vis(parts.lect),
+      hasRoom: !!parts.room, hasTime: !!parts.time, hasLect: !!parts.lect,
+      lectText: parts.lect ? parts.lect.textContent : '',
+      soft: e.classList.contains('is-soft'),
+      dashed: getComputedStyle(e).outlineStyle === 'dashed',
+      cut: cut,
+    };
+  });
+}"""
+
+
+def _overlap_on(page):
+    """מכבה חובת נוכחות ברכיב אחד, ועובר ללשונית שבה יש חפיפה מכוונת.
+
+    בלי זה בדיקות החפיפה ריקות מתוכן: המערכת שנבנית בברירת המחדל אינה
+    מכילה חפיפה כלל, וכל תנאי ``if softCount`` היה עובר בלי לבדוק דבר.
+    שני השלבים הם פעולות ממשק אמיתיות — מתג ולחיצה על לשונית — ולא מצב
+    מוזרע.
+
+    למה צריך גם לעבור לשונית: מרגע שהפסקת הצהריים אינה נספרת, מערכת בלי
+    חפיפה כבר אינה מפסידה 2 נקודות על החור שסביב הצהריים, ולכן היא
+    מנצחת את זו שקונה את החור הזה בוויתור על נוכחות. החפיפה ירדה
+    למקום שלישי — קיימת, ולא נבחרת ראשונה. זה בדיוק מה שהשינוי נועד
+    לעשות, ולכן הבדיקה מחפשת אותה ולא מניחה שהיא במקום הראשון.
+    """
+    page.uncheck('input[data-fk="att-61759-הרצאה"]', force=True)
+    page.wait_for_timeout(3000)
+    tabs = page.locator("#schedule-tabs .tab")
+    for i in range(tabs.count()):
+        if i:
+            tabs.nth(i).click()
+            page.wait_for_timeout(1200)
+        if page.locator("#schedule-grid .ev.is-soft").count():
+            return
+    raise AssertionError(
+        "אף אחת מהמערכות המוצגות אינה מכילה חפיפה מכוונת — "
+        "הבדיקה אינה בודקת דבר, ויש למצוא הגדרה שמייצרת אחת"
+    )
+
+
+def _assert_lines_intact(rows, where):
+    """שם וסוג קיימים בכל בלוק, שום שורה אינה נחתכת, והסדר נשמר.
+
+    סדר הירידה, מהמוותר ביותר: חדר, שעה, מרצה. שם הקורס וסוג השיעור
+    אינם יורדים לעולם. המרצה יורד אחרון — הוא מה שבוחרים לפיו.
+    """
+    assert rows, f"אין בלוקים ב{where}"
+    cut = [r["name"] + ": " + ", ".join(r["cut"]) for r in rows if r["cut"]]
+    assert not cut, f"שורות נחתכות ב{where}: " + " | ".join(cut)
+    assert all(r["name"] for r in rows), f"בלוק בלי שם קורס ב{where}"
+    assert all(r["kind"] for r in rows), f"בלוק בלי סוג שיעור ב{where}"
+    # השעה יורדת רק אחרי החדר, והמרצה רק אחרי השעה.
+    flipped = [r["name"] for r in rows
+               if r["hasTime"] and not r["time"] and r["hasRoom"] and r["room"]]
+    assert not flipped, f"השעה ירדה לפני החדר ב{where}: " + "; ".join(flipped)
+    flipped = [r["name"] for r in rows
+               if r["hasLect"] and not r["lect"] and r["hasTime"] and r["time"]]
+    assert not flipped, f"המרצה ירד לפני השעה ב{where}: " + "; ".join(flipped)
+
+
+def test_no_line_in_a_block_is_ever_cut(fresh):
+    """שום שורה בבלוק אינה נחתכת — לא לגובה ולא לרוחב.
+
+    זו הבדיקה שסולם הירידה קיים בשבילה: שורה שאין לה מקום יורדת כולה,
+    ואינה נקטעת באמצע. שעה חתוכה ל-"10:30–12:2" נראית שלמה, וחדר חתוך
+    ‏"F 506" הוא חדר קיים אחר — ולכן חיתוך כאן גרוע מהשמטה.
+    """
+    _with_schedule(fresh)
+    _assert_lines_intact(fresh.evaluate(LINES, "#schedule-grid"), "רוחב רגיל")
+
+
+def test_narrow_window_drops_room_before_time(fresh):
+    """בחלון צר יורד קודם החדר, אחר כך השעה — והשם והסוג נשארים."""
+    _with_schedule(fresh)
+    fresh.set_viewport_size({"width": 760, "height": 900})
+    fresh.wait_for_timeout(1200)  # ‏refit רץ אחרי השהיה קצרה
+    _assert_lines_intact(fresh.evaluate(LINES, "#schedule-grid"), "חלון צר")
+
+
+def test_print_keeps_name_and_kind_on_every_block(fresh):
+    """בהדפסה משבצת נמוכה ב-5px, והשורות יורדות בהתאם — לא נחתכות.
+
+    ‏‎--slot-h יורד מ-22px ל-17px, ולכן בלוק שנכנס על המסך אינו נכנס על
+    הנייר. הבדיקה רצה אחרי המעבר למדיית הדפסה, כי זה בדיוק הרגע שבו
+    ‏fitBlocks נדרש למדוד מחדש.
+    """
+    _with_schedule(fresh)
+    fresh.emulate_media(media="print")
+    fresh.wait_for_timeout(800)
+    _assert_lines_intact(fresh.evaluate(LINES, "#schedule-grid"), "הדפסה")
+    hidden = fresh.evaluate(
+        """() => ['#tech-details', '#steps-progress', '#build-row', '#compare']
+             .filter(s => { const e = document.querySelector(s);
+                            return e && getComputedStyle(e).display !== 'none'; })"""
+    )
+    assert hidden == [], "אמצעי מסך שדלפו אל הנייר: " + ", ".join(hidden)
+
+
+def test_print_shows_only_the_grid_and_one_header_line(fresh):
+    """על הנייר: הרשת, ושורת כותרת אחת. שום דבר אחר.
+
+    הרשימה שקבעה מה מוסתר בהדפסה הייתה רשימת איסור, ולכן כל אלמנט חדש
+    דלף אליה בשקט — שורת ההתקדמות וכפתור הבנייה היו כל תוכנו של העמוד
+    המודפס הראשון. הבדיקה סורקת מה **כן** מצויר, ולכן היא נכשלת על כל
+    תוספת חדשה, ולא רק על אלה שנזכרנו לרשום.
+    """
+    _with_schedule(fresh)
+    fresh.emulate_media(media="print")
+    fresh.wait_for_timeout(900)
+    painted = fresh.evaluate(
+        """() => {
+      const out = [];
+      document.querySelectorAll('body *').forEach(e => {
+        const r = e.getBoundingClientRect();
+        if (r.height < 1 || r.width < 1) return;
+        // מה שבתוך הרשת הוא הרשת עצמה, לא תוספת עליה
+        if (e.closest('#grid-scroll') && e.id !== 'grid-scroll') return;
+        if (e.id) return out.push('#' + e.id);
+        out.push(e.tagName.toLowerCase() + '.' + (e.className.toString().split(' ')[0] || ''));
+      });
+      return Array.from(new Set(out));
+    }"""
+    )
+    allowed = {"#steps", "#step-schedule", "div.step-body", "#grid-scroll", "#print-head"}
+    extra = [x for x in painted if x not in allowed]
+    assert not extra, "דלף אל הדף המודפס: " + ", ".join(extra)
+    assert "#grid-scroll" in painted, "הרשת עצמה אינה על הדף"
+    assert "#print-head" in painted, "שורת הכותרת אינה על הדף"
+
+    head = fresh.evaluate("document.getElementById('print-head').textContent")
+    assert "מערכת" in head and "." in head, f"שורת כותרת בלי שם ותאריך: {head!r}"
+
+
+def test_print_fits_one_page(fresh):
+    """המערכת נכנסת לעמוד אחד.
+
+    רשת שנשפכת לעמוד שני נשברת באמצע שעה, ושורת כותרות הימים נשארת
+    מאחור — ואי אפשר לחזור עליה: ‏thead עושה זאת בטבלה, והרשת היא
+    ‏grid. לכן הגובה מוקטן עד שהיא נכנסת, במקום לנהל את השבירה.
+    """
+    _with_schedule(fresh)
+    fresh.emulate_media(media="print")
+    fresh.wait_for_timeout(900)
+    page_px = round(210 * 96 / 25.4)  # ‏A4 לרוחב: 210 מ"מ גובה
+    body = fresh.evaluate("Math.round(document.body.scrollHeight)")
+    assert body <= page_px, f"הדף המודפס גולש: {body}px מול עמוד {page_px}px"
+    _assert_lines_intact(fresh.evaluate(LINES, "#schedule-grid"), "הדפסה בעמוד אחד")
+
+
+def test_deliberate_overlap_stays_two_blocks(fresh):
+    """חפיפה מכוונת מוצגת כשני בלוקים, לא כאחד ממוזג.
+
+    מיזוג הסתיר **אילו** שני קורסים מתנגשים, וזו השאלה שעומדת להכרעה.
+    """
+    _with_schedule(fresh)
+    _overlap_on(fresh)
+    rows = fresh.evaluate(LINES, "#schedule-grid")
+    soft = [r for r in rows if r["soft"]]
+    merged = fresh.evaluate(
+        "document.querySelectorAll('#schedule-grid .ev.is-cluster').length"
+    )
+    assert merged == 0, "עדיין קיים בלוק ממוזג"
+    assert len(soft) >= 2, "חפיפה אמורה להיות לפחות שני בלוקים"
+    assert all(r["dashed"] for r in soft), "בלוק חופף בלי מסגרת מקווקוות"
+    assert len({r["name"] for r in soft}) >= 2, "שני הצדדים אמורים לשאת שמות שונים"
+
+
+def test_overlap_halves_stay_readable_at_half_width(fresh):
+    """שני החצאים מציגים שם, סוג ומרצה — בלי חיתוך.
+
+    זו הסיבה שהחצאים נפסלו בפעם הקודמת: הטקסט נקטע. הוא נקטע מפני
+    שהבלוק נשא גם מרצה וגם מספר קבוצה; מספר הקבוצה עבר לפאנל.
+
+    החדר **כן** רשאי לרדת כאן — הוא הראשון בסולם, והוא קוד קצר שאפשר
+    לשלוף מהפאנל. מה שאסור לרדת הוא השם, הסוג והמרצה: לפי המרצה בוחרים.
+    """
+    _with_schedule(fresh)
+    _overlap_on(fresh)
+    fresh.set_viewport_size({"width": 900, "height": 900})
+    fresh.wait_for_timeout(1200)
+    rows = fresh.evaluate(LINES, "#schedule-grid")
+    _assert_lines_intact(rows, "חצי רוחב")
+    soft = [r for r in rows if r["soft"]]
+    assert len(soft) >= 2
+    for r in soft:
+        assert r["kind"], f"חצי בלוק בלי סוג שיעור: {r['name']}"
+        if r["hasLect"]:
+            assert r["lect"], f"חצי בלוק ויתר על המרצה: {r['name']}"
 
 
 # ==========================================================================

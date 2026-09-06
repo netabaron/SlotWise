@@ -119,9 +119,53 @@ so a reader will reasonably ask why they are not in `strings.json`. They cannot
 be, until the server sends a stable id separate from the display label. Recorded
 so the question is answered once.
 
+
+### The lecturer field in the yedion sometimes holds a note, not a name
+**Where:** `data/db/sections.json` → `groups[].lecturer`, now rendered in full on
+every grid block and on the printed sheet.
+**Owner:** unassigned — a parser question, not a display one.
+**What:** 6 of 291 distinct lecturer values are not names: `טרם נקבע`,
+`מיועד לחוזרים`, `הקורס מלא`, `שפת הוראה של הקורס : עברית`, plus two untitled
+names. The block now shows the value verbatim, so
+`שפת הוראה של הקורס : עברית` wraps across two lines of a timetable block as
+though it were a person.
+**Got slightly worse, deliberately:** an earlier version abbreviated to title +
+surname, which happened to cap junk at two words. Showing the full name is the
+right call for the 285 real names — abbreviating deletes exactly what separates
+two lecturers with the same surname — and it removes that accidental cap for the
+6 bad ones. The fix belongs in `src/parser.py`, which should not be putting a
+group note in the lecturer field at all, rather than in a display-layer guess
+about which strings are people.
+
 ---
 
 ## Closed
+
+### The printed sheet — closed
+The print stylesheet now describes what **is** printed instead of listing what
+is not: `body > *:not(.steps)`, then `.steps > *:not(#step-schedule)`, then
+`#step-schedule > .step-body > *:not(#grid-scroll):not(#print-head)`. A denylist
+had leaked the progress row and the build button onto printed page 1 twice; a
+list of what survives cannot forget a new element, and a browser test asserts the
+painted set rather than a handful of named ids.
+
+The sheet is the grid plus one header line — schedule name and date. Everything
+else (score, tabs, facts tiles, penalty breakdown, course chips, legend, overlap
+warning) is decision support; once the decision is made, you print the schedule,
+not the reasoning.
+
+One page, not two. Repeating the day headers across a page break was the original
+ask and it has no CSS answer: `<thead>` repeats in a table, the timetable is a
+CSS grid, and `position: fixed` is not repainted on later pages in Chrome. So the
+break is avoided rather than managed — `fitGridToPage()` steps `--slot-h` down
+from 17px until the body fits 210mm, flooring at 12px. Measured on the semester-5
+default: 13px, one page, and 2 of 13 blocks give up their room and time line while
+every block keeps its name and kind. Below 12px it stops shrinking and lets the
+sheet paginate, because a single page too small to read is not an improvement on
+two readable ones. `@page` margin is 0 with the margin moved to body padding —
+that is also what suppresses the browser's own URL/date footer, which no CSS can
+switch off directly.
+
 
 ### Duration formatting in the score panel — closed in Phase 2
 Every duration now goes through `fmtDuration()`, which renders `3:00 שעות` —

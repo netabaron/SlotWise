@@ -233,15 +233,49 @@ class Selection:
                     pairs.append((a, b))
         return pairs
 
-    def gap_minutes(self) -> int:
-        """סך 'החורים' — דקות פנויות בין מפגשים רצופים באותו יום בלבד."""
-        total = 0
+    def gap_intervals(self) -> list[tuple[int, int]]:
+        """כל 'חור' במערכת, כטווח (התחלה, סוף), באותו יום בלבד.
+
+        ההגדרה היחידה של "חור". שתי הספירות שמתחתיה נגזרות ממנה, כדי שלא
+        ייווצר מצב שבו "כמה זמן המתנה יש" ו"על כמה ממנו נקנס" עונים על
+        שאלות שנספרו בשתי לולאות שונות.
+        """
+        out: list[tuple[int, int]] = []
         for meetings in self.meetings_by_day().values():
             cursor = meetings[0].end
             for m in meetings[1:]:
                 if m.start > cursor:
-                    total += m.start - cursor
+                    out.append((cursor, m.start))
                 cursor = max(cursor, m.end)
+        return out
+
+    def gap_minutes(self) -> int:
+        """סך 'החורים' — דקות פנויות בין מפגשים רצופים באותו יום בלבד.
+
+        זו **מדידה**, והיא נשארת כפי שהיא: זה המספר שמוצג כ"זמן המתנה",
+        נשלח ב-API ומודפס בסיכום. מה שנספר לחובה בניקוד הוא עניין נפרד —
+        ראי ``billable_gap_minutes``.
+        """
+        return sum(end - start for start, end in self.gap_intervals())
+
+    def billable_gap_minutes(self, window: tuple[int, int] | None = None) -> int:
+        """דקות ההמתנה שנספרות לחובה, בלי הפסקה קבועה שנופלת בתוכן.
+
+        ‏``window`` הוא חלון הצהריים של המוסד — חצי שעה שאי אפשר לקבוע בה
+        שיעור. המתנה בתוכה אינה בחירה של אף אחד ואינה מבדילה בין מערכת
+        למערכת, ולכן קנס עליה מעניש כל מי שיש לו שיעור משני צדדיה.
+
+        הזיכוי ניתן על **החפיפה של החור עצמו** עם החלון, ולא על עצם קיומו
+        של החלון. שיעור שרץ דרכו — 11:30–13:50 — אינו יוצר חור, ולכן אינו
+        מזוכה בדבר: אין לו הפסקת צהריים, ואסור שהניקוד יתנהג כאילו יש.
+        """
+        if not window:
+            return self.gap_minutes()
+        low, high = window
+        total = 0
+        for start, end in self.gap_intervals():
+            lunch = max(0, min(end, high) - max(start, low))
+            total += (end - start) - lunch
         return total
 
     def span_minutes(self) -> int:
