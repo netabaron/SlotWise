@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import html as _htmlmod
 import os
+import re as _re
 import zlib
 from datetime import datetime
+from pathlib import Path as _Path
 
 from models import (
     DAY_LETTERS_HE,
@@ -69,23 +71,53 @@ BREAKDOWN_LABELS_HE: dict[str, str] = {
 }
 
 # --------------------------------------------------------------------------
-# פלטת הצבעים — 10 גוונים פסטליים, אחד לכל קורס
+# פלטת הצבעים — 10 גוונים, אחד לכל קורס
 # --------------------------------------------------------------------------
 # לכל גוון: (רקע, מסגרת, טקסט) במצב בהיר, ואותו דבר במצב כהה.
-# הזוגות נבחרו כך שיחס הניגודיות של הטקסט מול הרקע גבוה מ-7:1 (AAA)
-# בשני המצבים, כי קוראים מזה שעות.
-PALETTE: tuple[dict[str, tuple[str, str, str]], ...] = (
-    {"light": ("#dbeafe", "#93c5fd", "#152c56"), "dark": ("#1d3557", "#4b7bb5", "#dbeafe")},
-    {"light": ("#dcfce7", "#86efac", "#0f3d22"), "dark": ("#17402a", "#3f8a5c", "#dcfce7")},
-    {"light": ("#fef3c7", "#fcd34d", "#5c2c06"), "dark": ("#453413", "#8f7124", "#fef3c7")},
-    {"light": ("#ffe4e6", "#fda4af", "#6b0f28"), "dark": ("#4a1f2a", "#94505f", "#ffe4e6")},
-    {"light": ("#ede9fe", "#c4b5fd", "#3b1a75"), "dark": ("#2e2557", "#6455a6", "#ede9fe")},
-    {"light": ("#cffafe", "#67e8f9", "#0d4453"), "dark": ("#123e4a", "#2f8296", "#cffafe")},
-    {"light": ("#ecfccb", "#bef264", "#2b4310"), "dark": ("#2b3d16", "#61812c", "#ecfccb")},
-    {"light": ("#ffedd5", "#fdba74", "#6a250d"), "dark": ("#472a14", "#8e5a2b", "#ffedd5")},
-    {"light": ("#fae8ff", "#e879f9", "#5c1462"), "dark": ("#43164a", "#8f4499", "#fae8ff")},
-    {"light": ("#ccfbf1", "#5eead4", "#0d423e"), "dark": ("#123f3b", "#2f7f77", "#ccfbf1")},
-)
+#
+# ‏הערכים **אינם** נכתבים כאן. הם נקראים מ-‎src/web/static/style.css‎, שהוא
+# מקור האמת היחיד של הפלטה. עד 2026-09-08 ישבו כאן עשר שורות זהות לאלה
+# שבגיליון הסגנון, תחת שמות אחרים (‎--cN-bg‎ מול ‎--course-N‎) — כך ש-
+# ‏find-and-replace על ‎--course-‎ פסח על הקובץ הזה לגמרי, והייצוא העצמאי
+# היה ממשיך לצאת בפלטה הישנה בלי שאיש ישים לב.
+#
+# ‏הקריאה מתבצעת פעם אחת, בזמן הייבוא: ‎render.py‎ משרת את ה-CLI, שהוא
+# תהליך קצר. אם הגיליון חסר או שהפלטה בו אינה שלמה — נכשלים כאן ועכשיו,
+# ולא מייצרים דף בצבעים חלקיים.
+_STYLE_CSS = _Path(__file__).resolve().parent / "web" / "static" / "style.css"
+
+
+def _load_palette(
+    path: "_Path" = _STYLE_CSS,
+) -> tuple[dict[str, tuple[str, str, str]], ...]:
+    """קורא את עשרת שלישיות הצבע מגיליון הסגנון של האפליקציה."""
+    try:
+        css = path.read_text(encoding="utf-8")
+    except OSError as exc:  # אין גיליון — אין פלטה. לא ממציאים ברירת מחדל.
+        raise RuntimeError(f"לא נמצא גיליון הסגנון לקריאת הפלטה: {path}") from exc
+
+    def grab(name: str) -> str:
+        # ‏"--course-3:" לעולם אינו תת-מחרוזת של "--dark-course-3:" (שם יש
+        # מקף בודד לפני course), ולכן אין כאן דו-משמעות.
+        match = _re.search(rf"(?<![\w-]){_re.escape(name)}\s*:\s*(#[0-9a-fA-F]{{6}})\b", css)
+        if not match:
+            raise RuntimeError(f"חסר טוקן צבע בגיליון הסגנון: {name}")
+        return match.group(1).lower()
+
+    entries = []
+    for i in range(10):
+        entries.append(
+            {
+                "light": (grab(f"--course-{i}"), grab(f"--course-{i}-bd"),
+                          grab(f"--course-{i}-fg")),
+                "dark": (grab(f"--dark-course-{i}"), grab(f"--dark-course-{i}-bd"),
+                         grab(f"--dark-course-{i}-fg")),
+            }
+        )
+    return tuple(entries)
+
+
+PALETTE: tuple[dict[str, tuple[str, str, str]], ...] = _load_palette()
 
 
 # ==========================================================================

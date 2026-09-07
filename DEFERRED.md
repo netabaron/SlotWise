@@ -73,15 +73,42 @@ as a decision aid. Phase 3 leads with the differentiating label and demotes the
 number whenever the spread across the shown set is 5 points or less. The number
 is still there, and still relative — see the entry above.
 
-### Colour-blind distinguishability of the ten course colours
+### Colour-blind distinguishability of the ten course colours — **measured 2026-09-08, and it is worse than this entry used to say**
 **Where:** `--course-0..9` in `src/web/static/style.css`.
-**Owner:** Phase 7 (accessibility).
-**Why not now:** Phase 4 removed the *reliance* on colour — every block states its
-type in words (הרצאה / תרגול / …) and the overlap marker has a legend entry — which
-is what the brief asked for here. Whether the ten hues are separable under
-deuteranopia or protanopia is a palette question, and the palette is contrast-tuned
-for both themes already; re-tuning it belongs with the rest of the accessibility
-audit rather than being done twice.
+**Owner:** Phase 7 (accessibility) — and now Phase 10, because a new ramp is the
+cheapest time to fix it.
+**What this entry used to say:** that separability "is a palette question" to be
+looked at later. That was true but it left the impression the current ramp was
+merely untested. It was tested on 2026-09-08 and it fails badly.
+**Measured** — dichromat simulation over the ten backgrounds, worst pair by ΔE:
+
+| theme | worst pair | ΔE deuteranopia | ΔE protanopia |
+|---|---|---|---|
+| light | course-4 vs course-8 | 1.4 | **0.4** |
+| light | course-5 vs course-8 | **0.6** | 5.3 |
+| light | course-4 vs course-5 | **0.9** | 5.5 |
+| dark | course-2 vs course-6 | 4.5 | **1.3** |
+| dark | course-6 vs course-7 | **1.9** | 6.2 |
+
+Six pairs collapse in each theme. A ΔE under about 2 is not "hard to tell apart",
+it is the same colour. For a red-green colour-blind student roughly a third of the
+pairwise comparisons carry no information at all.
+**What Phase 4's mitigation does and does not cover:** every block states its
+*kind* in words, so הרצאה vs תרגול is safe. **Which course a block belongs to is
+still signalled by fill colour alone** — the block shows the course name, so a
+single block is readable, but scanning the grid for "all my algorithms classes",
+which is what the colour is for, is not.
+**Why it cannot be fixed one hue at a time:** verified, not assumed. Dichromats
+have essentially only lightness left, so moving one fill to separate it from its
+neighbour re-collides it with another. Every single-hue repair tested during the
+Phase 10 direction work *lowered* the worst-pair floor. The ramp is a joint
+optimisation: no course colour is ever changed alone, and every change re-runs the
+full simulation.
+**Where it stands:** all three Phase 10 candidate ramps raise the floor
+substantially (worst pair ΔE 4.5–6.9 against today's 0.4), which is a 5–15×
+improvement but still not full separation — ten categories cannot be made
+unambiguous for a dichromat by fill alone. That is why the 1px per-course border
+is load-bearing in every direction.
 
 ### Displayed room text no longer equals the stored room text
 **Where:** `formatRoom()` / `roomOf()` vs `rawRoomOf()` in `src/web/static/app.js`.
@@ -262,6 +289,43 @@ about which strings are people.
 ---
 
 ## Closed
+
+### The palette lived in four places — closed 2026-09-08
+Not three, as first reported. `:root` (light), two hand-duplicated dark blocks,
+`@media print` re-declaring its own, and `src/render.py` holding a second copy of
+the ten course triples under **different names** (`--cN-bg`, not `--course-N`) —
+so a find-and-replace on `--course-` missed the standalone export entirely.
+
+**Now:** every colour is written once. `--dark-*` and `--print-*` hold the values
+in `:root`; the two dark blocks and the print block contain only `var()` mappings
+and no hex at all. `render.py` parses the ramp out of `style.css` at import and
+raises if a token is missing, rather than carrying its own copy.
+
+**The structural move that did most of the work:** both dark blocks are now
+wrapped in `@media screen`. Dark is a property of a screen, not of paper, so the
+dark palette can no longer reach the print sheet by any path — which means the
+print block does not need to override the ten course colours at all.
+
+**It was hiding a real bug, shipped.** `:root[data-theme="dark"]` has specificity
+(0,2,0); the print block's `:root` has (0,1,0). The print block therefore lost.
+Printing in dark mode kept `--ink: #e6eaf1` while `body` was forced to white —
+**near-white text on white paper, 1.16:1.** It applied to an explicit dark choice
+*and* to "system" on a dark OS, so the only users who printed correctly were those
+on a light theme. For a schedule app used at night during registration week, that
+is most of the wrong half. Caught by specificity arithmetic, reproduced in a
+browser, fixed by the `@media screen` wrapping.
+
+**Guarded by `tests/test_theme_tokens.py`** (13 tests): the two dark blocks are
+compared declaration-by-declaration, both are asserted to contain no hex, every
+themed token is asserted to be mapped in both, each source token is asserted to be
+defined exactly once, `render.py`'s ramp is asserted equal to the stylesheet's, and
+printing is asserted black-on-white in all four theme states. Both guards were
+mutation-tested — re-forking one hex and removing the `@media screen` wrapper each
+produced a failure.
+
+**Verified behaviour-preserving:** every resolved custom property and the computed
+styles of fifteen painted elements were snapshotted in five modes before and after.
+Zero differences, other than the print-in-dark fix, which is the point.
 
 ### The printed sheet — closed
 The print stylesheet now describes what **is** printed instead of listing what

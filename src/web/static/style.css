@@ -74,95 +74,169 @@
   --course-7: #ffedd5;  --course-7-bd: #fdba74;  --course-7-fg: #6a250d;
   --course-8: #fae8ff;  --course-8-bd: #e879f9;  --course-8-fg: #5c1462;
   --course-9: #ccfbf1;  --course-9-bd: #5eead4;  --course-9-fg: #0d423e;
+
+  /* ======================================================================
+     ‏מקור הפלטה הכהה. הערכים חיים **כאן בלבד**, ושני גושי הכהה בפרק 2
+     רק ממפים אליהם. לפני האיחוד כל צבע כהה הופיע פעמיים, ו"לשנות
+     בשניהם או בכלל לא" היה הסכם שבעל פה שאין מי שיאכוף. עכשיו שינוי
+     צבע הוא עריכה של שורה אחת, ואי אפשר לשנות עותק אחד ולפספס את השני.
+     The dark palette is defined once, here. The two dark blocks in §2
+     only map to it, so no hex appears twice.
+     ====================================================================== */
+  --dark-bg: #11151b;
+  --dark-panel: #1a2028;
+  --dark-panel-2: #20272f;
+  --dark-chip: #222a34;
+  --dark-ink: #e6eaf1;
+  --dark-muted: #a8b3c2;
+  --dark-line: #2a323d;
+  --dark-line-strong: #3d4855;
+
+  --dark-accent: #93c0f6;
+  --dark-accent-ink: #0f1620;
+  --dark-accent-soft: #1e2c40;
+  --dark-focus: #93c0f6;
+
+  --dark-info-bg: #17263b;  --dark-info-line: #3d5f8e;  --dark-info-ink: #bcd6f7;
+  --dark-ok-bg:   #12331f;  --dark-ok-line:   #3d7a55;  --dark-ok-ink:   #9de8bb;
+  --dark-warn-bg: #3a2b0c;  --dark-warn-line: #8a6a21;  --dark-warn-ink: #ffd894;
+  --dark-err-bg:  #3d1219;  --dark-err-line:  #8a3a45;  --dark-err-ink:  #ffb3bc;
+
+  --dark-pin-bg: #12331f;
+  --dark-pin-line: #4fae7c;
+  --dark-tie-line: #a48ce0;
+  --dark-dead-line: #d4707c;
+
+  --dark-shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 8px 24px rgba(0, 0, 0, .38);
+  --dark-shadow-sm: 0 1px 2px rgba(0, 0, 0, .5);
+
+  --dark-course-0: #1d3557;  --dark-course-0-bd: #4b7bb5;  --dark-course-0-fg: #dbeafe;
+  --dark-course-1: #17402a;  --dark-course-1-bd: #3f8a5c;  --dark-course-1-fg: #dcfce7;
+  --dark-course-2: #453413;  --dark-course-2-bd: #8f7124;  --dark-course-2-fg: #fef3c7;
+  --dark-course-3: #4a1f2a;  --dark-course-3-bd: #94505f;  --dark-course-3-fg: #ffe4e6;
+  --dark-course-4: #2e2557;  --dark-course-4-bd: #6455a6;  --dark-course-4-fg: #ede9fe;
+  --dark-course-5: #123e4a;  --dark-course-5-bd: #2f8296;  --dark-course-5-fg: #cffafe;
+  --dark-course-6: #2b3d16;  --dark-course-6-bd: #61812c;  --dark-course-6-fg: #ecfccb;
+  --dark-course-7: #472a14;  --dark-course-7-bd: #8e5a2b;  --dark-course-7-fg: #ffedd5;
+  --dark-course-8: #43164a;  --dark-course-8-bd: #8f4499;  --dark-course-8-fg: #fae8ff;
+  --dark-course-9: #123f3b;  --dark-course-9-bd: #2f7f77;  --dark-course-9-fg: #ccfbf1;
+
+  /* ======================================================================
+     ‏מקור הפלטה של הנייר. הדף המודפס אינו "בהיר" ואינו "כהה" — הוא לבן,
+     תמיד. הערכים כאן, והמיפוי בפרק 15.
+     ====================================================================== */
+  --print-bg: #ffffff;
+  --print-panel: #ffffff;
+  --print-panel-2: #ffffff;
+  --print-chip: #f1f3f6;
+  --print-ink: #000000;
+  --print-muted: #444444;
+  --print-line: #c9ced6;
+  --print-line-strong: #8b939e;
+  --print-accent: #14406f;
+  --print-accent-ink: #ffffff;
+  --print-accent-soft: #eef3fa;
 }
 
 /* ==========================================================================
-   2. מצב כהה — דריסת טוקנים בלבד, שום כלל חדש
+   2. מצב כהה — מיפוי בלבד. הערכים עצמם יושבים בפרק 1.
    ========================================================================== */
+/* ‏שני הגושים האלה חייבים להישאר זהים — ‎CSS‎ אינו יודע לצרף תנאי מדיה
+   ותנאי סלקטור לכלל אחד, ולכן הכפילות מכוונת. מה שהשתנה: הם כבר אינם
+   מחזיקים צבעים, רק הפניות אל ‎--dark-*‎. שכפול של רשימת הפניות אינו
+   יכול להיסדק בשקט — ‎tests/test_theme_tokens.py‎ מוודא שהשניים זהים.
+
+   ‏שניהם עטופים ב-‎screen‎ בכוונה. "כהה" הוא מצב של מסך, לא של נייר, ובלי
+   העטיפה הזאת ‎:root[data-theme="dark"]‎ בדרגה (0,2,0) גבר על ‎:root‎ של
+   גוש ההדפסה בדרגה (0,1,0) — והדף יצא עם ‎--ink: #e6eaf1‎ על נייר לבן,
+   יחס ניגודיות 1.16:1. מי שהדפיס במצב כהה הדפיס דף ריק למראה. */
+
 /* ‏א. "לפי המערכת": חל רק כשאין בחירה מפורשת בבהיר.
    בלי ‎:not([data-theme="light"])‎ הגוש הזה היה גובר על בחירת "בהיר"
-   של מי שמערכת ההפעלה שלו כהה — שתי הדרגות זהות (0,1,0), והמאוחר מנצח. */
-@media (prefers-color-scheme: dark) {
+   של מי שמערכת ההפעלה שלו כהה — שתי הדרגות זהות (0,2,0), והמאוחר מנצח. */
+@media screen and (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #11151b;
-    --panel: #1a2028;
-    --panel-2: #20272f;
-    --chip: #222a34;
-    --ink: #e6eaf1;
-    --muted: #a8b3c2;
-    --line: #2a323d;
-    --line-strong: #3d4855;
+    --bg: var(--dark-bg);
+    --panel: var(--dark-panel);
+    --panel-2: var(--dark-panel-2);
+    --chip: var(--dark-chip);
+    --ink: var(--dark-ink);
+    --muted: var(--dark-muted);
+    --line: var(--dark-line);
+    --line-strong: var(--dark-line-strong);
 
-    --accent: #93c0f6;
-    --accent-ink: #0f1620;
-    --accent-soft: #1e2c40;
-    --focus: #93c0f6;
+    --accent: var(--dark-accent);
+    --accent-ink: var(--dark-accent-ink);
+    --accent-soft: var(--dark-accent-soft);
+    --focus: var(--dark-focus);
 
-    --info-bg: #17263b;  --info-line: #3d5f8e;  --info-ink: #bcd6f7;
-    --ok-bg:   #12331f;  --ok-line:   #3d7a55;  --ok-ink:   #9de8bb;
-    --warn-bg: #3a2b0c;  --warn-line: #8a6a21;  --warn-ink: #ffd894;
-    --err-bg:  #3d1219;  --err-line:  #8a3a45;  --err-ink:  #ffb3bc;
+    --info-bg: var(--dark-info-bg);  --info-line: var(--dark-info-line);  --info-ink: var(--dark-info-ink);
+    --ok-bg: var(--dark-ok-bg);  --ok-line: var(--dark-ok-line);  --ok-ink: var(--dark-ok-ink);
+    --warn-bg: var(--dark-warn-bg);  --warn-line: var(--dark-warn-line);  --warn-ink: var(--dark-warn-ink);
+    --err-bg: var(--dark-err-bg);  --err-line: var(--dark-err-line);  --err-ink: var(--dark-err-ink);
 
-    --pin-bg: #12331f;
-    --pin-line: #4fae7c;
-    --tie-line: #a48ce0;
-    --dead-line: #d4707c;
+    --pin-bg: var(--dark-pin-bg);
+    --pin-line: var(--dark-pin-line);
+    --tie-line: var(--dark-tie-line);
+    --dead-line: var(--dark-dead-line);
 
-    --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 8px 24px rgba(0, 0, 0, .38);
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .5);
+    --shadow: var(--dark-shadow);
+    --shadow-sm: var(--dark-shadow-sm);
 
-    --course-0: #1d3557;  --course-0-bd: #4b7bb5;  --course-0-fg: #dbeafe;
-    --course-1: #17402a;  --course-1-bd: #3f8a5c;  --course-1-fg: #dcfce7;
-    --course-2: #453413;  --course-2-bd: #8f7124;  --course-2-fg: #fef3c7;
-    --course-3: #4a1f2a;  --course-3-bd: #94505f;  --course-3-fg: #ffe4e6;
-    --course-4: #2e2557;  --course-4-bd: #6455a6;  --course-4-fg: #ede9fe;
-    --course-5: #123e4a;  --course-5-bd: #2f8296;  --course-5-fg: #cffafe;
-    --course-6: #2b3d16;  --course-6-bd: #61812c;  --course-6-fg: #ecfccb;
-    --course-7: #472a14;  --course-7-bd: #8e5a2b;  --course-7-fg: #ffedd5;
-    --course-8: #43164a;  --course-8-bd: #8f4499;  --course-8-fg: #fae8ff;
-    --course-9: #123f3b;  --course-9-bd: #2f7f77;  --course-9-fg: #ccfbf1;
+    --course-0: var(--dark-course-0);  --course-0-bd: var(--dark-course-0-bd);  --course-0-fg: var(--dark-course-0-fg);
+    --course-1: var(--dark-course-1);  --course-1-bd: var(--dark-course-1-bd);  --course-1-fg: var(--dark-course-1-fg);
+    --course-2: var(--dark-course-2);  --course-2-bd: var(--dark-course-2-bd);  --course-2-fg: var(--dark-course-2-fg);
+    --course-3: var(--dark-course-3);  --course-3-bd: var(--dark-course-3-bd);  --course-3-fg: var(--dark-course-3-fg);
+    --course-4: var(--dark-course-4);  --course-4-bd: var(--dark-course-4-bd);  --course-4-fg: var(--dark-course-4-fg);
+    --course-5: var(--dark-course-5);  --course-5-bd: var(--dark-course-5-bd);  --course-5-fg: var(--dark-course-5-fg);
+    --course-6: var(--dark-course-6);  --course-6-bd: var(--dark-course-6-bd);  --course-6-fg: var(--dark-course-6-fg);
+    --course-7: var(--dark-course-7);  --course-7-bd: var(--dark-course-7-bd);  --course-7-fg: var(--dark-course-7-fg);
+    --course-8: var(--dark-course-8);  --course-8-bd: var(--dark-course-8-bd);  --course-8-fg: var(--dark-course-8-fg);
+    --course-9: var(--dark-course-9);  --course-9-bd: var(--dark-course-9-bd);  --course-9-fg: var(--dark-course-9-fg);
   }
 }
 
-/* ‏ב. בחירה מפורשת בכהה. עותק זהה לגוש שמעליו — ראו כלל 2 בראש הקובץ. */
-:root[data-theme="dark"] {
-  --bg: #11151b;
-  --panel: #1a2028;
-  --panel-2: #20272f;
-  --chip: #222a34;
-  --ink: #e6eaf1;
-  --muted: #a8b3c2;
-  --line: #2a323d;
-  --line-strong: #3d4855;
+/* ‏ב. בחירה מפורשת בכהה. רשימה זהה לגוש שמעליו — ראו ההערה בראש הפרק. */
+@media screen {
+  :root[data-theme="dark"] {
+    --bg: var(--dark-bg);
+    --panel: var(--dark-panel);
+    --panel-2: var(--dark-panel-2);
+    --chip: var(--dark-chip);
+    --ink: var(--dark-ink);
+    --muted: var(--dark-muted);
+    --line: var(--dark-line);
+    --line-strong: var(--dark-line-strong);
 
-  --accent: #93c0f6;
-  --accent-ink: #0f1620;
-  --accent-soft: #1e2c40;
-  --focus: #93c0f6;
+    --accent: var(--dark-accent);
+    --accent-ink: var(--dark-accent-ink);
+    --accent-soft: var(--dark-accent-soft);
+    --focus: var(--dark-focus);
 
-  --info-bg: #17263b;  --info-line: #3d5f8e;  --info-ink: #bcd6f7;
-  --ok-bg:   #12331f;  --ok-line:   #3d7a55;  --ok-ink:   #9de8bb;
-  --warn-bg: #3a2b0c;  --warn-line: #8a6a21;  --warn-ink: #ffd894;
-  --err-bg:  #3d1219;  --err-line:  #8a3a45;  --err-ink:  #ffb3bc;
+    --info-bg: var(--dark-info-bg);  --info-line: var(--dark-info-line);  --info-ink: var(--dark-info-ink);
+    --ok-bg: var(--dark-ok-bg);  --ok-line: var(--dark-ok-line);  --ok-ink: var(--dark-ok-ink);
+    --warn-bg: var(--dark-warn-bg);  --warn-line: var(--dark-warn-line);  --warn-ink: var(--dark-warn-ink);
+    --err-bg: var(--dark-err-bg);  --err-line: var(--dark-err-line);  --err-ink: var(--dark-err-ink);
 
-  --pin-bg: #12331f;
-  --pin-line: #4fae7c;
-  --tie-line: #a48ce0;
-  --dead-line: #d4707c;
+    --pin-bg: var(--dark-pin-bg);
+    --pin-line: var(--dark-pin-line);
+    --tie-line: var(--dark-tie-line);
+    --dead-line: var(--dark-dead-line);
 
-  --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 8px 24px rgba(0, 0, 0, .38);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .5);
+    --shadow: var(--dark-shadow);
+    --shadow-sm: var(--dark-shadow-sm);
 
-  --course-0: #1d3557;  --course-0-bd: #4b7bb5;  --course-0-fg: #dbeafe;
-  --course-1: #17402a;  --course-1-bd: #3f8a5c;  --course-1-fg: #dcfce7;
-  --course-2: #453413;  --course-2-bd: #8f7124;  --course-2-fg: #fef3c7;
-  --course-3: #4a1f2a;  --course-3-bd: #94505f;  --course-3-fg: #ffe4e6;
-  --course-4: #2e2557;  --course-4-bd: #6455a6;  --course-4-fg: #ede9fe;
-  --course-5: #123e4a;  --course-5-bd: #2f8296;  --course-5-fg: #cffafe;
-  --course-6: #2b3d16;  --course-6-bd: #61812c;  --course-6-fg: #ecfccb;
-  --course-7: #472a14;  --course-7-bd: #8e5a2b;  --course-7-fg: #ffedd5;
-  --course-8: #43164a;  --course-8-bd: #8f4499;  --course-8-fg: #fae8ff;
-  --course-9: #123f3b;  --course-9-bd: #2f7f77;  --course-9-fg: #ccfbf1;
+    --course-0: var(--dark-course-0);  --course-0-bd: var(--dark-course-0-bd);  --course-0-fg: var(--dark-course-0-fg);
+    --course-1: var(--dark-course-1);  --course-1-bd: var(--dark-course-1-bd);  --course-1-fg: var(--dark-course-1-fg);
+    --course-2: var(--dark-course-2);  --course-2-bd: var(--dark-course-2-bd);  --course-2-fg: var(--dark-course-2-fg);
+    --course-3: var(--dark-course-3);  --course-3-bd: var(--dark-course-3-bd);  --course-3-fg: var(--dark-course-3-fg);
+    --course-4: var(--dark-course-4);  --course-4-bd: var(--dark-course-4-bd);  --course-4-fg: var(--dark-course-4-fg);
+    --course-5: var(--dark-course-5);  --course-5-bd: var(--dark-course-5-bd);  --course-5-fg: var(--dark-course-5-fg);
+    --course-6: var(--dark-course-6);  --course-6-bd: var(--dark-course-6-bd);  --course-6-fg: var(--dark-course-6-fg);
+    --course-7: var(--dark-course-7);  --course-7-bd: var(--dark-course-7-bd);  --course-7-fg: var(--dark-course-7-fg);
+    --course-8: var(--dark-course-8);  --course-8-bd: var(--dark-course-8-bd);  --course-8-fg: var(--dark-course-8-fg);
+    --course-9: var(--dark-course-9);  --course-9-bd: var(--dark-course-9-bd);  --course-9-fg: var(--dark-course-9-fg);
+  }
 }
 
 /* ‏color-scheme קובע את הגוון של פקדי המערכת עצמם — תיבות בחירה, שדה
@@ -1590,18 +1664,21 @@ html.is-modal-open body { overflow: hidden; }
 }
 
 @media print {
+  /* ‏הצבעים באים מ-‎--print-*‎ בפרק 1, ולא נכתבים כאן שוב. הגושים הכהים
+     עטופים ב-‎screen‎, ולכן במצב כהה הדף פשוט נופל חזרה לערכי ‎:root‎
+     הבהירים — ואין צורך לדרוס כאן את עשרת צבעי הקורס. */
   :root {
-    --bg: #ffffff;
-    --panel: #ffffff;
-    --panel-2: #ffffff;
-    --chip: #f1f3f6;
-    --ink: #000000;
-    --muted: #444444;
-    --line: #c9ced6;
-    --line-strong: #8b939e;
-    --accent: #14406f;
-    --accent-ink: #ffffff;
-    --accent-soft: #eef3fa;
+    --bg: var(--print-bg);
+    --panel: var(--print-panel);
+    --panel-2: var(--print-panel-2);
+    --chip: var(--print-chip);
+    --ink: var(--print-ink);
+    --muted: var(--print-muted);
+    --line: var(--print-line);
+    --line-strong: var(--print-line-strong);
+    --accent: var(--print-accent);
+    --accent-ink: var(--print-accent-ink);
+    --accent-soft: var(--print-accent-soft);
     --shadow: none;
     --shadow-sm: none;
     --slot-h: 17px;

@@ -73,6 +73,17 @@ precedent for changing scoring on your own initiative.
   `"709 L"` to `"L 709"` for display. Anything that matches, filters or
   de-duplicates a room must use `rawRoomOf()`, never text scraped from
   the DOM.
+* **Every colour is written exactly once, and `render.py` reads the
+  stylesheet.** `style.css` is the single source: `--dark-*` and `--print-*`
+  hold the values in `:root`, and the two dark blocks plus `@media print`
+  contain only `var()` mappings — **never put a hex in them.**
+  `src/render.py` parses the ten course triples out of `style.css` at import
+  time instead of holding a copy, because its standalone export names them
+  `--cN-bg` and a find-and-replace on `--course-` used to miss it entirely.
+  Both dark blocks are wrapped in `@media screen` on purpose: without it
+  `:root[data-theme="dark"]` (0,2,0) beat the print block's `:root` (0,1,0)
+  and dark mode printed near-white ink on white paper.
+  `tests/test_theme_tokens.py` enforces all of this.
 * **`KIND_ORDER` and the term codes `"א"/"ב"/"קיץ"` stay in `app.js`**,
   not in `strings.json`. They arrive from the server and are used as
   comparison, sort and map keys; moving them into copy breaks sorting and
