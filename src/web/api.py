@@ -699,6 +699,35 @@ def clean_code(value: Any, *, field: str = "code") -> str:
     return text
 
 
+def _day_relaxations_json(courses: list, prefs: Any, target_days: int) -> dict[str, Any]:
+    """אילו ויתורים על קורסים יפתחו את יעד הימים.
+
+    ‏``checked`` הם אלה שנמדדו ואינם פותחים — "בדקנו את כולם" הוא מה
+    שהופך "אף ויתור בודד אינו מספיק" לדיווח ולא להתחמקות.
+    """
+    try:
+        report = scheduler_mod.day_relaxations(courses, prefs, target_days)
+    except Exception as exc:  # noqa: BLE001 - אבחון לא מפיל תשובה
+        LOG.exception("day_relaxations נכשל")
+        return {"items": [], "checked": [], "error": str(exc)}
+
+    def one(o: Any) -> dict[str, Any]:
+        return {
+            "codes": list(o.codes),
+            "names": list(o.names),
+            "credits": o.credits,
+            # ‏None נשאר null: חיפוש שלא הסתיים אינו מספר.
+            "min_days": o.min_days,
+            "schedules": o.schedules,
+        }
+
+    return {
+        "items": [one(o) for o in report.helpful()],
+        "checked": [one(o) for o in report.measured_useless()],
+        "target": report.target,
+    }
+
+
 def _relaxation_json(item: Any) -> dict[str, Any]:
     """ויתור אחד, בצורה שהלקוח מרנדר ממנה משפט."""
     return {
@@ -4731,6 +4760,11 @@ def solve():
     else:
         base_common["target_message"] = (
             f"{target_days} ימים אינם אפשריים עם הקורסים האלה — המינימום הוא {min_days}"
+        )
+        # לא רק לקרוא לקיר בשמו. איזה ויתור על קורס יפתח את היעד —
+        # נמדד, עם המחיר בנקודות זכות, ומסודר מהזול לנזק.
+        base_common["day_relaxations"] = _day_relaxations_json(
+            built, prefs, target_days
         )
 
     # ── 5. viability — לכל קבוצה, האם היא משאירה פתרון ──

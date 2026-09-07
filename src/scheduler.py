@@ -1535,6 +1535,152 @@ def relaxations(
 
 
 # ==========================================================================
+# 4ג. יעד ימים שאינו בר-השגה — איזה ויתור על קורס יפתח אותו
+# ==========================================================================
+@dataclass
+class CourseDrop:
+    """ויתור על קורס אחד (או על חבילה צמודה שלמה), ומה שנמדד בעקבותיו.
+
+    ``codes`` הוא רשימה ולא קוד יחיד בכוונה: הידיעון מסמן קורסים מסוימים
+    כחבילה (``tied_with``), וּויתור על אחד מהם לבדו אינו חוקי — ``solve``
+    זורק ``TiedCoursesError``. לכן היחידה היא החבילה, והמחיר הוא סכום
+    נקודות הזכות שלה. זה גם מה שמסדר אותה נכון: חבילה של שלושה קורסים
+    יקרה יותר מקורס בודד, ולכן היא תוצע אחריו.
+
+    ``min_days`` ו-``schedules`` נמדדים בפתירה אמיתית. ``None`` = לא ניתן
+    היה למדוד, ואז לא מוצג מספר — בדיוק כמו בוויתור על אילוץ.
+    """
+
+    codes: list
+    names: list
+    credits: float
+    min_days: "int | None" = None
+    schedules: "int | None" = None
+
+    def unlocks(self, target: int) -> bool:
+        return self.min_days is not None and self.min_days <= target
+
+
+@dataclass
+class DayRelaxationReport:
+    """כל האפשרויות שנמדדו ליעד ימים אחד."""
+
+    target: int = 0
+    options: list = field(default_factory=list)
+    reachable_without_dropping: bool = False
+
+    def helpful(self) -> list:
+        return [o for o in self.options if o.unlocks(self.target)]
+
+    def measured_useless(self) -> list:
+        """נמדדו במפורש ואינם פותחים את היעד — להבדיל מלא-נמדדו."""
+        return [
+            o for o in self.options
+            if o.min_days is not None and not o.unlocks(self.target)
+        ]
+
+
+def _tied_units(courses: list) -> list:
+    """מחלק את הקורסים ליחידות ויתור: קורס בודד, או חבילה צמודה שלמה."""
+    by_code = {c.code: c for c in courses}
+    seen: set = set()
+    units: list = []
+    for course in courses:
+        if course.code in seen:
+            continue
+        package = [course.code]
+        for other in list(getattr(course, "tied_with", []) or []):
+            if other in by_code and other not in package:
+                package.append(other)
+        for code in package:
+            seen.add(code)
+        units.append(sorted(package))
+    return units
+
+
+def _min_days_of(courses: list, prefs: Preferences, limit: "int | None"):
+    """‏(מינימום ימים, כמה מערכות). ``None`` = לא ניתן היה למדוד.
+
+    חיפוש שנקטע מחזיר "לפחות" ולא ערך — ולכן אינו נחשב מדידה.
+    """
+    budget = limit if limit is not None else _node_budget(courses, prefs)
+    best = None
+    count = 0
+    try:
+        for selection in enumerate_selections(courses, prefs, limit=budget):
+            count += 1
+            days = len(selection.days_used())
+            if best is None or days < best:
+                best = days
+    except SearchExhausted:
+        return None, None
+    except Exception:  # noqa: BLE001
+        return None, None
+    if best is None:
+        return None, 0
+    return best, count
+
+
+def day_relaxations(
+    courses: list,
+    prefs: Preferences,
+    target_days: int,
+    *,
+    limit: "int | None" = None,
+) -> DayRelaxationReport:
+    """
+    אילו ויתורים על קורסים יאפשרו את יעד הימים — **נמדד**.
+
+    לכל יחידת ויתור (קורס, או חבילה צמודה) פותרים מחדש בלעדיה ובודקים
+    למה יורד מינימום הימים. שום מספר כאן אינו הערכה.
+
+    הסדר הוא **לפי נזק**: קודם מה שעולה פחות נקודות זכות. שני קורסים
+    שפותחים את אותו יעד אינם שקולים, והמחיר הוא מה שמבדיל ביניהם.
+
+    אין כאן מושג של "קורס שסומן כחובה" — הוא אינו קיים במערכת. הדבר
+    הקרוב ביותר הוא ``tied_with``, וזו קביעה של הידיעון ולא בחירה של
+    הסטודנט/ית.
+    """
+    report = DayRelaxationReport(target=int(target_days))
+
+    base_min, _ = _min_days_of(courses, prefs, limit)
+    if base_min is not None and base_min <= target_days:
+        report.reachable_without_dropping = True
+        return report
+
+    by_code = {c.code: c for c in courses}
+    for unit in _tied_units(courses):
+        kept = [c for c in courses if c.code not in unit]
+        if not kept:
+            continue  # ויתור על הכול אינו הצעה
+        min_days, count = _min_days_of(kept, prefs, limit)
+        report.options.append(
+            CourseDrop(
+                codes=list(unit),
+                names=[str(getattr(by_code.get(c), "name", "") or c) for c in unit],
+                credits=round(
+                    sum(float(getattr(by_code.get(c), "credits", 0) or 0) for c in unit),
+                    1,
+                ),
+                min_days=min_days,
+                schedules=count,
+            )
+        )
+
+    # פחות נזק קודם: מי שעולה פחות נקודות זכות. ואז לפי כמה ימים נחסכו,
+    # ואז לפי הקוד — כדי שהסדר יהיה יציב בין ריצות.
+    report.options.sort(
+        key=lambda o: (
+            not o.unlocks(target_days),
+            o.credits,
+            o.min_days if o.min_days is not None else 99,
+            o.codes,
+        )
+    )
+    return report
+
+
+# ==========================================================================
 # 5. diagnose_infeasibility — למה אין פתרון
 # ==========================================================================
 def diagnose_infeasibility(courses: list[Course], prefs: Preferences) -> list[str]:

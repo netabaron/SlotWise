@@ -145,7 +145,17 @@
       "targetImpossible": "{days} ימים אינם אפשריים עם הקורסים האלה — המינימום הוא {min}",
       "targetImpossibleTitle": "{days} ימים אינם אפשריים עם הקורסים האלה — המינימום הוא {min}",
       "blockedWindow": "יום {day}׳ {from}–{to}",
-      "removeBlocked": "הסרת החסימה"
+      "removeBlocked": "הסרת החסימה",
+      "relaxTitle": "מה יאפשר {days} ימים",
+      "relaxIntro": "בדקנו כל קורס בנפרד, בפתירה מחדש.",
+      "relaxOption": "ויתור על {name} ({credits} נ\"ז) יאפשר {days} ימים",
+      "relaxOptionNoCredits": "ויתור על {name} יאפשר {days} ימים",
+      "relaxPackage": "ויתור על {names} — חבילה אחת ({credits} נ\"ז) — יאפשר {days} ימים",
+      "relaxNone": "ויתור על קורס אחד אינו מספיק כדי להגיע ל-{days} ימים. בדקנו כל אחד מהקורסים לחוד.",
+      "relaxChecked": "נבדקו ולא הספיקו: {list}.",
+      "relaxUnmeasured": "לא נבדק עד הסוף",
+      "relaxSchedules": "{n} מערכות",
+      "relaxNoRequiredInfo": "המערכת אינה יודעת אילו קורסים חובה לתואר שלך — היא בדקה ימי לימוד בלבד."
     },
     "header": {
       "offline": "אין חיבור לשרת המקומי",

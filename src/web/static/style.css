@@ -2294,3 +2294,34 @@ html.is-modal-open body { overflow: hidden; }
 @media print {
   .relax, .relax-undo { display: none !important; }
 }
+
+
+/* ---- שלב 3: מה יאפשר את יעד הימים ---- */
+.days-relax { margin-block-start: 10px; }
+.days-relax-title { margin: 0 0 3px; font-size: 13px; font-weight: 700; }
+.days-relax-intro { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+.days-relax-list { margin: 0; padding: 0; list-style: none; }
+.days-relax-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  margin-block-end: 4px;
+  font-size: 12.5px;
+}
+.days-relax-count { font-weight: 600; white-space: nowrap; }
+.days-relax-count.is-quiet { font-weight: 400; color: var(--muted); }
+.days-relax-checked { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+
+@media print { .days-relax { display: none !important; } }
+
+.days-relax-note {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-style: italic;
+}

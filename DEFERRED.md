@@ -123,6 +123,28 @@ be, until the server sends a stable id separate from the display label. Recorded
 so the question is answered once.
 
 
+### No course can be marked "required for my degree" — Phase 6 follow-up
+**Where:** course selection in step 2; consumed by `scheduler.day_relaxations()`
+and the "מה יאפשר N ימים" list in step 3.
+**Owner:** Phase 6 follow-up, deliberately deferred so Phase 6 could close.
+**What is missing:** there is no way for a student to mark a course as
+non-negotiable. Checked before building the day-target relaxations: the only
+`required` field in the codebase (`src/web/api.py:1086`) is per-component
+*attendance*, unrelated. The closest thing is `tied_with`, and that is the
+yedion's rule that certain courses form one package — not the student's choice.
+**Why it matters:** the day-target list will cheerfully suggest dropping a course
+someone must pass this semester to graduate, ranked first if it happens to be
+cheap in credits. The ordering is honest about credit cost and says nothing about
+necessity, because it cannot.
+**Mitigation shipped in the meantime:** the list carries a one-line caveat —
+`app.days.relaxNoRequiredInfo` — stating that the system does not know which
+courses are required for the degree and checked study days only. That makes the
+gap visible instead of letting the ranking sound more authoritative than it is.
+**Where it should live:** next to the course chips in step 2, as a per-course
+toggle, so `day_relaxations()` can exclude marked courses from the candidate
+units entirely rather than ranking them low. Note that a required course inside a
+tied package makes the whole package non-droppable.
+
 ### `runtime.reparseBusy` is dead state that is permanently `false`
 **Where:** `src/web/static/app.js` — initialised at the `runtime` block, read at
 four sites (`anyBusy()`, the scrape summary line, the header phase line, and the

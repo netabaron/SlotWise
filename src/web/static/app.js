@@ -2615,6 +2615,12 @@
     ui.minDays = byId("min-days-label");
     ui.feasibleCount = byId("feasible-count-label");
     ui.daysWarning = byId("days-warning");
+    ui.daysRelax = byId("days-relax");
+    ui.daysRelaxTitle = byId("days-relax-title");
+    ui.daysRelaxIntro = byId("days-relax-intro");
+    ui.daysRelaxList = byId("days-relax-list");
+    ui.daysRelaxChecked = byId("days-relax-checked");
+    ui.daysRelaxNote = byId("days-relax-note");
     ui.inputEarliest = byId("input-earliest");
     ui.inputLatest = byId("input-latest");
     ui.chkFriday = byId("chk-forbid-friday");
@@ -4643,6 +4649,80 @@
   }
 
   /* --- שלב 3: ימי לימוד ---------------------------------------------- */
+  /**
+   * מה יאפשר את יעד הימים — נמדד, ולא מנוחש.
+   *
+   * הכלל זהה למצב "אין פתרון": מספר מוצג רק אם פתירה אמיתית הפיקה אותו,
+   * והשורה אומרת גם מה הוויתור **עולה** — בנקודות זכות. שני קורסים
+   * שפותחים את אותו יעד אינם שקולים.
+   */
+  function renderDaysRelax(s) {
+    if (!ui.daysRelax) return;
+    var data = (s && s.day_relaxations) || {};
+    var items = pickList(data, ["items"], null);
+    var checked = pickList(data, ["checked"], null);
+    var target = num(data.target, state.targetDays);
+    var show = s && s.target_reachable === false && (items.length || checked.length);
+    setHidden(ui.daysRelax, !show);
+    if (!show) return;
+
+    setText(ui.daysRelaxTitle, Tf("app.days.relaxTitle", { days: target }));
+    setText(
+      ui.daysRelaxIntro,
+      items.length ? T("app.days.relaxIntro") : Tf("app.days.relaxNone", { days: target })
+    );
+
+    rebuild(ui.daysRelaxList, function (box) {
+      items.forEach(function (item) {
+        var names = (item.names || []).join(", ");
+        var credits = num(item.credits, 0);
+        var days = item.min_days;
+        var text;
+        if (item.codes && item.codes.length > 1) {
+          text = Tf("app.days.relaxPackage", {
+            names: names, credits: credits, days: days,
+          });
+        } else if (credits > 0) {
+          text = Tf("app.days.relaxOption", {
+            name: names, credits: credits, days: days,
+          });
+        } else {
+          // נ"ז 0 בידיעון אינו "בחינם" — הוא פשוט לא ידוע. לא ממציאים מחיר.
+          text = Tf("app.days.relaxOptionNoCredits", { name: names, days: days });
+        }
+        var li = el("li", { class: "days-relax-row" }, [
+          el("span", { class: "days-relax-what", text: text }),
+          item.schedules === null || item.schedules === undefined
+            ? el("span", {
+                class: "days-relax-count is-quiet",
+                text: T("app.days.relaxUnmeasured"),
+              })
+            : el("span", {
+                class: "days-relax-count",
+                text: Tf("app.days.relaxSchedules", { n: item.schedules }),
+              }),
+        ]);
+        box.appendChild(li);
+      });
+    });
+
+    // הסתייגות, לא הערת שוליים: המערכת מציעה לוותר על קורסים בלי לדעת
+    // אילו מהם חובה לתואר. עד שיהיה סימון כזה (ראי DEFERRED.md), עדיף
+    // לומר את זה מאשר להשמיט ולתת לרשימה להישמע סמכותית מכפי שהיא.
+    setText(ui.daysRelaxNote, T("app.days.relaxNoRequiredInfo"));
+
+    setText(
+      ui.daysRelaxChecked,
+      checked.length
+        ? Tf("app.days.relaxChecked", {
+            list: checked
+              .map(function (c) { return (c.names || []).join(", "); })
+              .join("; "),
+          })
+        : ""
+    );
+  }
+
 
   function renderDaysStep() {
     var s = runtime.solve || {};
@@ -4661,6 +4741,7 @@
       );
     });
 
+    renderDaysRelax(s);
     setText(ui.daysTarget, Tf("app.days.daysCount", { days: state.targetDays }));
     setText(
       ui.minDays,
