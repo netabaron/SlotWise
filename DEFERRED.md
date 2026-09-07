@@ -10,6 +10,73 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
+### Grid blocks ship with lecturer names sliced in half — **next up after the palette**
+**Where:** `fitBlocks()` in `src/web/static/app.js:6855`, called from `app.js:6071`.
+**Owner:** the first thing to fix once Phase 10's palette lands. Agreed 2026-09-08.
+**What it looks like:** not an ellipsis — the glyphs are cut horizontally by the
+block's own bottom edge, so the lecturer's name shows its top half and nothing
+else. It reads as a rendering fault, not as truncation.
+**The mechanism, measured rather than guessed:** `fitBlocks()` drops
+`ev-drop-1/2/3` (room, time, lecturer) while `block.scrollHeight >
+block.clientHeight`. Measured live, the short blocks report `scrollH 91` against
+`clientH 83` — the test *works*, it correctly says "overflows". But
+`hiddenLines` is **0**: nothing was dropped. So the function is not running
+against the settled layout. It measures too early, breaks out of its loop, and
+never re-runs.
+**Rate, over five runs of the default semester-5 schedule:**
+
+| width | runs that clipped | lines clipped | after a `resize` event |
+|---|---|---|---|
+| 1440px | 4 of 5 | 2 | 0 — always repaired |
+| 390px | 5 of 5 | 4 | 0 — always repaired |
+
+Dispatching `window.resize` fixes it every single time, which is what pins it to
+ordering rather than to the drop logic. The same is true under `@media print`,
+where `refitBlocks()` fires on the media change and 6 lines drop correctly.
+**Pre-existing.** Present at `e6aaafb` (before any Phase 10 work). The 13px type
+floor deepens each clip by about 1.9px but does not change how many lines clip.
+**Probably the same root cause as** the load-sensitive
+`test_neither_physics_track_is_marked` further down this file: both are
+measurements taken before layout settles.
+**Where to look first:** `fitBlocks(ui.grid)` at `app.js:6071` runs synchronously
+inside the render path. It likely needs to run after layout — a
+`requestAnimationFrame`, or a `ResizeObserver` on the grid, which would also
+cover the width-change case the fixed call cannot see.
+
+### The printed sheet is now at the bottom of its ladder
+**Where:** `fitGridToPage()` in `src/web/static/app.js:6892`, `SLOT_H_PRINT_MIN = 12`.
+**Owner:** informational — no action pending, but read this before adding to a block.
+**What:** the 13px type floor pushed the print fit down one rung. Measured on the
+semester-5 default, 13 blocks:
+
+| | slot height chosen | body height | fits one page |
+|---|---|---|---|
+| before the floor | 13px | 784px | yes |
+| after the floor | **12px — the minimum** | 750px | yes (44px spare) |
+
+Same six lines dropped, same 11 blocks keeping room and time, nothing clipped. So
+the sheet is unchanged in content — but it is now sitting on `SLOT_H_PRINT_MIN`
+with no rung left. The next thing that makes a block taller paginates the sheet,
+and `fitGridToPage()` deliberately stops shrinking rather than print something
+too small to read. A student with a denser semester than the default may already
+be there; this was measured on one schedule, not on the worst one.
+
+### Phase 7's 14px body half is not done — only the 13px floor
+**Where:** `src/web/static/style.css`, everywhere.
+**Owner:** Phase 7.
+**What:** the brief asks for "minimum font size 14px for body, 13px for
+secondary". This commit raised all 76 sub-13px screen rules to 13px, which closes
+the secondary half. It did **not** promote sentence-level text — `.step-hint`,
+`.note`, `.empty-sub`, `.fit-note`, `.relax-intro`, `.progress-hint` — to 14px.
+**Why not:** deciding which rules are "body" is a judgement per rule, and each
+promotion costs vertical space that the print sheet no longer has (see above).
+A flat floor is mechanical and verifiable; a scale is a design decision, and the
+three Phase 10 directions each propose their own. Doing it now means doing it
+twice.
+**Consequence to be honest about:** a floor flattens hierarchy. Rules that were
+12.5px and 11px are now both 13px, so the relationship between them is gone. The
+scale that restores it arrives with whichever palette direction is chosen.
+
 ### `.pin-btn` sits at 45% opacity as its resting state
 **Where:** `src/web/static/style.css`, `.pin-btn`.
 **Owner:** Phase 7 (item 3 replaces the control outright).
