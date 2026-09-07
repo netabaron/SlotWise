@@ -284,6 +284,24 @@
     return Tf("app.schedule.duration", { span: fmtSpan(minutes) });
   }
 
+  /**
+   * ‏87 -> "87%". הניסוח היחיד של ההתאמה, בכל מקום שבו היא מוצגת.
+   *
+   * ‏עד 2026-09-08 הנוסח היה ‎"{score} / 100"‎, והוא נשבר בדו-כיווניות:
+   * ‏"87 / 100" הוא שני מקטעי מספר עם מפריד נייטרלי ביניהם, ובפסקה RTL
+   * הנייטרלי מקבל כיוון ימין-לשמאל והמקטעים מסודרים מימין לשמאל — כלומר
+   * התא הראה ‎"100 / 87"‎. בפאנל הניקוד זה הוסתר על ידי ‎class="ltr"‎;
+   * בטבלת ההשוואה, שבנתה את אותה מחרוזת לתוך ‎<td>‎ רגיל, זה נראה.
+   *
+   * ‏אחוז אחד אומר בדיוק את מה ש-‎"87 / 100"‎ אמר, בפחות מקום, ואי אפשר
+   * לסדר אותו מחדש: ‎%‎ הוא ET, וכלל W5 של אלגוריתם הדו-כיווניות מצרף
+   * ‏ET צמוד ל-EN לאותו מקטע. מספר אחד אינו יכול להתהפך — התיקון מסלק
+   * את הסיבה, ולא את הסימפטום.
+   */
+  function fmtFit(score) {
+    return Tf("app.schedule.fitValue", { score: clamp(Math.round(num(score, 0)), 0, 100) });
+  }
+
   /** 410 -> "6:50". */
   function fmtSpan(minutes) {
     var m = Math.max(0, Math.round(num(minutes, 0)));
@@ -5412,7 +5430,7 @@
         key: "fit",
         title: T("app.compare.rowFit"),
         cell: function (i) {
-          return Tf("app.schedule.fitValue", { score: fits[i] });
+          return fmtFit(fits[i]);
         },
       },
       {
@@ -5925,7 +5943,7 @@
             el("span", { class: "fit-label", text: T("app.schedule.fitLabel") }),
             el("strong", {
               class: "fit-value ltr",
-              text: Tf("app.schedule.fitValue", { score: fit }),
+              text: fmtFit(fit),
             }),
             el("span", {
               class: "fit-note",

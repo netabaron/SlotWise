@@ -369,6 +369,37 @@ about which strings are people.
 
 ## Closed
 
+### The fit score rendered backwards in the comparison table — closed 2026-09-08
+`app.schedule.fitValue` was `"{score} / 100"`. That is two number runs with a
+bidi-neutral separator between them, so in an RTL paragraph the neutrals resolve
+to right-to-left and the runs are ordered right-to-left: the cell drew
+**`100 / 87`**. The score panel escaped it because `app.js` gives that element
+`class="fit-value ltr"`; the comparison table built the same string into a plain
+`<td>` and inherited the page direction. The table is the brief's
+"highest-value addition in the whole brief", and the number it exists to compare
+was the one reversed.
+
+**Fixed by removing the cause, not the symptom.** The fit is now a single
+percentage — `87%`. `%` is an ET, and rule W5 of the bidi algorithm folds an ET
+adjacent to an EN into the same run, so one number cannot split into two runs
+and cannot reorder. One string in `strings.json`, one formatter (`fmtFit()` in
+`app.js`), both render sites through it. The caveat in `fitTitle` is unchanged
+apart from its unit — a percentage reads more absolute than a score does, so
+"relative to the five shown" matters more now, not less.
+
+**The test that matters is `test_the_fit_is_not_visually_reversed`**, and it is
+worth understanding why. `textContent` returns the *logical* order, which is
+`87 / 100` whether or not the glyphs are reversed — so no text assertion could
+ever have caught this, and none did. The test measures the painted rectangle of
+the first character against the last one via a `Range`. Mutation-tested: with
+`"{score} / 100"` put back, it reports the first character 20.4px to the *right*
+of the last and fails. The same test against `.fit-value` passes even with the
+bug restored, which is the proof that `.ltr` was masking it there.
+
+**Habit worth keeping:** a composite `number separator number` string is a bidi
+hazard in any RTL interface. Prefer a form that cannot be reordered over a form
+that has to be wrapped, because the wrapper is what someone forgets.
+
 ### The palette lived in four places — closed 2026-09-08
 Not three, as first reported. `:root` (light), two hand-duplicated dark blocks,
 `@media print` re-declaring its own, and `src/render.py` holding a second copy of
