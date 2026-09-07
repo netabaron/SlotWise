@@ -274,8 +274,55 @@ Before you tell me a phase is done, verify:
 - [ ] There is a designed state for: loading, zero results, scrape failure, stale data.
 - [ ] Both dark and light themes pass contrast checks.
 
+## Phase 10 — Visual identity and maintainer/student separation
+
+Added 2026-09-07, after Phase 6. **Runs after Phase 6 closes, before Phases 7-9.**
+Phases 7-9 wait until after the presentation.
+
+This phase is the one exception to "Out of scope: do not redesign the visual
+identity from scratch" below. That line was written when the priority was
+behaviour over looks; the behaviour is now done and the interface still does not
+hold the eye.
+
+### 1. A real visual identity
+
+The current palette is unattractive and nothing about the screen is deliberate —
+it is defaults. Colour, typography and spacing all need choosing on purpose.
+
+**Propose two or three directions with a rationale, and wait for a decision
+before implementing any of them.** Do not pick one unilaterally.
+
+Hard constraint: whatever is chosen must still pass the Phase 7 contrast
+requirements, in **both** themes. A direction that cannot is not a direction.
+
+### 2. The logo moves to the left of the header
+
+"SlotWise" reads as English, and in an RTL layout an English wordmark belongs on
+the left. Add an icon beside the wordmark.
+
+### 3. The theme switch becomes icons
+
+Sun for light, moon for dark, monitor for system. Each needs an accessible label,
+and the current state must be visible by something other than colour alone —
+Phase 7's rule applies here in advance.
+
+### 4. Maintainer controls leave the student's screen
+
+`עבד מחדש את הנתונים השמורים` is not something a student should ever see. It
+moves into `פרטים טכניים`, behind `?debug=1`, together with the reparse button.
+
+`עדכן נתונים מהידיעון` **stays**, but also moves into `פרטים טכניים`. It now
+refreshes only the courses the student selected, which is the one way to check
+whether a specific course changed since the catalog was built — real
+functionality, wrong prominence. See DEFERRED.md: if this is ever hosted, it is
+removed entirely, because a hosted student has no scrape of their own.
+
+
 ## Out of scope
 
-Do not redesign the visual identity from scratch, do not introduce a UI framework or a
+Do not introduce a UI framework or a
 component library, do not add animations beyond what communicates a state change, and do
 not change any Hebrew string I specified above.
+
+The visual identity **is** in scope, but only in Phase 10 and only after a direction has
+been chosen. Until then it stays as it is.

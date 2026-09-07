@@ -123,6 +123,40 @@ be, until the server sends a stable id separate from the display label. Recorded
 so the question is answered once.
 
 
+### Phase 10 — visual identity, and getting maintainer controls off the student's screen
+**Where:** `src/web/static/style.css` (tokens), `src/web/templates/index.html`
+(header, theme switch, `פרטים טכניים`), `src/web/static/app.js`.
+**Owner:** Phase 10 — runs **after Phase 6 closes and before Phases 7-9**, which
+wait until after the presentation. Logged 2026-09-07.
+**What it covers:**
+1. **A real visual identity.** The palette is unattractive and the screen is
+   defaults rather than decisions. Two or three directions to be **proposed with
+   a rationale and chosen by the owner** — not picked unilaterally. Whatever wins
+   must pass the Phase 7 contrast checks in both themes.
+2. **Logo to the left of the header.** "SlotWise" reads as English, so in RTL it
+   belongs on the left. An icon joins the wordmark.
+3. **Theme switch as icons** — sun / moon / monitor, each with an accessible
+   label and a current state that is visible by more than colour.
+4. **Maintainer controls move into `פרטים טכניים`.**
+   `עבד מחדש את הנתונים השמורים` goes behind `?debug=1` with the reparse button.
+   `עדכן נתונים מהידיעון` **stays but moves there too** — it now refreshes only
+   the student's selected courses, which is the only way to check whether a
+   specific course changed since the catalog was built. Real functionality, wrong
+   prominence.
+**Note this explicitly overrides** the brief's original "do not redesign the
+visual identity from scratch", which was written when behaviour mattered more
+than appearance. The brief has been amended.
+
+### `עדכן נתונים מהידיעון` must disappear entirely if this is ever hosted
+**Where:** the button, `/api/scrape/start`, `/api/scrape/status`.
+**Owner:** whoever does the hosting work — see `HOSTING_NOTES.md` row 3.
+**Why:** a hosted student has no scrape of their own, and the endpoint has no auth
+or rate guard, so exposing it publicly makes the app an open relay to Braude's
+server. Phase 10 moves the button into `פרטים טכניים`; hosting removes it.
+**The functionality does not vanish, it changes owner:** the catalog rebuild
+becomes a server cron running `build_catalog.py`, which is the same paced fetch
+and the same six validation gates with a different trigger.
+
 ### No course can be marked "required for my degree" — Phase 6 follow-up
 **Where:** course selection in step 2; consumed by `scheduler.day_relaxations()`
 and the "מה יאפשר N ימים" list in step 3.
