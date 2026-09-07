@@ -508,6 +508,11 @@ def _group_from_dict(data: Any, course_code: str) -> Group:
         meetings=[_meeting_from_dict(m) for m in (kw.get("meetings") or [])],
         linked_to=[str(x) for x in (kw.get("linked_to") or [])],
         note=str(kw.get("note", "") or ""),
+        # ‏semester **חייב** לעבור. כל עוד sections.json נכתב מסונן לסמסטר
+        # אחד, אפשר היה לוותר עליו בלי שאיש ירגיש; מרגע שהקטלוג נושא את
+        # כל הסמסטרים, קבוצה בלי תג סמסטר אינה ניתנת לסינון בזמן קריאה —
+        # וקבוצות סמסטר ב', שאין להן מפגשים כלל, נכנסו למרחב החיפוש.
+        semester=str(kw.get("semester", "") or ""),
     )
 
 
@@ -734,7 +739,13 @@ class Store:
         ...     print(line)
     """
 
-    def __init__(self, root: str = "data/db", *, use_shipped: bool = False) -> None:
+    def __init__(
+        self,
+        root: str = "data/db",
+        *,
+        use_shipped: bool = False,
+        semester: str = "",
+    ) -> None:
         """
         Args:
             root: תיקיית המסד.
@@ -745,8 +756,11 @@ class Store:
                 יראו קטלוג מלא, ואילו ``refresh.py`` ו-``reparse.py``
                 משאירים אותו כבוי, אחרת זיהוי השינויים היה מוצא 572
                 "קורסים קיימים" שמעולם לא נכתבו למסד הזה.
+            semester: לאיזה סמסטר לסנן את הקטלוג שנשלח. ריק = בלי סינון.
+                הקטלוג נושא את כל הסמסטרים, ולכן הבחירה היא של הקורא.
         """
         self.use_shipped = bool(use_shipped)
+        self.shipped_semester = str(semester or "")
         self.root = os.path.abspath(str(root))
         self.catalog_path = os.path.join(self.root, CATALOG_FILE)
         self.sections_path = os.path.join(self.root, SECTIONS_FILE)
@@ -1049,7 +1063,9 @@ class Store:
         merged: dict[str, Any] = {}
         if self.use_shipped and _shipped is not None:
             try:
-                merged.update(_shipped.as_sections_entries())
+                merged.update(
+                    _shipped.as_sections_entries(self.shipped_semester)
+                )
             except Exception:  # noqa: BLE001 - קטלוג פגום לא מפיל את המסד
                 pass
         merged.update(courses)  # הנתונים של המשתמש/ת מנצחים

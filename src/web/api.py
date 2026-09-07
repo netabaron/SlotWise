@@ -1117,6 +1117,29 @@ def _store() -> store_mod.Store:
     return obj
 
 
+def _store_for(semester: str) -> store_mod.Store:
+    """‏Store שמסנן את הקטלוג שנשלח לסמסטר מבוקש.
+
+    מופע לכל סמסטר, ולא שדה שמשתנה על מופע משותף: השרת מטפל בבקשות
+    במקביל, ומצב משותף שמשתנה לפי בקשה הוא בדיוק סוג התקלה שאי אפשר
+    לשחזר. המופעים זולים ומקוששים.
+    """
+    from flask import current_app
+
+    key = str(semester or "")
+    if not key:
+        return _store()
+    cache = current_app.extensions.setdefault("slotwise", {})
+    stores = cache.setdefault("stores_by_semester", {})
+    obj = stores.get(key)
+    if obj is None:
+        obj = store_mod.Store(
+            str(_config()["db_root"]), use_shipped=True, semester=key
+        )
+        stores[key] = obj
+    return obj
+
+
 def _request_cache() -> dict[str, Any]:
     """מטמון קצר-טווח שחי **רק לאורך הבקשה הנוכחית**.
 
@@ -1891,7 +1914,10 @@ def _build_courses(
         ``(courses, problems, metas)`` — ``problems`` הם קודים שאי אפשר לשבץ,
         כל אחד עם סיבה בעברית. הם לא שגיאה: הם מידע.
     """
-    store = _store()
+    # הקטלוג שנשלח נושא את **כל** הסמסטרים, ולכן כאן — במקום היחיד שבונה
+    # קורסים למנוע — בוחרים אחד. בלי זה קבוצות סמסטר ב', שאין להן מפגשים
+    # ולכן אינן מתנגשות עם דבר, נכנסות למרחב החיפוש ומנפחות אותו.
+    store = _store_for(semester)
     curr = _curriculum()
 
     courses: list[models.Course] = []

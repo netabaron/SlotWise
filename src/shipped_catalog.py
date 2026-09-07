@@ -132,9 +132,14 @@ def index() -> dict[str, dict]:
     }
 
 
-def as_sections_entries() -> dict[str, dict]:
+def as_sections_entries(semester: str = "") -> dict[str, dict]:
     """
     הקטלוג בצורה ש-``Store._split_entry`` כבר יודע לקרוא.
+
+    ``semester``: סינון בזמן **קריאה**. הקובץ נושא את כל הסמסטרים בכוונה
+    (ראי ``build_catalog.py``), ולכן מי שקורא חייב לבחור. בלי הסינון
+    הזה קבוצות סמסטר ב' — שאין להן מפגשים ולכן אינן מתנגשות עם דבר —
+    נכנסות למרחב החיפוש ומנפחות אותו בלי לתרום פתרון אחד.
 
     לכל רשומה מוצמד ``meta`` סינתטי שבו ``fetched_at`` הוא **תאריך בניית
     הקטלוג**. זו לא הונאה אלא ההפך: כך ``Store.is_stale`` מודד את הגיל
@@ -146,6 +151,12 @@ def as_sections_entries() -> dict[str, dict]:
     info = data.get("meta") or {}
     out: dict[str, dict] = {}
     for code, rec in (data.get("courses") or {}).items():
+        if semester:
+            groups = [
+                g for g in (rec.get("groups") or [])
+                if not g.get("semester") or g.get("semester") == semester
+            ]
+            rec = dict(rec, groups=groups)
         out[code] = {
             "course": rec,
             "meta": {
