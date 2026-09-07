@@ -574,10 +574,9 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
 .banner-more-title {
   font-weight: 600;
   font-size: 12px;
-  opacity: .85;
 }
 
-.banner-more-legend { font-size: 11.5px; opacity: .8; }
+.banner-more-legend { font-size: 11.5px; color: var(--muted); }
 
 .code-chips {
   display: flex;
@@ -1052,7 +1051,7 @@ html.is-modal-open body { overflow: hidden; }
 
 /* כיוון הקריאה של המדד. מספר בלי הכיוון הזה — ובעיקר מספר שלילי —
    אינו אומר לסטודנט/ית אם הוא טוב או רע. */
-.fact-hint { font-size: 10.5px; color: var(--muted); opacity: .85; }
+.fact-hint { font-size: 10.5px; color: var(--muted); }
 .fact[title] { cursor: help; }
 .fact--warn { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
 .fact--ok   { border-color: var(--ok-line);   background: var(--ok-bg);   color: var(--ok-ink); }
@@ -1171,7 +1170,7 @@ html.is-modal-open body { overflow: hidden; }
 .course-item.is-tied { border-inline-start-color: var(--tie-line); }
 
 .course-item.is-unavailable {
-  opacity: .55;
+  color: var(--muted);
   cursor: not-allowed;
   text-decoration: line-through;
   text-decoration-color: var(--dead-line);
@@ -1351,7 +1350,7 @@ html.is-modal-open body { overflow: hidden; }
 
 .lect-table tbody tr.is-dead > td,
 .lect-table tbody tr[aria-disabled="true"] > td {
-  opacity: .4;
+  color: var(--muted);
   text-decoration: line-through;
   text-decoration-color: var(--dead-line);
   text-decoration-thickness: 1.5px;
@@ -1379,7 +1378,7 @@ html.is-modal-open body { overflow: hidden; }
 
 /* ---- קוד הקבוצה: הקידומת חוזרת בכל שורה, הסיומת היא ההבדל ---- */
 .gid { direction: ltr; unicode-bidi: isolate; }
-.gid-prefix { opacity: .5; font-weight: 400; }
+.gid-prefix { color: var(--muted); font-weight: 400; }
 .gid-suffix { font-weight: 700; }
 
 /* קישור בין קבוצות — סמל אחד במקום משפט שחזר בכל שורה */
@@ -1559,7 +1558,7 @@ html.is-modal-open body { overflow: hidden; }
    דבר — והשם והסוג נחתכים לרוחב השורה במקום שהחדר והשעה ירדו לפי הסדר. */
 .ev > * { flex-shrink: 0; }
 .ev-room { font-weight: 600; }
-.ev span { opacity: .94; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* עשרת גווני הקורסים — אותו מיפוי כמו render.py (c0 .. c9) */
 .c0 { --ev-bg: var(--course-0); --ev-bd: var(--course-0-bd); --ev-fg: var(--course-0-fg); }
@@ -2004,7 +2003,7 @@ html.is-modal-open body { overflow: hidden; }
    היא מודגשת, ושורה שזהה בכולן נסוגה. לכל תא יש ערך בשני המקרים:
    צביעה לבדה אומרת "כאן שונה" בלי לומר במה. */
 .compare-table tr.same td,
-.compare-table tr.same th { opacity: .5; }
+.compare-table tr.same th { color: var(--muted); }
 
 .compare-table td.is-diff {
   font-weight: 700;
@@ -2076,8 +2075,7 @@ html.is-modal-open body { overflow: hidden; }
 .print-head { display: none; }
 
 /* ---- יום ריק ---- */
-.hd.is-empty,
-.slot.is-empty { opacity: .55; }
+.hd.is-empty { color: var(--muted); }
 .hd.is-empty { font-size: 11px; }
 .hd-empty { display: block; font-size: 9.5px; font-weight: 400; color: var(--muted); }
 .slot.is-empty { background: var(--panel-2); }
@@ -2140,7 +2138,7 @@ html.is-modal-open body { overflow: hidden; }
 
 .detail-list dt { color: var(--muted); font-size: 11.5px; }
 .detail-list dd { margin: 0; }
-.detail-code { margin-inline-start: .5em; opacity: .6; font-size: 11px; }
+.detail-code { margin-inline-start: .5em; color: var(--muted); font-size: 11px; }
 
 .detail-overlap {
   font-size: 12px;
@@ -2258,18 +2256,18 @@ html.is-modal-open body { overflow: hidden; }
 /* סוג השיעור: שורה קצרה משלו. הוא מהדברים הראשונים שמחפשים על הרשת,
    והוא גם מה שמבדיל הרצאה מתרגול כשהצבע מציין את הקורס בלבד.
 
-   ‏.ev .ev-kind ולא .ev-kind: הכלל .ev span הוא (0,1,1) ומנצח מחלקה
-   בודדת בכל סדר, ולכן ה-opacity כאן לא היה חל כלל. */
+   ‏.ev .ev-kind ולא .ev-kind: הכלל ‎.ev span‎ הוא (0,1,1) ומנצח מחלקה
+   בודדת בכל סדר. הצירוף נשאר גם אחרי ש-‎opacity‎ ירדה משתי השורות, כי
+   הוא עדיין מה שמאפשר לכלל הזה לגבור על ‎.ev span‎. */
 .ev .ev-kind {
   font-size: 11.5px;
   font-weight: 600;
-  opacity: .9;
 }
 
 /* שם המרצה, מלא. ‏13px כמו החדר והשעה ולא קטן מהם: מבין שלוש השורות
    שיכולות לרדת הוא האחרון שיורד, ולכן אין סיבה שיהיה הקשה ביותר לקריאה.
    שם ארוך נשבר לשתי שורות — עדיף מקוצר. */
-.ev .ev-lect { font-size: 13px; opacity: .82; }
+.ev .ev-lect { font-size: 13px; }
 
 /* ‏fitBlocks מסתיר שורות שאינן נכנסות, לפי הסדר: חדר, שעה, מרצה.
    ‏[hidden] כבר display:none גלובלית — הכלל כאן רק מתעד את הסדר. */
@@ -2286,14 +2284,12 @@ html.is-modal-open body { overflow: hidden; }
 
 /* בהדפסה סוג השיעור נשאר — הוא לא קישוט מסך.
 
-   ‏!important על ה-opacity, ולא סתם עוצמה גבוהה: על המסך שלוש שורות
-   הבלוק מוחוורות בכוונה כדי שהשם יבלוט, אבל דיו חיוור על נייר לבן הוא
-   פשוט טקסט שקשה לקרוא. על הנייר הכול נדפס מלא. */
+   ‏עד 2026-09-08 עמד כאן גם ‎opacity: 1 !important‎ על שלוש שורות הבלוק,
+   כדי לבטל החוורה שנעשתה למסך. ההחוורה עצמה נמחקה — היא הורידה את שורת
+   המרצה אל 5.4:1 מול רף 7:1 שהפרויקט מצהיר עליו — ולכן גם הביטול שלה
+   מיותר. כלל שכל תפקידו לבטל כלל אחר נמחק יחד איתו. */
 @media print {
   .ev .ev-kind { display: block !important; }
-  .ev .ev-kind,
-  .ev .ev-lect,
-  .ev span { opacity: 1 !important; }
 }
 
 

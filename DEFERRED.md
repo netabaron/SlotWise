@@ -10,6 +10,18 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
+### `.pin-btn` sits at 45% opacity as its resting state
+**Where:** `src/web/static/style.css`, `.pin-btn`.
+**Owner:** Phase 7 (item 3 replaces the control outright).
+**Why it survived the opacity sweep:** the sweep removed multipliers from *text*.
+`.pin-btn` is a control, and its `:disabled` state at `.2` is covered by WCAG
+1.4.3's exemption for inactive components — but `.45` is its **enabled** resting
+state, which is not exempt. It is left alone because Phase 7 replaces the emoji
+pin with an inline SVG button carrying `aria-label` and `aria-pressed`, and
+re-tuning the opacity of a control that is about to be deleted is wasted work.
+Recorded so it is a decision and not an oversight.
+`tests/test_no_opacity_on_text.py` lists it in `ALLOWED` with this reason.
+
 ### A missing string used to be invisible
 **Where:** `T()` in `app.js`, Jinja rendering in `api.py`, `strings.py:load()`.
 **Owner:** closed — fixed the moment it was found, not deferred.
@@ -326,6 +338,30 @@ produced a failure.
 **Verified behaviour-preserving:** every resolved custom property and the computed
 styles of fifteen painted elements were snapshotted in five modes before and after.
 Zero differences, other than the print-in-dark fix, which is the point.
+
+### Twelve opacity multipliers on real text — closed 2026-09-08
+`opacity` runs *after* the colour is chosen, so it blends text with whatever is
+behind it and no token value rescues it. Measured against the current light
+palette, on `--panel`:
+
+| | before | after |
+|---|---|---|
+| comparison table, identical row | 3.17 : 1 | 7.23 : 1 |
+| lecturer row, dead end | 2.42 : 1 | 7.23 : 1 |
+| unavailable course | 3.66 : 1 | 7.23 : 1 |
+| room code in the detail panel | 4.26 : 1 | 7.23 : 1 |
+| lecturer line inside a grid block | 6.84 : 1 | 11.28 : 1 |
+
+All twelve now use `color: var(--muted)` at full opacity — the same visual
+recession, without the cost. The `@media print` rule that set
+`opacity: 1 !important` on three block lines was deleted with them: its entire job
+was to undo a screen decision that no longer exists.
+
+What deliberately stayed, each with its reason in `ALLOWED` in
+`tests/test_no_opacity_on_text.py`: `.btn:disabled`, `.step.is-locked`,
+`.banner-close`, `.pin-btn` (WCAG 1.4.3 exempts inactive components — but see the
+open entry, its *enabled* state is not exempt), `.legend-swatch--dead` (a colour
+chip, not text), and the reduced-motion busy bar (an animation).
 
 ### The printed sheet — closed
 The print stylesheet now describes what **is** printed instead of listing what
