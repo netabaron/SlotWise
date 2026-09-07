@@ -123,6 +123,35 @@ be, until the server sends a stable id separate from the display label. Recorded
 so the question is answered once.
 
 
+### `test_neither_physics_track_is_marked` is load-sensitive, not deterministic
+**Where:** `tests/test_recommended_defaults_browser.py`, via the `choose()` helper.
+**Owner:** unassigned — a test-robustness question, not a product bug.
+**What happened:** it failed once in a full-suite run on 2026-09-07 and has not
+reproduced since. Chased properly before being written off:
+
+| check | result |
+|---|---|
+| full suite, first run | 1 failed |
+| that module alone | 20 passed |
+| that module + `test_phase6_states_browser` | 28 passed |
+| same two, with a suspected fixture bug deliberately restored | 28 passed |
+| orphaned Playwright browsers | none — the 26 chromium processes were the user's own Chrome/Edge |
+| full suite, second run | **665 passed, 0 failed** |
+
+**Why it is believed to be timing:** `choose()` changes year and semester, which
+triggers a course fetch, a solve and a re-render, then waits a fixed
+`wait_for_timeout(1200)` before snapshotting. On a busy machine that margin can
+lapse and `snap()` reads a half-updated page. The failing run took 8m32s against
+a usual ~6m40s, which is consistent with contention.
+**Two hypotheses that were tested and are wrong**, recorded so nobody re-tests
+them: the `_age_catalog` helper in the Phase 6 tests mutating `shipped_catalog`'s
+module cache (restoring the bug did not reproduce the failure), and orphaned
+browser processes from killed background runs (there were none).
+**What would fix it:** replace the fixed sleep with a wait on an observable
+condition — the semester's course list having rendered — rather than on the
+clock. That means editing an existing test file, which the standing rule forbids
+without an explicit decision.
+
 ### Phase 10 — visual identity, and getting maintainer controls off the student's screen
 **Where:** `src/web/static/style.css` (tokens), `src/web/templates/index.html`
 (header, theme switch, `פרטים טכניים`), `src/web/static/app.js`.

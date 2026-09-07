@@ -131,6 +131,14 @@
    * שינוי שלו מחייב מסלול הגירה שקורא את הישן וכותב לחדש, ולא החלפת מחרוזת.
    */
   var STORAGE_KEY = "braude_schedule_builder_v1";
+
+  //: אחרי כמה ימים קטלוג נחשב ישן מספיק כדי לומר עליו משהו.
+  //:
+  //: לא 24 שעות כמו הסף של המסד הפרטי. קטלוג שנשלח עם התוכנה הוא **אותו
+  //: קטלוג** לכל המשתמשים, והוא מתיישן לאט: לוח השעות של סמסטר משתנה
+  //: בשוליים אחרי פרסומו. ‏45 יום הם בערך אמצע סמסטר — מספיק זמן כדי
+  //: שכדאי לבדוק, ולא כל כך קצר שההודעה תהפוך לרעש קבוע.
+  var CATALOG_STALE_DAYS = 45;
   var STORAGE_SCHEMA = 1;
 
   /**
@@ -664,6 +672,8 @@
     solve: null,
     solveError: null,
     solveBusy: false,
+    solveAbort: null,       // ‏AbortController של החישוב הרץ
+    solveCancelled: false,  // בוטל ביודעין — לא תקלה
     scrape: {
       running: false,
       phase: "idle",
@@ -842,12 +852,33 @@
     return request(path, { method: "GET" });
   }
 
-  function postJSON(path, body) {
-    return request(path, { method: "POST", body: JSON.stringify(body || {}) });
+  function postJSON(path, body, signal) {
+    return request(path, {
+      method: "POST",
+      body: JSON.stringify(body || {}),
+      signal: signal,
+    });
   }
 
+  /**
+   * שגיאה בשפה של מי שקורא אותה: מה קרה, ומה אפשר לעשות עכשיו.
+   *
+   * ‏"טעינת נתוני הקורסים נכשלה: TypeError: Failed to fetch" אומר למי
+   * שכתב את הקוד מה קרה, ולסטודנט/ית לא אומר דבר — ובעיקר לא אומר
+   * שהבחירות שלהם לא אבדו, שזו השאלה הראשונה שעולה.
+   */
   function errorText(err) {
     if (!err) return T("app.errors.unknown", "");
+    if (err.name === "AbortError") return T("app.schedule.solvingCancelled");
+    var status = num(err.status, 0);
+    // ‏fetch נכשל בלי סטטוס = לא הגענו לשרת בכלל.
+    if (!status) return T("app.errors.network");
+    if (status >= 500) return Tf("app.errors.serverFault", { status: status });
+    if (status >= 400) {
+      return Tf("app.errors.badRequest", {
+        error: txt(err.message) || T("app.errors.unknown", ""),
+      });
+    }
     return txt(err.message) || T("app.errors.unknown", "");
   }
 
@@ -2305,9 +2336,26 @@
       return Promise.resolve();
     }
     var my = ++seq.solve;
+    // חישוב שאי אפשר לעצור הוא מסך נעול. ‏AbortController מבטל את
+    // הבקשה עצמה, ולא רק מתעלם מהתשובה — אחרת השרת ממשיך לעבוד בזמן
+    // שהמשתמש/ת כבר המשיכו הלאה.
+    if (runtime.solveAbort) {
+      try {
+        runtime.solveAbort.abort();
+      } catch (e) {
+        /* דפדפן בלי abort — נופלים חזרה להתעלמות לפי seq */
+      }
+    }
+    runtime.solveAbort =
+      typeof AbortController === "function" ? new AbortController() : null;
     runtime.solveBusy = true;
+    runtime.solveCancelled = false;
     render();
-    return postJSON("/api/solve", buildSolveBody())
+    return postJSON(
+      "/api/solve",
+      buildSolveBody(),
+      runtime.solveAbort ? runtime.solveAbort.signal : undefined
+    )
       .then(function (data) {
         if (my !== seq.solve) return; // תשובה ישנה — להתעלם
         runtime.solveBusy = false;
@@ -2323,9 +2371,36 @@
       .catch(function (err) {
         if (my !== seq.solve) return;
         runtime.solveBusy = false;
-        runtime.solveError = errorText(err);
+        if (err && err.name === "AbortError") {
+          // ביטול אינו תקלה: אין באנר אדום, רק הודעה שקטה.
+          runtime.solveError = null;
+          runtime.solveCancelled = true;
+          toast(T("app.schedule.solvingCancelled"), "ok");
+        } else {
+          runtime.solveError = errorText(err);
+        }
         render();
       });
+  }
+
+  /** עוצר חישוב שרץ. הבחירות נשמרות — רק החישוב מפסיק. */
+  function cancelSolve() {
+    if (solveTimer) {
+      clearTimeout(solveTimer);
+      solveTimer = null;
+    }
+    seq.solve += 1; // תשובה שכבר בדרך תיזרק
+    if (runtime.solveAbort) {
+      try {
+        runtime.solveAbort.abort();
+      } catch (e) {
+        /* מטופל ב-catch של doSolve */
+      }
+    }
+    runtime.solveAbort = null;
+    runtime.solveBusy = false;
+    runtime.solveCancelled = true;
+    render();
   }
 
   function scheduleSolve(delay) {
@@ -3386,14 +3461,38 @@
     });
     // ‏באנר **רק** כשקורס שנבחר בפועל מושפע. מסד ישן שאף קורס נבחר אינו
     // מושפע ממנו אינו הודעה שדורשת החלטה — הוא שורת מצב, והיא כבר בכותרת.
+    // --- הקטלוג עצמו ישן ---
+    // מה שידוע: מתי הוא נבנה. מה שאינו ידוע ואי אפשר לדעת: אם הידיעון
+    // השתנה מאז. הניסוח אומר "ייתכן", ולא טוען דבר על השרת של המכללה.
+    var builtAt = txt(db.catalog_built_at);
+    var origin = txt(db.origin);
+    if (builtAt && (origin === "shipped" || origin === "mixed")) {
+      var ageDays = ageInDays(builtAt);
+      if (ageDays !== null && ageDays >= CATALOG_STALE_DAYS) {
+        wanted.push({
+          key: "catalog-old-" + builtAt,
+          kind: "warn",
+          text: Tf("app.banners.catalogOld", { age: agoHebrew(builtAt) }),
+          note: T("app.banners.catalogOldNote"),
+        });
+      }
+    }
+
     var staleMine = [];
     if (staleCodes.length) {
       var chosenSet = Object.create(null);
       state.codes.forEach(function (c) {
         chosenSet[txt(c)] = true;
       });
+      // קורס שהגיע עם הקטלוג אינו "הנתונים שלי התיישנו": כולם באותו
+      // גיל בדיוק, כי כולם נבנו באותו רגע. רשימה של 572 קורסים "ישנים"
+      // היא רעש, והמשפט "כדאי לעדכן מהידיעון" אינו נכון עבורם — יש
+      // עליהם באנר אחד, על הקטלוג עצמו.
+      var perCourse = (db.courses || {});
       staleMine = staleCodes.filter(function (c) {
-        return chosenSet[c];
+        if (!chosenSet[c]) return false;
+        var info = perCourse[c] || {};
+        return txt(info.origin) !== "shipped";
       });
     }
     if (staleMine.length) {
@@ -3509,6 +3608,12 @@
           if (!child) return;
           if (closeBtn) node.insertBefore(child, closeBtn);
           else node.appendChild(child);
+        }
+
+        // שורה שנייה, מושתקת: מה שהבאנר **אינו** יודע. היא נפרדת מהטקסט
+        // ולא משורשרת אליו, כי היא הסתייגות ולא המשך של אותה טענה.
+        if (item.note) {
+          place(el("span", { class: "banner-note", text: item.note }));
         }
 
         if (item.details) place(bannerDetails(item));
@@ -3693,6 +3798,19 @@
       setText(
         ui.freshText,
         builtAge ? Tf("app.header.builtAt", { age: builtAge }) : txt(db.text)
+      );
+      if (ui.freshText) {
+        ui.freshText.setAttribute("title", T("app.header.builtAtTitle"));
+      }
+    } else if (txt(db.origin) === "mixed" && txt(db.catalog_built_at)) {
+      // חלק מהנתונים נשלפו כאן וחלק הגיעו עם התוכנה. "הנתונים עודכנו"
+      // לבדו הוא טענה שגויה על החצי שנשלח, ולכן שני התאריכים נאמרים.
+      setText(
+        ui.freshText,
+        Tf("app.header.builtAtMixed", {
+          age: ageText,
+          built: agoHebrew(txt(db.catalog_built_at)),
+        })
       );
       if (ui.freshText) {
         ui.freshText.setAttribute("title", T("app.header.builtAtTitle"));
@@ -6054,7 +6172,41 @@
         // כמה מערכות נמצאו בסך הכול וכמה זמן לקח החישוב הם פירוט טכני.
         note = Tf("app.schedule.noteShown", { shown: list.length });
       }
-      setText(ui.scheduleNote, note);
+      // חישוב שרץ מקבל כפתור עצירה לידו. מסך שאי אפשר לצאת ממנו הוא
+      // מסך נעול, גם אם ההמתנה קצרה ברוב המקרים.
+      rebuild(ui.scheduleNote, function (box) {
+        if (note) box.appendChild(el("span", { class: "note-text", text: note }));
+        if (runtime.solveBusy) {
+          box.appendChild(
+            el("button", {
+              class: "btn btn-ghost btn-sm",
+              attrs: {
+                type: "button",
+                title: T("app.schedule.solvingCancelTitle"),
+              },
+              data: { fk: "solve-cancel" },
+              text: T("app.schedule.solvingCancel"),
+              on: { click: cancelSolve },
+            })
+          );
+        } else if (runtime.solveError) {
+          // שגיאה מגיעה עם דרך החוצה, לא רק עם תיאור.
+          box.appendChild(
+            el("button", {
+              class: "btn btn-outline btn-sm",
+              attrs: { type: "button" },
+              data: { fk: "solve-retry" },
+              text: T("app.errors.retry"),
+              on: {
+                click: function () {
+                  runtime.solveError = null;
+                  scheduleSolve(0);
+                },
+              },
+            })
+          );
+        }
+      });
     }
   }
 
@@ -6648,6 +6800,15 @@
       );
       root.appendChild(block);
     });
+  }
+
+  /** גיל בימים של חותמת ISO, או null אם אי אפשר לקרוא אותה. */
+  function ageInDays(stamp) {
+    var text = txt(stamp);
+    if (!text) return null;
+    var when = Date.parse(text);
+    if (isNaN(when)) return null;
+    return (Date.now() - when) / 86400000;
   }
 
   /** תאריך היום כ-‏"5.9.2026" — הסדר שבו כותבים תאריך בעברית. */

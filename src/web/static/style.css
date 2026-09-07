@@ -2325,3 +2325,20 @@ html.is-modal-open body { overflow: hidden; }
   color: var(--muted);
   font-style: italic;
 }
+
+/* הסתייגות בתוך באנר — שורה שנייה, מושתקת. */
+.banner-note {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--muted);
+  margin-block-start: 2px;
+}
+
+/* שורת המצב של החישוב: טקסט, ולידו דרך לצאת. */
+#schedule-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+#schedule-note:empty { display: none; }
