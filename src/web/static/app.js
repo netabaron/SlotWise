@@ -2490,34 +2490,10 @@
       });
   }
 
-  function startReparse() {
-    if (runtime.reparseBusy) return;
-    runtime.reparseBusy = true;
-    runtime.logShown = 0;
-    runtime.scrape.log = [];
-    runtime.scrape.summary = "";
-    // גם כאן היומן נשאר מקופל; מה שנראה הוא שורת הסיכום בכותרת.
-    render();
-    postJSON("/api/reparse", { semester: state.term, year: state.academicYear })
-      .then(function (data) {
-        runtime.reparseBusy = false;
-        runtime.scrape.log = pickList(data, ["log", "lines"], null);
-        runtime.scrape.phase = num(data.exit_code, 1) === 0 ? "done" : "failed";
-        runtime.scrape.exit_code = num(data.exit_code, null);
-        runtime.scrape.message = txt(data.message);
-        runtime.scrape.summary =
-          txt(data.message) || T("app.scrape.reparseSummary");
-        runtime.logShown = 0;
-        toast(txt(data.message) || T("app.toasts.reparseDone"), "ok");
-        refreshAllData();
-        render();
-      })
-      .catch(function (err) {
-        runtime.reparseBusy = false;
-        toast(errorText(err), "error");
-        render();
-      });
-  }
+  // ‏startReparse הוסר יחד עם הכפתור. ‏/api/reparse עצמו נשאר: הוא כלי
+  // של מתחזק/ת (וגם ‏tests/test_web.py §6ב בודק אותו), אבל הוא קורא מ-
+  // data/raw שאינו נכנס לגיט — כלומר בשכפול נקי הוא היה פועל על תיקייה
+  // ריקה, תמיד. כפתור שאינו יכול לעבוד גרוע מכפתור שאינו קיים.
 
   /**
    * שורת הסיכום היחידה שמופיעה על המסך בזמן רענון ואחריו (SPEC_V2 §4).
@@ -2590,7 +2566,6 @@
     ui.freshText = byId("freshness-text");
     ui.freshMeta = byId("freshness-meta");
     ui.btnRefresh = byId("btn-refresh");
-    ui.btnReparse = byId("btn-reparse");
     ui.logToggle = byId("btn-log-toggle");
     ui.logClose = byId("btn-log-close");
     ui.log = byId("scrape-log");
@@ -2835,9 +2810,6 @@
         if (runtime.scrape.running) return;
         startScrape();
       });
-    }
-    if (ui.btnReparse) {
-      ui.btnReparse.addEventListener("click", startReparse);
     }
     if (ui.logToggle) {
       ui.logToggle.addEventListener("click", function () {
@@ -3699,11 +3671,24 @@
       setText(ui.freshText, T("app.header.loading"));
     } else if (!num(db.count, 0)) {
       setText(ui.freshText, T("app.header.empty"));
+    } else if (txt(db.origin) === "shipped") {
+      // כל הנתונים הגיעו עם התוכנה. מה שידוע הוא **מתי הקטלוג נבנה**,
+      // ולא "מתי הנתונים עודכנו" — האפליקציה אינה בודקת את הידיעון
+      // ואינה יכולה לדעת אם משהו השתנה שם מאז.
+      var builtAge = agoHebrew(txt(db.catalog_built_at)) || ageText;
+      setText(
+        ui.freshText,
+        builtAge ? Tf("app.header.builtAt", { age: builtAge }) : txt(db.text)
+      );
+      if (ui.freshText) {
+        ui.freshText.setAttribute("title", T("app.header.builtAtTitle"));
+      }
     } else {
       setText(
         ui.freshText,
         ageText ? Tf("app.header.fetched", { age: ageText }) : txt(db.text)
       );
+      if (ui.freshText) ui.freshText.removeAttribute("title");
     }
 
     // שורת מצב אחת ותו לא. כל הספירות — כמה קורסים במסד, כמה קבוצות,
@@ -3733,7 +3718,6 @@
         ? T("app.header.refreshRunning")
         : T("app.header.refreshIdle");
     }
-    if (ui.btnReparse) ui.btnReparse.disabled = runtime.reparseBusy === true;
 
     // ‏SPEC_V2 §4: על המסך שורה אחת. השורות הגולמיות נשארות ביומן המקופל.
     var summaryLine = refreshSummaryText();

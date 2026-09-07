@@ -120,6 +120,40 @@ be, until the server sends a stable id separate from the display label. Recorded
 so the question is answered once.
 
 
+### `runtime.reparseBusy` is dead state that is permanently `false`
+**Where:** `src/web/static/app.js` — initialised at the `runtime` block, read at
+four sites (`anyBusy()`, the scrape summary line, the header phase line, and the
+disable check that survived).
+**Owner:** unassigned — a tidy-up, not a bug.
+**What:** the reparse button was removed on 2026-09-07 and `startReparse()` with
+it, so nothing ever sets the flag true. Four branches now cannot fire.
+**Why not removed:** the reads live inside the busy/phase logic that the *scrape*
+path still uses. Deleting them means editing shared state machinery for no
+user-visible gain, and this change had already grown large. Worth doing next time
+that code is opened for another reason — dead state that is always false is
+exactly what misleads a reader who assumes it can be true.
+
+### `/api/reparse` reads `data/raw`, which a fresh clone does not have
+**Where:** `src/web/api.py` (`/api/reparse`), `reparse.py`, and
+`tests/test_web.py` §6ב which covers the endpoint.
+**Owner:** a decision waiting, not a loose end.
+**What:** reparse rebuilds the database from the raw HTML in `data/raw/`. That
+directory is gitignored, so on a fresh clone the endpoint operates on an empty
+directory and always will. The button is gone; the endpoint remains and is
+tested.
+**The three options, for when this is decided:**
+1. **Make it a maintainer CLI only.** `reparse.py` already is one, and
+   `build_catalog.py` does the same job better — it reparses *and* validates.
+   Removing the HTTP endpoint means editing `tests/test_web.py`, which the
+   standing rule forbids, so it needs an explicit decision to lift that.
+2. **Repoint it at the shipped catalog.** "Reparse" becomes "reload
+   `data/catalog.jsonl`", which is meaningful on any machine and costs no
+   network. Closest to what a user would expect the words to mean.
+3. **Leave it.** It is harmless: it returns an honest "nothing to reparse" on a
+   clone. The cost is an endpoint whose name promises something it cannot do.
+**Recommendation:** option 2 when Phase 9 or hosting work touches this area.
+Option 1 is cleaner but pays a test-file edit for an endpoint nobody calls.
+
 ### The lecturer field in the yedion sometimes holds a note, not a name
 **Where:** `data/db/sections.json` → `groups[].lecturer`, now rendered in full on
 every grid block and on the printed sheet.

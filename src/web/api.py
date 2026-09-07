@@ -699,6 +699,19 @@ def clean_code(value: Any, *, field: str = "code") -> str:
     return text
 
 
+def _origin_of(meta: Any) -> str:
+    """מאיפה הרשומה הגיעה: ``"shipped"`` או ``"db"``.
+
+    ‏``shipped_catalog`` מסמן את הרשומות שלו ב-``source_url`` קבוע, ולכן
+    אין צורך לנחש לפי היעדר שדות.
+    """
+    try:
+        from shipped_catalog import SHIPPED_SOURCE  # type: ignore
+    except Exception:  # noqa: BLE001
+        return "db"
+    return "shipped" if getattr(meta, "source_url", "") == SHIPPED_SOURCE else "db"
+
+
 def _clean_codes(value: Any, *, field: str = "codes", allow_empty: bool = False) -> list[str]:
     """רשימת קודים מאומתת, בלי כפילויות, בסדר שהתקבל."""
     if value is None:
@@ -1063,7 +1076,9 @@ def _store() -> store_mod.Store:
     cache = current_app.extensions.setdefault("slotwise", {})
     obj = cache.get("store")
     if obj is None:
-        obj = store_mod.Store(str(_config()["db_root"]))
+        # ‏use_shipped: רק כאן. זו שכבת התצוגה, וכאן רוצים שמשתמש/ת
+        # יראו קטלוג מלא גם בשכפול נקי. ‏refresh/reparse משאירים כבוי.
+        obj = store_mod.Store(str(_config()["db_root"]), use_shipped=True)
         cache["store"] = obj
     return obj
 
@@ -3486,6 +3501,7 @@ def _meta_to_json(meta: store_mod.CourseMeta | None, max_age_hours: float) -> di
     if meta is None:
         return {
             "known": False,
+            "origin": "",
             "fetched_at": "",
             "age_hours": None,
             "age_text": "אין נתונים",
@@ -3501,6 +3517,10 @@ def _meta_to_json(meta: store_mod.CourseMeta | None, max_age_hours: float) -> di
     age = meta.age_hours()
     return {
         "known": True,
+        # ‏"shipped" = הגיע עם הקוד; "db" = נשלף על המכשיר הזה. הלקוח
+        # חייב את ההבחנה: רק לשני האחרונים יש חותמת שליפה של המשתמש/ת,
+        # ולקטלוג שנשלח יש רק תאריך **בנייה**.
+        "origin": _origin_of(meta),
         "fetched_at": meta.fetched_at,
         "age_hours": age,
         "age_text": store_mod.format_hebrew_age(age),
@@ -3536,8 +3556,29 @@ def _db_snapshot() -> dict[str, Any]:
         "newest": freshness.get("newest", ""),
         "oldest": freshness.get("oldest", ""),
         "max_age_hours": max_age,
+        # מאיפה הנתונים. ‏"shipped" = הכול הגיע עם התוכנה ואיש לא שלף
+        # כאן דבר; אז הכותרת מדברת על **תאריך בניית הקטלוג**, שהוא
+        # היחיד שידוע. ‏built_at ריק כשאין קטלוג שנשלח.
+        "origin": _db_origin(metas),
+        "catalog_built_at": _shipped_built_at(),
         "courses": {code: _meta_to_json(metas.get(code), max_age) for code in codes},
     }
+
+
+def _shipped_built_at() -> str:
+    try:
+        import shipped_catalog  # type: ignore
+    except Exception:  # noqa: BLE001
+        return ""
+    return shipped_catalog.built_at()
+
+
+def _db_origin(metas: dict) -> str:
+    """‏"shipped" אם אף רשומה לא נשלפה על המכשיר הזה, אחרת "mixed"/"db"."""
+    kinds = {_origin_of(m) for m in metas.values()} or {"db"}
+    if kinds == {"shipped"}:
+        return "shipped"
+    return "mixed" if "shipped" in kinds else "db"
 
 
 def _catalog_snapshot() -> tuple[dict[str, dict], dict[str, Any]]:
@@ -4269,8 +4310,12 @@ def courses():
     # עכשיו כבר ייחשב טרי.
     stale_details = set(_details_needing_fetch(codes))
     for course in built:
-        sources[course.code] = "fetched" if course.code in fetched_ok else "db"
         meta = metas.get(course.code)
+        # שלושה מקורות: נשלף עכשיו / נשלף כאן בעבר / הגיע עם הקוד.
+        # אחרי ``meta``, לא לפניו — אחרת נקרא כאן ה-meta של הקורס הקודם.
+        sources[course.code] = (
+            "fetched" if course.code in fetched_ok else _origin_of(meta)
+        )
         warnings: list[str] = []
         if not _year_matches(year, meta):
             warnings.append(
@@ -4301,7 +4346,11 @@ def courses():
                 course,
                 {
                     "offered": True,
-                    "source": sources.get(course.code, "db"),
+                    # שלושה מקורות, לא שניים: "fetched" — נשלף עכשיו;
+                    # "db" — המשתמש/ת שלפו קודם; "shipped" — הגיע עם הקוד.
+                    # ההבחנה אינה קוסמטית: רק ל-"db" ול-"fetched" יש
+                    # חותמת שליפה אמיתית, ועליה נשען כל נוסח הטריות.
+                    "source": sources.get(course.code, _origin_of(meta)),
                     "freshness": meta_json,
                     "warnings": warnings,
                     # נ"ז ותנאי קדם לפי סדר ההכרעה היחיד — עם המקור, כדי

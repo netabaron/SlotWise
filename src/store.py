@@ -125,6 +125,13 @@ DEFAULT_DETAILS_MAX_AGE_HOURS = 24.0 * 7
 MAX_SNAPSHOTS = 30
 
 #: שמות הקבצים בתוך תיקיית המסד.
+#: הקטלוג שנשלח עם הקוד. ייבוא עצל ורך: מסד שרץ בלעדיו חייב להמשיך
+#: לעבוד, כי ``store.py`` נטען גם מ-refresh.py ומ-reparse.py.
+try:  # pragma: no cover - נתיב הייבוא נבדק בבדיקות ייעודיות
+    import shipped_catalog as _shipped
+except Exception:  # noqa: BLE001
+    _shipped = None  # type: ignore[assignment]
+
 CATALOG_FILE = "catalog.json"
 SECTIONS_FILE = "sections.json"
 DETAILS_FILE = "details.json"
@@ -727,7 +734,19 @@ class Store:
         ...     print(line)
     """
 
-    def __init__(self, root: str = "data/db") -> None:
+    def __init__(self, root: str = "data/db", *, use_shipped: bool = False) -> None:
+        """
+        Args:
+            root: תיקיית המסד.
+            use_shipped: האם לצרף מתחת למסד את הקטלוג שנשלח עם הקוד.
+                **כבוי כברירת מחדל, ובכוונה.** ``Store(path)`` מתאר את מה
+                שיש ב-``path`` ותו לא; מסד ריק חייב להיות ריק. הצירוף הוא
+                החלטה של שכבת התצוגה — האפליקציה מדליקה אותו כדי שמשתמש/ת
+                יראו קטלוג מלא, ואילו ``refresh.py`` ו-``reparse.py``
+                משאירים אותו כבוי, אחרת זיהוי השינויים היה מוצא 572
+                "קורסים קיימים" שמעולם לא נכתבו למסד הזה.
+        """
+        self.use_shipped = bool(use_shipped)
         self.root = os.path.abspath(str(root))
         self.catalog_path = os.path.join(self.root, CATALOG_FILE)
         self.sections_path = os.path.join(self.root, SECTIONS_FILE)
@@ -924,6 +943,16 @@ class Store:
         """טוען את הקטלוג. מחזיר ``(courses, meta)``; מסד ריק -> ``({}, {})``."""
         data = self._read_json(self.catalog_path, None)
         if not isinstance(data, dict):
+            # אין קטלוג פרטי — נופלים לקטלוג שנשלח עם הקוד. זה מה שהופך
+            # שכפול נקי מ"אפס קורסים" ל-572.
+            if self.use_shipped and _shipped is not None and _shipped.available():
+                info = _shipped.meta()
+                return _shipped.index(), {
+                    "fetched_at": info.get("built_at") or "",
+                    "year": info.get("year") or "",
+                    "year_gregorian": info.get("year_gregorian") or "",
+                    "source": _shipped.SHIPPED_SOURCE,
+                }
             return {}, {}
         raw = data.get("courses")
         meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
@@ -1003,18 +1032,33 @@ class Store:
     # 6.3 סקשנים — הקבוצות המפורטות של קורס
     # ------------------------------------------------------------------
     def _load_sections_db(self) -> dict[str, Any]:
-        """הקובץ הגולמי של sections.json, תמיד בצורה תקינה."""
+        """הקובץ הגולמי של sections.json, מעל הקטלוג שנשלח עם הקוד.
+
+        **נקודת החיבור היחידה.** ``load_course``, ``load_all`` ו-``codes``
+        כולם עוברים כאן, ולכן די בשכבה אחת: הקטלוג שנשלח הוא הבסיס, ומה
+        שהמשתמש/ת שלפו בעצמם דורס אותו קוד-אחר-קוד. שכפול נקי מקבל את כל
+        הקטלוג; מי ששלף קורס בעצמו מקבל את הגרסה שלו.
+        """
         data = self._read_json(self.sections_path, None)
         if not isinstance(data, dict):
-            return {"schema": SECTIONS_SCHEMA, "version": SCHEMA_VERSION, "courses": {}}
+            data = {}
         courses = data.get("courses")
         if not isinstance(courses, dict):
             courses = {}
+
+        merged: dict[str, Any] = {}
+        if self.use_shipped and _shipped is not None:
+            try:
+                merged.update(_shipped.as_sections_entries())
+            except Exception:  # noqa: BLE001 - קטלוג פגום לא מפיל את המסד
+                pass
+        merged.update(courses)  # הנתונים של המשתמש/ת מנצחים
+
         return {
             "schema": data.get("schema", SECTIONS_SCHEMA),
             "version": _safe_int(data.get("version", SCHEMA_VERSION), SCHEMA_VERSION),
             "updated_at": data.get("updated_at", ""),
-            "courses": courses,
+            "courses": merged,
         }
 
     @staticmethod

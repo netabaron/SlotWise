@@ -33,7 +33,6 @@
     #freshness-text      "הנתונים נמשכו לפני 3 שעות"
     #freshness-meta      "6 קורסים · 27 קבוצות · קטלוג: 1412"
     #btn-refresh         "רענון מהידיעון"  ->  POST /api/scrape/start
-    #btn-reparse         "בנייה מחדש ללא רשת"  ->  POST /api/reparse
     #btn-log-toggle      מציג/מסתיר את #scrape-log (יש לעדכן aria-expanded)
 
   סרגל מצוף ושכבת המערכת / sticky bar + grid overlay
@@ -159,7 +158,6 @@
     </div>
     <div class="header-actions">
       <button type="button" class="btn btn-outline" id="btn-refresh">{{ S.ui.header.btnRefresh }}</button>
-      <button type="button" class="btn btn-quiet" id="btn-reparse">{{ S.ui.header.btnReparse }}</button>
     </div>
     <div class="theme-toggle" id="theme-toggle" role="radiogroup" aria-label="{{ S.ui.header.themeGroupLabel }}">
       <button type="button" class="theme-btn" role="radio" aria-checked="true"
