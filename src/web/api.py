@@ -699,6 +699,39 @@ def clean_code(value: Any, *, field: str = "code") -> str:
     return text
 
 
+def _relaxation_json(item: Any) -> dict[str, Any]:
+    """ויתור אחד, בצורה שהלקוח מרנדר ממנה משפט."""
+    return {
+        "kind": item.kind,
+        "detail": dict(item.detail or {}),
+        "apply": dict(item.apply or {}),
+        # ‏None עובר כ-null ונשאר null: "לא נמדד" אינו 0, ואסור שהממשק
+        # יציג מספר על חיפוש שלא הסתיים.
+        "schedules": item.schedules,
+        "cost": dict(item.cost or {}),
+        "combines_with": dict(item.combines_with) if item.combines_with else None,
+    }
+
+
+def _relaxations_json(courses: list, prefs: Any) -> dict[str, Any]:
+    """‏{"items": [...], "pairs_only": bool, "checked": [...]}.
+
+    ``checked`` הם הוויתורים שנמדדו במפורש כלא-עוזרים. הם נשלחים בכוונה:
+    "בדקנו כל אחד לחוד ואף אחד לא פותר" הוא מה שהופך את "שילוב של שניים
+    כן" למשפט שאפשר להבין.
+    """
+    try:
+        report = scheduler_mod.relaxations(courses, prefs)
+    except Exception as exc:  # noqa: BLE001 - אבחון לא מפיל תשובה
+        LOG.exception("relaxations נכשל")
+        return {"items": [], "pairs_only": False, "checked": [], "error": str(exc)}
+    return {
+        "items": [_relaxation_json(r) for r in report.best()],
+        "pairs_only": bool(report.pairs_only),
+        "checked": [_relaxation_json(r) for r in report.measured_useless()],
+    }
+
+
 def _origin_of(meta: Any) -> str:
     """מאיפה הרשומה הגיעה: ``"shipped"`` או ``"db"``.
 
@@ -894,7 +927,8 @@ def _clean_pinned(value: Any) -> dict[str, dict[str, str]]:
         if not isinstance(by_kind, dict):
             raise ApiError(
                 400,
-                "הנעיצות של כל קורס צריכות להיות מילון של {סוג רכיב: מספר קבוצה}.",
+                "הנעיצות של כל קורס צריכות להיות מילון של {סוג השיעור: מספר קבוצה} — "
+                "למשל {הרצאה: 271060310}.",
                 f"pinned[{code}]: expected an object, got {type(by_kind).__name__}",
             )
         for raw_kind, group_id in by_kind.items():
@@ -952,7 +986,7 @@ def _clean_attendance(value: Any) -> dict[str, dict[str, bool]]:
             raise ApiError(
                 400,
                 "הגדרות הנוכחות של כל קורס צריכות להיות מילון של "
-                "{סוג רכיב: כן/לא}.",
+                "{סוג השיעור: כן/לא} — למשל {הרצאה: כן}.",
                 f"attendance[{code}]: expected an object, got {type(by_kind).__name__}",
             )
         for raw_kind, flag in by_kind.items():
@@ -4705,6 +4739,10 @@ def solve():
             )
         base_common["reasons"] = reasons
         base_common["suggestions"] = suggestions
+        # ויתורים **נמדדים**: לכל אילוץ שהוגדר בפועל, כמה מערכות ייפתחו אם
+        # נרפה אותו, ומה זה גובה. הפותר רץ במילישניות, ולכן אין שום סיבה
+        # להציע ויתור בלי לבדוק אם הוא בכלל עוזר.
+        base_common["relaxations"] = _relaxations_json(diag, prefs)
         base_common["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
         return _ok(base_common)
 

@@ -116,6 +116,8 @@
                   #schedule-tabs #schedule-summary #schedule-legend
                   #grid-scroll > #schedule-grid
                   #schedule-empty (hidden) > #infeasible-reasons #infeasible-suggestions
+                  #relax (hidden) > #relax-title #relax-intro #relax-list #relax-checked
+                  #relax-undo (hidden)  — הודעת הביטול, מוצגת כשיש תוצאות
                   #btn-print #schedule-note
 
   הרשת השבועית / the weekly grid  (#schedule-grid)
@@ -419,6 +421,10 @@
       </details>
 
       <div class="facts" id="schedule-summary"></div>
+      <!-- ‏אחרי החלת ויתור המסך כבר אינו ריק, ולכן הביטול חייב לחיות
+           כאן — במקום שרואים כשיש תוצאות, לא במצב הריק שנעלם. -->
+      <p class="relax-undo" id="relax-undo" hidden></p>
+
       <div class="grid-tools">
         <div class="legend" id="schedule-legend"></div>
         <label class="grid-toggle" title="{{ S.app.grid.showAllHoursTitle }}">
@@ -453,6 +459,15 @@
         <p class="empty-sub">{{ S.ui.schedule.emptySub }}</p>
         <ul class="reasons" id="infeasible-reasons"></ul>
         <ul class="suggestions" id="infeasible-suggestions"></ul>
+
+        <!-- ‏ויתורים נמדדים. כל מספר כאן הוא תוצאה של פתירה מחדש, ולא
+             הערכה; ויתור שלא ניתן היה למדוד מוצג בלי מספר. -->
+        <div class="relax" id="relax" hidden>
+          <h4 class="relax-title" id="relax-title"></h4>
+          <p class="relax-intro" id="relax-intro"></p>
+          <div class="relax-list" id="relax-list"></div>
+          <p class="relax-checked" id="relax-checked"></p>
+        </div>
       </div>
 
       <p class="note" id="schedule-note"></p>

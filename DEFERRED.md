@@ -33,17 +33,20 @@ section-less tree and reloads when the file's mtime changes, so a long-running d
 server cannot serve yesterday's copy. `tests/test_rendered_copy_browser.py` asserts
 in a real browser that no label is empty and no raw key reaches the screen.
 
-### `רכיב` still appears in server-generated text
-**Where:** `src/strings.json` → `server.pins.kindMissing`, `server.pins.groupMissing`
-are fixed, but the infeasibility reasons and suggestions built in
-`src/web/api.py` (around the `reasons` / `suggestions` assembly) still use the
-word in places, and `api.py:2343` / `api.py:3349` use `רכיב` in its *software
-module* sense, which must NOT be renamed.
-**Owner:** Phase 6 (empty and error states) — that phase rewrites the
-infeasibility copy wholesale, so the terminology pass lands with it.
-**Why not now:** Phase 1 changed only strings that were already extracted. The
-remaining ones are interleaved with logic that Phase 6 rewrites anyway, and
-touching them twice would mean reviewing the same lines twice.
+### `רכיב` as user-facing wording — **closed 2026-09-07, and it was overstated**
+**What the entry used to claim:** that the infeasibility reasons and suggestions
+built in `src/web/api.py` still used `רכיב` in user-facing text, and that Phase 6
+would rewrite them.
+**What was actually there:** almost nothing. Every `רכיב` in `src/scheduler.py`
+and nearly all in `api.py` are docstrings and comments, which are correct — it is
+the right internal term. The infeasibility reasons never used it: they say
+`כל קבוצות ה{kind}`, substituting the real kind name (`הרצאה`, `תרגול`).
+**The two genuine ones**, both validation errors, now say `סוג השיעור` with a
+worked example instead of `סוג רכיב`:
+`api.py` — the `pinned` shape error, and the `attendance` shape error.
+**Worth recording as a habit, not just a fix:** this entry sat open for weeks
+describing a rewrite that was never needed. A deferred item should name the exact
+lines it means, or it grows in the retelling.
 
 ### The staleness banner and the header both offer a refresh
 **Where:** `#btn-refresh` in the header, and the banner's `עדכן נתונים` action.

@@ -36,6 +36,7 @@ import re
 import sys
 import warnings
 from collections.abc import Iterator
+import dataclasses
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -1307,7 +1308,12 @@ def solve(
                 "החיפוש נעצר במכסת הצמתים לפני שנמצא פתרון — כדאי להעלות את "
                 "פרמטר limit או להקטין את מרחב החיפוש (search node limit reached)."
             )
-        raise Infeasible(reasons)
+        problem = Infeasible(reasons)
+        # ‏"לא נמצא פתרון" ו"לא סיימנו לחפש" הם שתי תשובות שונות לגמרי.
+        # בלי ההבחנה הזאת מי שסופר וריאנטים היה רושם 0 ("בדקתי, לא עוזר")
+        # על חיפוש שפשוט נגמרה לו המכסה — כלומר ניחוש שנראה כמו מדידה.
+        problem.truncated = hit_limit  # type: ignore[attr-defined]
+        raise problem
 
     kept.sort(key=_sort_key)
     best = kept[:keep]
@@ -1316,6 +1322,216 @@ def solve(
     for sched in best:
         sched.truncated = hit_limit  # type: ignore[attr-defined]
     return best
+
+
+# ==========================================================================
+# 4ב. ויתורים — מה באמת ייפתח אם נרפה אילוץ אחד
+# ==========================================================================
+#: כמה צירופים של שני ויתורים לבדוק כשאף ויתור בודד אינו עוזר.
+MAX_RELAXATION_PAIRS: int = 15
+
+
+@dataclass
+class Relaxation:
+    """ויתור אחד אפשרי, ומה **נמדד** כשמוותרים עליו.
+
+    ``schedules`` הוא תמיד תוצאה של פתירה אמיתית, ולעולם לא הערכה. כשאי
+    אפשר למדוד — חיפוש שנקטע במכסה, או חריגה — הוא ``None``, והממשק מציג
+    את הוויתור **בלי מספר**. מספר משוער כאן גרוע ממספר חסר: הוא נראה כמו
+    הבטחה.
+
+    ``cost`` הוא מה שהוויתור **גובה**, גם הוא מדוד. "12 מערכות" בלי
+    "וכולן עם יום שישי" מוכר את הוויתור בלי המחיר שלו.
+    """
+
+    kind: str
+    detail: dict
+    apply: dict
+    schedules: "int | None" = None
+    cost: dict = field(default_factory=dict)
+    combines_with: "dict | None" = None
+
+    def helps(self) -> bool:
+        return bool(self.schedules)
+
+
+@dataclass
+class RelaxationReport:
+    """כל מה שנמדד על הוויתורים, בלי לאבד מדידה בדרך.
+
+    ``singles`` נשמר גם כשרק זוגות עוזרים: "בדקנו כל אחד לחוד, אף אחד לא
+    פותר" הוא בדיוק מה שהופך את "שילוב של שניים כן" למשפט מובן.
+    """
+
+    singles: list = field(default_factory=list)
+    pairs: list = field(default_factory=list)
+    pairs_only: bool = False
+
+    def best(self) -> list:
+        """מה להציג: הזוגות כשרק הם עוזרים, אחרת הבודדים שעוזרים."""
+        if self.pairs_only:
+            return list(self.pairs)
+        return [r for r in self.singles if r.helps()]
+
+    def measured_useless(self) -> list:
+        """ויתורים שנמדדו במפורש כלא-עוזרים (0), להבדיל מלא-נמדדו."""
+        return [r for r in self.singles if r.schedules == 0]
+
+
+def _relax_candidates(prefs: Preferences) -> list:
+    """אילו ויתורים רלוונטיים — רק אילוצים שהוגדרו בפועל.
+
+    אין טעם להציע "לבטל את חסימת שישי" למי שלא חסם אותו.
+    """
+    out = []
+    if prefs.forbid_friday:
+        out.append((CONSTRAINT_FRIDAY, {}, {"forbid_friday": False}))
+    if prefs.earliest > 0:
+        out.append((CONSTRAINT_EARLIEST, {"was": prefs.earliest}, {"earliest": 0}))
+    if prefs.latest < MINUTES_IN_DAY:
+        out.append(
+            (CONSTRAINT_LATEST, {"was": prefs.latest}, {"latest": MINUTES_IN_DAY})
+        )
+    for day, start, end in list(prefs.blocked_windows or []):
+        out.append(
+            (
+                CONSTRAINT_BLOCKED,
+                {"day": day, "start": start, "end": end},
+                {"drop_blocked_window": [day, start, end]},
+            )
+        )
+    return out
+
+
+def _apply_delta(prefs: Preferences, delta: dict) -> Preferences:
+    """מעתיק העדפות עם שינוי. לעולם לא נוגע במקור."""
+    changes = {}
+    for key, value in delta.items():
+        if key == "drop_blocked_window":
+            target = tuple(value)
+            base = changes.get("blocked_windows", prefs.blocked_windows or [])
+            changes["blocked_windows"] = [w for w in base if tuple(w) != target]
+        else:
+            changes[key] = value
+    return dataclasses.replace(prefs, **changes)
+
+
+def _measure(courses, prefs, top_n, limit):
+    """פותר, ומחזיר (כמה, המערכות). ``None`` = לא ניתן היה למדוד.
+
+    חיפוש שנקטע במכסה מחזיר "לפחות N" ולא N, ולכן הוא נחשב **לא נמדד** —
+    זה בדיוק ההבדל בין מספר לניחוש.
+    """
+    try:
+        found = solve(courses, prefs, top_n=top_n, limit=limit)
+    except Infeasible as exc:
+        # אפס = נבדק ואינו עוזר. ‏None = לא הספקנו לבדוק.
+        return (None if getattr(exc, "truncated", False) else 0), []
+    except Exception:  # noqa: BLE001 - וריאנט שנכשל אינו מפיל את השאר
+        return None, []
+    if any(getattr(x, "truncated", False) for x in found):
+        return None, found
+    return len(found), found
+
+
+def _cost_of(kind: str, detail: dict, found: list) -> dict:
+    """מה הוויתור גובה — נמדד מתוך המערכות שהוא באמת פתח."""
+    if not found:
+        return {}
+    total = len(found)
+    if kind == CONSTRAINT_FRIDAY:
+        n = sum(1 for x in found if FRIDAY in x.selection.days_used())
+        return {"metric": "friday", "n": n, "of": total}
+    if kind == CONSTRAINT_EARLIEST:
+        value = min(m.start for x in found for m in x.selection.all_meetings())
+        return {"metric": "starts_at", "minutes": value, "of": total}
+    if kind == CONSTRAINT_LATEST:
+        value = max(m.end for x in found for m in x.selection.all_meetings())
+        return {"metric": "ends_at", "minutes": value, "of": total}
+    if kind == CONSTRAINT_BLOCKED:
+        day = detail.get("day")
+        start = detail.get("start")
+        end = detail.get("end")
+        n = sum(
+            1
+            for x in found
+            if any(
+                _window_overlaps(m, day, start, end)
+                for m in x.selection.all_meetings()
+            )
+        )
+        return {"metric": "uses_window", "n": n, "of": total}
+    return {}
+
+
+def relaxations(
+    courses: list,
+    prefs: Preferences,
+    *,
+    top_n: int = 5,
+    limit: "int | None" = None,
+    max_pairs: int = MAX_RELAXATION_PAIRS,
+):
+    """
+    מה ייפתח אם נרפה אילוץ אחד — **נמדד**, אילוץ-אילוץ.
+
+    כל מספר כאן מגיע מפתירה אמיתית. הפותר רץ במילישניות על קלט ריאלי
+    (2,400 צירופים, 0.02 שניות), ולכן מדידה של חמישה וריאנטים זולה מכדי
+    שתהיה סיבה כלשהי לנחש.
+
+    Returns:
+        ``RelaxationReport``. ``singles`` תמיד מכיל את **כל** הוויתורים
+        הבודדים שנמדדו, כולל אלה שיצאו 0 — "בדקתי, לא עוזר" הוא מידע.
+        ``pairs_only=True`` אומר שאף בודד אינו פותח דבר אבל צירוף של
+        שניים כן, ואז ``pairs`` מחזיק אותם. רשימה ריקה אינה תשובה.
+    """
+    singles = []
+    for kind, detail, delta in _relax_candidates(prefs):
+        count, found = _measure(courses, _apply_delta(prefs, delta), top_n, limit)
+        singles.append(
+            Relaxation(
+                kind=kind,
+                detail=detail,
+                apply=delta,
+                schedules=count,
+                cost=_cost_of(kind, detail, found),
+            )
+        )
+
+    if any(r.helps() for r in singles):
+        singles.sort(key=lambda r: (-(r.schedules or 0), r.kind))
+        return RelaxationReport(singles=singles, pairs=[], pairs_only=False)
+
+    # אף ויתור בודד לא עזר. האם שניים יחד כן? "שילוב של שניים כן" הוא
+    # תשובה; רשימה ריקה היא הימנעות מתשובה.
+    pairs = []
+    cands = _relax_candidates(prefs)
+    for i, (kind_a, detail_a, delta_a) in enumerate(cands):
+        for kind_b, detail_b, delta_b in cands[i + 1 :]:
+            if len(pairs) >= max_pairs:
+                break
+            stepped = _apply_delta(_apply_delta(prefs, delta_a), delta_b)
+            count, found = _measure(courses, stepped, top_n, limit)
+            if count:
+                pairs.append(
+                    Relaxation(
+                        kind=kind_a,
+                        detail=detail_a,
+                        apply=delta_a,
+                        schedules=count,
+                        cost=_cost_of(kind_a, detail_a, found),
+                        combines_with={
+                            "kind": kind_b,
+                            "detail": detail_b,
+                            "apply": delta_b,
+                        },
+                    )
+                )
+    singles.sort(key=lambda r: (-(r.schedules or 0), r.kind))
+    if pairs:
+        pairs.sort(key=lambda r: -(r.schedules or 0))
+        return RelaxationReport(singles=singles, pairs=pairs, pairs_only=True)
+    return RelaxationReport(singles=singles, pairs=[], pairs_only=False)
 
 
 # ==========================================================================

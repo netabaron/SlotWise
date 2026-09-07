@@ -684,6 +684,8 @@
     logShown: 0,
     polling: false,
     reparseBusy: false,
+    // ההיפוך של הוויתור האחרון — ממוקד, לא צילום מצב. ראי undoRelaxation.
+    lastRelax: null,
     colors: Object.create(null),
     dismissed: Object.create(null),
     // ‏האם המשתמש/ת כבר נגעו במשהו בעמוד. הקיפול האוטומטי פועל רק לפני
@@ -2636,6 +2638,12 @@
     ui.empty = byId("schedule-empty");
     ui.reasons = byId("infeasible-reasons");
     ui.suggestions = byId("infeasible-suggestions");
+    ui.relax = byId("relax");
+    ui.relaxTitle = byId("relax-title");
+    ui.relaxIntro = byId("relax-intro");
+    ui.relaxList = byId("relax-list");
+    ui.relaxChecked = byId("relax-checked");
+    ui.relaxUndo = byId("relax-undo");
     ui.scheduleNote = byId("schedule-note");
     ui.softBox = byId("soft-conflicts");
     ui.softTitle = byId("soft-conflicts-title");
@@ -5893,15 +5901,35 @@
                 el("li", { text: T("app.schedule.noReasons") })
               );
             }
-            reasons.forEach(function (r) {
-              box.appendChild(
-                el("li", {
-                  text: txt(typeof r === "object" ? r.text || r.reason : r),
-                })
-              );
+            // הסיבות מסבירות את העבר; שורות הוויתור הן מה שעושים.
+            // לכן הראשונה גלויה והשאר מתקפלות — ולא להפך.
+            var texts = reasons.map(function (r) {
+              return txt(typeof r === "object" ? r.text || r.reason : r);
             });
+            if (texts.length) box.appendChild(el("li", { text: texts[0] }));
+            if (texts.length > 1) {
+              var rest = texts.slice(1);
+              var more = el("details", { class: "reasons-more" }, [
+                el("summary", {
+                  text:
+                    rest.length === 1
+                      ? T("app.schedule.moreReasonsOne")
+                      : Tf("app.schedule.moreReasons", { n: rest.length }),
+                }),
+                el(
+                  "ul",
+                  { class: "reasons" },
+                  rest.map(function (t) {
+                    return el("li", { text: t });
+                  })
+                ),
+              ]);
+              box.appendChild(el("li", { class: "reasons-more-wrap" }, [more]));
+            }
           });
         }
+        renderRelaxations(s);
+        renderRelaxUndo();
         if (ui.suggestions) {
           rebuild(ui.suggestions, function (box) {
             pickList(s, ["suggestions"], null).forEach(function (r) {
@@ -6644,6 +6672,283 @@
     fitGridToPage();
     fitBlocks(ui.grid);
     fitBlocks(ui.overlayGrid);
+  }
+
+
+  /* --- ויתורים נמדדים ------------------------------------------------ */
+
+  /** שם האילוץ, בלשון "לוותר על X". */
+  function relaxLabel(item) {
+    var d = item.detail || {};
+    if (item.kind === "friday") return T("app.relax.kind.friday");
+    if (item.kind === "earliest")
+      return Tf("app.relax.kind.earliest", { time: fmtTime(num(d.was, 0)) });
+    if (item.kind === "latest")
+      return Tf("app.relax.kind.latest", { time: fmtTime(num(d.was, 0)) });
+    if (item.kind === "blocked")
+      return Tf("app.relax.kind.blocked", {
+        day: dayName(num(d.day, 0)),
+        from: fmtTime(num(d.start, 0)),
+        to: fmtTime(num(d.end, 0)),
+      });
+    return txt(item.kind);
+  }
+
+  /** שם האילוץ בלשון "מה מוחזר" — לכפתור הביטול. */
+  function relaxRestoreName(kind, detail) {
+    var d = detail || {};
+    if (kind === "friday") return T("app.relax.restoreName.friday");
+    if (kind === "earliest")
+      return Tf("app.relax.restoreName.earliest", { time: fmtTime(num(d.was, 0)) });
+    if (kind === "latest")
+      return Tf("app.relax.restoreName.latest", { time: fmtTime(num(d.was, 0)) });
+    if (kind === "blocked")
+      return Tf("app.relax.restoreName.blocked", {
+        day: dayName(num(d.day, 0)),
+        from: fmtTime(num(d.start, 0)),
+        to: fmtTime(num(d.end, 0)),
+      });
+    return txt(kind);
+  }
+
+  /**
+   * המחיר, כפי שנמדד מהמערכות שהוויתור באמת פתח.
+   *
+   * ‏"12 מערכות" בלי "וכולן עם יום שישי" מוכר את הוויתור בלי המחיר שלו.
+   */
+  function relaxCost(cost) {
+    var c = cost || {};
+    var n = num(c.n, 0);
+    var of = num(c.of, 0);
+    if (c.metric === "friday") {
+      if (!n) return T("app.relax.cost.fridayNone");
+      return n >= of
+        ? T("app.relax.cost.fridayAll")
+        : Tf("app.relax.cost.fridaySome", { n: n, of: of });
+    }
+    if (c.metric === "starts_at")
+      return Tf("app.relax.cost.startsAt", { time: fmtTime(num(c.minutes, 0)) });
+    if (c.metric === "ends_at")
+      return Tf("app.relax.cost.endsAt", { time: fmtTime(num(c.minutes, 0)) });
+    if (c.metric === "uses_window") {
+      if (!n) return T("app.relax.cost.windowNone");
+      return n >= of
+        ? T("app.relax.cost.windowAll")
+        : Tf("app.relax.cost.windowSome", { n: n, of: of });
+    }
+    return "";
+  }
+
+  /** כמה נפתח — או למה אין מספר. ‏null אינו 0. */
+  function relaxOpens(item) {
+    if (item.schedules === null || item.schedules === undefined)
+      return { text: T("app.relax.unmeasured"), title: T("app.relax.unmeasuredTitle") };
+    if (!item.schedules) return { text: T("app.relax.useless"), title: "" };
+    return {
+      text:
+        item.schedules === 1
+          ? T("app.relax.opensOne")
+          : Tf("app.relax.opens", { n: item.schedules }),
+      title: "",
+    };
+  }
+
+  /**
+   * מחיל ויתור, וזוכר **את ההיפוך שלו בלבד**.
+   *
+   * לא צילום של כל ההעדפות: ביטול שמשחזר מצב שלם היה דורס כל שינוי אחר
+   * שנעשה בינתיים. היפוך ממוקד לא יכול לעשות את זה — הוא נוגע רק
+   * באילוץ שהורפה.
+   */
+  function applyRelaxation(item) {
+    var deltas = [item.apply];
+    if (item.combines_with) deltas.push(item.combines_with.apply);
+    var patch = {};
+    var restores = [];
+    deltas.forEach(function (delta, i) {
+      var kind = i === 0 ? item.kind : item.combines_with.kind;
+      var detail = i === 0 ? item.detail : item.combines_with.detail;
+      restores.push({ kind: kind, detail: detail, was: relaxSnapshot(delta) });
+      Object.keys(delta).forEach(function (key) {
+        if (key === "forbid_friday") patch.forbidFriday = delta[key];
+        else if (key === "earliest") patch.earliest = delta[key];
+        else if (key === "latest") patch.latest = delta[key];
+        else if (key === "drop_blocked_window") {
+          var w = delta[key];
+          patch.blocked = (patch.blocked || state.blocked || []).filter(function (b) {
+            return !(b[0] === w[0] && b[1] === w[1] && b[2] === w[2]);
+          });
+        }
+      });
+    });
+    runtime.lastRelax = { restores: restores, applied: patch };
+    setState(patch);
+    toast(
+      Tf("app.relax.applied", {
+        what: restores.map(function (r) { return relaxRestoreName(r.kind, r.detail); })
+                      .join(" ו"),
+        n: num(item.schedules, 0),
+      }),
+      "ok"
+    );
+  }
+
+  /** מה היה לפני הוויתור — ערך יחיד, לא מצב שלם. */
+  function relaxSnapshot(delta) {
+    var was = {};
+    Object.keys(delta).forEach(function (key) {
+      if (key === "forbid_friday") was.forbidFriday = state.forbidFriday;
+      else if (key === "earliest") was.earliest = state.earliest;
+      else if (key === "latest") was.latest = state.latest;
+      else if (key === "drop_blocked_window") was.window = delta[key];
+    });
+    return was;
+  }
+
+  /**
+   * האם הביטול עדיין תקף.
+   *
+   * תקף = האילוץ עדיין נמצא במצב שהוויתור הביא אותו אליו. אם שינית אותו
+   * שוב בעצמך, הביטול **נעלם** — ביטול שמחזיר מצב שכבר לא קיים גרוע
+   * מהיעדר ביטול.
+   */
+  function relaxUndoValid() {
+    var last = runtime.lastRelax;
+    if (!last) return false;
+    var patch = last.applied || {};
+    var keys = Object.keys(patch);
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      if (k === "blocked") {
+        if ((state.blocked || []).length !== (patch.blocked || []).length) return false;
+      } else if (state[k] !== patch[k]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** מחזיר בדיוק את מה שהורפה, ותו לא. */
+  function undoRelaxation() {
+    var last = runtime.lastRelax;
+    if (!last || !relaxUndoValid()) return;
+    var patch = {};
+    var names = [];
+    last.restores.forEach(function (r) {
+      names.push(relaxRestoreName(r.kind, r.detail));
+      var was = r.was || {};
+      if ("forbidFriday" in was) patch.forbidFriday = was.forbidFriday;
+      if ("earliest" in was) patch.earliest = was.earliest;
+      if ("latest" in was) patch.latest = was.latest;
+      if (was.window) {
+        patch.blocked = (patch.blocked || state.blocked || []).concat([was.window]);
+      }
+    });
+    runtime.lastRelax = null;
+    setState(patch);
+    toast(Tf("app.relax.undone", { what: names.join(" ו") }), "ok");
+  }
+
+  /**
+   * הודעת הביטול, במקום שרואים כשיש תוצאות.
+   *
+   * נעלמת מעצמה כשהאילוץ שהורפה שונה שוב ידנית — ראי ``relaxUndoValid``.
+   * ביטול שמחזיר מצב שכבר אינו קיים גרוע מהיעדר ביטול.
+   */
+  function renderRelaxUndo() {
+    if (!ui.relaxUndo) return;
+    var ok = relaxUndoValid();
+    setHidden(ui.relaxUndo, !ok);
+    if (!ok) return;
+    var names = (runtime.lastRelax.restores || []).map(function (r) {
+      return relaxRestoreName(r.kind, r.detail);
+    });
+    rebuild(ui.relaxUndo, function (box) {
+      box.appendChild(
+        el("span", {
+          class: "relax-undo-text",
+          text: Tf("app.relax.undoNotice", { what: names.join(" ו") }),
+        })
+      );
+      box.appendChild(
+        el("button", {
+          class: "btn btn-outline btn-sm",
+          attrs: { type: "button" },
+          data: { fk: "relax-undo" },
+          // שם מה שחוזר, ולא "בטל".
+          text: Tf("app.relax.undo", { what: names.join(" ו") }),
+          on: { click: undoRelaxation },
+        })
+      );
+    });
+  }
+
+  /** מצייר את הוויתורים שנמדדו. */
+  function renderRelaxations(s) {
+    if (!ui.relax) return;
+    var data = (s && s.relaxations) || {};
+    var items = pickList(data, ["items"], null);
+    var pairs = data.pairs_only === true;
+    setHidden(ui.relax, !items.length);
+    if (!items.length) return;
+
+    setText(ui.relaxTitle, pairs ? T("app.relax.titlePairs") : T("app.relax.title"));
+    setText(ui.relaxIntro, pairs ? T("app.relax.introPairs") : T("app.relax.intro"));
+
+    rebuild(ui.relaxList, function (box) {
+      items.forEach(function (item, idx) {
+        var opens = relaxOpens(item);
+        var cost = relaxCost(item.cost);
+        // זוג נכתב בשתי שורות עם סוגר, ולא במשפט אחד ארוך. זו השורה
+        // הכי קשה לקריאה במסך הזה, והיא בדיוק זו שסטודנט/ית תקועים
+        // מגיעים אליה — לכן היא מקבלת את המקום ולא חוסכת בו.
+        var what = item.combines_with
+          ? el("div", { class: "relax-pair" }, [
+              el("span", { class: "relax-pair-line", text: relaxLabel(item) }),
+              el("span", {
+                class: "relax-pair-line",
+                text: relaxLabel(item.combines_with),
+              }),
+              el("span", { class: "relax-pair-both", text: T("app.relax.pairBoth") }),
+            ])
+          : el("b", { text: relaxLabel(item) });
+
+        var row = el("div", { class: "relax-row" }, [
+          el("div", { class: "relax-what" }, [
+            what,
+            el("span", {
+              class: "relax-opens" + (item.schedules ? "" : " is-quiet"),
+              text: opens.text,
+              attrs: opens.title ? { title: opens.title } : {},
+            }),
+            cost ? el("span", { class: "relax-cost", text: cost }) : null,
+          ]),
+          item.schedules
+            ? el("button", {
+                class: "btn btn-outline btn-sm",
+                attrs: {
+                  type: "button",
+                  title: T("app.relax.applyTitle"),
+                },
+                data: { fk: "relax-" + idx },
+                text: item.combines_with ? T("app.relax.pairApply") : T("app.relax.apply"),
+                on: { click: function () { applyRelaxation(item); } },
+              })
+            : null,
+        ]);
+        box.appendChild(row);
+      });
+    });
+
+    var checked = pickList(data, ["checked"], null);
+    setText(
+      ui.relaxChecked,
+      checked.length
+        ? Tf("app.relax.checkedNone", {
+            list: checked.map(relaxLabel).join(", "),
+          })
+        : ""
+    );
   }
 
   /* --- מצב חמשת השלבים ------------------------------------------------ */

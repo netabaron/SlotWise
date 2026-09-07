@@ -2218,3 +2218,79 @@ html.is-modal-open body { overflow: hidden; }
   .ev .ev-lect,
   .ev span { opacity: 1 !important; }
 }
+
+
+/* ==========================================================================
+   23. ויתורים נמדדים — מצב "אין פתרון"
+   ========================================================================== */
+
+.relax { margin-block-start: 14px; }
+.relax-title { margin: 0 0 4px; font-size: 14px; font-weight: 700; }
+.relax-intro { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); }
+
+.relax-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  margin-block-end: 6px;
+}
+
+.relax-what { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
+.relax-what b { font-size: 13px; }
+
+/* ‏זוג: שתי שורות וסוגר. הסוגר הוא גבול בצד ההתחלה — בעברית זהו הצד
+   הימני — ולא תו סוגריים, כדי שהוא יימתח לגובה שתי השורות בכל גופן. */
+.relax-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-inline-start: 10px;
+  border-inline-start: 3px solid var(--accent);
+  border-start-start-radius: 3px;
+  border-end-start-radius: 3px;
+}
+.relax-pair-line { font-size: 13px; font-weight: 700; }
+.relax-pair-both {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-block-start: 2px;
+}
+
+.relax-opens { font-size: 12.5px; font-weight: 600; }
+.relax-opens.is-quiet { font-weight: 400; color: var(--muted); }
+.relax-cost { font-size: 12.5px; color: var(--muted); }
+.relax-checked { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+
+/* הסיבות שמתקפלות: הראשונה גלויה, השאר בגילוי. */
+.reasons-more-wrap { list-style: none; margin-inline-start: -1em; }
+.reasons-more summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--accent);
+}
+.reasons-more[open] summary { margin-block-end: 4px; }
+
+/* הודעת הביטול — לא במצב הריק, שנעלם ברגע שיש תוצאות. */
+.relax-undo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--chip);
+  font-size: 12.5px;
+}
+.relax-undo-text { color: var(--ink); }
+
+@media print {
+  .relax, .relax-undo { display: none !important; }
+}
