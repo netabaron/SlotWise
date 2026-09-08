@@ -5935,16 +5935,37 @@
           : 0;
         var close = spread <= 5;
         var myLabel = differentiators(list)[idx] || "";
+
+        // ‏המערכת המדורגת ראשונה מקבלת תווית במקום מספר. הרף נקבע על ידה —
+        // ‏fitScores() נותן 100 לטובה מבין המוצגות — ולכן "100%" שם נשמע
+        // מוחלט הרבה יותר ממה שהוא. "ההתאמה הגבוהה ביותר" אומר בדיוק את
+        // מה שהמספר אמר, בלי להבטיח התאמה מושלמת.
+        //
+        // ‏כשכולן שקולות אין "ראשונה", ואז המספר נשאר וההערה (fitTied)
+        // היא שמסבירה. שימוש חוזר ב-app.compare.bestOverall ולא נוסח שני
+        // זהה: זה אותו משפט, ולשוניות ההשוואה כבר אומרות אותו — שני
+        // מפתחות היו נפרדים בשקט ואז המסך היה אומר אותו דבר פעמיים.
+        var bestFit = fits.length ? Math.max.apply(null, fits) : 0;
+        var isBest = fits.length > 0 && !allTied && fit === bestFit;
+        var bestText = T("app.compare.bestOverall");
+        var headline = close && myLabel && !(isBest && myLabel === bestText)
+          ? myLabel
+          : "";
         box.appendChild(
           el("div", { class: "fit" + (close ? " fit--close" : "") }, [
-            close && myLabel
-              ? el("strong", { class: "fit-headline", text: myLabel })
+            headline
+              ? el("strong", { class: "fit-headline", text: headline })
               : null,
-            el("span", { class: "fit-label", text: T("app.schedule.fitLabel") }),
-            el("strong", {
-              class: "fit-value ltr",
-              text: fmtFit(fit),
-            }),
+            // ‏"התאמה" מסביר מה המספר מודד. התווית כבר מכילה את המילה,
+            // ולכן לצדה השורה הייתה נקראת "התאמה · ההתאמה הגבוהה ביותר".
+            isBest
+              ? null
+              : el("span", { class: "fit-label", text: T("app.schedule.fitLabel") }),
+            // ‏בלי class="ltr" בענף התווית: הוא כופה direction: ltr, שנכון
+            // למספר ושגוי למשפט עברי.
+            isBest
+              ? el("strong", { class: "fit-value fit-value--best", text: bestText })
+              : el("strong", { class: "fit-value ltr", text: fmtFit(fit) }),
             el("span", {
               class: "fit-note",
               text: allTied

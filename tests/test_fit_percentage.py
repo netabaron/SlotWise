@@ -147,28 +147,105 @@ FIRST_LAST = """(sel) => {
 }"""
 
 
-def test_the_score_panel_shows_a_percentage(page):
-    text = page.text_content(".fit-value").strip()
-    assert re.fullmatch(r"\d{1,3}%", text), text
-    assert "/" not in text
+BEST_LABEL = STRINGS["app"]["compare"]["bestOverall"]
+
+#: בורר מערכת לפי אינדקס, ומחזיר כמה לשוניות יש.
+SELECT = """(i) => {
+  const tabs = [...document.querySelectorAll('#schedule-tabs .tab')];
+  if (tabs[i]) tabs[i].click();
+  return tabs.length;
+}"""
+
+FIT_STATE = """() => {
+  const v = document.querySelector('.fit-value');
+  if (!v) return null;
+  return {text: v.textContent.trim(), best: v.classList.contains('fit-value--best'),
+          ltr: v.classList.contains('ltr'),
+          hasLabel: !!document.querySelector('.fit .fit-label')};
+}"""
 
 
-def test_the_comparison_table_shows_the_same_percentage(page):
-    """אותו מספר בשני המקומות — וגם זה נשבר פעם אחת בעבר."""
-    cell = page.evaluate(
+def _fit_row_cells(page):
+    return page.evaluate(
         """() => {
           const rows = [...document.querySelectorAll('.compare-table tbody tr')];
           const row = rows.find(r => (r.querySelector('th')?.textContent || '')
                                        .trim() === 'התאמה');
-          if (!row) return null;
-          const active = row.querySelector('td.is-active') || row.querySelector('td');
-          return active ? active.textContent.trim() : null;
+          return row ? [...row.querySelectorAll('td')].map(td => td.textContent.trim())
+                     : null;
         }"""
     )
-    assert cell, "לא נמצאה שורת ההתאמה בטבלת ההשוואה"
-    assert re.fullmatch(r"\d{1,3}%", cell), cell
-    assert "/" not in cell
-    assert cell == page.text_content(".fit-value").strip()
+
+
+def test_the_top_ranked_schedule_is_labelled_not_scored(page):
+    """‏fitScores() נותן 100 לטובה מבין המוצגות, ולכן היא מגדירה את הרף.
+
+    ‏"100%" שם נשמע כמו התאמה מושלמת. התווית אומרת את אותו דבר בלי
+    ההבטחה הזאת.
+    """
+    page.evaluate(SELECT, 0)
+    page.wait_for_timeout(400)
+    got = page.evaluate(FIT_STATE)
+    assert got, "לא נמצא פאנל ההתאמה"
+    assert got["best"], f"המערכת הראשונה עדיין מציגה מספר: {got['text']!r}"
+    assert got["text"] == BEST_LABEL, got["text"]
+    assert "%" not in got["text"]
+    assert not got["ltr"], "‏class=ltr כופה direction: ltr על משפט עברי"
+    assert not got["hasLabel"], (
+        "‏'התאמה' לצד 'ההתאמה הגבוהה ביותר' קורא 'התאמה · ההתאמה הגבוהה ביותר'")
+
+
+def test_the_label_is_not_shown_twice(page):
+    """הכותרת המבדילה יכולה לומר בדיוק את אותו משפט. אז היא נסוגה."""
+    page.evaluate(SELECT, 0)
+    page.wait_for_timeout(400)
+    count = page.evaluate(
+        "(t) => [...document.querySelectorAll('.fit *')]"
+        "        .filter(e => e.textContent.trim() === t).length", BEST_LABEL)
+    assert count <= 1, f"‏{BEST_LABEL!r} מופיע {count} פעמים בפאנל אחד"
+
+
+def test_a_lower_ranked_schedule_still_shows_a_percentage(page):
+    """התווית היא למובילה בלבד; כל השאר נשארות מספר."""
+    total = page.evaluate(SELECT, 0)
+    found = None
+    for i in range(1, total):
+        page.evaluate(SELECT, i)
+        page.wait_for_timeout(400)
+        got = page.evaluate(FIT_STATE)
+        if got and not got["best"]:
+            found = got
+            break
+    page.evaluate(SELECT, 0)
+    page.wait_for_timeout(300)
+    if found is None:
+        pytest.skip("כל המערכות המוצגות שקולות — אין מערכת שאינה המובילה")
+    assert re.fullmatch(r"\d{1,3}%", found["text"]), found["text"]
+    assert "/" not in found["text"]
+    assert found["ltr"], "מספר חייב להישאר מבודד ב-ltr"
+    assert found["hasLabel"], "מספר בלי 'התאמה' לצדו אינו אומר מה הוא מודד"
+
+
+def test_the_comparison_table_shows_percentages(page):
+    """בטבלה המספר הוא כן הדבר הנכון: חמש עמודות זו לצד זו הן ההקשר
+    שהופך אותו ליחסי, ומשפט באורך מלא בכל עמודה היה הורס את הטבלה."""
+    cells = _fit_row_cells(page)
+    assert cells, "לא נמצאה שורת ההתאמה בטבלת ההשוואה"
+    for c in cells:
+        assert re.fullmatch(r"\d{1,3}%", c), c
+        assert "/" not in c
+
+
+def _select_a_numeric_schedule(page) -> bool:
+    """בורר מערכת שאינה המובילה, כי רק שם ההתאמה היא מספר."""
+    total = page.evaluate(SELECT, 0)
+    for i in range(0, total):
+        page.evaluate(SELECT, i)
+        page.wait_for_timeout(400)
+        got = page.evaluate(FIT_STATE)
+        if got and not got["best"]:
+            return True
+    return False
 
 
 @pytest.mark.parametrize(
@@ -188,7 +265,13 @@ def test_the_fit_is_not_visually_reversed(page, where, selector):
     לאחרון, וזה בדיוק מה שנראה על המסך. ‏textContent היה מחזיר
     ‏"87 / 100" בשני המקרים ולא היה מבחין ביניהם כלל.
     """
+    if selector == ".fit-value":
+        # ‏במערכת המובילה הפאנל מציג משפט עברי, ושם ימין-לשמאל הוא הנכון.
+        # הבדיקה הזאת עוסקת בסדר של מספר, ולכן בוחרים מערכת שמציגה מספר.
+        if not _select_a_numeric_schedule(page):
+            pytest.skip("כל המערכות שקולות — אין מספר לבדוק את סדרו")
     got = page.evaluate(FIRST_LAST, selector)
+    page.evaluate(SELECT, 0)
     assert got, f"לא נמצא טקסט ב{where}"
     assert got["firstLeft"] < got["lastLeft"], (
         f"ההתאמה מצוירת הפוכה ב{where}: {got['text']!r} — "

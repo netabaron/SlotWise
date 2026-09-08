@@ -1849,6 +1849,19 @@ html.is-modal-open body { overflow: hidden; }
 
 .fit-label { font-size: 13px; color: var(--muted); font-weight: 600; }
 .fit-value { font-size: 22px; font-variant-numeric: tabular-nums; }
+
+/* ‏המערכת המדורגת ראשונה נושאת משפט במקום מספר, ולכן היא זקוקה לגודל
+   משלה: ‎22px‎ נבחר לשני תווים ומחצה, ו"ההתאמה הגבוהה ביותר" באותו גודל
+   היה בולע את השורה. ‏700 ולא 600 — ‎Noto Sans Hebrew‎ מגיע ב-400 וב-700
+   בלבד, ומשקל ביניים על עברית נצמד ל-700 בעוד לטינית לצדו מקבלת 600
+   אמיתי. הצירוף עם ‎.fit--close‎ נחוץ כי הכלל שם הוא (0,2,0) ומנצח. */
+.fit-value--best,
+.fit--close .fit-value--best {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: normal;
+}
 .fit-note { font-size: 13px; color: var(--muted); flex: 1 1 14rem; min-inline-size: 0; }
 
 /* שני חצאי הפאנל, כל אחד עם כותרת משלו. */
