@@ -24,56 +24,56 @@
   color-scheme: light dark;
 
   /* ---- משטחים וטקסט ---- */
-  --bg: #f4f6f9;
-  --panel: #ffffff;
-  --panel-2: #f7f9fc;
-  --chip: #eef1f5;
-  --ink: #1b232e;
-  --muted: #4d5866;
-  --line: #dde2e9;
-  --line-strong: #b8c0cc;
+  --bg: #f3eee4;
+  --panel: #fffdf9;
+  --panel-2: #f7f1e5;
+  --chip: #ece4d3;
+  --ink: #2b241d;
+  --muted: #5f5245;
+  --line: #e2d8c6;
+  --line-strong: #8f7b62;
 
   /* ---- צבע ראשי ---- */
-  --accent: #1f5296;
-  --accent-ink: #ffffff;
-  --accent-soft: #e6eefb;
-  --focus: #1f5296;
+  --accent: #a33b1c;
+  --accent-ink: #fffdf9;
+  --accent-soft: #f8e3d7;
+  --focus: #a33b1c;
 
   /* ---- מצבים ---- */
-  --info-bg: #e9f0fb;  --info-line: #9dbbe6;  --info-ink: #17457e;
-  --ok-bg:   #e8f7ee;  --ok-line:   #8ccfa8;  --ok-ink:   #0f4d2b;
-  --warn-bg: #fff7e6;  --warn-line: #d9a94e;  --warn-ink: #6b4104;
-  --err-bg:  #fdeaec;  --err-line:  #e39aa3;  --err-ink:  #8f1220;
+  --info-bg: #e9eef6;  --info-line: #4d74ad;  --info-ink: #1f4576;
+  --ok-bg:   #e7f0dc;  --ok-line:   #4a8a3c;  --ok-ink:   #24501a;
+  --warn-bg: #fbf0d5;  --warn-line: #8a5a12;  --warn-ink: #5d3a05;
+  --err-bg:  #fbe3e8;  --err-line:  #ad2c48;  --err-ink:  #8a1030;
 
   /* ---- סימוני טבלת המרצים ---- */
-  --pin-bg: #e8f7ee;
-  --pin-line: #2f7d52;
-  --tie-line: #7d5bbe;
-  --dead-line: #a6323f;
+  --pin-bg: #e7f0dc;
+  --pin-line: #366e2b;
+  --tie-line: #6d4fa6;
+  --dead-line: #7d1533;
 
   /* ---- מידות ---- */
   --slot-h: 22px;          /* גובה משבצת של 15 דקות */
   --time-col: 4.6rem;      /* רוחב עמודת השעות */
   --day-min: 8.5rem;       /* רוחב מינימלי לעמודת יום — מתחת לזה הרשת נגללת */
-  --radius: 12px;
-  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-sm: 6px;
   --gap: 14px;
-  --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 24px rgba(16, 24, 40, .07);
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, .08);
+  --shadow: 0 1px 0 rgba(74, 56, 38, .05), 0 2px 6px rgba(74, 56, 38, .09);
+  --shadow-sm: 0 1px 2px rgba(74, 56, 38, .10);
 
   /* ---- עשרה צבעי קורס נגישים ----
      כל שילוב רקע/טקסט נבדק: יחס ניגודיות ‎>= 9:1‎ במצב בהיר ובמצב כהה כאחד
      (הדרישה היא 7:1). מיפוי הקוד לצבע זהה ל-src/render.py. */
-  --course-0: #dbeafe;  --course-0-bd: #93c5fd;  --course-0-fg: #152c56;
-  --course-1: #dcfce7;  --course-1-bd: #86efac;  --course-1-fg: #0f3d22;
-  --course-2: #fef3c7;  --course-2-bd: #fcd34d;  --course-2-fg: #5c2c06;
-  --course-3: #ffe4e6;  --course-3-bd: #fda4af;  --course-3-fg: #6b0f28;
-  --course-4: #ede9fe;  --course-4-bd: #c4b5fd;  --course-4-fg: #3b1a75;
-  --course-5: #cffafe;  --course-5-bd: #67e8f9;  --course-5-fg: #0d4453;
-  --course-6: #ecfccb;  --course-6-bd: #bef264;  --course-6-fg: #2b4310;
-  --course-7: #ffedd5;  --course-7-bd: #fdba74;  --course-7-fg: #6a250d;
-  --course-8: #fae8ff;  --course-8-bd: #e879f9;  --course-8-fg: #5c1462;
-  --course-9: #ccfbf1;  --course-9-bd: #5eead4;  --course-9-fg: #0d423e;
+  --course-0: #f3d4c9;  --course-0-bd: #d9613e;  --course-0-fg: #681a04;
+  --course-1: #fbecd7;  --course-1-bd: #ae660f;  --course-1-fg: #623804;
+  --course-2: #f8e5a1;  --course-2-bd: #b18b0c;  --course-2-fg: #4a3b03;
+  --course-3: #cfe5bb;  --course-3-bd: #5a952e;  --course-3-fg: #1b4003;
+  --course-4: #d9efe2;  --course-4-bd: #2b885c;  --course-4-fg: #03492b;
+  --course-5: #a9dde2;  --course-5-bd: #229ba9;  --course-5-fg: #03373e;
+  --course-6: #c1d2eb;  --course-6-bd: #3e74ce;  --course-6-fg: #042c6a;
+  --course-7: #e9ddf1;  --course-7-bd: #a177ca;  --course-7-fg: #4d079f;
+  --course-8: #faf0f4;  --course-8-bd: #c850a0;  --course-8-fg: #84055e;
+  --course-9: #f6cdd3;  --course-9-bd: #db6780;  --course-9-fg: #6c051d;
 
   /* ======================================================================
      ‏מקור הפלטה הכהה. הערכים חיים **כאן בלבד**, ושני גושי הכהה בפרק 2
@@ -83,43 +83,43 @@
      The dark palette is defined once, here. The two dark blocks in §2
      only map to it, so no hex appears twice.
      ====================================================================== */
-  --dark-bg: #11151b;
-  --dark-panel: #1a2028;
-  --dark-panel-2: #20272f;
-  --dark-chip: #222a34;
-  --dark-ink: #e6eaf1;
-  --dark-muted: #a8b3c2;
-  --dark-line: #2a323d;
-  --dark-line-strong: #3d4855;
+  --dark-bg: #1a1a1a;
+  --dark-panel: #252525;
+  --dark-panel-2: #2d2d2d;
+  --dark-chip: #353535;
+  --dark-ink: #f2e8da;
+  --dark-muted: #bcac95;
+  --dark-line: #3b3b3b;
+  --dark-line-strong: #7e7e7e;
 
-  --dark-accent: #93c0f6;
-  --dark-accent-ink: #0f1620;
-  --dark-accent-soft: #1e2c40;
-  --dark-focus: #93c0f6;
+  --dark-accent: #f0a077;
+  --dark-accent-ink: #1a1410;
+  --dark-accent-soft: #3b2517;
+  --dark-focus: #f0a077;
 
-  --dark-info-bg: #17263b;  --dark-info-line: #3d5f8e;  --dark-info-ink: #bcd6f7;
-  --dark-ok-bg:   #12331f;  --dark-ok-line:   #3d7a55;  --dark-ok-ink:   #9de8bb;
-  --dark-warn-bg: #3a2b0c;  --dark-warn-line: #8a6a21;  --dark-warn-ink: #ffd894;
-  --dark-err-bg:  #3d1219;  --dark-err-line:  #8a3a45;  --dark-err-ink:  #ffb3bc;
+  --dark-info-bg: #1b2431;  --dark-info-line: #4a6f9e;  --dark-info-ink: #bcd3ef;
+  --dark-ok-bg:   #1a2c17;  --dark-ok-line:   #4f8a45;  --dark-ok-ink:   #b6e0a2;
+  --dark-warn-bg: #3a2c0e;  --dark-warn-line: #c99a3f;  --dark-warn-ink: #f2cf8a;
+  --dark-err-bg:  #3a1620;  --dark-err-line:  #d9697f;  --dark-err-ink:  #f5aab8;
 
-  --dark-pin-bg: #12331f;
-  --dark-pin-line: #4fae7c;
-  --dark-tie-line: #a48ce0;
-  --dark-dead-line: #d4707c;
+  --dark-pin-bg: #1a2c17;
+  --dark-pin-line: #66b356;
+  --dark-tie-line: #b099e8;
+  --dark-dead-line: #e88fa8;
 
-  --dark-shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 8px 24px rgba(0, 0, 0, .38);
-  --dark-shadow-sm: 0 1px 2px rgba(0, 0, 0, .5);
+  --dark-shadow: 0 1px 0 rgba(0, 0, 0, .40), 0 2px 8px rgba(0, 0, 0, .38);
+  --dark-shadow-sm: 0 1px 2px rgba(0, 0, 0, .45);
 
-  --dark-course-0: #1d3557;  --dark-course-0-bd: #4b7bb5;  --dark-course-0-fg: #dbeafe;
-  --dark-course-1: #17402a;  --dark-course-1-bd: #3f8a5c;  --dark-course-1-fg: #dcfce7;
-  --dark-course-2: #453413;  --dark-course-2-bd: #8f7124;  --dark-course-2-fg: #fef3c7;
-  --dark-course-3: #4a1f2a;  --dark-course-3-bd: #94505f;  --dark-course-3-fg: #ffe4e6;
-  --dark-course-4: #2e2557;  --dark-course-4-bd: #6455a6;  --dark-course-4-fg: #ede9fe;
-  --dark-course-5: #123e4a;  --dark-course-5-bd: #2f8296;  --dark-course-5-fg: #cffafe;
-  --dark-course-6: #2b3d16;  --dark-course-6-bd: #61812c;  --dark-course-6-fg: #ecfccb;
-  --dark-course-7: #472a14;  --dark-course-7-bd: #8e5a2b;  --dark-course-7-fg: #ffedd5;
-  --dark-course-8: #43164a;  --dark-course-8-bd: #8f4499;  --dark-course-8-fg: #fae8ff;
-  --dark-course-9: #123f3b;  --dark-course-9-bd: #2f7f77;  --dark-course-9-fg: #ccfbf1;
+  --dark-course-0: #672d1b;  --dark-course-0-bd: #bb5232;  --dark-course-0-fg: #f6e0d9;
+  --dark-course-1: #36230c;  --dark-course-1-bd: #b67322;  --dark-course-1-fg: #e2bc8c;
+  --dark-course-2: #52410d;  --dark-course-2-bd: #816a16;  --dark-course-2-fg: #f4ecd2;
+  --dark-course-3: #293f17;  --dark-course-3-bd: #568432;  --dark-course-3-fg: #bee8a3;
+  --dark-course-4: #163524;  --dark-course-4-bd: #369468;  --dark-course-4-fg: #81dfb7;
+  --dark-course-5: #18474c;  --dark-course-5-bd: #2a7981;  --dark-course-5-fg: #ceeef3;
+  --dark-course-6: #1f365b;  --dark-course-6-bd: #5681c6;  --dark-course-6-fg: #c9d8f1;
+  --dark-course-7: #4e2973;  --dark-course-7-bd: #8b58bf;  --dark-course-7-fg: #e7dbf6;
+  --dark-course-8: #481b37;  --dark-course-8-bd: #c0579d;  --dark-course-8-fg: #edb8dd;
+  --dark-course-9: #5c1c29;  --dark-course-9-bd: #c13c58;  --dark-course-9-fg: #f1c8d1;
 
   /* ======================================================================
      ‏מקור הפלטה של הנייר. הדף המודפס אינו "בהיר" ואינו "כהה" — הוא לבן,

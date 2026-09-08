@@ -43,6 +43,34 @@ inside the render path. It likely needs to run after layout — a
 `requestAnimationFrame`, or a `ResizeObserver` on the grid, which would also
 cover the width-change case the fixed call cannot see.
 
+**It already fails a test, and that test is the better repro — 2026-09-08.**
+`tests/test_rendered_copy_browser.py::test_overlap_halves_stay_readable_at_half_width`
+fails: a half-width overlap block gives up its lecturer. Measured at 900px, on
+the block the test names:
+
+| state | space in the block | space the lines need | slack | lines dropped |
+|---|---|---|---|---|
+| `e6aaafb`, before any Phase 10 work | 167px | 79.4px | **+87.6px** | **4** |
+| after commits 1–4 | 167px | 81.3px | **+85.8px** | **4** |
+| with the Phase 10 palette applied | 167px | 81.3px | **+85.8px** | **4** |
+
+So this is not a block that is too small. `fitBlocks()` threw away **four lines
+from a block with 86px to spare**, which is a far clearer symptom than the 8px
+clipping above and the same cause: it measured before the layout existed, found
+what looked like an overflow, dropped everything in `DROP_ORDER`, and never ran
+again. The three states are identical in behaviour — the 1.9px the type floor
+added changes nothing here.
+
+**Do not read the suite's history as this being new.** The full browser suite
+passed at commits 3 and 4 and fails now, which looks like a regression and is
+not: the test fails **3 of 3 in isolation at every one of the three states,
+including `e6aaafb`**. The in-suite passes were the race landing the other way
+when earlier tests had warmed the page. Two green runs were luck.
+
+**Consequence for the fix:** whoever fixes `fitBlocks()` gets this test back for
+free, and should check it rather than only the clipping. Until then the browser
+suite is 62/63, with this the only failure.
+
 ### The printed sheet is now at the bottom of its ladder
 **Where:** `fitGridToPage()` in `src/web/static/app.js:6892`, `SLOT_H_PRINT_MIN = 12`.
 **Owner:** informational — no action pending, but read this before adding to a block.
