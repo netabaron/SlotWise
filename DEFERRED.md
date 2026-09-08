@@ -373,6 +373,43 @@ about which strings are people.
 
 ## Closed
 
+### A running server served a three-day-old template — closed 2026-09-08
+Three Phase 10 header changes were reported as visible and were not. The code
+was right and committed; the server was from 2026-09-05. Jinja's `auto_reload`
+defaults to `app.debug`, so `create_app()` compiled `index.html` once and served
+that copy for the life of the process — including a button deleted from the repo
+before this session began.
+
+**What made it read as "the work was not done" rather than as a cache:**
+`style.css` is a static file, read from disk per request, so the palette and the
+`order: 1` wordmark move *did* appear. `index.html` is a template, so the icon,
+the theme buttons and the moved scrape control did not. Half the change landing
+looks nothing like staleness. `Ctrl+F5` cannot help — the browser refetches and
+the server hands back the same compiled copy.
+
+Measured at the time: the file on disk had 4 occurrences of
+`brand-icon`/`theme-ico`; `http://127.0.0.1:5000/` served **0**, plus
+`כהה</button>` and `עבד מחדש את הנתונים השמורים`. The same URL served the
+current `style.css`, `--dark-accent-soft: #3e3e3e` and all.
+
+**Now:** `api.py` sets `TEMPLATES_AUTO_RELOAD` and `jinja_env.auto_reload`
+explicitly, so it no longer rides on `app.debug` — the student's server runs
+without `--debug`, which is exactly the case the default got wrong. Cost is one
+`stat()` per template render, on a local app for at most five people.
+
+**This is the third instance of one pattern in this repo,** and worth naming as
+such: `strings.py`'s module-level `_CACHE` (closed with an mtime check), the
+shipped-catalog module cache, and now Jinja's template cache. A long-running
+local dev server plus any process-lifetime cache equals "I changed it and
+nothing happened". `tests/test_template_autoreload.py` closes this one
+behaviourally — same app object, file changed on disk with mtime pushed
+forward, new content asserted — and was mutation-tested by deleting the two
+lines, which fails all three of its tests.
+
+**The habit this should leave behind** is in `CLAUDE.md`: verify against the
+server the user is actually running. A throwaway server started by a script
+always has the current template and will confirm anything asked of it.
+
 ### Phase 10 — closed 2026-09-08, all four items
 1. **The visual identity.** Four directions were proposed against the brief's
    constraints, each adversarially reviewed, and every claimed contrast ratio

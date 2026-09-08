@@ -73,6 +73,22 @@ precedent for changing scoring on your own initiative.
   `"709 L"` to `"L 709"` for display. Anything that matches, filters or
   de-duplicates a room must use `rawRoomOf()`, never text scraped from
   the DOM.
+* **Verify against the server the user is actually running.** A throwaway
+  server started by a script always has the current template, so it will
+  confirm anything. On 2026-09-08 three header changes were reported as
+  visible while the user's browser showed a page from a `webapp.py`
+  process started three days earlier. Check `Get-CimInstance Win32_Process
+  -Filter "Name='python.exe'"` for what is up and since when, and
+  `netstat -ano | grep LISTENING` for the port. **If it is not obvious
+  which server the user is looking at, ask before reporting anything as
+  visible.** `TEMPLATES_AUTO_RELOAD` now closes the specific cache, but a
+  process still predates any change to `api.py` itself.
+* **CSS reaches the screen; templates used to not.** `style.css` is a
+  static file, read per request, so a hard reload always gets it.
+  `index.html` is a Jinja template — before `TEMPLATES_AUTO_RELOAD` a
+  running server served the copy it compiled at startup. That asymmetry
+  is what made the failure read as "some of the changes were made and
+  some were not" instead of as a cache.
 * **Every colour is written exactly once, and `render.py` reads the
   stylesheet.** `style.css` is the single source: `--dark-*` and `--print-*`
   hold the values in `:root`, and the two dark blocks plus `@media print`

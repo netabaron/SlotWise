@@ -5175,6 +5175,26 @@ def create_app(
     from jinja2 import StrictUndefined
 
     app.jinja_env.undefined = StrictUndefined
+
+    # ‏התבנית נקראת מחדש כשהקובץ משתנה, גם בלי ‎--debug‎.
+    #
+    # ‏auto_reload של Jinja נגזר כברירת מחדל מ-‎app.debug‎, כלומר שרת רגיל
+    # מהדר את ‎index.html‎ פעם אחת וחי איתה עד שהוא נסגר. זה נראה בדיוק כמו
+    # שינוי שלא בוצע: ‎style.css‎ הוא קובץ סטטי ונקרא מהדיסק בכל בקשה, ולכן
+    # שינויי CSS כן מגיעים למסך — בעוד שינויי תבנית לא. ‏Ctrl+F5 אינו עוזר,
+    # כי הדפדפן אמנם מבקש את הדף מחדש והשרת מחזיר את אותו עותק מזיכרון.
+    #
+    # ‏ב-2026-09-08 שרת שהופעל ב-2026-09-05 הגיש כותרת ישנה שלושה ימים,
+    # כולל כפתור שנמחק מהמאגר לפני כן. אותו סוג תקלה בדיוק כמו ‎_CACHE‎ של
+    # ‎strings.py‎ — ראו DEFERRED.md — ושם הוא כבר נסגר בבדיקת mtime. כאן
+    # ‏Jinja עושה את אותה בדיקה בעצמו ברגע שהדגל דלוק.
+    #
+    # ‏המחיר הוא ‎stat()‎ אחד לכל רינדור של תבנית. זו אפליקציה מקומית לחמישה
+    # משתמשים לכל היותר, והמחיר הזה זניח מול יום עבודה שהולך על "שיניתי
+    # ולא קרה כלום".
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
+    app.jinja_env.auto_reload = True
+
     app.config["SLOTWISE"] = settings
     app.config["SCRAPE_RUNNER"] = scrape_runner
     app.config["REPARSE_RUNNER"] = reparse_runner
