@@ -324,6 +324,28 @@ ul { margin: 0; padding: 0; list-style: none; }
   box-shadow: var(--shadow-sm);
 }
 
+/* ‏הסימן בצד שמאל. ‎order‎ ולא היפוך ה-DOM: שם המוצר נשאר האלמנט הראשון
+   בקריאת מסך ובסדר ה-Tab, ורק המיקום הוויזואלי זז. ‎justify-content:
+   space-between‎ שכבר קיים דוחף אותו אל הקצה. */
+.brand { order: 1; text-align: left; }
+
+/* ‏הסימן והמילה הם יחידה לטינית אחת, ולכן ‎ltr‎ בתוכה — בלעדיו האייקון
+   היה נוחת מימין ל-"SlotWise" ולא משמאלו. הכיתוב מתחת נשאר עברי
+   ונקרא ימין-לשמאל כרגיל; רק היישור שלו הוא לשמאל, כמו הסימן שמעליו. */
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  direction: ltr;
+}
+
+.brand-icon {
+  inline-size: 22px;
+  block-size: 22px;
+  flex: none;
+  color: var(--accent);
+}
+
 .brand-title { font-size: 20px; letter-spacing: -.01em; }
 .brand-sub { color: var(--muted); font-size: 13px; margin-block-start: 2px; }
 
@@ -375,10 +397,11 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 
 .theme-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 4px 11px;
+  padding: 5px 10px;
   border: 0;
   border-radius: 999px;
   background: transparent;
@@ -386,11 +409,30 @@ ul { margin: 0; padding: 0; list-style: none; }
   cursor: pointer;
 }
 
+.theme-ico {
+  inline-size: 17px;
+  block-size: 17px;
+  display: block;
+}
+
 .theme-btn:hover { color: var(--ink); }
 
 .theme-btn[aria-checked="true"] {
   background: var(--accent);
   color: var(--accent-ink);
+}
+
+/* ‏הסימון השני, שאינו צבע. גלולה צבועה לבדה מבדילה בגוון ובבהירות, וכלל
+   ‏7.1 דורש סימן שאינו נשען על צבע — כאן הצורה שבתוך האייקון עוברת
+   ממתאר למילוי: השמש מקבלת דיסקה, הירח גוף, והמסך זכוכית. ההבדל נשאר
+   גלוי גם בגווני אפור ובסימולציית עיוורון צבעים.
+   ‏fill-opacity ולא מילוי מלא: מילוי אטום היה בולע את המתאר והופך את
+   הירח לכתם. */
+.theme-btn .ico-fill { fill: none; }
+
+.theme-btn[aria-checked="true"] .ico-fill {
+  fill: currentColor;
+  fill-opacity: .3;
 }
 
 /* ==========================================================================

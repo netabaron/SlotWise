@@ -32,8 +32,11 @@
     #freshness-dot       נקודת מצב. data-state = "fresh" | "stale" | "empty" | "unknown"
     #freshness-text      "הנתונים נמשכו לפני 3 שעות"
     #freshness-meta      "6 קורסים · 27 קבוצות · קטלוג: 1412"
-    #btn-refresh         "רענון מהידיעון"  ->  POST /api/scrape/start
+    #btn-refresh         "עדכן נתונים מהידיעון"  ->  POST /api/scrape/start
+    #theme-toggle        ‏role=radiogroup. שלושה .theme-btn עם aria-checked;
+                         אין בהם טקסט נראה, והשם הנגיש הוא aria-label.
     #btn-log-toggle      מציג/מסתיר את #scrape-log (יש לעדכן aria-expanded)
+
 
   סרגל מצוף ושכבת המערכת / sticky bar + grid overlay
     #sticky-bar          ‏position: fixed בראש העמוד. מקבל class "is-visible"
@@ -145,8 +148,20 @@
 <div class="busy-bar" id="busy-bar" hidden aria-hidden="true"><span></span></div>
 
 <header class="app-header" id="app-header">
+  <!-- ‏הסימן והשם יושבים בצד שמאל. "SlotWise" הוא מילה באנגלית, ובעמוד
+       ‏RTL סימן מסחר לטיני שייך לקצה השמאלי — ‎order‎ ולא סידור מחדש של
+       ה-DOM, כדי ששם המוצר יישאר ראשון בקריאת מסך ובסדר ה-Tab. -->
   <div class="brand">
-    <h1 class="brand-title">{{ S.meta.brand }}</h1>
+    <span class="brand-mark">
+      <!-- ‏לוח עם משבצת אחת מלאה: זה מה שהמוצר עושה. ‎SVG‎ מוטבע ולא
+           אמוג'י — אמוג'י מצויר אחרת בכל מערכת הפעלה ואינו נושא צבע. -->
+      <svg class="brand-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+        <rect x="3" y="5" width="18" height="16" rx="3" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        <rect x="6.6" y="13" width="5.2" height="5" rx="1.2" fill="currentColor"/>
+      </svg>
+      <h1 class="brand-title">{{ S.meta.brand }}</h1>
+    </span>
     <p class="brand-sub">{{ S.meta.tagline }}</p>
   </div>
 
@@ -161,13 +176,37 @@
     <div class="header-actions">
       <button type="button" class="btn btn-outline" id="btn-refresh">{{ S.ui.header.btnRefresh }}</button>
     </div>
+    <!-- ‏שלושה אייקונים ולא שלוש מילים. השם הנגיש עובר ל-aria-label, כי
+         בלי טקסט נראה אין לכפתור שם אחר. המצב הנבחר מסומן פעמיים: מילוי
+         הגלולה, **וגם** מילוי הצורה שבתוך האייקון (‎.ico-fill‎) — כלל 7.1
+         אוסר על סימון שנשען על צבע בלבד, וגלולה צבועה לבדה היא בדיוק זה. -->
     <div class="theme-toggle" id="theme-toggle" role="radiogroup" aria-label="{{ S.ui.header.themeGroupLabel }}">
       <button type="button" class="theme-btn" role="radio" aria-checked="true"
-              data-theme-choice="system" title="{{ S.ui.header.themeSystemTitle }}">{{ S.ui.header.themeSystem }}</button>
+              data-theme-choice="system"
+              aria-label="{{ S.ui.header.themeSystemTitle }}" title="{{ S.ui.header.themeSystemTitle }}">
+        <svg class="theme-ico" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+          <rect class="ico-fill" x="2.8" y="4.4" width="18.4" height="12.4" rx="2.2"
+                stroke="currentColor" stroke-width="1.7"/>
+          <path d="M9 20.4h6M12 16.8v3.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+      </button>
       <button type="button" class="theme-btn" role="radio" aria-checked="false"
-              data-theme-choice="light" title="{{ S.ui.header.themeLightTitle }}">{{ S.ui.header.themeLight }}</button>
+              data-theme-choice="light"
+              aria-label="{{ S.ui.header.themeLightTitle }}" title="{{ S.ui.header.themeLightTitle }}">
+        <svg class="theme-ico" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+          <circle class="ico-fill" cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.7"/>
+          <path d="M12 2.6v2.3M12 19.1v2.3M2.6 12h2.3M19.1 12h2.3M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6"
+                stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+      </button>
       <button type="button" class="theme-btn" role="radio" aria-checked="false"
-              data-theme-choice="dark" title="{{ S.ui.header.themeDarkTitle }}">{{ S.ui.header.themeDark }}</button>
+              data-theme-choice="dark"
+              aria-label="{{ S.ui.header.themeDarkTitle }}" title="{{ S.ui.header.themeDarkTitle }}">
+        <svg class="theme-ico" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+          <path class="ico-fill" d="M20 14.3A8.3 8.3 0 0 1 9.7 4 8.4 8.4 0 1 0 20 14.3Z"
+                stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        </svg>
+      </button>
     </div>
 
     <p class="fresh-meta" id="refresh-summary" role="status" aria-live="polite" hidden></p>

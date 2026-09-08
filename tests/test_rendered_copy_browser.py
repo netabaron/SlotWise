@@ -247,7 +247,9 @@ LABEL_SELECTORS = [
     ".step-name",
     ".step-hint",
     ".tab",
-    ".theme-btn",
+    # ‏.theme-btn ירד מכאן ב-2026-09-08: הכפתורים הם אייקונים ואין בהם
+    # טקסט נראה. השם שלהם נבדק ב-test_theme_buttons_have_accessible_names,
+    # שבודק aria-label — שם ריק שם הוא התקלה המקבילה.
     ".label",
     ".lect-table thead th",
 ]
