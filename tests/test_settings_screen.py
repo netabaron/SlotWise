@@ -12,9 +12,16 @@
    ``#select-year``. **זה נבדק כאן כחפיפה גאומטרית בין תווית לתיבה שאינה
    שלה** ולא כרוחב של מחלקה, כי המספר שנשבר הוא היחס ביניהם.
 
-2. **הסימונים בסעיפים** דווחו כירוקים על טעינה נקייה. הם אינם. הבדיקות
-   כאן נועלות את ההתנהגות הנכונה כדי שהשאלה לא תישאל שוב: על ביקור ראשון
-   כל ארבעת הסעיפים אפורים, ורק פעולה אמיתית הופכת אחד מהם.
+2. **הסימונים בסעיפים** דווחו כירוקים על טעינה נקייה. על הקשר דפדפן נקי
+   הם לא היו — אבל הדיווח הצביע על פגם אמיתי במנגנון. הגרסה הראשונה זכרה
+   *נגיעה* (``state.touched``), וזיכרון כזה דביק: סעיף שנגעת בו נשאר ירוק
+   לתמיד, גם אחרי שהחזרת את הערך בדיוק לברירת המחדל. אחרי יום שימוש כל
+   ארבעת הסעיפים ירוקים, והסימון חדל לשאת מידע — כלומר בדיוק מה ששלב 5
+   בא לתקן.
+
+   ‏המנגנון הוחלף בהשוואת **ערכים** מול ברירת המחדל שהשרת נותן לסטודנט/ית
+   הזה/ו. ``test_going_back_to_the_default_turns_the_mark_grey_again`` היא
+   הבדיקה שמבדילה בין השניים: הישנה עוברת אותה רק אם המנגנון אינו דביק.
 
 הבדיקות רצות ב**הקשר דפדפן חדש בכל פעם** — בלי ``localStorage`` ובלי מצב
 מוזרע. זה בדיוק הפער שהחמיץ בעבר את באג התוויות הריקות: מצב מוזרע בודק
@@ -149,19 +156,11 @@ def test_every_section_is_grey_on_a_first_visit(browser, server):
     ctx, pg = _fresh(browser, server)
     try:
         steps = pg.evaluate(STEPS)
-        stored = pg.evaluate(
-            "() => { try { return JSON.parse(localStorage.getItem("
-            "'braude_schedule_builder_v1')).touched || {}; } catch (e) { return {}; } }"
-        )
     finally:
         ctx.close()
     assert len(steps) == 4, steps
     green = [s["id"] for s in steps if not s["def"] and not s["conflict"]]
-    assert not green, (
-        f"סעיפים מסומנים כנבחרים בלי שנגעו בהם: {green}. "
-        f"‏touched בזיכרון: {stored}"
-    )
-    assert stored == {}, f"‏touched אינו ריק על ביקור ראשון: {stored}"
+    assert not green, f"סעיפים מסומנים כנבחרים והערכים בהם עדיין ברירת המחדל: {green}"
 
 
 def test_one_real_choice_turns_exactly_one_section(browser, server):
@@ -172,20 +171,46 @@ def test_one_real_choice_turns_exactly_one_section(browser, server):
         pg.click('.day-btn[data-days="3"]')
         pg.wait_for_timeout(2500)
         after = {s["id"]: s["def"] for s in pg.evaluate(STEPS)}
-        stored = pg.evaluate(
-            "() => { try { return JSON.parse(localStorage.getItem("
-            "'braude_schedule_builder_v1')).touched || {}; } catch (e) { return {}; } }"
-        )
     finally:
         ctx.close()
     changed = [k for k in before if before[k] and not after[k]]
     assert changed == ["step-days"], (
         f"בחירה אחת שינתה {changed}, ציפינו ל-['step-days'] בלבד")
-    assert stored == {"days": True}, stored
+
+
+def test_going_back_to_the_default_turns_the_mark_grey_again(browser, server):
+    """הסיבה כולה שהמנגנון הוחלף.
+
+    ‏הגרסה הקודמת זכרה נגיעה, ולכן סעיף שנגעת בו נשאר ירוק לתמיד — גם
+    אחרי שהחזרת את הערך בדיוק למה שהיה. אחרי יום שימוש כל ארבעת הסעיפים
+    היו ירוקים, והסימון חדל לשאת מידע. עכשיו משווים ערכים, ולכן חזרה אל
+    ברירת המחדל חוזרת גם לאפור.
+    """
+    ctx, pg = _fresh(browser, server)
+    try:
+        base = pg.evaluate(
+            "() => document.querySelector('.day-btn[aria-checked=\"true\"]')"
+            "        ?.dataset.days || null")
+        assert base, "לא נמצא יעד ימים ברירת מחדל"
+        other = "3" if base != "3" else "5"
+
+        pg.click(f'.day-btn[data-days="{other}"]')
+        pg.wait_for_timeout(2500)
+        away = {s["id"]: s["def"] for s in pg.evaluate(STEPS)}
+
+        pg.click(f'.day-btn[data-days="{base}"]')   # בחזרה בדיוק לברירת המחדל
+        pg.wait_for_timeout(2500)
+        back = {s["id"]: s["def"] for s in pg.evaluate(STEPS)}
+    finally:
+        ctx.close()
+    assert away["step-days"] is False, f"שינוי מ-{base} ל-{other} לא סימן את הסעיף"
+    assert back["step-days"] is True, (
+        f"חזרה ל-{base}, שהוא ברירת המחדל, השאירה את הסעיף מסומן כנבחר — "
+        "הסימון דביק, וזה מה שהיה אמור להשתנות")
 
 
 def test_the_mark_survives_a_reload(browser, server):
-    """‏touched נשמר, ולכן משתמש/ת חוזר/ת רואה את מה שבחר/ה — לא איפוס."""
+    """ערך שנבחר נשמר, ולכן משתמש/ת חוזר/ת רואה אותו מסומן — לא איפוס."""
     ctx = browser.new_context(viewport={"width": 1280, "height": 900})
     pg = ctx.new_page()
     try:

@@ -632,9 +632,6 @@
       collapsed: {},
       // ‏"הצג את כל השעות" — העדפת תצוגה, נשמרת כמו הקיפול.
       allHours: false,
-      // באילו סעיפים המשתמש/ת באמת בחרו משהו. ‏✓ ירוק שמופיע תמיד
-      // אינו אומר דבר; זה מה שמבדיל בחירה מברירת מחדל.
-      touched: {},
     };
   }
 
@@ -789,7 +786,6 @@
     if (!base.attendance || typeof base.attendance !== "object") base.attendance = {};
     if (!base.collapsed || typeof base.collapsed !== "object") base.collapsed = {};
     base.allHours = base.allHours === true;
-    if (!base.touched || typeof base.touched !== "object") base.touched = {};
     base.allowSoftConflicts = true;  // גם מצב ישן שנשמר ב-localStorage מיושר
     if (!Array.isArray(base.blocked)) base.blocked = [];
     base.targetDays = clamp(Math.round(num(base.targetDays, 4)), 2, 6);
@@ -1532,7 +1528,6 @@
 
   /** מפתח חסר = חובה, בדיוק כמו בשרת — ולכן "חובה" נשמר כמחיקה. */
   function setAttendance(code, kind, required) {
-    markTouched("lecturers");
     var att = deepCopy(state.attendance) || {};
     var c = txt(code);
     var k = txt(kind);
@@ -1795,6 +1790,33 @@
     var profile = (data && data.profile) || {};
     var student = profile.student || {};
     var prefs = profile.preferences || {};
+
+    // ‏נקודת הייחוס לסימון הסעיפים: מה שהיישום היה בוחר לסטודנט/ית הזה/ו
+    // בלי שום קלט. נשמרת **תמיד**, גם כשיש מצב משוחזר — אחרת למי שחוזר/ת
+    // לא היה מול מה להשוות, וזו בדיוק הנקודה שבה הסימון איבד את משמעותו.
+    // ‏defaultState() הוא הגיבוי כשהשרת לא אמר דבר; אותה נוסחה בדיוק שבה
+    // משתמש הגוש שמתחת, כדי ששני המקומות לא ייפרדו.
+    var fallback = defaultState();
+    var baseYear = num(defaults.year_of_study, num(student.year_of_study, null));
+    var baseDays = num(defaults.target_days, num(prefs.target_days, null));
+    var baseEarly = num(defaults.earliest, null);
+    var baseLate = num(defaults.latest, null);
+    runtime.baseline = {
+      program:
+        txt(data && data.curriculum_program) ||
+        (data && Array.isArray(data.programs) && data.programs.length
+          ? txt(data.programs[0].id)
+          : ""),
+      studyYear:
+        baseYear === null ? fallback.studyYear : clamp(Math.round(baseYear), 1, 4),
+      term: txt(defaults.term) || txt(student.term) || fallback.term,
+      targetDays:
+        baseDays === null ? fallback.targetDays : clamp(Math.round(baseDays), 2, 6),
+      forbidFriday:
+        defaults.forbid_friday === true || prefs.forbid_friday === true,
+      earliest: baseEarly === null ? fallback.earliest : baseEarly,
+      latest: baseLate === null ? fallback.latest : baseLate,
+    };
 
     var academic =
       txt(defaults.academic_year) ||
@@ -2820,7 +2842,6 @@
   function wireEvents() {
     if (ui.selProgram) {
       ui.selProgram.addEventListener("change", function () {
-        markTouched("year");
         // מספר הסמסטר נגזר מלוח הסמסטרים של המסלול, ולכן הוא חייב להיגזר
         // מחדש כאן. בלי זה מסלול שאין לו תוכנית כלל היה ממשיך להצהיר
         // "סמסטר 5 בתוכנית הלימודים" שנשאר מהמסלול הקודם.
@@ -2872,14 +2893,12 @@
       var n = clamp(Math.round(num(btn.dataset.days, 4)), 2, 6);
       btn.dataset.fk = "day-" + n;
       btn.addEventListener("click", function () {
-        markTouched("days");
         setState({ targetDays: n, activeSchedule: 0 });
       });
     });
 
     if (ui.chkFriday) {
       ui.chkFriday.addEventListener("change", function () {
-        markTouched("days");
         setState({ forbidFriday: ui.chkFriday.checked, activeSchedule: 0 });
       });
     }
@@ -3022,17 +3041,6 @@
     });
   }
 
-  /**
-   * רושם שסעיף נבחר בפועל.
-   *
-   * ‏✓ שמופיע על כל הסעיפים מהרגע הראשון אינו סימן אלא קישוט. מכאן:
-   * מתאר ריק = ברירת מחדל, ‏✓ = נבחר, ‏! = יש בעיה.
-   */
-  function markTouched(key) {
-    if (state.touched[key]) return;
-    state.touched[key] = true;
-    saveState();
-  }
 
   /** האם השלב מקופל כרגע. מפתח חסר = פרוס. */
   function stepCollapsed(key) {
@@ -3343,7 +3351,6 @@
   }
 
   function onYearTermChange() {
-    markTouched("year");
     var y = clamp(
       Math.round(num(ui.selYear ? ui.selYear.value : state.studyYear, state.studyYear)),
       1,
@@ -4006,7 +4013,6 @@
   }
 
   function toggleCourse(code, checked) {
-    markTouched("courses");
     var family = tiedGroupFor(code);
     var set = selectedSet();
     var order = state.codes.slice();
@@ -4962,7 +4968,6 @@
   }
 
   function toggleLecturer(code, lecturer) {
-    markTouched("lecturers");
     var name = txt(lecturer);
     if (!name) return;
     var ranked = deepCopy(state.ranked);
@@ -4976,7 +4981,6 @@
   }
 
   function togglePin(code, kind, groupId) {
-    markTouched("lecturers");
     var pinned = deepCopy(state.pinned);
     var byKind = pinned[code] || {};
     if (txt(byKind[kind]) === txt(groupId)) delete byKind[kind];
@@ -7253,7 +7257,70 @@
       conflict = pinCount() > 0 && !!s && schedules().length === 0;
     }
     if (conflict) return "conflict";
-    return state.touched[key] ? "chosen" : "default";
+    return sectionIsDefault(key) ? "default" : "chosen";
+  }
+
+  /** האם יש בכלל ערך בתוך המפה — מפתח עם אובייקט או מערך ריק אינו בחירה. */
+  function hasAnyEntry(map, isSet) {
+    var m = map || {};
+    return Object.keys(m).some(function (k) {
+      return isSet(m[k]);
+    });
+  }
+
+  /**
+   * האם הסעיף עדיין מציג את ברירת המחדל.
+   *
+   * ‏משווים ערכים, ולא זוכרים נגיעה. ``state.touched`` היה דביק: מרגע
+   * שנגעת בסעיף הוא נשאר ירוק לתמיד, גם אחרי שהחזרת הכול לברירת המחדל —
+   * ולמי שחוזר/ת אחרי יום כל ארבעת הסעיפים היו ירוקים, כלומר הסימון חדל
+   * לשאת מידע. זה בדיוק מה ששלב 5 בא לתקן.
+   *
+   * ‏ברירת המחדל של "קורסים" אינה רשימה ריקה אלא ההמלצה של הסמסטר, ולכן
+   * הסטייה נמדדת במקור: הוספה ידנית או ביטול של קורס מומלץ.
+   */
+  function sectionIsDefault(key) {
+    var b = runtime.baseline;
+    if (!b) return true; // לפני bootstrap אין מול מה להשוות
+
+    if (key === "year") {
+      return (
+        txt(state.program) === txt(b.program) &&
+        num(state.studyYear, 0) === num(b.studyYear, 0) &&
+        txt(state.term) === txt(b.term)
+      );
+    }
+    if (key === "courses") {
+      return (
+        (state.manualCodes || []).length === 0 &&
+        (state.autoDropped || []).length === 0
+      );
+    }
+    if (key === "days") {
+      return (
+        num(state.targetDays, 0) === num(b.targetDays, 0) &&
+        !!state.forbidFriday === !!b.forbidFriday &&
+        state.earliest === b.earliest &&
+        state.latest === b.latest &&
+        (state.blocked || []).length === 0
+      );
+    }
+    if (key === "lecturers") {
+      // ‏מפתח חסר = חובת נוכחות, ולכן רק ``false`` מפורש הוא ויתור.
+      var waived = hasAnyEntry(state.attendance, function (byKind) {
+        return Object.keys(byKind || {}).some(function (k) {
+          return byKind[k] === false;
+        });
+      });
+      var ranked = hasAnyEntry(state.ranked, function (list) {
+        return Array.isArray(list) && list.length > 0;
+      });
+      var pinned = hasAnyEntry(state.pinned, function (byKind) {
+        return Object.keys(byKind || {}).length > 0;
+      });
+      return !waived && !ranked && !pinned;
+    }
+    return true;
   }
 
   /**
