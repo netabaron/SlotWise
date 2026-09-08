@@ -526,6 +526,20 @@ ul { margin: 0; padding: 0; list-style: none; }
 .field { display: flex; flex-direction: column; gap: 4px; min-inline-size: 0; }
 .field-grow { flex: 1 1 16rem; }
 
+/* ‏בתוך שדה, מחלקת הרוחב היא הקובעת — לא רצפת ה-‎min-inline-size‎ של
+   ‎.input‎.
+   ‏.input מצהיר על ‎min-inline-size: 9rem‎ כדי ששדה בודד לא ייצא זעיר, אבל
+   ‎.field--sm‎ הוא ‎8rem‎. ‏9 > 8, ולכן ה-‎select‎ גלש 16px אל מחוץ למכל שלו,
+   וב-RTL הגלישה היא שמאלה — אל תוך השדה השכן. התוצאה: התווית "סמסטר",
+   שמיושרת לימין השדה שלה, כיסתה את ‎#select-year‎, וכל תווית נראתה כאילו
+   היא שייכת לתיבה הלא נכונה.
+   ‏inline-size: 100% ולא רק ביטול הרצפה: כך התיבה **שווה** למחלקה שלה,
+   וזה מה ששלב 5 ביקש — "לתת לשדות את רוחב התוכן שלהם וליישר על רשת". */
+.field > .input {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
 .field-check {
   flex-direction: row;
   align-items: center;
