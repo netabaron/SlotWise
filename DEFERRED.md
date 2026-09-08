@@ -352,6 +352,51 @@ tested.
 **Recommendation:** option 2 when Phase 9 or hosting work touches this area.
 Option 1 is cleaner but pays a test-file edit for an endpoint nobody calls.
 
+### The lecturer field now holds a note **glued onto** a real name — worse than the entry below, 2026-09-09
+**Where:** `src/parser.py`, surfacing in `data/db/sections.json` →
+`groups[].lecturer`, rendered on every grid block and the printed sheet.
+**Owner:** parser. Raised with the owner 2026-09-09; not fixed, because the
+parser is out of scope in `CLAUDE.md` without an explicit ask.
+**What changed.** The entry below describes 6 of 291 lecturer values that were
+*pure* notes (`טרם נקבע`, `הקורס מלא`). After the 2026-09-08 fetch:
+
+| | 2026-09-06 | 2026-09-08 |
+|---|---|---|
+| distinct lecturer values | 291 | 348 |
+| values containing a status note | 4 | **55** |
+| of those, a note **glued onto a real name** | 0 | **51** |
+
+Examples: `ד"ר קורנבלט קטרינה הקורס מלא`,
+`ד"ר סוקולובסקי איזבלה בקורס זה קיימת רשימת המתנה`,
+`ד"ר קליינגזינד שלום, טרם נקבע`.
+
+**This is a different failure from the one below.** A pure note could be
+filtered by matching the whole value against a known list. A note concatenated
+onto a name cannot — the name is real and must be kept, and only the suffix
+removed. The two phrases seen so far are `הקורס מלא` and
+`בקורס זה קיימת רשימת המתנה`, both of which are enrolment status and belong on
+the group, not in the lecturer field.
+
+**It is visible in the product right now:** the grid block for
+אנגלית טכנית יישומית renders the lecturer over three lines because the waiting
+-list sentence is inside the name.
+
+**It also breaks two tests**, and they are the reason it was found:
+`test_web.py::test_solve_accepts_a_lecturer_ranking` and
+`test_courses_groups_carry_kind_lecturer_and_group_id` pin
+`ד"ר קליימן ילנה`, which the local database now stores as
+`ד"ר קליימן ילנה הקורס מלא`. They fail on the current data and pass on the
+2026-09-06 copy — the tests are correct and the data is not.
+
+**A caution recorded with it.** Diagnosing this, the same investigation first
+reported that the database had been emptied and that an empty local overlay was
+masking the shipped catalog. Both were wrong, and both came from guessing a
+JSON shape instead of reading it: groups live at
+`courses[<code>].course.groups`, not `courses[<code>].groups`, and the
+`semester` field of `POST /api/courses` is the **term** (`"א"`), not the
+program-semester number. Read the schema before reporting data loss — the
+restore that was nearly performed would have replaced 572 courses with 433.
+
 ### The lecturer field in the yedion sometimes holds a note, not a name
 **Where:** `data/db/sections.json` → `groups[].lecturer`, now rendered in full on
 every grid block and on the printed sheet.
