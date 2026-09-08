@@ -317,7 +317,9 @@ def test_key_screens_carry_hebrew(fresh):
     fresh.select_option("#select-term", "א")
     fresh.wait_for_timeout(2500)
     regions = {
-        "כפתורי הכותרת": ".header-actions",
+        # ‏.header-actions עבר ל"פרטים טכניים" ב-2026-09-08 ואינו עוד
+        # אזור בכותרת. מה שנשאר שם ונושא עברית הוא שורת טריות הנתונים.
+        "כותרת": "#freshness",
         "שלב 1": "#step-year .step-head",
         "שלב 2": "#step-courses .step-head",
         "פאנל הניקוד": "#schedule-summary",

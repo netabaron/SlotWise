@@ -383,7 +383,15 @@ ul { margin: 0; padding: 0; list-style: none; }
 .fresh-dot[data-state="stale"] { background: var(--warn-line); border-color: var(--warn-line); }
 .fresh-dot[data-state="empty"] { background: var(--dead-line); border-color: var(--dead-line); }
 
-.header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* ‏חי עכשיו בתוך "פרטים טכניים" ולא בכותרת, ולכן שורת הסיכום שלצדו
+   מיושרת אליו במקום להיתלות מתחת לכפתור. */
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin-block-end: 12px;
+}
 
 /* ---- בורר ערכת הצבעים: שלושה מצבים בפקד אחד ---- */
 .theme-toggle {

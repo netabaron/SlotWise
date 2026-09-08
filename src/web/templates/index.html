@@ -32,11 +32,15 @@
     #freshness-dot       נקודת מצב. data-state = "fresh" | "stale" | "empty" | "unknown"
     #freshness-text      "הנתונים נמשכו לפני 3 שעות"
     #freshness-meta      "6 קורסים · 27 קבוצות · קטלוג: 1412"
-    #btn-refresh         "עדכן נתונים מהידיעון"  ->  POST /api/scrape/start
     #theme-toggle        ‏role=radiogroup. שלושה .theme-btn עם aria-checked;
                          אין בהם טקסט נראה, והשם הנגיש הוא aria-label.
     #btn-log-toggle      מציג/מסתיר את #scrape-log (יש לעדכן aria-expanded)
 
+  פרטים טכניים / #tech-details  — ‏?debug=1 פותח אותו מראש
+    #btn-refresh         "עדכן נתונים מהידיעון"  ->  POST /api/scrape/start
+                         ‏עבר לכאן מהכותרת ב-2026-09-08: פעולת תחזוקה, לא
+                         פעולה של סטודנט/ית.
+    #refresh-summary     שורת סיכום אחרי משיכה. עברה יחד איתו.
 
   סרגל מצוף ושכבת המערכת / sticky bar + grid overlay
     #sticky-bar          ‏position: fixed בראש העמוד. מקבל class "is-visible"
@@ -173,9 +177,6 @@
         <span class="fresh-meta" id="freshness-meta"></span>
       </span>
     </div>
-    <div class="header-actions">
-      <button type="button" class="btn btn-outline" id="btn-refresh">{{ S.ui.header.btnRefresh }}</button>
-    </div>
     <!-- ‏שלושה אייקונים ולא שלוש מילים. השם הנגיש עובר ל-aria-label, כי
          בלי טקסט נראה אין לכפתור שם אחר. המצב הנבחר מסומן פעמיים: מילוי
          הגלולה, **וגם** מילוי הצורה שבתוך האייקון (‎.ico-fill‎) — כלל 7.1
@@ -208,8 +209,6 @@
         </svg>
       </button>
     </div>
-
-    <p class="fresh-meta" id="refresh-summary" role="status" aria-live="polite" hidden></p>
   </div>
 </header>
 
@@ -530,6 +529,15 @@
 <details class="tech-details" id="tech-details">
   <summary class="tech-summary">{{ S.app.tech.title }}</summary>
   <div class="tech-body">
+    <!-- ‏המשיכה מהידיעון נשארת — היא הדרך היחידה לבדוק אם קורס מסוים
+         השתנה מאז שנבנה הקטלוג — אבל היא אינה פעולה של סטודנט/ית, ולכן
+         אינה יושבת בכותרת. אם האפליקציה תתארח אי־פעם היא נמחקת לגמרי:
+         למשתמש מארח אין משיכה משלו, ולנקודת הקצה אין אימות ולא מגן קצב.
+         ראו HOSTING_NOTES.md שורה 3 ו-DEFERRED.md. -->
+    <div class="header-actions">
+      <button type="button" class="btn btn-outline" id="btn-refresh">{{ S.ui.header.btnRefresh }}</button>
+      <p class="fresh-meta" id="refresh-summary" role="status" aria-live="polite" hidden></p>
+    </div>
     <ul class="tech-facts" id="tech-facts"></ul>
     <section class="panel log-panel" id="scrape-log" aria-labelledby="scrape-log-title">
       <div class="log-head">

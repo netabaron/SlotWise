@@ -286,30 +286,6 @@ condition — the semester's course list having rendered — rather than on the
 clock. That means editing an existing test file, which the standing rule forbids
 without an explicit decision.
 
-### Phase 10 — visual identity, and getting maintainer controls off the student's screen
-**Where:** `src/web/static/style.css` (tokens), `src/web/templates/index.html`
-(header, theme switch, `פרטים טכניים`), `src/web/static/app.js`.
-**Owner:** Phase 10 — runs **after Phase 6 closes and before Phases 7-9**, which
-wait until after the presentation. Logged 2026-09-07.
-**What it covers:**
-1. **A real visual identity.** The palette is unattractive and the screen is
-   defaults rather than decisions. Two or three directions to be **proposed with
-   a rationale and chosen by the owner** — not picked unilaterally. Whatever wins
-   must pass the Phase 7 contrast checks in both themes.
-2. **Logo to the left of the header.** "SlotWise" reads as English, so in RTL it
-   belongs on the left. An icon joins the wordmark.
-3. **Theme switch as icons** — sun / moon / monitor, each with an accessible
-   label and a current state that is visible by more than colour.
-4. **Maintainer controls move into `פרטים טכניים`.**
-   `עבד מחדש את הנתונים השמורים` goes behind `?debug=1` with the reparse button.
-   `עדכן נתונים מהידיעון` **stays but moves there too** — it now refreshes only
-   the student's selected courses, which is the only way to check whether a
-   specific course changed since the catalog was built. Real functionality, wrong
-   prominence.
-**Note this explicitly overrides** the brief's original "do not redesign the
-visual identity from scratch", which was written when behaviour mattered more
-than appearance. The brief has been amended.
-
 ### `עדכן נתונים מהידיעון` must disappear entirely if this is ever hosted
 **Where:** the button, `/api/scrape/start`, `/api/scrape/status`.
 **Owner:** whoever does the hosting work — see `HOSTING_NOTES.md` row 3.
@@ -396,6 +372,46 @@ about which strings are people.
 ---
 
 ## Closed
+
+### Phase 10 — closed 2026-09-08, all four items
+1. **The visual identity.** Four directions were proposed against the brief's
+   constraints, each adversarially reviewed, and every claimed contrast ratio
+   re-computed rather than taken on trust. Three were shown; **Paper & Ink** was
+   chosen, with its dark theme's warm brown page rejected and replaced by a
+   neutral lifted charcoal derived from the same luminance ladder. See the two
+   commits for the measurements.
+2. **The wordmark moved left, with an icon.** `order: 1` rather than reordering
+   the DOM, so the product name stays first for a screen reader and first in the
+   Tab order while only its painted position changes. The icon is an inline SVG
+   of a timetable with one filled slot — not an emoji, which renders differently
+   per platform and carries no colour.
+3. **The theme switch is three icons** — moon, sun, monitor — with the accessible
+   name in `aria-label`, since there is no visible text left to name them. The
+   selected state is marked twice: the accent pill, **and** the shape inside the
+   icon filling in. A coloured pill on its own distinguishes by hue and lightness
+   only, which is what rule 7.1 forbids.
+4. **`עדכן נתונים מהידיעון` moved into `פרטים טכניים`.** It stays in the product
+   because it is the only way to check whether one course changed since the
+   catalog was built; it is not a student's action, so it is not in the header.
+   `עבד מחדש את הנתונים השמורים` needed no move — that button and
+   `startReparse()` were already deleted on 2026-09-07 (see the dead-state entry
+   above), so only its string survives in `strings.json`.
+
+**Guarded by `tests/test_phase10_header.py`** (7 tests). Two of them are worth
+knowing about, because the obvious version of each would pass while broken:
+the wordmark's position is measured from the **painted rectangle**, since a
+class name proves nothing in a flex row driven by `order`; and the theme state
+compares the computed `fill` of the selected icon against the unselected ones,
+because asserting "the selected one has the accent background" is asserting
+exactly the colour-only signal the rule forbids. Both were mutation-tested —
+removing `order: 1` and removing the `.ico-fill` rule each produce a failure.
+
+**Two existing tests were updated, not worked around.** `.theme-btn` left
+`LABEL_SELECTORS` in `test_rendered_copy_browser.py` because those buttons no
+longer have visible text; their name is now asserted on `aria-label` instead.
+And `test_key_screens_carry_hebrew` watched `.header-actions` for Hebrew, which
+is the element that moved — it now watches `#freshness`, which is what is
+actually left in the header.
 
 ### The fit score rendered backwards in the comparison table — closed 2026-09-08
 `app.schedule.fitValue` was `"{score} / 100"`. That is two number runs with a

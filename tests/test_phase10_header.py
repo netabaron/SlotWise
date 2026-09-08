@@ -183,3 +183,50 @@ def test_theme_state_is_not_signalled_by_colour_alone(page):
         for o in others:
             assert o["fill"] == "none", (
                 f"גם הלא-נבחר ({o['choice']}) ממולא — אין הבדל צורה: {o}")
+
+
+# --------------------------------------------------------------------------
+# 3. פקדי התחזוקה מחוץ למסך של הסטודנט/ית
+# --------------------------------------------------------------------------
+def test_the_scrape_control_left_the_header_and_is_in_the_technical_section(page):
+    """שני הכיוונים. בדיקה של צד אחד עוברת גם אם הכפתור פשוט נמחק."""
+    got = page.evaluate(
+        """() => {
+          const b = document.getElementById('btn-refresh');
+          if (!b) return {exists: false};
+          return {exists: true,
+                  inHeader: !!b.closest('.app-header'),
+                  inTech: !!b.closest('#tech-details'),
+                  text: (b.textContent || '').trim(),
+                  summaryInTech: !!document.getElementById('refresh-summary')
+                                   ?.closest('#tech-details')};
+        }"""
+    )
+    assert got["exists"], "הכפתור נמחק. הוא אמור לעבור, לא להיעלם"
+    assert not got["inHeader"], "המשיכה מהידיעון עדיין בכותרת"
+    assert got["inTech"], "המשיכה מהידיעון אינה בפרטים הטכניים"
+    assert got["summaryInTech"], "שורת הסיכום נשארה מאחור, בלי הכפתור שלה"
+    assert "ידיעון" in got["text"], got["text"]
+
+
+def test_the_student_does_not_see_it_until_the_section_is_opened(page):
+    """‏<details> סגור בטעינה רגילה, ולכן הכפתור אינו מצויר כלל."""
+    assert page.evaluate(
+        "() => !document.getElementById('tech-details').open"
+    ), "פרטים טכניים פתוח בטעינה רגילה"
+    assert not page.is_visible("#btn-refresh"), "הכפתור נראה בלי לפתוח את הסעיף"
+
+
+def test_debug_opens_the_technical_section(browser, server):
+    """‏?debug=1 הוא הדלת שהתדריך מצביע עליה עבור פקדי התחזוקה."""
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+    pg = ctx.new_page()
+    try:
+        pg.goto(server + "?debug=1")
+        pg.wait_for_timeout(3000)
+        assert pg.evaluate(
+            "() => document.getElementById('tech-details').open"
+        ), "‏?debug=1 אינו פותח את הפרטים הטכניים"
+        assert pg.is_visible("#btn-refresh")
+    finally:
+        ctx.close()
