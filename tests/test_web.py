@@ -474,11 +474,23 @@ def _never_open_a_browser(monkeypatch):
 
 @pytest.fixture(scope="module")
 def app():
-    """אפליקציה אחת לכל הקובץ, עם cwd בשורש הפרויקט (נתיבים יחסיים ל-data/)."""
+    """אפליקציה אחת לכל הקובץ, מעל הקטלוג שנשלח עם הקוד.
+
+    ‏db_root מצביע על הקטלוג ולא על ``data/db``: המאגר המקומי אינו במאגר
+    הקוד, והאפליקציה הרצה כותבת אותו מחדש — ב-2026-09-09 מספר הקבוצות זז
+    מתחת לבדיקות האלה בזמן שהן רצו. מול הקטלוג המספרים כאן יוצאים בדיוק
+    כפי שנכתבו (27 קבוצות, ואותו פירוק לכל קורס) והם יציבים. ראו
+    ``tests/catalog_source.py``.
+
+    ‏cwd נשאר בשורש: נתיבים יחסיים אחרים (תוכנית לימודים, פרופיל) עדיין
+    נקראים משם.
+    """
+    from catalog_source import catalog_db_dir  # noqa: PLC0415
+
     previous = os.getcwd()
     os.chdir(ROOT)
     try:
-        yield _make_app()
+        yield _make_app(db_root=catalog_db_dir())
     finally:
         os.chdir(previous)
 
@@ -492,14 +504,20 @@ def client(app):
 # ==========================================================================
 # 0. עוגן: המסד האמיתי הוא באמת מה שהבדיקות מניחות
 # ==========================================================================
-def test_the_real_database_is_the_one_the_tests_assume():
-    """אם המסד השתנה — עדיף שהבדיקה הזו תיפול ראשונה, ובבירור."""
-    import store as store_mod
+def test_the_catalog_is_the_one_the_tests_assume():
+    """אם מקור הנתונים השתנה — עדיף שהבדיקה הזו תיפול ראשונה, ובבירור.
 
-    db = store_mod.Store(str(DB_ROOT))
-    everything = db.load_all()
-    # תת-קבוצה ולא שוויון: הרענון היומי מושך את כל הקורסים שנפתחים, ולכן
-    # המאגר גדל כל הזמן. מה שחייב להתקיים הוא שהקורסים של הסטודנט/ית שם.
+    ‏שומרת על הקטלוג ולא על ``data/db``, כי מאז 2026-09-09 זה המקור שכל
+    הקובץ הזה קורא. ההבדל אינו טכני: ``data/db`` נכתב מחדש בכל רענון,
+    ולכן קנרית שמצביעה עליו מצייצת על כל שינוי בידיעון ולא על שינוי אצלנו.
+    ``data/catalog.jsonl`` נמצא במאגר הקוד, ולכן נפילה כאן פירושה שמישהו
+    בנה אותו מחדש — וזה בדיוק מה שכדאי לדעת עליו.
+    """
+    from catalog_source import catalog_courses  # noqa: PLC0415
+
+    everything = catalog_courses()
+    # תת-קבוצה ולא שוויון: הקטלוג נושא את כל המחלקות, ומה שחייב להתקיים
+    # הוא שהקורסים של הסטודנט/ית שבבדיקות נמצאים בו.
     missing = [c for c in CODES if c not in everything]
     assert not missing, f"חסרים מהמאגר: {missing}"
     courses = {c: everything[c] for c in CODES}

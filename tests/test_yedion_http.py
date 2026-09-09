@@ -741,11 +741,26 @@ def test_repeated_fetches_do_not_overwrite_each_other(session):
     not HAVE_BRAUDE_RAW, reason="אין דמפים של בראודה ב-data/raw (git-ignored)"
 )
 def test_the_fetched_markup_parses_into_the_real_groups(session):
-    """הטענה הכי חשובה: מה שחזר הוא באמת דף בראודה שהפרסר יודע לקרוא."""
+    """הטענה הכי חשובה: מה שחזר הוא באמת דף בראודה שהפרסר יודע לקרוא.
+
+    ‏נבדק כתכונה ולא כמספר. עד 2026-09-09 עמד כאן ``== 2``, והוא נפל על
+    ``3 == 2`` — לא כי הפרסר נשבר אלא כי ``data/raw`` הוא דמפ מקומי
+    שמתחדש, ולקורס נוספה קבוצה בידיעון. מספר הקבוצות של קורס אמיתי אינו
+    בשליטתנו ואינו נושא הבדיקה; מה שכן בשליטתנו הוא שהפענוח מייצר קבוצות
+    שלמות. קיבוע המספר הפך שינוי אצל בראודה לכישלון אצלנו.
+    """
     html = session.client.fetch_course("11069")
     result = parse_course_page(html, "11069", semester="א")
-    assert len(result.course.groups) == 2
+
     assert result.course.name.startswith("אנגלית")
+    assert result.course.groups, "דף אמיתי חייב להניב לפחות קבוצה אחת"
+    for g in result.course.groups:
+        assert g.group_id, f"קבוצה בלי מזהה: {g!r}"
+        assert g.kind, f"קבוצה בלי סוג שיעור: {g.group_id}"
+        for m in g.meetings:
+            assert 1 <= m.day <= 6, f"יום מחוץ לטווח ב-{g.group_id}: {m.day}"
+            assert m.end > m.start, f"מפגש שנגמר לפני שהתחיל ב-{g.group_id}"
+            assert m.semester == "א", f"סינון הסמסטר דלף ב-{g.group_id}: {m.semester}"
 
 
 # ==========================================================================
