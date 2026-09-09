@@ -178,6 +178,54 @@ def test_choosing_an_identity_marks_that_semesters_plan(page):
     assert state["manualCodes"] == []
 
 
+def test_a_fresh_visitor_has_nothing_chosen_and_step_two_locked(page):
+    """הצד השני של הבחירה: לפניה אין תוכנית, ואין ממה לבחור.
+
+    ‏זו הטענה החיובית של השינוי מ-2026-09-09, ולא רק היעדר הטענה הישנה.
+    שלוש התיבות פתוחות על ה-placeholder, שום קורס אינו מסומן, ושלב 2 נעול
+    עם שורה שאומרת מה חסר — ולא ריק בלי הסבר, שנראה כמו תקלה.
+
+    ‏ואז, ברגע שנבחרו שלושתם, השלב נפתח וההמלצה מופיעה. שני החצאים באותה
+    בדיקה בכוונה: "נעול" בלי "ונפתח" היה עובר גם אם הנעילה לא נפתחת לעולם.
+    """
+    placeholders = page.evaluate(
+        """() => ['select-program', 'select-year', 'select-term'].map(id => {
+             const s = document.getElementById(id);
+             return {id: id, value: s.value,
+                     shown: s.selectedIndex >= 0
+                       ? s.options[s.selectedIndex].textContent.trim() : null};
+           })"""
+    )
+    for p in placeholders:
+        assert p["value"] == "", f"{p['id']} מגיע מלא מראש: {p['value']!r}"
+        assert p["shown"] and "בחר" in p["shown"], (
+            f"{p['id']} מצויר ריק במקום להזמין לבחור: {p['shown']!r}")
+
+    before = snap(page)
+    assert before["checked"] == [], "אין תוכנית לפני שיודעים למי"
+    assert before["codes"] == []
+    assert before["autoSemester"] == ""
+
+    locked = page.evaluate(
+        "() => ({locked: document.getElementById('step-courses')"
+        "                  .classList.contains('is-locked'),"
+        "         why: (document.getElementById('step-courses-state')||{})"
+        "                  .textContent || ''})"
+    )
+    assert locked["locked"], "שלב 2 חייב להיות נעול כל עוד אין זהות"
+    assert locked["why"].strip(), "ונעילה בלי שורה שמסבירה אותה היא מסך שבור"
+
+    # ואז הבחירה — ורק אחריה מופיעה הרשימה.
+    after = with_identity(page)
+    assert set(after["checked"]) == {
+        "11069", "61756", "61757", "62027", "61759", "61832"
+    }, "ההמלצה מופיעה ברגע שיש מסלול, שנה וסמסטר"
+    assert after["autoSemester"] == "5"
+    assert not page.evaluate(
+        "() => document.getElementById('step-courses').classList.contains('is-locked')"
+    ), "והשלב נפתח"
+
+
 def test_a_fresh_visitor_does_not_inherit_the_profile_selection(page):
     """‏61753 הוא קורס של סמסטר 4 מ-``data/profile.json``. זו הייתה התקלה:
     הוא הופיע מסומן לכל מי שפתח/ה את העמוד, בלי קשר לסמסטר שנבחר."""
