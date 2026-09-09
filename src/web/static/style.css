@@ -523,6 +523,38 @@ ul { margin: 0; padding: 0; list-style: none; }
   color: var(--ink);
 }
 
+/* ==========================================================================
+   אישור סעיף — "ההצעה הזאת מתאימה לי"
+   ========================================================================== */
+/* ‏פקד רפאים, לא ראשי. יש בדיוק כפתור ראשי אחד במסך ("בנה מערכות"), וזה
+   אינו הוא: זו אמירה שקטה על סעיף, לא הפעולה שהמסך קיים בשבילה. */
+.confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.confirm-btn { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ‏הסימן שאינו צבע: ה-✓ פשוט אינו מצויר עד שמאשרים. שינוי צורה, ולא
+   רק גוון — כלל 7.1 חל גם על מתג. ‏aria-pressed נושא את אותו מידע
+   לקורא מסך. */
+.confirm-tick {
+  inline-size: 15px;
+  block-size: 15px;
+  flex: none;
+  visibility: hidden;
+}
+
+.confirm-btn[aria-pressed="true"] .confirm-tick { visibility: visible; }
+
+.confirm-btn[aria-pressed="true"] {
+  border-color: var(--ok-line);
+  color: var(--ok-ink);
+  background: var(--ok-bg);
+}
+
 .field { display: flex; flex-direction: column; gap: 4px; min-inline-size: 0; }
 .field-grow { flex: 1 1 16rem; }
 

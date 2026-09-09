@@ -91,6 +91,10 @@
     ‏#catalog-browse ו-#electives נושאים גם הם class="step-body" בתוך שלב 2,
     ולכן הכלל ב-CSS חייב להיות ‎.step.is-collapsed > .step-body‎.
 
+  אישור סעיף (שלבים 2 ו-3 בלבד; למרצים אין ברירת מחדל דעתנית ולכן אין לו)
+    #btn-confirm-courses #btn-confirm-days   מתג, aria-pressed
+    #confirm-courses-stale #confirm-days-stale
+                  השורה שמופיעה כשברירת המחדל חושבה מחדש אחרי אישור
   1 שנה וסמסטר   #select-year #select-term #semester-summary #year-note
   2 קורסים        #course-search #course-search-results #course-list
                   #credits-total  סכום הנ"ז הידועות ("—" כשאין אף אחת)
@@ -320,6 +324,24 @@
         <p class="note" id="catalog-browse-state" role="status" aria-live="polite"></p>
       </div>
 
+
+      <!-- ‏אישור: הדרך לומר "ההצעה הזאת היא מה שאני רוצה" בלי לשנות בה
+           דבר. בלעדיו סטודנט/ית שההמלצה מתאימה לה בדיוק נראית כמי שלא
+           נגעה בסעיף — נענשת על כך שהניחוש היה טוב.
+           ‏aria-pressed ולא class בלבד: זהו מתג, ומצבו חייב להישמע גם
+           למי שאינו רואה אותו. הסימן החזותי אינו צבע — ה-✓ מופיע או לא
+           — כדי לעמוד בכלל 7.1 גם כאן. -->
+      <div class="confirm-row" id="confirm-courses-row" hidden>
+        <p class="inline-warn" id="confirm-courses-stale" role="status"
+           aria-live="polite" hidden></p>
+        <button type="button" class="btn btn-ghost btn-sm confirm-btn"
+                id="btn-confirm-courses" aria-pressed="false">
+          <svg class="confirm-tick" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+               focusable="false"><path d="M4.5 12.5l5 5 10-11" stroke="currentColor"
+               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>{{ S.app.confirm.courses }}</span>
+        </button>
+      </div>
       <p class="note" id="courses-note"></p>
 
       <!-- קבוצות קורסי בחירה מפרק השנתון של המסלול.
@@ -368,6 +390,19 @@
       </div>
 
       <p class="inline-warn" id="days-warning" role="status" aria-live="polite" hidden></p>
+
+      <!-- אותו מתג, לסעיף שיש לו יעד מוצע. ראו ההערה בשלב 2. -->
+      <div class="confirm-row" id="confirm-days-row" hidden>
+        <p class="inline-warn" id="confirm-days-stale" role="status"
+           aria-live="polite" hidden></p>
+        <button type="button" class="btn btn-ghost btn-sm confirm-btn"
+                id="btn-confirm-days" aria-pressed="false">
+          <svg class="confirm-tick" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+               focusable="false"><path d="M4.5 12.5l5 5 10-11" stroke="currentColor"
+               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>{{ S.app.confirm.days }}</span>
+        </button>
+      </div>
 
         <!-- ‏מה יפתח את היעד, ולא רק למה הוא חסום. כל מספר כאן הוא
              תוצאה של פתירה מחדש בלי הקורס. -->
