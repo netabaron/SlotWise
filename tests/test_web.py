@@ -96,11 +96,13 @@ if not API_PATH.exists():  # pragma: no cover - נתיב זמני בלבד
 # --------------------------------------------------------------------------
 CODES = ["11069", "61753", "61756", "61757", "61832", "62027"]
 TIED_TRIO = {"61756", "61757", "62027"}
-TOTAL_GROUPS = 27
 PICKS_PER_SCHEDULE = 12  # רכיב אחד לכל (קורס, סוג): 1+2+3+2+2+2
-# ‏עודכן ב-2026-09-04 אחרי ריענון מלא: ראו ההערה ב-tests/test_attendance.py.
-# תיקון הקבוצות המקושרות נכנס לנתונים רק בריענון, ופתח צירופים שהיו חסומים.
-FEASIBLE_COUNT = 83
+#: ‏TOTAL_GROUPS = 27 ו-FEASIBLE_COUNT = 83 ישבו כאן עד 2026-09-10. שניהם
+#: נפלו פעמיים באותו יום על נתונים שהשתנו כדין — האחרון כשהידיעון הוסיף
+#: קבוצה שלישית ל-11069 והקטלוג נבנה מחדש. אף בדיקה כאן לא באמת אכפת לה
+#: מ-27 או מ-83; אכפת לה שהשרת מסכים עם הנתונים שהוא קורא. לכן שני
+#: המספרים נגזרים עכשיו בזמן ריצה — ראו ``_catalog_group_counts`` ו-
+#: ``_engine_feasible_count`` — ובדיקה נופלת רק כשיש אי-הסכמה אמיתית.
 MIN_DAYS = 4
 DAYS_USED = [1, 2, 3, 4]
 
@@ -402,6 +404,29 @@ def _viability_node(data: dict, code: str, kind: str, group_id: str) -> dict:
     return entry
 
 
+def _catalog_group_counts() -> dict[str, int]:
+    """‏{קוד: מספר קבוצות} מהקטלוג — מקור האמת שהשרת עצמו קורא ממנו."""
+    from catalog_source import catalog_courses  # noqa: PLC0415
+
+    everything = catalog_courses()
+    return {code: len(everything[code].groups) for code in CODES if code in everything}
+
+
+def _engine_feasible_count() -> int:
+    """כמה צירופים חוקיים יש באמת, לפי המנוע ועל אותם נתונים.
+
+    ‏זה מה ש-``FEASIBLE_COUNT = 83`` היה קיצור-דרך אליו. הטענה שהבדיקות
+    כאן עושות היא ש-``/api/solve`` מדווח את **אותו** מספר, ולא שהמספר
+    הוא 83 — ולכן קבוצה שהידיעון מוסיף מזיזה את שני הצדדים יחד.
+    """
+    from catalog_source import catalog_courses  # noqa: PLC0415
+    from scheduler import Preferences, enumerate_selections  # noqa: PLC0415
+
+    everything = catalog_courses()
+    courses = [everything[c] for c in CODES if c in everything]
+    return len(list(enumerate_selections(courses, Preferences())))
+
+
 def _solve_body(**overrides) -> dict:
     body: dict[str, object] = {
         "codes": list(CODES),
@@ -521,7 +546,12 @@ def test_the_catalog_is_the_one_the_tests_assume():
     missing = [c for c in CODES if c not in everything]
     assert not missing, f"חסרים מהמאגר: {missing}"
     courses = {c: everything[c] for c in CODES}
-    assert sum(len(c.groups) for c in courses.values()) == TOTAL_GROUPS
+    # ‏עד 2026-09-10 עמד כאן ``== 27``. מה שהעוגן הזה צריך לתפוס הוא מקור
+    # ריק או חתוך, לא מספר שזז: הידיעון הוסיף קבוצה ל-11069 ב-08/09, וזה
+    # נתון תקין לחלוטין.
+    for code, course in courses.items():
+        assert course.groups, f"{code} חזר בלי אף קבוצה"
+        assert course.kinds(), f"{code} חזר בלי אף סוג רכיב"
     semesters = {m.semester for c in courses.values() for g in c.groups for m in g.meetings}
     assert semesters == {TERM}
 
@@ -739,15 +769,22 @@ def test_courses_returns_all_six_courses(courses_payload):
     assert sorted(courses) == CODES
 
 
-def test_courses_returns_twenty_seven_groups_in_total(courses_payload):
+def test_courses_returns_every_group_the_catalog_has(courses_payload):
+    """‏עד 2026-09-10: ``== 27``. השרת אינו אמור להסכים עם מספר שנכתב פעם
+    אחת ב-2026-09-04 — הוא אמור להסכים עם הנתונים שהוא קורא."""
     courses = _by_code(courses_payload, "courses", "items", "results")
     total = sum(len(c.get("groups") or []) for c in courses.values())
-    assert total == TOTAL_GROUPS, f"ציפיתי ל-27 קבוצות, קיבלתי {total}"
+    expected = sum(_catalog_group_counts().values())
+    assert expected, "הקטלוג ריק — אין מה להשוות"
+    assert total == expected, f"ציפיתי ל-{expected} קבוצות, קיבלתי {total}"
 
 
 def test_courses_group_counts_match_the_real_data(courses_payload):
+    """אותה השוואה, קורס-קורס: מי שמאבד קבוצה בקורס אחד וממציא באחר לא
+    ייתפס על ידי הסכום לבדו."""
     courses = _by_code(courses_payload, "courses", "items", "results")
-    expected = {"11069": 2, "61753": 4, "61756": 7, "61757": 6, "61832": 5, "62027": 3}
+    expected = _catalog_group_counts()
+    assert set(expected) == set(CODES), f"חסרים מהקטלוג: {set(CODES) - set(expected)}"
     actual = {code: len(courses[code].get("groups") or []) for code in expected}
     assert actual == expected
 
@@ -849,7 +886,15 @@ def solve_payload(app):
 
 
 def test_solve_finds_every_feasible_combination(solve_payload):
-    assert solve_payload.get("feasible_count") == FEASIBLE_COUNT
+    """השרת מדווח בדיוק את מה שהמנוע מוצא על אותם נתונים.
+
+    ‏עד 2026-09-10 זה נכתב ``== 83``, וזה נפל כשהידיעון הוסיף קבוצה. מה
+    שנבדק כאן הוא ששכבת ה-API אינה מאבדת או ממציאה צירופים בדרך, וזה
+    נכון בכל מספר.
+    """
+    expected = _engine_feasible_count()
+    assert expected > 0, "אין צירופים חוקיים בכלל — הנתונים שבורים"
+    assert solve_payload.get("feasible_count") == expected
 
 
 def test_solve_reports_five_as_the_minimum_number_of_days(solve_payload):
@@ -900,10 +945,14 @@ def test_solve_picks_cover_every_course_component(solve_payload):
             assert {"day", "start", "end"} <= set(meeting)
 
 
-def test_solve_respects_top_n(client):
+def test_solve_respects_top_n(client, solve_payload):
+    """‏top_n חותך כמה מוחזרות, לא כמה קיימות. זה יחס בין שתי הרצות, ולא
+    מספר — עד 2026-09-10 שני הצדדים נבדקו מול ``== 83`` בנפרד."""
     data = _ok(client.post("/api/solve", json=_solve_body(top_n=3)))
     assert len(_pick_list(data, "schedules")) <= 3
-    assert data.get("feasible_count") == FEASIBLE_COUNT, "top_n לא משנה את מספר האפשרויות"
+    assert data.get("feasible_count") == solve_payload.get("feasible_count"), (
+        "top_n לא משנה את מספר האפשרויות"
+    )
 
 
 def test_solve_honours_a_pin(client):
@@ -941,8 +990,17 @@ def test_solve_pin_narrows_the_result_set_to_the_pinned_group(client):
         assert [p["group_id"] for p in chosen] == ["271060310/1"], (
             f"הנעיצה לא כובדה: {chosen}"
         )
-    assert data.get("feasible_count") == 14, (
-        f"נעיצת תרגול 271060310/1 משאירה 14 צירופים; קיבלתי {data.get('feasible_count')}"
+    # ‏עד 2026-09-10: ``== 14``. מה שנעיצה עושה הוא **לצמצם** — היא לא
+    # מבטיחה מספר מסוים, והמספר זז בכל פעם שהידיעון מוסיף קבוצה. שני
+    # הקצוות חשובים: אפס פירושו שהנעיצה הרגה הכול, ושוויון פירושו
+    # שהתעלמו ממנה.
+    pinned_count = data.get("feasible_count")
+    loose_count = loose.get("feasible_count")
+    assert isinstance(pinned_count, int) and pinned_count > 0, (
+        f"נעיצה חוקית חייבת להשאיר צירופים; קיבלתי {pinned_count}"
+    )
+    assert pinned_count < loose_count, (
+        f"נעיצה חייבת לצמצם: {pinned_count} מול {loose_count} בלעדיה"
     )
 
 
@@ -1037,7 +1095,11 @@ def test_solve_computes_viability_for_every_group(solve_payload):
                 counted += len(value)
             else:  # מבנה שטוח: {group_id: {...}}
                 counted += 1
-    assert counted == TOTAL_GROUPS, f"ציפיתי ל-27 בדיקות היתכנות, קיבלתי {counted}"
+    # ‏עד 2026-09-10: ``== 27``. הטענה היא כיסוי — לכל קבוצה שהשרת מכיר יש
+    # בדיקת היתכנות — ולכן הצד השני חייב להיגזר מאותו מקור ולא ממספר.
+    expected = sum(_catalog_group_counts().values())
+    assert expected, "הקטלוג ריק — אין מה להשוות"
+    assert counted == expected, f"ציפיתי ל-{expected} בדיקות היתכנות, קיבלתי {counted}"
 
 
 def test_solve_accepts_a_lecturer_ranking(client):
@@ -1065,19 +1127,46 @@ def test_solve_accepts_blocked_windows_and_forbid_friday(client):
     assert resp.status_code == 200, resp.get_data(as_text=True)[:300]
     data = _ok(resp)
     # אין שיעורים ביום שישי בנתונים האמיתיים — החסימה לא אמורה לשנות כלום.
-    assert data.get("feasible_count") == FEASIBLE_COUNT
+    # ‏"לא לשנות כלום" הוא יחס מול הרצה בלי החסימה, ולא ``== 83``.
+    assert data.get("feasible_count") == _engine_feasible_count()
 
-    # ...אבל חסימה שכן פוגעת חייבת להשפיע: כל 16 הצירופים משתמשים ביום ראשון,
-    # ולכן חסימת יום ראשון חייבת לאפס אותם. בלי הבדיקה הזאת שרת שמתעלם
-    # לגמרי מ-blocked היה עובר את הבדיקה הזאת בירוק.
-    real = client.post("/api/solve", json=_solve_body(blocked=[[1, 0, 1440]], top_n=2))
+    # ...אבל חסימה שכן פוגעת חייבת להשפיע. בלי החצי הזה, שרת שמתעלם
+    # לגמרי מ-blocked היה עובר את הבדיקה בירוק.
+    #
+    # ‏עד 2026-09-10 נכתב כאן ``== 0``, עם הנימוק "כל 16 הצירופים משתמשים
+    # ביום ראשון". זה היה נכון על הנתונים של אז ואינו נכון היום: הקבוצה
+    # שהידיעון הוסיף ל-11069 ב-08/09 פותחת 10 צירופים שאינם נוגעים ביום
+    # ראשון. "אפס" מעולם לא היה הדרישה — הדרישה היא שהחסימה נאכפת, ואת
+    # זה אומרות שתי הטענות שלמטה בלי להיות תלויות בנתונים: הספירה יורדת,
+    # ואף מפגש שחוזר אינו נופל בחלון החסום.
+    day = 1  # ראשון
+    real = client.post("/api/solve", json=_solve_body(blocked=[[day, 0, 1440]], top_n=5))
     assert real.status_code == 200, real.get_data(as_text=True)[:300]
     blocked_data = _ok(real)
-    assert blocked_data.get("feasible_count") == 0, (
-        "חסימת יום ראשון כולו חייבת לפסול את כל הצירופים — נראה ש-blocked לא נלקח בחשבון"
+    blocked_count = blocked_data.get("feasible_count")
+    assert isinstance(blocked_count, int)
+    assert blocked_count < data.get("feasible_count"), (
+        f"חסימת יום שלם חייבת לצמצם: {blocked_count} מול "
+        f"{data.get('feasible_count')} בלי חסימה — נראה ש-blocked לא נלקח בחשבון"
     )
-    assert _pick_list(blocked_data, "schedules") == []
-    reasons = blocked_data.get("reasons")
+    for schedule in _pick_list(blocked_data, "schedules"):
+        for pick in schedule["picks"]:
+            for meeting in pick["meetings"]:
+                assert meeting["day"] != day, (
+                    f"מפגש ביום החסום חזר בכל זאת: {pick['code']}/{pick['group_id']} "
+                    f"{meeting}"
+                )
+
+    # וחסימה שבאמת מרוקנת חייבת להחזיר הסבר, לא רשימה ריקה בשקט.
+    everything = client.post(
+        "/api/solve",
+        json=_solve_body(blocked=[[d, 0, 1440] for d in range(1, 7)], top_n=2),
+    )
+    assert everything.status_code == 200, everything.get_data(as_text=True)[:300]
+    empty = _ok(everything)
+    assert empty.get("feasible_count") == 0
+    assert _pick_list(empty, "schedules") == []
+    reasons = empty.get("reasons")
     assert reasons, "כשאין פתרון חייב להגיע הסבר"
     assert _hebrew(json.dumps(reasons, ensure_ascii=False)), (
         f"ההסבר חייב להיות בעברית: {reasons}"

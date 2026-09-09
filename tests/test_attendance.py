@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import copy
 import inspect
+import itertools
 import sys
 from pathlib import Path
 
@@ -96,15 +97,14 @@ CLASH_B = ("61756", KIND_TUTORIAL, "271060310/3")
 #: הרצאת 61753 — הרכיב שהסטודנטית מסמנת כ"בלי חובת נוכחות".
 OPTIONAL_LECTURE = {"61753": {KIND_LECTURE: False}}
 
-#: המספרים של היום, לפני השינוי. אלה קבועי הרגרסיה של כל הפיצ'ר.
-#: ‏עודכנו ב-2026-09-04 אחרי ריענון מלא מהידיעון: תיקון הקבוצות המקושרות
-#: מהקומיט הקודם נכנס לנתונים רק כשהדפים נמשכו ופורסרו מחדש. קבוצת הרצאה
-#: מקושרת גם למזהה של עצמה — בבראודה הרצאה ותרגול חולקים מזהה קבוצה —
-#: ולכן יש יותר צירופי הרצאה↔תרגול חוקיים. ‏54 -> 83.
-TODAY_FEASIBLE = 83
+#: ‏83 ו-564 היו כאן עד 2026-09-10, ופעמיים באותו יום הם נפלו על נתונים
+#: שהשתנו כדין — פעם כשהמאגר המקומי זז מתחת לבדיקות, ופעם כשהידיעון הוסיף
+#: קבוצה שלישית ל-11069 והקטלוג נבנה מחדש. מספר צירופים אינו מה שהקובץ
+#: הזה שומר עליו; הוא שומר על **הכלל**. לכן במקום מספר, כל אחת מהבדיקות
+#: שקיבעה מספר משווה עכשיו את המנוע לספירה ממצה של אותו כלל — ראו
+#: ``legal_combinations`` — ומספר הצירופים נגזר מהנתונים שיש.
 TODAY_MIN_DAYS = 4
 TODAY_COURSES = 6
-TODAY_GROUPS = 27
 
 #: הקורסים של הסטודנט/ית בסמסטר 5. הבדיקות כאן עוסקות *בהם*, לא בכל מה
 #: שמקרה במאגר: מאז שהרענון היומי מושך את כל הקורסים שנפתחים, המאגר גדל
@@ -112,8 +112,45 @@ TODAY_GROUPS = 27
 STUDENT_CODES = ["11069", "61753", "61756", "61757", "61832", "62027"]
 
 #: אחרי שמסמנים את הרצאת 61753 כלא-חובה ומאפשרים חפיפות רכות.
-SOFT_FEASIBLE = 564
 SOFT_MIN_DAYS = 4
+
+
+def selection_key(sel) -> tuple[str, ...]:
+    """זהות של מערכת: אילו קבוצות בדיוק נבחרו. סדר אינו חלק ממנה."""
+    return tuple(sorted(f"{g.course_code}~{g.kind}~{g.group_id}" for g in sel.groups))
+
+
+def all_combinations(courses):
+    """כל צירוף של קבוצה אחת לכל (קורס, סוג רכיב) — **בלי** המנוע.
+
+    מכפלה קרטזית פשוטה, 2400 צירופים על ששת הקורסים האלה. זו הספירה
+    הבלתי-תלויה שהמספרים המקובעים היו קיצור-דרך אליה.
+    """
+    buckets = [
+        [g for g in course.groups if g.kind == kind]
+        for course in courses
+        for kind in course.kinds()
+    ]
+    for combo in itertools.product(*buckets):
+        yield Selection(groups=list(combo))
+
+
+def legal_combinations(courses, prefs) -> set[tuple[str, ...]]:
+    """הצירופים שהכלל מתיר, נספרים ממצה ובלי ``enumerate_selections``.
+
+    ‏``conflict_is_hard`` הוא הכלל עצמו, והוא נבדק בנפרד בסעיף 2. מה
+    שנבדק כאן הוא שהמונה **מיישם** אותו: לא גוזם צירוף חוקי ולא מחזיר
+    צירוף אסור. זו הטענה שהמספר 83 עמד בשבילה, והיא נכונה גם כשהידיעון
+    מוסיף קבוצה.
+    """
+    out: set[tuple[str, ...]] = set()
+    for sel in all_combinations(courses):
+        if all(
+            not (a.conflicts_with(b) and conflict_is_hard(a, b, prefs))
+            for a, b in itertools.combinations(sel.groups, 2)
+        ):
+            out.add(selection_key(sel))
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -214,11 +251,23 @@ def soft_prefs(**kwargs) -> Preferences:
 # ==========================================================================
 # 0. המאגר עצמו — לוודא שהבדיקות מדברות על הנתונים שאנחנו חושבים
 # ==========================================================================
-def test_the_real_database_has_six_courses_and_27_groups(courses):
-    """הקורסים של הסטודנט/ית — לא כל מה שיש במאגר (הוא גדל עם כל רענון)."""
+def test_the_six_student_courses_are_present_and_well_formed(courses):
+    """הקורסים של הסטודנט/ית — לא כל מה שיש במאגר (הוא גדל עם כל רענון).
+
+    ‏עד 2026-09-10 השורה האחרונה כאן הייתה ``== 27`` קבוצות. הידיעון הוסיף
+    קבוצה שלישית ל-11069 ב-08/09, והמספר נפל — על נתון שהשתנה כדין. מה
+    שהבדיקה הזאת באמת עוגנת הוא שהקובץ מדבר על הקורסים שהוא חושב, ושכל
+    קבוצה שהוא יקרא ניתנת לשימוש; שני אלה אינם תלויים בכמה קבוצות יש.
+    """
     assert [c.code for c in courses] == STUDENT_CODES
     assert len(courses) == TODAY_COURSES
-    assert sum(len(c.groups) for c in courses) == TODAY_GROUPS
+    for course in courses:
+        assert course.groups, f"{course.code} בלי אף קבוצה — אין מה לשבץ"
+        assert course.kinds(), f"{course.code} בלי אף סוג רכיב"
+        for group in course.groups:
+            assert group.group_id, f"{course.code}: קבוצה בלי מזהה"
+            assert group.kind, f"{course.code}/{group.group_id}: קבוצה בלי סוג"
+            assert group.course_code == course.code
 
 
 def test_the_spec_example_pair_really_overlaps_on_wednesday(courses):
@@ -253,8 +302,16 @@ def test_default_preferences_have_no_attendance_overrides():
 
 
 def test_default_preferences_reproduce_the_strict_enumeration(courses):
-    """**שומר הרגרסיה של כל השינוי.** 16 צירופים, בדיוק כמו לפניו."""
-    assert len(list(enumerate_selections(courses, Preferences()))) == TODAY_FEASIBLE
+    """**שומר הרגרסיה של כל השינוי:** ברירת המחדל היא בדיוק כל הצירופים
+    שאין בהם חפיפה, לא אחד יותר ולא אחד פחות.
+
+    ‏עד 2026-09-10 זה נכתב ``== 83``. המספר עצמו אף פעם לא היה הנקודה —
+    הוא היה קיצור דרך לספירה הממצה, והוא נשבר כשהיא זזה כדין. עכשיו
+    הספירה עצמה כתובה, והבדיקה שורדת כל שינוי לגיטימי בנתונים.
+    """
+    engine = {selection_key(s) for s in enumerate_selections(courses, Preferences())}
+    assert engine, "המונה החזיר ריק — אין מה להשוות"
+    assert engine == legal_combinations(courses, Preferences())
 
 
 def test_default_preferences_reproduce_min_days_of_five(courses):
@@ -283,9 +340,15 @@ def test_solve_still_works_with_the_default_preferences(courses):
 
 
 def test_allowing_soft_conflicts_alone_changes_nothing(courses):
-    """הדגל לבדו אינו מתיר כלום — צריך גם רכיב שסומן כלא-חובה."""
+    """הדגל לבדו אינו מתיר כלום — צריך גם רכיב שסומן כלא-חובה.
+
+    ‏"לא משנה כלום" הוא יחס בין שתי הרצות, ולא מספר. עד 2026-09-10 הוא
+    נבדק כ-``== 83`` בשני הצדדים בנפרד, ולכן נשבר כשהמספר זז.
+    """
     prefs = Preferences(allow_soft_conflicts=True)
-    assert len(list(enumerate_selections(courses, prefs))) == TODAY_FEASIBLE
+    with_flag = {selection_key(s) for s in enumerate_selections(courses, prefs)}
+    without = {selection_key(s) for s in enumerate_selections(courses, Preferences())}
+    assert with_flag == without
 
 
 def test_marking_attendance_is_enough_on_its_own(courses):
@@ -297,7 +360,21 @@ def test_marking_attendance_is_enough_on_its_own(courses):
     """
     prefs = Preferences(attendance=copy.deepcopy(OPTIONAL_LECTURE))
     selections = list(enumerate_selections(courses, prefs))
-    assert len(selections) == SOFT_FEASIBLE
+    keys = {selection_key(s) for s in selections}
+    strict = {selection_key(s) for s in enumerate_selections(courses, Preferences())}
+    # ‏עד 2026-09-10: ``== 564``. מה שהתקלה דיווחה עליו אינו מספר אלא
+    # שהסימון לבדו כן פותח מערכות — ושהזוג מה-SPEC הוא אחת מהן.
+    assert strict < keys, "הסימון לבדו חייב לפתוח מערכות, ולא לגרוע"
+    assert keys == legal_combinations(courses, prefs)
+    lecture = find_group(courses, *CLASH_A)
+    tutorial = find_group(courses, *CLASH_B)
+    together = [
+        s for s in selections
+        if lecture in s.groups and tutorial in s.groups
+    ]
+    assert together, (
+        "הזוג שהתקלה דיווחה עליו עדיין חסום — זה בדיוק מה שהסימון אמור לפתוח"
+    )
     assert min(len(sel.days_used()) for sel in selections) == SOFT_MIN_DAYS
 
 
@@ -555,7 +632,8 @@ def test_describe_soft_conflicts_reports_every_pair(courses):
 # ==========================================================================
 def test_optional_lecture_unlocks_schedules_the_strict_solver_rejects(courses):
     selections = list(enumerate_selections(courses, soft_prefs()))
-    assert len(selections) > TODAY_FEASIBLE
+    strict = list(enumerate_selections(courses, Preferences()))
+    assert len(selections) > len(strict)
     rejected_by_strict = [s for s in selections if not s.is_feasible()]
     assert rejected_by_strict, "לא נמצאה אף מערכת חדשה — הפיצ'ר לא עושה כלום"
 
@@ -578,20 +656,24 @@ def test_waiving_attendance_opens_schedules_the_strict_solver_rejects(courses):
 
 
 def test_the_strict_enumeration_is_a_subset_of_the_soft_one(courses):
-    def key(sel):
-        return tuple(
-            sorted(f"{g.course_code}~{g.kind}~{g.group_id}" for g in sel.groups)
-        )
-
-    strict = {key(s) for s in enumerate_selections(courses, Preferences())}
-    soft = {key(s) for s in enumerate_selections(courses, soft_prefs())}
-    assert len(strict) == TODAY_FEASIBLE
-    assert strict <= soft, "הרפיה חייבת רק להוסיף פתרונות, אף פעם לא לגרוע"
+    strict = {selection_key(s) for s in enumerate_selections(courses, Preferences())}
+    soft = {selection_key(s) for s in enumerate_selections(courses, soft_prefs())}
+    assert strict, "הפתרון הקשיח ריק — אין מה להשוות"
+    # ‏תת-קבוצה **ממש**: ‏``<=`` לבדו היה עובר גם אילו הרפיה לא מוסיפה דבר.
+    assert strict < soft, "הרפיה חייבת רק להוסיף פתרונות, אף פעם לא לגרוע"
 
 
-def test_the_soft_enumeration_has_the_expected_size(courses):
-    """מספר מדויק — כדי שכל שינוי בכלל החפיפה ייראה מיד."""
-    assert len(list(enumerate_selections(courses, soft_prefs()))) == SOFT_FEASIBLE
+def test_the_soft_enumeration_is_exactly_what_the_rule_allows(courses):
+    """כל שינוי בכלל החפיפה נראה מיד — בלי לקבע מספר.
+
+    ‏עד 2026-09-10 זה היה ``== 564``, "מספר מדויק כדי שכל שינוי ייראה
+    מיד". הכוונה הייתה נכונה והמימוש היה שביר: המספר זז גם כשהכלל לא
+    השתנה. ההשוואה מול ספירה ממצה של אותו כלל אומרת את אותו הדבר, ורק
+    שינוי אמיתי בכלל מפיל אותה.
+    """
+    prefs = soft_prefs()
+    engine = {selection_key(s) for s in enumerate_selections(courses, prefs)}
+    assert engine == legal_combinations(courses, prefs)
 
 
 def _linked_candidates(courses: list[Course], owner: Group) -> list[Group]:
@@ -641,7 +723,11 @@ def test_a_yedion_attendance_note_never_seeds_optional(courses):
     seeded = seeder(courses)
     assert seeded.get("11069", {}).get(KIND_COMBINED) is not False
     prefs = Preferences(attendance=seeded, allow_soft_conflicts=True)
-    assert len(list(enumerate_selections(courses, prefs))) == TODAY_FEASIBLE
+    # ‏"הזריעה לא הפכה דבר לרשות" = אותה קבוצת מערכות בדיוק כמו בלעדיה.
+    # עד 2026-09-10 נבדק כ-``== 83`` בשני הצדדים בנפרד.
+    assert {selection_key(s) for s in enumerate_selections(courses, prefs)} == {
+        selection_key(s) for s in enumerate_selections(courses, Preferences())
+    }
 
 
 # ==========================================================================

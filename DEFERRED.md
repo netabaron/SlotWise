@@ -414,7 +414,11 @@ tested.
 **Recommendation:** option 2 when Phase 9 or hosting work touches this area.
 Option 1 is cleaner but pays a test-file edit for an endpoint nobody calls.
 
-### Eighteen tests pin exact counts against a live, gitignored, self-refreshing database
+---
+
+## Closed
+
+### Eighteen tests pinned exact counts — closed 2026-09-10
 **Where:** `tests/test_attendance.py`, `tests/test_web.py`, `tests/test_yedion_http.py`
 — e.g. `test_the_real_database_has_six_courses_and_27_groups`.
 **Owner:** unassigned — a test-robustness question, not a product bug.
@@ -454,10 +458,52 @@ live `data/db` in four places (module-level API probe, a `copytree`, and a direc
 `Store(DB_ROOT)`). It has not failed on drift, so this is prevention rather than a
 live problem — but it is the same exposure, and it is the last of it.
 
+**Closed 2026-09-10, option 2 on top of option 1.** `dc8c20d` had done option 1
+— point them at the committed catalogue — which stabilised the *source* while
+leaving the exact numbers in place. It bought one day. They broke again the
+moment the catalogue itself legitimately moved: the yedion added a third
+semester-א group to 11069 on 08/09, rebuilding the catalogue picked it up, and
+15 assertions went red — 27 groups to 28, an enumeration of 83 to 152, 564 to
+960. The rule against editing existing tests was lifted for exactly this, on the
+grounds that a test which breaks when the yedion legitimately adds a group is
+pinning something it does not care about.
 
----
+**What each number became.** Nothing was deleted and nothing was loosened to a
+range; every assertion still fails on a real defect. The pattern is that both
+sides of the comparison are derived at runtime, so legitimate data movement
+moves them together.
 
-## Closed
+| was | is |
+|---|---|
+| `sum(len(groups)) == 27` | every one of the six courses has groups, kinds, and well-formed ids |
+| `{"11069": 2, "61753": 4, ...}` | the same dict, read from the catalogue through `Store` |
+| `feasible_count == 83` | `== _engine_feasible_count()` — the API agrees with the engine on the same data |
+| `feasible_count == 83` after `top_n=3` | equal to the unrestricted solve's own count: `top_n` caps what is returned, not what exists |
+| `feasible_count == 14` after a pin | `0 < pinned < unpinned` — pinning narrows, and neither kills everything nor is ignored |
+| viability `counted == 27` | equal to the number of groups the payload carries — a coverage claim |
+| blocking Sunday gives `== 0` | the count drops, **and** no returned meeting falls in the blocked window |
+| enumeration `== 83` / `== 564` | equal to `legal_combinations()`, an exhaustive independent count of the same rule |
+
+`legal_combinations()` is the interesting one. It walks the cartesian product of
+one group per (course, component) — 2400 combinations here — and applies
+`conflict_is_hard` directly, without `enumerate_selections`. That is precisely
+what 83 and 564 were shorthand for, and it reproduces both exactly on the data
+they were written against. The enumerator is where pruning bugs live, so
+comparing it against an exhaustive count of the rule it claims to implement is a
+stronger check than a literal, not a weaker one.
+
+**Proved not to be a loosening**, two ways. The converted files pass against
+*both* the old committed catalogue and the rebuilt one — which is the actual
+claim, that they no longer pin data. And three mutations each had to fail, and
+did: an enumerator that silently drops one legal combination (3 tests caught), an
+API that drops a group from every course (4 caught), and a server that ignores
+`blocked` entirely (1 caught — the very assertion whose `== 0` had just gone).
+
+**Still pinned, deliberately:** `MIN_DAYS = 4`, `PICKS_PER_SCHEDULE = 12` and
+`DAYS_USED`. Those are product claims someone decided — "four days is
+reachable", "one component per course and kind" — not incidental counts. If a
+data change moves one of them, that is worth a red test.
+
 
 ### The lecturer field held a note glued onto a real name — closed 2026-09-10
 **Where:** `src/parser.py`, surfacing in `data/db/sections.json` →
