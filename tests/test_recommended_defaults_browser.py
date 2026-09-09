@@ -148,6 +148,29 @@ def with_identity(page) -> dict:
     return choose(page, 3, "א")
 
 
+def tick_recommended(page) -> dict:
+    """מסמן את ההמלצה בלחיצה אחת.
+
+    ‏עד 2026-09-09 ההמלצה הגיעה מסומנת, ולכן בדיקה יכלה להמשיך ישר
+    למה שהיא באמת בודקת. מאז היא **מוצגת ואינה מסומנת**, והסימון
+    הוא לחיצה אחת על "סמן את כל המומלצים". זה כל מה שהשורה הזאת
+    עושה: הצעד שהסטודנט/ית עושה עכשיו במקום האפליקציה. שום טענה
+    בבדיקות שמשתמשות בה לא השתנתה.
+    """
+    # מצב שמור שכבר יש בו בחירה מגיע עם שלב 2 מכווץ, ואז הכפתור בגובה
+    # אפס ואי אפשר ללחוץ עליו. הפתיחה היא מה שהסטודנט/ית עושה במסך
+    # הזה, ולא עקיפה של הממשק.
+    if page.evaluate(
+        "() => document.getElementById('step-courses')"
+        "        .classList.contains('is-collapsed')"
+    ):
+        page.click("#step-courses-toggle")
+        page.wait_for_timeout(500)
+    page.click("#btn-restore-recommended")
+    page.wait_for_timeout(1200)
+    return snap(page)
+
+
 # ==========================================================================
 # 1. הבחירה בשלב 1 היא שמסמנת
 # ==========================================================================
@@ -316,6 +339,7 @@ def test_switching_program_drops_the_previous_program_plan(page):
     לא משתנה בהחלפת מסלול.
     """
     with_identity(page)
+    tick_recommended(page)
     assert "61756" in snap(page)["checked"], "מתחילים עם תוכנית הנדסת תוכנה"
 
     page.select_option("#select-program", other_program(page))
@@ -359,6 +383,7 @@ def uncheck(page, code: str) -> dict:
 def test_unchecking_a_recommended_course_sticks_across_a_reload(page):
     """משיכה חוזרת של אותה רשימה אסור שתסמן מחדש מה שבוטל במפורש."""
     with_identity(page)
+    tick_recommended(page)
     state = uncheck(page, "61759")
     assert state["autoDropped"] == ["61759"]
     assert "61759" not in state["checked"]
@@ -385,6 +410,7 @@ def test_restoring_the_recommended_list_brings_it_back(page):
 def test_unchecking_one_tied_course_unchecks_the_whole_package(page):
     """‏61756+61757+62027 — הידיעון רושם אותם כחבילה אחת."""
     with_identity(page)
+    tick_recommended(page)
     state = uncheck(page, "61757")
     assert not ({"61756", "61757", "62027"} & set(state["checked"]))
 
@@ -546,7 +572,7 @@ def test_adoption_does_not_swallow_the_students_next_choice(browser, server):
         p.select_option("#select-term", "א")
         p.wait_for_timeout(1800)
 
-        state = snap(p)
+        state = tick_recommended(p)
         assert state["autoSemester"] == "5"
         assert {"61756", "61757", "62027", "61832"} <= set(state["checked"]), (
             "ההמלצה של הסמסטר שנבחר מסומנת"
@@ -566,10 +592,15 @@ def test_another_department_gets_its_own_plan_not_software_engineering(page):
     השאיר את רשימת הנדסת תוכנה מסומנת מתחת לקורסי האזרחית. הבעלות היא על
     צמד מסלול+סמסטר."""
     with_identity(page)
+    tick_recommended(page)
     assert "61756" in snap(page)["checked"], "מתחילים בהנדסת תוכנה"
 
     page.select_option("#select-program", "הנדסה אזרחית")
     page.wait_for_timeout(2200)
+    # התוכנית החדשה מוצגת ואינה מסומנת, כמו כל המלצה — ולכן סימון
+    # שני. מה שהבדיקה בודקת הוא שהרשימה המסומנת היא של המסלול
+    # החדש בלבד, לא מי לחץ על מה.
+    tick_recommended(page)
     state = snap(page)
     checked = set(state["checked"])
     assert not (checked & {"61756", "61757", "62027", "61832", "11069"}), (
