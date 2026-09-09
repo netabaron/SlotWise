@@ -36,7 +36,7 @@ where `refitBlocks()` fires on the media change and 6 lines drop correctly.
 **Pre-existing.** Present at `e6aaafb` (before any Phase 10 work). The 13px type
 floor deepens each clip by about 1.9px but does not change how many lines clip.
 **Probably the same root cause as** the load-sensitive
-`test_neither_physics_track_is_marked` further down this file: both are
+`test_neither_physics_track_is_recommended` further down this file: both are
 measurements taken before layout settles.
 **Where to look first:** `fitBlocks(ui.grid)` at `app.js:6071` runs synchronously
 inside the render path. It likely needs to run after layout — a
@@ -257,8 +257,11 @@ be, until the server sends a stable id separate from the display label. Recorded
 so the question is answered once.
 
 
-### `test_neither_physics_track_is_marked` is load-sensitive, not deterministic
+### `test_neither_physics_track_is_recommended` is load-sensitive, not deterministic
 **Where:** `tests/test_recommended_defaults_browser.py`, via the `choose()` helper.
+**Renamed 2026-09-09** from `..._is_marked` when the recommendation stopped
+arriving ticked (`69cdabb`). The rename does not touch the timing problem below,
+which is about `choose()` and applies to every test that goes through it.
 **Owner:** unassigned — a test-robustness question, not a product bug.
 **What happened:** it failed once in a full-suite run on 2026-09-07 and has not
 reproduced since. Chased properly before being written off:
@@ -285,6 +288,22 @@ browser processes from killed background runs (there were none).
 condition — the semester's course list having rendered — rather than on the
 clock. That means editing an existing test file, which the standing rule forbids
 without an explicit decision.
+
+### `test_restoring_the_recommended_list_brings_it_back` passes for the wrong reason
+**Where:** `tests/test_recommended_defaults_browser.py`.
+**Owner:** unassigned — test honesty, not a product bug.
+**What:** it calls `uncheck(page, "61759")`, which clicks the checkbox. Since
+`dc112c3` nothing arrives ticked, so that click now *ticks* 61759 rather than
+unticking it. The test still passes — clicking `סמן את כל המומלצים` afterwards
+produces the asserted end state either way — but it no longer exercises the path
+its name describes, and it would keep passing if restore stopped clearing
+`autoDropped`.
+**Why it was left:** the rule for the 2026-09-09 test work was explicit — do not
+touch a test in that file that still passes. The untick-and-restore path itself is
+covered by `test_unchecking_a_recommended_course_sticks_across_a_reload`, which
+ticks first and does genuinely untick.
+**What would fix it:** tick before unticking, exactly as the five mechanical
+repairs in `5c10640` do.
 
 ### `עדכן נתונים מהידיעון` must disappear entirely if this is ever hosted
 **Where:** the button, `/api/scrape/start`, `/api/scrape/status`.
@@ -380,6 +399,17 @@ misread as the identity change breaking the API layer.
 
 Option 1 or 2. Not 3: the standing advice would become "ignore those eighteen",
 which is worse than no test.
+
+**Mostly closed 2026-09-09 by `dc8c20d`, option 1.** `tests/catalog_source.py`
+writes `data/catalog.jsonl` into a temp `sections.json` and reads it back through
+the same `Store` the app uses, so only the source changed and not the code path.
+`test_attendance.py`, `test_web.py` and `test_yedion_http.py` are converted, and
+the numbers came out exactly as written — nothing was weakened to pass.
+
+**What is still open:** `tests/test_multifaculty.py` still points `DB_ROOT` at the
+live `data/db` in four places (module-level API probe, a `copytree`, and a direct
+`Store(DB_ROOT)`). It has not failed on drift, so this is prevention rather than a
+live problem — but it is the same exposure, and it is the last of it.
 
 ### The lecturer field now holds a note **glued onto** a real name — worse than the entry below, 2026-09-09
 **Where:** `src/parser.py`, surfacing in `data/db/sections.json` →
