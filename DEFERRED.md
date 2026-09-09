@@ -305,49 +305,6 @@ ticks first and does genuinely untick.
 **What would fix it:** tick before unticking, exactly as the five mechanical
 repairs in `5c10640` do.
 
-### The shipped catalog is a build behind, and rebuilding it moves 15 pinned counts
-**Where:** `data/catalog.jsonl` / `data/catalog.meta.json`, built 2026-09-07.
-**Owner:** a decision waiting, not a loose end. Held back deliberately 2026-09-10.
-**What happened:** the lecturer fix above needs the catalog rebuilt to carry
-clean values at rest. `build_catalog.py --check` does it offline from
-`data/raw`, and it worked — all six quality gates passed, 134 polluted rows went
-to 0. It was **not committed**, because it also brings a data change that has
-nothing to do with lecturers:
-
-| | committed catalog (07/09) | rebuilt from today's `data/raw` |
-|---|---|---|
-| groups | 2166 | 2167 |
-| timed meetings | 1186 | 1187 |
-| 11069, semester א | 2 groups | **3** |
-
-The third group of 11069 (`271060310/2`) is real: the yedion added it in the
-2026-09-08 fetch, `data/db/sections.json` has had it since, and the app has been
-showing it. Only the committed catalog predates it.
-
-**Verified not to be caused by the parser change**, because that was the obvious
-suspicion: the *old* parser on today's `data/raw` also yields 3 groups for
-11069. The parser change moved lecturer strings and nothing else.
-
-**Why it is held:** one extra group in a shared course multiplies through the
-enumeration, and 15 assertions in `test_attendance.py` and `test_web.py` fail on
-it — 27 groups becomes 28, an enumeration of 83 becomes 152, 564 becomes 960.
-Those are the same count-pinned tests as the entry further down, and both files
-are covered by the standing rule against editing existing tests. With the
-committed catalog restored, all 112 tests in those two files pass.
-
-**So the fix ships without the rebuild:** `store._group_from_dict()` repairs the
-catalog's 134 rows as it reads them, so a fresh clone sees clean names anyway.
-That is a patch over stale data, not a substitute for rebuilding it.
-
-**Two ways out, for whoever picks this up:**
-1. Rebuild the catalog and update the 15 counts, saying in the message that the
-   yedion added a group on 2026-09-08. Honest, and it needs the test rule lifted.
-2. Do the invariants conversion the count-pinning entry already recommends, and
-   then the rebuild costs nothing.
-
-Not "leave the catalog stale": every further yedion change widens the gap, and
-the read-time repair only knows the phrases seen up to 2026-09-10.
-
 ### `עדכן נתונים מהידיעון` must disappear entirely if this is ever hosted
 **Where:** the button, `/api/scrape/start`, `/api/scrape/status`.
 **Owner:** whoever does the hosting work — see `HOSTING_NOTES.md` row 3.
@@ -417,6 +374,78 @@ Option 1 is cleaner but pays a test-file edit for an endpoint nobody calls.
 ---
 
 ## Closed
+
+### The shipped catalog was a build behind — closed 2026-09-10
+**Where:** `data/catalog.jsonl` / `data/catalog.meta.json`, built 2026-09-07.
+**Owner:** a decision waiting, not a loose end. Held back deliberately 2026-09-10.
+**What happened:** the lecturer fix above needs the catalog rebuilt to carry
+clean values at rest. `build_catalog.py --check` does it offline from
+`data/raw`, and it worked — all six quality gates passed, 134 polluted rows went
+to 0. It was **not committed**, because it also brings a data change that has
+nothing to do with lecturers:
+
+| | committed catalog (07/09) | rebuilt from today's `data/raw` |
+|---|---|---|
+| groups | 2166 | 2167 |
+| timed meetings | 1186 | 1187 |
+| 11069, semester א | 2 groups | **3** |
+
+The third group of 11069 (`271060310/2`) is real: the yedion added it in the
+2026-09-08 fetch, `data/db/sections.json` has had it since, and the app has been
+showing it. Only the committed catalog predates it.
+
+**Verified not to be caused by the parser change**, because that was the obvious
+suspicion: the *old* parser on today's `data/raw` also yields 3 groups for
+11069. The parser change moved lecturer strings and nothing else.
+
+**Why it is held:** one extra group in a shared course multiplies through the
+enumeration, and 15 assertions in `test_attendance.py` and `test_web.py` fail on
+it — 27 groups becomes 28, an enumeration of 83 becomes 152, 564 becomes 960.
+Those are the same count-pinned tests as the entry further down, and both files
+are covered by the standing rule against editing existing tests. With the
+committed catalog restored, all 112 tests in those two files pass.
+
+**So the fix ships without the rebuild:** `store._group_from_dict()` repairs the
+catalog's 134 rows as it reads them, so a fresh clone sees clean names anyway.
+That is a patch over stale data, not a substitute for rebuilding it.
+
+**Two ways out, for whoever picks this up:**
+1. Rebuild the catalog and update the 15 counts, saying in the message that the
+   yedion added a group on 2026-09-08. Honest, and it needs the test rule lifted.
+2. Do the invariants conversion the count-pinning entry already recommends, and
+   then the rebuild costs nothing.
+
+Not "leave the catalog stale": every further yedion change widens the gap, and
+the read-time repair only knows the phrases seen up to 2026-09-10.
+
+**Closed 2026-09-10, the same night.** The count-pinned tests were converted to
+invariants first (entry above), which removed the only thing standing in the
+way, and then the catalogue was rebuilt and committed.
+
+`build_catalog.py --check` builds offline from `data/raw` with no network. All
+six quality gates passed. What landed:
+
+| | before (07/09) | after (10/09) |
+|---|---|---|
+| courses | 572 | 572 |
+| groups | 2166 | **2167** |
+| timed meetings | 1186 | **1187** |
+| lecturer values carrying a status note | **134 rows** | 0 |
+| `status_note` populated | — | 134 rows |
+
+The extra group is 11069's `271060310/2`, which the yedion added in the
+2026-09-08 fetch. It is real, `data/db/sections.json` has had it since, and the
+app has been showing it — only the committed catalogue predated it.
+
+**The read-time repair in `store._group_from_dict()` stays.** It is no longer
+load-bearing for the shipped catalogue, but it still covers the 12 courses that
+`reparse` skips because they have no fixed time in semester א, and any older
+`data/db` on another machine. It costs a string comparison per group on read.
+
+Order of the two commits was reversed from the way it was asked for — tests
+first, then the rebuild — so that neither commit is red on its own. Committing
+the rebuild first would have left one commit in history with 15 failures in it.
+
 
 ### Eighteen tests pinned exact counts — closed 2026-09-10
 **Where:** `tests/test_attendance.py`, `tests/test_web.py`, `tests/test_yedion_http.py`
@@ -603,7 +632,9 @@ The other route is a **read-time** repair in `store._group_from_dict()`, and it
 covers two cases the reparse cannot. 12 courses have no fixed time in
 semester א, so `parse_course_page(..., semester="א")` returns `None` and
 `reparse` skips them entirely. And `data/catalog.jsonl` — committed, and what a
-fresh clone reads — could not be rebuilt at all; see the open entry below.
+fresh clone reads — was a build behind on the night this landed, so it was
+repaired on read too; it has since been rebuilt (see the entry above), and the
+read path stays as a floor under any older copy.
 Reading has no HTML and therefore no red span, so this path uses a two-item
 phrase list (`_LEGACY_STATUS_SUFFIXES`) plus a prefix check for labels that
 leaked into the field. It removes an **exact suffix only**, and only when a name
