@@ -92,6 +92,19 @@ def _fresh(browser, server, width: int = 1280):
     return ctx, pg
 
 
+def _identity(pg):
+    """בוחר מסלול, שנה וסמסטר.
+
+    ‏מאז 2026-09-09 שלב 1 הוא זהות ואין לו ברירת מחדל, ולכן שלבים 2..5
+    נעולים עד שנבחרו שלושתם. כל בדיקה שנוגעת בכפתורי הימים חייבת לעבור
+    כאן קודם — אחרת היא נכשלת על פקד נעול, ולא על מה שהיא בודקת.
+    """
+    pg.select_option("#select-program", "הנדסת תוכנה")
+    pg.select_option("#select-year", "3")
+    pg.select_option("#select-term", "א")
+    pg.wait_for_timeout(3000)
+
+
 # --------------------------------------------------------------------------
 # 1. תווית מעל התיבה שלה — ולא מעל השכנה
 # --------------------------------------------------------------------------
@@ -148,7 +161,8 @@ STEPS = """() => [...document.querySelectorAll('.step')]
   .filter(s => s.id !== 'step-schedule')
   .map(s => ({id: s.id,
               def: s.classList.contains('is-default'),
-              conflict: s.classList.contains('is-conflict')}))"""
+              conflict: s.classList.contains('is-conflict'),
+              locked: s.classList.contains('is-locked')}))"""
 
 
 def test_every_section_is_grey_on_a_first_visit(browser, server):
@@ -159,14 +173,21 @@ def test_every_section_is_grey_on_a_first_visit(browser, server):
     finally:
         ctx.close()
     assert len(steps) == 4, steps
-    green = [s["id"] for s in steps if not s["def"] and not s["conflict"]]
+    # ‏שלב נעול אינו נושא סימן כלל — renderStepMarks מתנה את is-default
+    # ב-‎!step.locked‎ — ולכן "ירוק" הוא: לא אפור, לא ענבר, ולא נעול.
+    green = [s["id"] for s in steps
+             if not s["def"] and not s["conflict"] and not s["locked"]]
     assert not green, f"סעיפים מסומנים כנבחרים והערכים בהם עדיין ברירת המחדל: {green}"
+    assert [s["id"] for s in steps if s["locked"]] == [
+        "step-courses", "step-days", "step-lecturers"
+    ], "לפני בחירת זהות שלבים 2..4 נעולים"
 
 
 def test_one_real_choice_turns_exactly_one_section(browser, server):
     """ולא כולם, ולא אף אחד."""
     ctx, pg = _fresh(browser, server)
     try:
+        _identity(pg)
         before = {s["id"]: s["def"] for s in pg.evaluate(STEPS)}
         pg.click('.day-btn[data-days="3"]')
         pg.wait_for_timeout(2500)
@@ -188,6 +209,7 @@ def test_going_back_to_the_default_turns_the_mark_grey_again(browser, server):
     """
     ctx, pg = _fresh(browser, server)
     try:
+        _identity(pg)
         base = pg.evaluate(
             "() => document.querySelector('.day-btn[aria-checked=\"true\"]')"
             "        ?.dataset.days || null")
@@ -216,6 +238,7 @@ def test_the_mark_survives_a_reload(browser, server):
     try:
         pg.goto(server)
         pg.wait_for_timeout(4500)
+        _identity(pg)
         pg.click('.day-btn[data-days="3"]')
         pg.wait_for_timeout(2500)
         pg.reload()
@@ -224,7 +247,9 @@ def test_the_mark_survives_a_reload(browser, server):
     finally:
         ctx.close()
     assert after["step-days"] is False, "הבחירה לא שרדה טעינה מחדש"
-    assert after["step-year"] is True, "סעיף שלא נגעו בו הפך לנבחר אחרי טעינה"
+    # ‏שלב 1 ירוק בצדק: הזהות נבחרה ונשמרה. הסעיף שלא נגעו בו הוא מרצים.
+    assert after["step-year"] is False, "הזהות שנבחרה לא שרדה טעינה מחדש"
+    assert after["step-lecturers"] is True, "סעיף שלא נגעו בו הפך לנבחר אחרי טעינה"
 
 
 # --------------------------------------------------------------------------
