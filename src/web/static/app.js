@@ -585,8 +585,11 @@
   function defaultState() {
     return {
       schema: STORAGE_SCHEMA,
-      studyYear: 3, // שנה בתוכנית (1..4)
-      term: "א", // סמסטר בידיעון: א / ב / קיץ
+      // ‏זהות, לא העדפה: מי הסטודנט/ית. אין לזה ברירת מחדל סבירה, כי
+      // ‏האפליקציה אינה יודעת. ‏null / "" פירושם "עוד לא נבחר", וכל השלבים
+      // שאחריהם נעולים עד שיש שלושתם — ראו identityChosen().
+      studyYear: null, // שנה בתוכנית (1..4), או null כשעוד לא נבחרה
+      term: "", // סמסטר בידיעון: א / ב / קיץ, או "" כשעוד לא נבחר
       semester: "5", // סמסטר בתוכנית הלימודים (1..8), "" אם אין
       academicYear: "", // שנה"ל (למשל תשפ"ז) — מגיע מהשרת
       codes: [], // קודי הקורסים שנבחרו, לפי סדר הוספה
@@ -790,7 +793,13 @@
     if (!Array.isArray(base.blocked)) base.blocked = [];
     base.targetDays = clamp(Math.round(num(base.targetDays, 4)), 2, 6);
     base.topN = clamp(Math.round(num(base.topN, 5)), 1, 20);
-    base.studyYear = clamp(Math.round(num(base.studyYear, 3)), 1, 4);
+    // ‏null שורד: הוא "עוד לא נבחרה שנה", ולא ערך פגום. ‏clamp אל 3 היה
+    // ממציא זהות למי שלא בחר/ה — בדיוק מה שהמסך הזה בא להפסיק.
+    base.studyYear =
+      base.studyYear === null || base.studyYear === undefined || base.studyYear === ""
+        ? null
+        : clamp(Math.round(num(base.studyYear, 3)), 1, 4);
+    base.term = txt(base.term);
     base.activeSchedule = Math.max(0, Math.round(num(base.activeSchedule, 0)));
     if (base.earliest !== null) base.earliest = num(base.earliest, null);
     if (base.latest !== null) base.latest = num(base.latest, null);
@@ -973,6 +982,62 @@
       if (txt(list[i].semester) === txt(sem)) return list[i];
     }
     return null;
+  }
+
+  /**
+   * האם המסלול הוא בכלל שאלה. שרת בלי רשימת מסלולים מסתיר את התיבה
+   * (‏renderProgramSelect), ואז אין מה לדרוש — דרישה כזאת הייתה נועלת את
+   * כל המסך בלי דרך לפתוח אותו.
+   */
+  function programRequired() {
+    return !!(runtime.programs && runtime.programs.length);
+  }
+
+  /**
+   * ‏האם ידוע מי הסטודנט/ית: מסלול, שנה וסמסטר — שלושתם.
+   *
+   * ‏זה השער לכל מה שאחריו. רשימת הקורסים המומלצת, ה-‎semester‎ שנשלח
+   * לשרת והפתרון עצמו כולם נגזרים מהשלושה האלה, ולכן לפניהם אין מה
+   * לשאול ואין מה להציג. השלבים 2..5 נעולים, כל אחד עם שורה שאומרת למה —
+   * אותו דפוס שכבר קיים ל"אין עדיין קורסים".
+   */
+  function identityChosen() {
+    return (
+      (!programRequired() || !!txt(state.program)) &&
+      num(state.studyYear, null) !== null &&
+      !!txt(state.term)
+    );
+  }
+
+  /**
+   * ‏האפשרות הריקה שבראש כל תיבה. ‏disabled ולא רק ריקה: אחרי שבחרו,
+   * חזרה אל "בחר/י…" אינה בחירה אלא מחיקה, ואין לה משמעות כאן.
+   */
+  /**
+   * ‏בוחר ערך, או מציג את ה-placeholder כשאין ערך.
+   *
+   * ‏value = "" אינו מספיק: האפשרות הריקה היא ``disabled``, ולכן הדפדפן
+   * אינו יכול לבחור אותה — ‎selectedIndex‎ יוצא ‎-1‎ והתיבה מצוירת **ריקה**,
+   * בלי ההזמנה לבחור. ‏selectedIndex = 0 מציג אותה, ואפשרות מושבתת עדיין
+   * אינה ניתנת לבחירה ידנית.
+   */
+  function selectOrPlaceholder(sel, value) {
+    if (!sel) return;
+    if (value === "" || value === null || value === undefined) {
+      sel.selectedIndex = 0;
+      return;
+    }
+    sel.value = value;
+    if (sel.selectedIndex < 0) sel.selectedIndex = 0;
+  }
+
+  function placeholderOption(label) {
+    var opt = el("option", { attrs: { disabled: "disabled" }, text: label });
+    // ‏כתכונה ולא דרך attrs: ‏el() מדלג על ערך ריק (‎v !== ""‎), ובלי זה
+    // ערך האפשרות היה נופל לטקסט שלה — כלומר ‎select.value‎ היה מחזיר
+    // "בחר/י מסלול" במקום "".
+    opt.value = "";
+    return opt;
   }
 
   function yearOptions() {
@@ -1755,9 +1820,6 @@
         // ומקבלים את הקטלוג המלא במקום רשימה של מחלקה זרה.
         if (Array.isArray(data.programs) && data.programs.length) {
           runtime.programs = data.programs;
-          if (!txt(state.program)) {
-            state.program = txt(data.curriculum_program) || txt(data.programs[0].id);
-          }
         }
         applyBootstrapDefaults(data);
         if (isScrapeRunning(data)) startPolling();
@@ -1797,19 +1859,10 @@
     // ‏defaultState() הוא הגיבוי כשהשרת לא אמר דבר; אותה נוסחה בדיוק שבה
     // משתמש הגוש שמתחת, כדי ששני המקומות לא ייפרדו.
     var fallback = defaultState();
-    var baseYear = num(defaults.year_of_study, num(student.year_of_study, null));
     var baseDays = num(defaults.target_days, num(prefs.target_days, null));
     var baseEarly = num(defaults.earliest, null);
     var baseLate = num(defaults.latest, null);
     runtime.baseline = {
-      program:
-        txt(data && data.curriculum_program) ||
-        (data && Array.isArray(data.programs) && data.programs.length
-          ? txt(data.programs[0].id)
-          : ""),
-      studyYear:
-        baseYear === null ? fallback.studyYear : clamp(Math.round(baseYear), 1, 4),
-      term: txt(defaults.term) || txt(student.term) || fallback.term,
       targetDays:
         baseDays === null ? fallback.targetDays : clamp(Math.round(baseDays), 2, 6),
       forbidFriday:
@@ -1839,10 +1892,11 @@
     });
 
     if (!runtime.restored) {
-      var y = num(defaults.year_of_study, num(student.year_of_study, null));
-      if (y !== null) state.studyYear = clamp(Math.round(y), 1, 4);
-      var t = txt(defaults.term) || txt(student.term);
-      if (t) state.term = t;
+      // ‏שנה וסמסטר **אינם** נקבעים כאן, בכוונה. ‏profile.json הוא הבחירה
+      // של סטודנט/ית אחד/ת, ולהחיל אותה על כל מי שפותח/ת את הדף פירושו
+      // לנחש זהות — וניחוש שנראה בדיוק כמו בחירה. ‏הן נשארות ריקות עד
+      // שבוחרים, וההעדפות שמתחת (יעד ימים, שעות, שישי) כן נטענות: הן
+      // ברירות מחדל סבירות ולא טענה על מי המשתמש/ת.
       var td = num(defaults.target_days, num(prefs.target_days, null));
       if (td !== null) state.targetDays = clamp(Math.round(td), 2, 6);
       if (defaults.forbid_friday === true || prefs.forbid_friday === true) {
@@ -2456,6 +2510,16 @@
 
   function syncData(force) {
     if (!runtime.ready) return;
+    // ‏בלי זהות אין למי לבנות. ‏/api/courses ו-/api/solve שולחים את
+    // ``state.term`` כ-``semester``, ובקשה עם סמסטר ריק היא בקשה על
+    // כלום — היא הייתה חוזרת ריקה ומציגה "לא נמצאה מערכת", כלומר תקלה
+    // במקום הזמנה לבחור. יוצאים כאן, והמסך אומר מה חסר.
+    if (!identityChosen()) {
+      lastSig.semester = null;
+      lastSig.courses = null;
+      lastSig.program = null;
+      return;
+    }
     // גם המסלול, ולא רק הסמסטר: ‏/api/semester/<n>/courses מקבל ``?program=``
     // ומחזיר רשימה ריקה למסלול שאין לו תוכנית. בלי המסלול בחתימה החלפת
     // מסלול לא הייתה מושכת מחדש כלום, והרשימה של המסלול הקודם — כולל מה
@@ -3351,16 +3415,19 @@
   }
 
   function onYearTermChange() {
-    var y = clamp(
-      Math.round(num(ui.selYear ? ui.selYear.value : state.studyYear, state.studyYear)),
-      1,
-      4
-    );
-    var t = txt(ui.selTerm ? ui.selTerm.value : state.term) || state.term;
+    // ‏תיבה שעדיין על ה-placeholder מחזירה "". ‏clamp(Math.round(null),1,4)
+    // הוא 1, ולכן בחירת סמסטר לפני שנה הייתה קובעת בשקט "שנה א׳" — זהות
+    // שאיש לא בחר, וזה בדיוק מה שהמסך הזה בא למנוע. ריק נשאר ריק.
+    var rawYear = ui.selYear ? txt(ui.selYear.value) : "";
+    var y =
+      rawYear === ""
+        ? num(state.studyYear, null)
+        : clamp(Math.round(num(rawYear, 1)), 1, 4);
+    var t = txt(ui.selTerm ? ui.selTerm.value : state.term) || txt(state.term);
     setState({
       studyYear: y,
       term: t,
-      semester: semesterOf(y, t),
+      semester: y === null || !t ? "" : semesterOf(y, t),
       activeSchedule: 0,
     });
   }
@@ -3930,13 +3997,15 @@
     if (sig !== programOptionsSig) {
       programOptionsSig = sig;
       clear(ui.selProgram);
+      ui.selProgram.appendChild(placeholderOption(T("ui.fields.programPlaceholder")));
       opts.forEach(function (o) {
         ui.selProgram.appendChild(
           el("option", { attrs: { value: txt(o.id) }, text: txt(o.label) || txt(o.id) })
         );
       });
     }
-    ui.selProgram.value = txt(state.program) || txt(opts[0] && opts[0].id);
+    // ‏אין ברירת מחדל למסלול. עד שבוחרים, התיבה מציגה הזמנה לבחור.
+    selectOrPlaceholder(ui.selProgram, txt(state.program));
   }
 
   var programOptionsSig = null;
@@ -3950,20 +4019,36 @@
     if (sig !== yearOptionsSig) {
       yearOptionsSig = sig;
       clear(ui.selYear);
+      ui.selYear.appendChild(placeholderOption(T("ui.fields.studyYearPlaceholder")));
       years.forEach(function (y) {
         ui.selYear.appendChild(
           el("option", { attrs: { value: String(y.value) }, text: y.label })
         );
       });
       clear(ui.selTerm);
+      ui.selTerm.appendChild(placeholderOption(T("ui.fields.termPlaceholder")));
       terms.forEach(function (t) {
         ui.selTerm.appendChild(
           el("option", { attrs: { value: t.value }, text: t.label })
         );
       });
     }
-    ui.selYear.value = String(state.studyYear);
-    ui.selTerm.value = txt(state.term);
+    selectOrPlaceholder(
+      ui.selYear,
+      num(state.studyYear, null) === null ? "" : String(state.studyYear)
+    );
+    selectOrPlaceholder(ui.selTerm, txt(state.term));
+
+    // ‏לפני שיש זהות אין מה לסכם, ובוודאי לא "שנה ג׳ · סמסטר א" שאיש
+    // לא בחר. השבב נעלם לגמרי: שורת המצב של הסעיף כבר אומרת מה חסר,
+    // ואותו משפט פעמיים באותו מסך הוא בדיוק מה שרשימת הקבלה אוסרת.
+    if (!identityChosen()) {
+      setText(ui.semesterSummary, "");
+      if (ui.semesterSummary) ui.semesterSummary.hidden = true;
+      setText(ui.yearNote, "");
+      return;
+    }
+    if (ui.semesterSummary) ui.semesterSummary.hidden = false;
 
     var info = semesterInfo(state.semester);
     var yearLabel =
@@ -7284,11 +7369,9 @@
     if (!b) return true; // לפני bootstrap אין מול מה להשוות
 
     if (key === "year") {
-      return (
-        txt(state.program) === txt(b.program) &&
-        num(state.studyYear, 0) === num(b.studyYear, 0) &&
-        txt(state.term) === txt(b.term)
-      );
+      // ‏זהות, לא העדפה: אין ברירת מחדל להשוות אליה. אפור עד שנבחרו
+      // שלושתם, ירוק אחריהם.
+      return !identityChosen();
     }
     if (key === "courses") {
       return (
@@ -7425,10 +7508,10 @@
         // בחירת שנה+סמסטר היא שלב שלם גם כשאין לה סמסטר בתוכנית
         // (תוכנית קצרה מ-8 סמסטרים, קיץ, או אין תוכנית כלל).
         locked: false,
-        complete: !!txt(state.term),
+        complete: identityChosen(),
         // שנה וסמסטר בלבד. התרגום לסמסטר בתוכנית הלימודים יושב בשבב
         // שמתחת, ואמירתו כאן שוב הייתה אותה שורה פעמיים במרחק שורה.
-        text: !txt(state.term)
+        text: !identityChosen()
           ? T("app.steps.year.empty")
           : Tf("app.steps.year.selected", {
               year: YEAR_LABELS[state.studyYear] || "",
@@ -7437,9 +7520,14 @@
       },
       {
         key: "courses",
-        locked: false,
-        complete: hasCodes,
-        text: hasCodes
+        // ‏רשימת הקורסים נגזרת מהמסלול ומהסמסטר. בלעדיהם אין מה להציע,
+        // ולכן השלב נעול עם שורה שאומרת מה חסר — אותו דפוס בדיוק כמו
+        // "‏ממתין לקורסים" בשלבים שאחריו.
+        locked: !identityChosen(),
+        complete: identityChosen() && hasCodes,
+        text: !identityChosen()
+          ? T("app.steps.courses.waitingForIdentity")
+          : hasCodes
           ? Tf("app.steps.courses.selected", {
               count: state.codes.length,
               credits: totalCreditsText({ unit: true, short: true }),

@@ -73,7 +73,10 @@
       "advancedSummary": "העדפות נוספות",
       "earliest": "לא להתחיל לפני",
       "latest": "לא לסיים אחרי",
-      "noFriday": "בלי יום שישי"
+      "noFriday": "בלי יום שישי",
+      "programPlaceholder": "בחר/י מסלול",
+      "studyYearPlaceholder": "בחר/י שנה",
+      "termPlaceholder": "בחר/י סמסטר"
     },
     "lecturers": {
       "legendRank": "העדפה ראשונה",
@@ -405,14 +408,15 @@
     },
     "steps": {
       "year": {
-        "empty": "יש לבחור שנה וסמסטר",
+        "empty": "יש לבחור מסלול, שנה וסמסטר",
         "selected": "{year} · סמסטר {term}",
         "selectedWithCurriculum": "{year} · סמסטר {term} · סמסטר {semester} בתוכנית"
       },
       "courses": {
         "selected": "{count} קורסים · {credits}",
         "emptyCatalog": "יש לבחור קורסים מהקטלוג",
-        "empty": "יש לסמן קורסים"
+        "empty": "יש לסמן קורסים",
+        "waitingForIdentity": "צריך קודם מסלול, שנה וסמסטר — לפיהם נבנית רשימת הקורסים"
       },
       "days": {
         "waitingForCourses": "ממתין לבחירת קורסים",
