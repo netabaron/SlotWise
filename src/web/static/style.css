@@ -394,7 +394,10 @@ ul { margin: 0; padding: 0; list-style: none; }
   border: 1px solid var(--line-strong);
 }
 
-.fresh-dot[data-state="fresh"] { background: var(--pin-line); border-color: var(--pin-line); }
+/* ‏--ok-line ולא --pin-line: זהו מצב של הנתונים, ושלושת המצבים כאן הם
+   משפחה אחת — ‏ok / warn / err. שימוש בטוקן הנעיצה היה עובד עד היום
+   שבו מישהו ישנה את צבע הנעיצה ויגלה שנקודת הטריות זזה איתו. */
+.fresh-dot[data-state="fresh"] { background: var(--ok-line); border-color: var(--ok-line); }
 .fresh-dot[data-state="stale"] { background: var(--warn-line); border-color: var(--warn-line); }
 .fresh-dot[data-state="empty"] { background: var(--dead-line); border-color: var(--dead-line); }
 
@@ -1311,7 +1314,12 @@ html.is-modal-open body { overflow: hidden; }
   white-space: nowrap;
 }
 
-.tag--in-plan  { border-color: var(--ok-line);   background: var(--ok-bg);   color: var(--ok-ink); }
+/* ‏קטגוריה, לא מצב. ירוק כאן אמר לעין "הכול בסדר" בזמן שלא דווח דבר.
+   ‏"בתוכנית" הוא גם המקרה הרגיל — רוב מה שברשימה נמצא בתוכנית — ולכן
+   הוא השקט מבין השניים, ו-‎.tag--out-plan‎ נשאר צבוע כי הוא החריג
+   שכדאי לשים לב אליו. אלה בדיוק ערכי ‎.tag‎ הבסיסיים, כתובים במפורש
+   כדי שהשקט יהיה החלטה ולא היעדר כלל. */
+.tag--in-plan  { border-color: var(--line-strong); background: var(--chip); color: var(--muted); }
 .tag--out-plan { border-color: var(--info-line); background: var(--info-bg); color: var(--info-ink); }
 .tag--tied     { border-color: var(--tie-line);  color: var(--tie-line); background: transparent; }
 .tag--warn     { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
