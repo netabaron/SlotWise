@@ -611,7 +611,9 @@
       // כ"בוטלה" ומשאירה את הרשימה ריקה.
       provenanceReady: false,
       known: {}, // מטמון שמות/נ"ז: {code: {name, credits, semester}}
-      targetDays: 4,
+      // ‏null = עוד לא נבחר יעד. הפותר מקבל 6, שהוא קנס אפס — "בלי
+      // העדפה" הוא מצב אמיתי, לא ניחוש של 4 שמעניש מערכות בנות 5 ימים.
+      targetDays: null,
       forbidFriday: false,
       // {code: {kind: האם יש חובת נוכחות}} — מפתח חסר פירושו חובה, בדיוק כמו בשרת.
       attendance: {},
@@ -635,11 +637,6 @@
       collapsed: {},
       // ‏"הצג את כל השעות" — העדפת תצוגה, נשמרת כמו הקיפול.
       allHours: false,
-      // ‏מה אושר, ולא **ש**אושר. דגל "אישרה" הוא ``touched`` בשם אחר: הוא
-      // נשאר דלוק גם אחרי שברירת המחדל חושבה מחדש, וסימן ירוק היה מעיד
-      // על הסכמה לרשימה שכבר אינה על המסך. כאן נשמר הערך עצמו, וההשוואה
-      // מולו היא שקובעת. ‏{courses: [...], days: {...}} — ראו sectionValue.
-      confirmed: {},
     };
   }
 
@@ -788,16 +785,26 @@
     // מצב שנשמר לפני שהשדות האלה היו קיימים מגיע בלי הדגל, ולכן בלי מקור
     // ידוע לקודים שבו — בדיוק המקרה שהאימוץ ב-applyRecommendedDefaults נועד לו.
     base.provenanceReady = base.provenanceReady === true;
+    // ‏הגירה ממצב שנשמר כשהסימון היה אוטומטי. שם ``codes`` הוא מה שהיה
+    // מסומן ו-``manualCodes`` ריק, כי ההבחנה אז הייתה בין "המערכת סימנה"
+    // ל"היא הוסיפה". מרגע שאין סימון אוטומטי כל מה שמסומן הוא שלה, ובלי
+    // השורה הזאת ``applyRecommendedDefaults`` היה כותב ``codes: manual``
+    // ומוחק לסטודנט/ית קיימת את כל הבחירה בטעינה הראשונה אחרי השדרוג.
+    if (base.codes.length && !base.manualCodes.length) {
+      base.manualCodes = base.codes.slice();
+    }
     if (!base.known || typeof base.known !== "object") base.known = {};
     if (!base.pinned || typeof base.pinned !== "object") base.pinned = {};
     if (!base.ranked || typeof base.ranked !== "object") base.ranked = {};
     if (!base.attendance || typeof base.attendance !== "object") base.attendance = {};
     if (!base.collapsed || typeof base.collapsed !== "object") base.collapsed = {};
-    if (!base.confirmed || typeof base.confirmed !== "object") base.confirmed = {};
     base.allHours = base.allHours === true;
     base.allowSoftConflicts = true;  // גם מצב ישן שנשמר ב-localStorage מיושר
     if (!Array.isArray(base.blocked)) base.blocked = [];
-    base.targetDays = clamp(Math.round(num(base.targetDays, 4)), 2, 6);
+    base.targetDays =
+      base.targetDays === null || base.targetDays === undefined
+        ? null
+        : clamp(Math.round(num(base.targetDays, 4)), 2, 6);
     base.topN = clamp(Math.round(num(base.topN, 5)), 1, 20);
     // ‏null שורד: הוא "עוד לא נבחרה שנה", ולא ערך פגום. ‏clamp אל 3 היה
     // ממציא זהות למי שלא בחר/ה — בדיוק מה שהמסך הזה בא להפסיק.
@@ -1498,12 +1505,10 @@
             autoSemester: target,
             autoProgram: txt(state.program),
             autoCodes: adopted.slice(),
-            autoDropped: adopted.filter(function (c) {
-              return picked[c] !== true;
-            }),
-            manualCodes: state.codes.filter(function (c) {
-              return adopted.indexOf(txt(c)) === -1;
-            }),
+            // ‏הכול שלה. מרגע שאין סימון אוטומטי, אין "מומלץ שבוטל" —
+            // יש רק מה שסומן ומה שלא.
+            autoDropped: [],
+            manualCodes: state.codes.slice(),
           },
           { solve: false }
         );
@@ -1534,7 +1539,7 @@
     var next = uniq(recommended.concat(manual));
     var nextSemester = target && runtime.semesterCourses.length ? target : "";
     if (
-      sameCodes(next, state.codes) &&
+      sameCodes(manual, state.codes) &&
       nextSemester === owned &&
       txt(state.autoProgram) === txt(state.program) &&
       state.provenanceReady &&
@@ -1543,8 +1548,11 @@
       return;
     }
 
+    // ‏codes: manual ולא next — ההמלצה **מוצגת** ואינה מסומנת. סטודנט/ית
+    // שלא סימנה דבר לא בחרה דבר, ולכן אין לה מה לרשת. ``autoCodes`` נשאר
+    // רשימת ההמלצה, כי ממנה מסומן הכול בלחיצה אחת.
     setState({
-      codes: next,
+      codes: manual,
       provenanceReady: true,
       manualCodes: manual,
       autoSemester: nextSemester,
@@ -1562,12 +1570,6 @@
         "warn"
       );
     }
-  }
-
-  /** האם הבחירה הנוכחית שונה מרשימת ההמלצה של הסמסטר. */
-  function recommendedChanged() {
-    if (!txt(state.autoSemester)) return false;
-    return state.autoDropped.length > 0;
   }
 
   /** "החזרת הרשימה המומלצת" — מבטל את הביטולים הידניים ומסמן מחדש. */
@@ -1865,12 +1867,9 @@
     // ‏defaultState() הוא הגיבוי כשהשרת לא אמר דבר; אותה נוסחה בדיוק שבה
     // משתמש הגוש שמתחת, כדי ששני המקומות לא ייפרדו.
     var fallback = defaultState();
-    var baseDays = num(defaults.target_days, num(prefs.target_days, null));
     var baseEarly = num(defaults.earliest, null);
     var baseLate = num(defaults.latest, null);
     runtime.baseline = {
-      targetDays:
-        baseDays === null ? fallback.targetDays : clamp(Math.round(baseDays), 2, 6),
       forbidFriday:
         defaults.forbid_friday === true || prefs.forbid_friday === true,
       earliest: baseEarly === null ? fallback.earliest : baseEarly,
@@ -1903,8 +1902,10 @@
       // לנחש זהות — וניחוש שנראה בדיוק כמו בחירה. ‏הן נשארות ריקות עד
       // שבוחרים, וההעדפות שמתחת (יעד ימים, שעות, שישי) כן נטענות: הן
       // ברירות מחדל סבירות ולא טענה על מי המשתמש/ת.
-      var td = num(defaults.target_days, num(prefs.target_days, null));
-      if (td !== null) state.targetDays = clamp(Math.round(td), 2, 6);
+      // ‏יעד הימים **אינו** נקבע כאן, מאותה סיבה שהשנה והסמסטר אינם:
+      // ‏profile.json הוא ההעדפה של סטודנט/ית אחת, ולהחיל אותה על כל מי
+      // שפותח/ת את הדף פירושו לבחור בשמה. שאר ההעדפות כאן (שישה, שעות)
+      // הן ברירות מחדל ניטרליות — "בלי הגבלה" — ולא דעה.
       if (defaults.forbid_friday === true || prefs.forbid_friday === true) {
         state.forbidFriday = true;
       }
@@ -2403,7 +2404,10 @@
       codes: state.codes.slice(),
       semester: state.term,
       year: state.academicYear,
-      target_days: state.targetDays,
+      // ‏6 כשאין יעד: ‏days_penalty הוא ‎max(0, ימים - target)‎, ולכן 6 הוא
+      // קנס אפס לכל מספר ימים — כלומר "בלי העדפה", ולא ניחוש. ‏4 היה
+      // מעניש כל מערכת בת 5 ימים בשם בחירה שאיש לא עשה.
+      target_days: num(state.targetDays, null) === null ? 6 : state.targetDays,
       // רק לקורסים שנבחרו. ‏prunePicks כבר לא מוחק רשומה של קורס שירד
       // מהרשימה — היא נשארת רדומה כדי לחזור אם הקורס יחזור — ולכן הסינון
       // חייב לקרות כאן, בדיוק כמו ב-attendanceBody.
@@ -2784,18 +2788,8 @@
     ui.recommendedRow = byId("recommended-row");
     ui.recommendedNote = byId("recommended-note");
     ui.btnRestoreRecommended = byId("btn-restore-recommended");
-    ui.confirmRows = {
-      courses: byId("confirm-courses-row"),
-      days: byId("confirm-days-row"),
-    };
-    ui.confirmBtns = {
-      courses: byId("btn-confirm-courses"),
-      days: byId("btn-confirm-days"),
-    };
-    ui.confirmStale = {
-      courses: byId("confirm-courses-stale"),
-      days: byId("confirm-days-stale"),
-    };
+    ui.daysHint = byId("days-hint");
+
     // ‏SPEC §4 — מצב קטלוג. אותה תיבת חיפוש, יעד אחר: כשאין תוכנית לימודים
     // היא מזינה את רשימת הקטלוג שמתחתיה במקום את הרשימה הנפתחת.
     ui.searchPlaceholder = ui.search ? txt(ui.search.getAttribute("placeholder")) : "";
@@ -2938,19 +2932,6 @@
     }
     if (ui.selYear) ui.selYear.addEventListener("change", onYearTermChange);
     if (ui.selTerm) ui.selTerm.addEventListener("change", onYearTermChange);
-
-    CONFIRMABLE.forEach(function (key) {
-      var btn = ui.confirmBtns && ui.confirmBtns[key];
-      if (!btn) return;
-      btn.addEventListener("click", function () {
-        // מתג: לחיצה שנייה מבטלת. אישור חד-כיווני היה הופך הקלקה בטעות
-        // לקבועה, ואת האפור לבלתי נגיש.
-        var next = deepCopy(state.confirmed) || {};
-        if (sectionConfirmed(key)) delete next[key];
-        else next[key] = sectionValue(key);
-        setState({ confirmed: next });
-      });
-    });
 
     if (ui.btnRestoreRecommended) {
       ui.btnRestoreRecommended.addEventListener("click", restoreRecommended);
@@ -3878,8 +3859,6 @@
     renderDaysStep();
     renderLecturersStep();
     renderScheduleStep();
-    // ‏אחרי הסעיפים: המתג נשען על sectionIsDefault, שקורא את המצב שהם ציירו.
-    renderConfirmControls();
     renderStepStates();
     renderProgress();
     renderStickyBar();
@@ -4207,52 +4186,7 @@
     toggleCourse(c, true);
   }
 
-  //: הסעיפים שיש להם ברירת מחדל דעתנית, ולכן גם אישור. "מרצים" אינו כאן
-  //: בכוונה: ברירת המחדל שלו היא היעדר העדפות — אין הצעה, ואין למה להסכים.
-  var CONFIRMABLE = ["courses", "days"];
 
-  /**
-   * מצייר את מתג האישור ואת שורת "השתנה מאז שאישרת".
-   *
-   * ‏המתג מוסתר כשהסעיף ירוק ממילא בגלל שינוי: אין טעם לבקש אישור למה
-   * שכבר הוכרע ביד. הוא כן מוצג כשהאישור התיישן, כי זו בדיוק הפעולה
-   * שצריך לעשות.
-   */
-  function renderConfirmControls() {
-    CONFIRMABLE.forEach(function (key) {
-      var row = ui.confirmRows && ui.confirmRows[key];
-      var btn = ui.confirmBtns && ui.confirmBtns[key];
-      var stale = ui.confirmStale && ui.confirmStale[key];
-      if (!row || !btn) return;
-
-      var isDefault = sectionIsDefault(key);
-      var confirmed = sectionConfirmed(key);
-      var wentStale = confirmWentStale(key);
-      var value = sectionValue(key);
-
-      // ‏אין מה לאשר לפני שיש זהות ולפני שיש ערך בכלל.
-      var relevant = identityChosen() && value !== null &&
-        (isDefault || confirmed);
-      row.hidden = !relevant;
-      if (!relevant) {
-        if (stale) stale.hidden = true;
-        return;
-      }
-
-      btn.setAttribute("aria-pressed", confirmed ? "true" : "false");
-      btn.title = confirmed ? T("app.confirm.pressedTitle") : T("app.confirm.hint");
-
-      if (stale) {
-        setText(
-          stale,
-          wentStale
-            ? T(key === "courses" ? "app.confirm.staleCourses" : "app.confirm.staleDays")
-            : ""
-        );
-        stale.hidden = !wentStale;
-      }
-    });
-  }
 
   function renderCoursesStep() {
     refreshColorMap();
@@ -4349,7 +4283,13 @@
     var sem = txt(state.autoSemester);
     var show = !catalogFallbackActive() && !!sem && runtime.semesterCourses.length > 0;
     setHidden(ui.recommendedRow, !show);
-    setHidden(ui.btnRestoreRecommended, !show || !recommendedChanged());
+    // ‏"סמן את כל המומלצים": מוצג כל עוד יש מומלץ שאינו מסומן. זה הופך
+    // הסכמה מלאה לקליק אחד — והקליק הוא שלה.
+    var picked = selectedSet();
+    var anyUnpicked = (state.autoCodes || []).some(function (c) {
+      return picked[txt(c)] !== true;
+    });
+    setHidden(ui.btnRestoreRecommended, !show || !anyUnpicked);
     if (!show) {
       setText(ui.recommendedNote, "");
       return;
@@ -5037,7 +4977,10 @@
 
     ui.dayButtons.forEach(function (btn) {
       var n = num(btn.dataset.days, 0);
-      btn.setAttribute("aria-checked", n === state.targetDays ? "true" : "false");
+      btn.setAttribute(
+        "aria-checked",
+        num(state.targetDays, null) !== null && n === state.targetDays ? "true" : "false"
+      );
       // יעד שנמוך מהמינימום האפשרי מסומן — אבל נשאר לחיץ, כי הוא רק העדפה.
       setClass(btn, "is-impossible", minDays !== null && n < minDays);
       btn.setAttribute(
@@ -5049,7 +4992,19 @@
     });
 
     renderDaysRelax(s);
-    setText(ui.daysTarget, Tf("app.days.daysCount", { days: state.targetDays }));
+    // ‏לפני בחירה אין יעד להציג, ובמקומו נאמר מה המינימום — זה מה שהופך
+    // את הבחירה לאפשרית במקום לניחוש.
+    setText(
+      ui.daysTarget,
+      num(state.targetDays, null) === null
+        ? T("app.days.noTarget")
+        : Tf("app.days.daysCount", { days: state.targetDays })
+    );
+    if (ui.daysHint) {
+      var wantsHint = num(state.targetDays, null) === null && minDays !== null;
+      setText(ui.daysHint, wantsHint ? Tf("app.days.minHint", { days: minDays }) : "");
+      ui.daysHint.hidden = !wantsHint;
+    }
     setText(
       ui.minDays,
       minDays === null ? "—" : Tf("app.days.daysCount", { days: minDays })
@@ -7422,99 +7377,7 @@
       conflict = pinCount() > 0 && !!s && schedules().length === 0;
     }
     if (conflict) return "conflict";
-    // ‏"החלטתי כאן" — או ששיניתי, או שאישרתי את מה שהוצע. סטודנט/ית
-    // שההצעה מתאימה לה בדיוק אינה אמורה להיראות כמי שלא נגעה בסעיף.
-    if (!sectionIsDefault(key)) return "chosen";
-    return sectionConfirmed(key) ? "chosen" : "default";
-  }
-
-  /**
-   * השוואת ערכים עמוקה שאינה תלויה בסדר.
-   *
-   * ‏מכוון: **לא** ‎JSON.stringify‎. מחרוזת מושווית תו-תו, ולכן היא רגישה גם
-   * לסדר איברים במערך וגם לסדר מפתחות באובייקט — ורשימת קורסים שסודרה
-   * מחדש הייתה נראית כאילו השתנתה, ומחזירה את הסעיף לאפור בלי סיבה.
-   * מערכים מושווים כרב-קבוצה, מפתחות לפי קבוצה, וכך הצורה יכולה להשתנות
-   * בלי לייצר אפור מדומה.
-   */
-  function sameValue(a, b) {
-    if (a === b) return true;
-    if (Array.isArray(a) || Array.isArray(b)) {
-      if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-      var left = a.slice().sort(compareForOrder);
-      var right = b.slice().sort(compareForOrder);
-      for (var i = 0; i < left.length; i++) {
-        if (!sameValue(left[i], right[i])) return false;
-      }
-      return true;
-    }
-    if (a && b && typeof a === "object" && typeof b === "object") {
-      var ka = Object.keys(a).sort();
-      var kb = Object.keys(b).sort();
-      if (ka.length !== kb.length) return false;
-      for (var j = 0; j < ka.length; j++) {
-        if (ka[j] !== kb[j]) return false;
-        if (!sameValue(a[ka[j]], b[ka[j]])) return false;
-      }
-      return true;
-    }
-    return false;
-  }
-
-  /** סדר יציב כלשהו, רק כדי להשוות מערכים כרב-קבוצה. */
-  function compareForOrder(x, y) {
-    var sx = typeof x === "object" && x !== null ? JSON.stringify(x) : String(x);
-    var sy = typeof y === "object" && y !== null ? JSON.stringify(y) : String(y);
-    return sx < sy ? -1 : sx > sy ? 1 : 0;
-  }
-
-  /**
-   * מה בדיוק מאשרים בסעיף — הערך, בצורה קנונית.
-   *
-   * ‏מוחזר ממוין כדי שהשוואה תהיה יציבה גם אם המקור יחליף סדר. ‏null
-   * פירושו "לסעיף הזה אין ערך שאפשר לאשר", וזה המצב של "מרצים": ברירת
-   * המחדל שלו היא באמת ריק, לא הצעה, ואין מה להסכים לו.
-   */
-  function sectionValue(key) {
-    if (key === "courses") return uniq((state.codes || []).map(txt)).sort();
-    if (key === "days") {
-      return {
-        targetDays: num(state.targetDays, 0),
-        forbidFriday: !!state.forbidFriday,
-        earliest: state.earliest === null ? null : num(state.earliest, null),
-        latest: state.latest === null ? null : num(state.latest, null),
-        blocked: (state.blocked || []).map(function (w) {
-          return (w || []).map(function (n) {
-            return num(n, 0);
-          });
-        }),
-      };
-    }
-    return null;
-  }
-
-  /** ‏האם הסעיף אושר בערכו הנוכחי. */
-  function sectionConfirmed(key) {
-    var value = sectionValue(key);
-    if (value === null) return false;
-    var saved = (state.confirmed || {})[key];
-    if (saved === undefined || saved === null) return false;
-    return sameValue(saved, value);
-  }
-
-  /**
-   * ‏אושר פעם — וברירת המחדל זזה מאז.
-   *
-   * ‏רק כשהערך הנוכחי **הוא** ברירת המחדל: אם הסטודנט/ית שינתה בעצמה,
-   * הסעיף ירוק ממילא ואין כאן הפתעה. ההודעה נועדה למקרה שבו משהו זז
-   * מתחתיה — החלפת סמסטר שמחשבת מחדש את ההמלצה — ואז סימן שנעלם בשקט
-   * הוא בדיוק מה שאסור.
-   */
-  function confirmWentStale(key) {
-    var saved = (state.confirmed || {})[key];
-    if (saved === undefined || saved === null) return false;
-    if (sectionValue(key) === null) return false;
-    return !sectionConfirmed(key) && sectionIsDefault(key);
+    return sectionIsDefault(key) ? "default" : "chosen";
   }
 
   /** האם יש בכלל ערך בתוך המפה — מפתח עם אובייקט או מערך ריק אינו בחירה. */
@@ -7546,14 +7409,12 @@
       return !identityChosen();
     }
     if (key === "courses") {
-      return (
-        (state.manualCodes || []).length === 0 &&
-        (state.autoDropped || []).length === 0
-      );
+      // ‏אין סימון מראש, ולכן אין מקרה מיוחד: ריק = לא בחרה, מסומן = בחרה.
+      return (state.codes || []).length === 0;
     }
     if (key === "days") {
       return (
-        num(state.targetDays, 0) === num(b.targetDays, 0) &&
+        num(state.targetDays, null) === null &&
         !!state.forbidFriday === !!b.forbidFriday &&
         state.earliest === b.earliest &&
         state.latest === b.latest &&

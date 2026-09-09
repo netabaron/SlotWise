@@ -105,6 +105,16 @@ def _identity(pg):
     pg.wait_for_timeout(3000)
 
 
+def _pick_courses(pg):
+    """מסמנת את כל המומלצים בלחיצה אחת.
+
+    ‏מאז 2026-09-09 שום קורס אינו מסומן מראש, ולכן שלב 3 נעול עד שיש
+    קורסים. בדיקה שנוגעת בכפתורי הימים חייבת לעבור כאן קודם.
+    """
+    pg.click("#btn-restore-recommended")
+    pg.wait_for_timeout(6000)
+
+
 # --------------------------------------------------------------------------
 # 1. תווית מעל התיבה שלה — ולא מעל השכנה
 # --------------------------------------------------------------------------
@@ -188,6 +198,7 @@ def test_one_real_choice_turns_exactly_one_section(browser, server):
     ctx, pg = _fresh(browser, server)
     try:
         _identity(pg)
+        _pick_courses(pg)
         before = {s["id"]: s["def"] for s in pg.evaluate(STEPS)}
         pg.click('.day-btn[data-days="3"]')
         pg.wait_for_timeout(2500)
@@ -199,36 +210,43 @@ def test_one_real_choice_turns_exactly_one_section(browser, server):
         f"בחירה אחת שינתה {changed}, ציפינו ל-['step-days'] בלבד")
 
 
-def test_going_back_to_the_default_turns_the_mark_grey_again(browser, server):
-    """הסיבה כולה שהמנגנון הוחלף.
+def test_unticking_everything_returns_the_section_to_grey(browser, server):
+    """הכלל אחיד: אפור עד שבחרה, ירוק אחרי — ובחזרה, אם ביטלה.
 
-    ‏הגרסה הקודמת זכרה נגיעה, ולכן סעיף שנגעת בו נשאר ירוק לתמיד — גם
-    אחרי שהחזרת את הערך בדיוק למה שהיה. אחרי יום שימוש כל ארבעת הסעיפים
-    היו ירוקים, והסימון חדל לשאת מידע. עכשיו משווים ערכים, ולכן חזרה אל
-    ברירת המחדל חוזרת גם לאפור.
+    ‏עד 2026-09-09 הבדיקה הזאת נכתבה על יעד הימים, כי לו הייתה ברירת מחדל
+    לחזור אליה. אין לו עוד — אין יעד מוצע, ואי אפשר "לבטל בחירה" של יעד.
+    הטענה עצמה לא השתנתה, ומקומה עכשיו בקורסים: לסמן ואז לבטל מחזיר את
+    הסעיף לאפור, כי הסימן מודד בחירה ולא נגיעה.
     """
     ctx, pg = _fresh(browser, server)
     try:
         _identity(pg)
-        base = pg.evaluate(
-            "() => document.querySelector('.day-btn[aria-checked=\"true\"]')"
-            "        ?.dataset.days || null")
-        assert base, "לא נמצא יעד ימים ברירת מחדל"
-        other = "3" if base != "3" else "5"
+        grey = {s["id"]: s["def"] for s in pg.evaluate(STEPS)}
+        assert grey["step-courses"] is True, "לפני סימון — אפור"
 
-        pg.click(f'.day-btn[data-days="{other}"]')
-        pg.wait_for_timeout(2500)
-        away = {s["id"]: s["def"] for s in pg.evaluate(STEPS)}
+        _pick_courses(pg)
+        green = {s["id"]: s["def"] for s in pg.evaluate(STEPS)}
+        assert green["step-courses"] is False, "אחרי סימון — ירוק"
 
-        pg.click(f'.day-btn[data-days="{base}"]')   # בחזרה בדיוק לברירת המחדל
-        pg.wait_for_timeout(2500)
+        # ‏קורסים צמודים יורדים כחבילה, ולכן לולאה שלוחצת על כל תיבה
+        # מסומנת בבת אחת מסמנת חלק מהן בחזרה. מבטלים אחת-אחת, ובכל פעם
+        # שואלים מחדש מה עדיין מסומן.
+        for _ in range(12):
+            left = pg.evaluate(
+                "() => document.querySelectorAll("
+                "  '#course-list .course-item input:checked').length")
+            if not left:
+                break
+            pg.evaluate(
+                "() => document.querySelector("
+                "  '#course-list .course-item input:checked').click()")
+            pg.wait_for_timeout(1200)
+        pg.wait_for_timeout(5000)
         back = {s["id"]: s["def"] for s in pg.evaluate(STEPS)}
     finally:
         ctx.close()
-    assert away["step-days"] is False, f"שינוי מ-{base} ל-{other} לא סימן את הסעיף"
-    assert back["step-days"] is True, (
-        f"חזרה ל-{base}, שהוא ברירת המחדל, השאירה את הסעיף מסומן כנבחר — "
-        "הסימון דביק, וזה מה שהיה אמור להשתנות")
+    assert back["step-courses"] is True, (
+        "ביטול כל הסימונים השאיר את הסעיף ירוק — הסימן דביק")
 
 
 def test_the_mark_survives_a_reload(browser, server):
@@ -239,6 +257,7 @@ def test_the_mark_survives_a_reload(browser, server):
         pg.goto(server)
         pg.wait_for_timeout(4500)
         _identity(pg)
+        _pick_courses(pg)
         pg.click('.day-btn[data-days="3"]')
         pg.wait_for_timeout(2500)
         pg.reload()
@@ -288,132 +307,3 @@ def test_a_collapsed_section_shows_its_own_summary(browser, server, key):
     finally:
         ctx.close()
     assert summary, f"סעיף {key} מקופל בלי שורת סיכום"
-
-
-# --------------------------------------------------------------------------
-# 4. אישור סעיף — "ההצעה מתאימה לי" הוא גם החלטה
-# --------------------------------------------------------------------------
-CONFIRM_SNAP = """() => {
-  const mark = id => {
-    const s = document.getElementById(id);
-    return s.classList.contains('is-conflict') ? 'amber'
-         : s.classList.contains('is-locked') ? 'locked'
-         : s.classList.contains('is-default') ? 'grey' : 'green';
-  };
-  const b = document.getElementById('btn-confirm-courses');
-  const stale = document.getElementById('confirm-courses-stale');
-  let saved = null;
-  try { saved = JSON.parse(
-    localStorage.getItem('braude_schedule_builder_v1')).confirmed; } catch (e) {}
-  return {
-    courses: mark('step-courses'), days: mark('step-days'),
-    pressed: b && b.getAttribute('aria-pressed'),
-    tick: b && getComputedStyle(b.querySelector('.confirm-tick')).visibility,
-    stale: stale && !stale.hidden ? (stale.textContent || '').trim() : null,
-    confirmed: saved,
-  };
-}"""
-
-
-def test_agreeing_with_the_suggestion_turns_the_section_green(browser, server):
-    """הבעיה שהמתג נועד לה: מי שההצעה מתאימה לה בדיוק לא שינתה דבר,
-    ולכן נראתה כמי שלא נגעה בסעיף — נענשת על כך שהניחוש היה טוב."""
-    ctx, pg = _fresh(browser, server)
-    try:
-        _identity(pg)
-        before = pg.evaluate(CONFIRM_SNAP)
-        assert before["courses"] == "grey", before
-        assert before["tick"] == "hidden", "אין ✓ לפני שאישרו"
-
-        pg.click("#btn-confirm-courses")
-        pg.wait_for_timeout(1200)
-        after = pg.evaluate(CONFIRM_SNAP)
-    finally:
-        ctx.close()
-    assert after["courses"] == "green", "הסכמה היא החלטה, והסעיף אמור לומר זאת"
-    assert after["pressed"] == "true"
-    assert after["tick"] == "visible", "הסימן חייב להיות צורה, לא רק צבע"
-    assert after["confirmed"] and after["confirmed"].get("courses"), (
-        "נשמר דגל במקום ערך — זה ‏touched בשם אחר")
-
-
-def test_the_confirm_is_a_toggle(browser, server):
-    """אישור חד-כיווני הופך הקלקה בטעות לקבועה, ואת האפור לבלתי נגיש."""
-    ctx, pg = _fresh(browser, server)
-    try:
-        _identity(pg)
-        pg.click("#btn-confirm-courses"); pg.wait_for_timeout(1000)
-        assert pg.evaluate(CONFIRM_SNAP)["courses"] == "green"
-        pg.click("#btn-confirm-courses"); pg.wait_for_timeout(1000)
-        back = pg.evaluate(CONFIRM_SNAP)
-    finally:
-        ctx.close()
-    assert back["courses"] == "grey", "לחיצה שנייה לא ביטלה"
-    assert back["pressed"] == "false"
-    assert not (back["confirmed"] or {}).get("courses"), "הערך לא נמחק"
-
-
-def test_a_recomputed_default_undoes_the_confirm_and_says_so(browser, server):
-    """הדרישה המרכזית: סימן שנעלם בשקט הוא בדיוק מה שאסור.
-
-    ‏אישרה שישה קורסים, החליפה שנה, וההמלצה חושבה מחדש. הסעיף חוזר לאפור
-    — נכון, כי היא לא אישרה את **זו** — אבל היא חייבת לדעת שמשהו זז.
-    """
-    ctx, pg = _fresh(browser, server)
-    try:
-        _identity(pg)
-        pg.click("#btn-confirm-courses"); pg.wait_for_timeout(1200)
-        assert pg.evaluate(CONFIRM_SNAP)["courses"] == "green"
-
-        pg.select_option("#select-year", "2")   # ההמלצה מחושבת מחדש
-        pg.wait_for_timeout(6000)
-        after = pg.evaluate(CONFIRM_SNAP)
-    finally:
-        ctx.close()
-    assert after["courses"] == "grey", "אישור לרשימה אחרת אינו אישור לזו"
-    assert after["stale"], "הסימן נעלם בלי לומר דבר — זה מה שנאסר במפורש"
-    assert "השתנתה" in after["stale"], after["stale"]
-
-
-def test_the_confirmed_value_is_compared_as_a_set_not_a_string(browser, server):
-    """‏עמידות לשינוי צורה, לא רק לשינוי ערך.
-
-    ‏הערך השמור מוזרע כאן **בסדר הפוך**. השוואה שנכתבה כמחרוזת או כמערך
-    מסודר הייתה קוראת לזה "השתנה" ומחזירה את הסעיף לאפור בלי סיבה, ביום
-    שבו משהו במעלה הזרם יחליף סדר. השוואה כרב-קבוצה אינה מבחינה בכך.
-    """
-    ctx, pg = _fresh(browser, server)
-    try:
-        _identity(pg)
-        pg.click("#btn-confirm-courses"); pg.wait_for_timeout(1200)
-        assert pg.evaluate(CONFIRM_SNAP)["courses"] == "green"
-
-        pg.evaluate(
-            """() => {
-              const k = 'braude_schedule_builder_v1';
-              const s = JSON.parse(localStorage.getItem(k));
-              s.confirmed.courses = s.confirmed.courses.slice().reverse();
-              localStorage.setItem(k, JSON.stringify(s));
-            }"""
-        )
-        pg.reload()
-        pg.wait_for_timeout(5000)
-        after = pg.evaluate(CONFIRM_SNAP)
-    finally:
-        ctx.close()
-    assert after["courses"] == "green", (
-        "סדר הפוך נקרא כשינוי — ההשוואה תלויה בסדר ותייצר אפור מדומה")
-    assert after["stale"] is None, "ואין להתריע על שינוי שלא קרה"
-
-
-def test_the_lecturers_section_has_no_confirm(browser, server):
-    """ברירת המחדל שלו היא היעדר העדפות — אין הצעה, ואין למה להסכים."""
-    ctx, pg = _fresh(browser, server)
-    try:
-        _identity(pg)
-        found = pg.evaluate(
-            "() => [...document.querySelectorAll('#step-lecturers .confirm-btn')].length"
-        )
-    finally:
-        ctx.close()
-    assert found == 0, "נוסף אישור למרצים — אין לו ברירת מחדל דעתנית לאשר"

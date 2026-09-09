@@ -113,7 +113,15 @@ def page(server):
         pg.select_option("#select-program", "הנדסת תוכנה")
         pg.select_option("#select-year", "3")
         pg.select_option("#select-term", "א")
-        pg.wait_for_timeout(5000)
+        pg.wait_for_timeout(2500)
+        # ‏הקורסים אינם מסומנים מראש; בלי סימון אין מערכת ואין ציון התאמה.
+        pg.click("#btn-restore-recommended")
+        pg.wait_for_timeout(6000)
+        # ‏ובוחרים יעד ימים. בלי יעד אין קנס על מספר הימים, חמש המערכות
+        # יוצאות שקולות, והפאנל מציג ‎fitTied‎ במקום תווית המובילה — נכון
+        # לגמרי, אבל אז אין כאן מה לבדוק.
+        pg.click('.day-btn[data-days="4"]')
+        pg.wait_for_timeout(6000)
         pg.evaluate("() => { const d = document.getElementById('compare');"
                     " if (d) d.open = true; }")
         pg.wait_for_timeout(400)

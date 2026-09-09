@@ -183,6 +183,10 @@ def test_no_missing_keys_while_stepping_through(dev):
     dev.select_option("#select-year", "3")
     dev.select_option("#select-term", "א")
     dev.wait_for_timeout(2500)
+    # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
+    # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    dev.click("#btn-restore-recommended")
+    dev.wait_for_timeout(2500)
     hits += scan(dev, "year+term")
 
     dev.fill("#course-search", "61753")
@@ -267,6 +271,10 @@ def test_no_empty_labels(fresh):
     fresh.select_option("#select-year", "3")
     fresh.select_option("#select-term", "א")
     fresh.wait_for_timeout(2500)
+    # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
+    # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    fresh.click("#btn-restore-recommended")
+    fresh.wait_for_timeout(2500)
     for key in ("courses", "days", "lecturers"):
         try:
             if fresh.evaluate(
@@ -303,6 +311,10 @@ def test_no_raw_key_names_on_screen(fresh):
     fresh.select_option("#select-year", "3")
     fresh.select_option("#select-term", "א")
     fresh.wait_for_timeout(2500)
+    # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
+    # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    fresh.click("#btn-restore-recommended")
+    fresh.wait_for_timeout(2500)
     found = fresh.evaluate(
         """() => {
       const keys = ['compactness','gaps','soft_conflict','late_finish',
@@ -325,6 +337,10 @@ def test_key_screens_carry_hebrew(fresh):
     fresh.select_option("#select-program", CURRICULUM_PROGRAM)
     fresh.select_option("#select-year", "3")
     fresh.select_option("#select-term", "א")
+    fresh.wait_for_timeout(2500)
+    # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
+    # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    fresh.click("#btn-restore-recommended")
     fresh.wait_for_timeout(2500)
     regions = {
         # ‏.header-actions עבר ל"פרטים טכניים" ב-2026-09-08 ואינו עוד
@@ -365,6 +381,10 @@ def _with_schedule(page):
     page.select_option("#select-program", CURRICULUM_PROGRAM)
     page.select_option("#select-year", "3")
     page.select_option("#select-term", "א")
+    page.wait_for_timeout(2500)
+    # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
+    # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    page.click("#btn-restore-recommended")
     page.wait_for_timeout(3000)
     page.wait_for_selector("#schedule-grid .ev", timeout=15000)
 
@@ -876,6 +896,10 @@ def test_section_marks_are_stateful(fresh):
     fresh.select_option("#select-program", CURRICULUM_PROGRAM)
     fresh.select_option("#select-year", "3")
     fresh.select_option("#select-term", "א")
+    fresh.wait_for_timeout(2500)
+    # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
+    # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    fresh.click("#btn-restore-recommended")
     fresh.wait_for_timeout(3000)
     assert marks()[0] == "is-chosen", "אחרי בחירת שנה וסמסטר הסעיף אמור להיות 'נבחר'"
 
@@ -908,6 +932,10 @@ def test_semester_line_is_not_duplicated(fresh):
     fresh.select_option("#select-program", CURRICULUM_PROGRAM)
     fresh.select_option("#select-year", "3")
     fresh.select_option("#select-term", "א")
+    fresh.wait_for_timeout(2500)
+    # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
+    # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    fresh.click("#btn-restore-recommended")
     fresh.wait_for_timeout(3000)
     state = fresh.evaluate(
         "(document.getElementById('step-year-state')||{}).textContent || ''"
