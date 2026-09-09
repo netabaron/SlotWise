@@ -117,11 +117,35 @@ def snap(page) -> dict:
     return page.evaluate(SNAPSHOT)
 
 
-def choose(page, year: int, term: str) -> dict:
+#: המסלול שיש לו תוכנית לימודים, ולכן זה שכל הבדיקות כאן מדברות עליו.
+CURRICULUM_PROGRAM = "הנדסת תוכנה"
+
+
+def choose(page, year: int, term: str, program: str = CURRICULUM_PROGRAM) -> dict:
+    """בוחר זהות מלאה: מסלול, שנה וסמסטר.
+
+    ‏המסלול נוסף כאן ב-2026-09-09. עד אז הוא נבחר אוטומטית — התוכנית של
+    ``curriculum_program`` — ולכן הספיק לבחור שנה וסמסטר. מרגע ששלוש
+    התיבות מתחילות ריקות, בחירה חלקית משאירה את שלב 2 נעול ואת הרשימה
+    ריקה, וכל בדיקה שנשענת על ``choose`` הייתה נכשלת על תיבת חיפוש שאי
+    אפשר להקליד בה — ולא על מה שהיא באמת בודקת.
+    """
+    page.select_option("#select-program", program)
     page.select_option("#select-year", str(year))
     page.select_option("#select-term", term)
     page.wait_for_timeout(1200)
     return snap(page)
+
+
+def with_identity(page) -> dict:
+    """בוחר את הזהות שהבדיקות כאן יצאו ממנה עד 2026-09-09.
+
+    ‏עד אז שנה ג׳ + סמסטר א׳ + הנדסת תוכנה נקבעו אוטומטית מ-``profile.json``,
+    ולכן בדיקה יכלה להתחיל לפעול על עמוד שכבר יש בו תוכנית. מרגע ששלוש
+    התיבות מתחילות ריקות צריך לבחור אותן במפורש — וזה כל מה שהשורה הזאת
+    עושה. שום טענה בבדיקות שמשתמשות בה לא השתנתה.
+    """
+    return choose(page, 3, "א")
 
 
 # ==========================================================================
@@ -180,6 +204,7 @@ def add_by_search(page, code: str) -> None:
 
 def test_a_manually_added_course_survives_a_semester_change(page):
     """המקרה שהתכונה נועדה לו: השלמת קורס מסמסטר קודם."""
+    with_identity(page)
     add_by_search(page, "61739")  # קורס של סמסטר 3, בזמן שיושבים על סמסטר 5
     state = snap(page)
     assert state["manualCodes"] == ["61739"]
@@ -193,6 +218,7 @@ def test_a_manually_added_course_survives_a_semester_change(page):
 
 def test_summer_drops_the_plan_and_keeps_the_manual_pick(page):
     """אין סמסטר קיץ בתוכנית. מסירים את מה שהמערכת סימנה — ורק אותו."""
+    with_identity(page)
     add_by_search(page, "61739")
     page.select_option("#select-term", "קיץ")
     page.wait_for_timeout(1200)
@@ -221,6 +247,7 @@ def test_switching_program_drops_the_previous_program_plan(page):
     שהתכונה הזאת נועדה לתקן — ומספר הסמסטר לבדו אינו מבחין ביניהם, כי הוא
     לא משתנה בהחלפת מסלול.
     """
+    with_identity(page)
     assert "61756" in snap(page)["checked"], "מתחילים עם תוכנית הנדסת תוכנה"
 
     page.select_option("#select-program", other_program(page))
@@ -233,6 +260,7 @@ def test_switching_program_drops_the_previous_program_plan(page):
 def test_a_program_without_a_curriculum_keeps_a_hand_built_list(page):
     """‏SPEC_MULTIFACULTY: בלי תוכנית לימודים הכול נבחר מהקטלוג, והמערכת
     לא נוגעת בבחירה שנבנתה ביד — היא מסירה רק מה שהיא עצמה סימנה."""
+    with_identity(page)
     page.select_option("#select-program", other_program(page))
     page.wait_for_timeout(2000)
     # במצב קטלוג אותה תיבת חיפוש מזינה את רשימת הקטלוג שמתחתיה, ולא רשימה
@@ -262,6 +290,7 @@ def uncheck(page, code: str) -> dict:
 
 def test_unchecking_a_recommended_course_sticks_across_a_reload(page):
     """משיכה חוזרת של אותה רשימה אסור שתסמן מחדש מה שבוטל במפורש."""
+    with_identity(page)
     state = uncheck(page, "61759")
     assert state["autoDropped"] == ["61759"]
     assert "61759" not in state["checked"]
@@ -275,6 +304,7 @@ def test_unchecking_a_recommended_course_sticks_across_a_reload(page):
 
 
 def test_restoring_the_recommended_list_brings_it_back(page):
+    with_identity(page)
     uncheck(page, "61759")
     page.click("#btn-restore-recommended")
     page.wait_for_timeout(1000)
@@ -286,6 +316,7 @@ def test_restoring_the_recommended_list_brings_it_back(page):
 
 def test_unchecking_one_tied_course_unchecks_the_whole_package(page):
     """‏61756+61757+62027 — הידיעון רושם אותם כחבילה אחת."""
+    with_identity(page)
     state = uncheck(page, "61757")
     assert not ({"61756", "61757", "62027"} & set(state["checked"]))
 
@@ -466,6 +497,7 @@ def test_another_department_gets_its_own_plan_not_software_engineering(page):
     """‏מספר הסמסטר אינו משתנה בהחלפת מסלול, ולכן "אותו סמסטר, אל תיגע"
     השאיר את רשימת הנדסת תוכנה מסומנת מתחת לקורסי האזרחית. הבעלות היא על
     צמד מסלול+סמסטר."""
+    with_identity(page)
     assert "61756" in snap(page)["checked"], "מתחילים בהנדסת תוכנה"
 
     page.select_option("#select-program", "הנדסה אזרחית")
@@ -482,6 +514,7 @@ def test_another_department_gets_its_own_plan_not_software_engineering(page):
 
 
 def test_track_courses_are_shown_but_never_auto_checked(page):
+    with_identity(page)
     page.select_option("#select-program", "הנדסה אזרחית")
     page.wait_for_timeout(2200)
     rows = {r["code"]: r for r in snap(page)["rows"]}
@@ -496,6 +529,7 @@ def test_track_courses_are_shown_but_never_auto_checked(page):
 def test_a_department_with_no_chapter_stays_on_the_catalog(page):
     """להנדסת ביוטכנולוגיה אין פרק שנתון כלל. אסור שתקבל לוח סמסטרים של
     מחלקה אחרת, ואסור שתראה "סמסטר 5 בתוכנית הלימודים"."""
+    with_identity(page)
     page.select_option("#select-program", "הנדסת ביוטכנולוגיה")
     page.wait_for_timeout(2200)
     state = snap(page)
