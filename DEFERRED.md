@@ -352,6 +352,35 @@ tested.
 **Recommendation:** option 2 when Phase 9 or hosting work touches this area.
 Option 1 is cleaner but pays a test-file edit for an endpoint nobody calls.
 
+### Eighteen tests pin exact counts against a live, gitignored, self-refreshing database
+**Where:** `tests/test_attendance.py`, `tests/test_web.py`, `tests/test_yedion_http.py`
+— e.g. `test_the_real_database_has_six_courses_and_27_groups`.
+**Owner:** unassigned — a test-robustness question, not a product bug.
+**What:** these assert exact numbers ("six courses and 27 groups", a specific
+enumeration size, a named lecturer) against `data/db/sections.json`, which is
+gitignored, lives only on the machine, and is **rewritten by the running app**.
+
+Observed twice on 2026-09-09 alone. The count went 1444 → 1445 groups between two
+runs of the same suite, with `updated_at` moving to `15:06:08Z` three minutes
+after the server was restarted at 18:03 local. Two tests failed in the morning,
+eighteen by the evening, with no code change between them — verified by reverting
+`app.js` and `strings.json` to `72b00ed` and getting the identical eighteen.
+
+**Why it matters beyond the noise:** a suite that fails for environmental reasons
+teaches you to skim its output, and that is exactly how a real regression gets
+waved through. It also cost real time today — the drifting data was first
+misread as the identity change breaking the API layer.
+
+**Options, for whoever picks this up:**
+1. Point these tests at a committed fixture rather than `data/db/`. Most direct,
+   and the shipped `data/catalog.jsonl` is already a committed, stable source.
+2. Assert invariants instead of counts — "every group has a kind and a group id"
+   rather than "there are 27 of them".
+3. Leave them, and accept that the suite is only meaningful with the app stopped.
+
+Option 1 or 2. Not 3: the standing advice would become "ignore those eighteen",
+which is worse than no test.
+
 ### The lecturer field now holds a note **glued onto** a real name — worse than the entry below, 2026-09-09
 **Where:** `src/parser.py`, surfacing in `data/db/sections.json` →
 `groups[].lecturer`, rendered on every grid block and the printed sheet.
