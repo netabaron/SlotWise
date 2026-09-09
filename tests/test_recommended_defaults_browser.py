@@ -174,8 +174,8 @@ def tick_recommended(page) -> dict:
 # ==========================================================================
 # 1. הבחירה בשלב 1 היא שמסמנת
 # ==========================================================================
-def test_choosing_an_identity_marks_that_semesters_plan(page):
-    """הרשימה נגזרת מהבחירה — אחריה, לא לפניה.
+def test_choosing_an_identity_shows_that_semesters_plan(page):
+    """הרשימה נגזרת מהבחירה — אחריה, לא לפניה. **מוצגת**, לא מסומנת.
 
     ‏עד 2026-09-09 הבדיקה הזאת נקראה
     ``test_a_fresh_visitor_gets_the_plan_for_the_chosen_semester`` והריצה
@@ -194,9 +194,22 @@ def test_choosing_an_identity_marks_that_semesters_plan(page):
 
     ‏הצד השני, שמבקר/ת חדש/ה **אינו/ה** מקבל/ת דבר, נבדק בנפרד ב-
     ``test_a_fresh_visitor_has_nothing_chosen_and_step_two_locked``.
+
+    ‏שינוי שני, ב-2026-09-09 מאוחר יותר: הבדיקה טענה
+    ``set(state["checked"]) == {ששת הקודים}`` — כלומר שתוכנית הסמסטר
+    מגיעה **מסומנת**. גם זה בוטל בכוונה, ומאותו טעם: אפליקציה שמסמנת
+    בשביל הסטודנט/ית מציגה בחירה שלא נעשתה, ומי שההמלצה במקרה מתאימה
+    לה נענשת על כך — אין לה דרך להביע הסכמה, כי אין לה מה ללחוץ.
+    הטענה עברה מ-``checked`` ל-``autoCodes``: אותם שישה קודים בדיוק,
+    אותו מקור ואותו רגע — רק שעכשיו הם ההמלצה **המוצגת** ולא הבחירה.
+    לצדה נוספה הטענה ההפוכה, שאף אחד מהם אינו מסומן, כי בלעדיה
+    "מוצגת" הייתה עוברת גם אם היא מסומנת.
     """
     state = with_identity(page)
-    assert set(state["checked"]) == {"11069", "61756", "61757", "62027", "61759", "61832"}
+    plan = {"11069", "61756", "61757", "62027", "61759", "61832"}
+    assert set(state["autoCodes"]) == plan, "ההמלצה היא בדיוק תוכנית הסמסטר"
+    assert plan <= {row["code"] for row in state["rows"]}, "והיא מוצגת ברשימה"
+    assert state["checked"] == [], "ואינה מסומנת — הסימון הוא שלה"
     assert state["autoSemester"] == "5"
     assert state["manualCodes"] == []
 
@@ -210,6 +223,13 @@ def test_a_fresh_visitor_has_nothing_chosen_and_step_two_locked(page):
 
     ‏ואז, ברגע שנבחרו שלושתם, השלב נפתח וההמלצה מופיעה. שני החצאים באותה
     בדיקה בכוונה: "נעול" בלי "ונפתח" היה עובר גם אם הנעילה לא נפתחת לעולם.
+
+    ‏החצי השני תוקן ב-2026-09-09 מאוחר יותר. הוא טען
+    ``set(after["checked"]) == {ששת הקודים}`` — כלומר מדד את "ההמלצה
+    מופיעה" לפי מה שמסומן. מרגע שההמלצה מוצגת ואינה מסומנת, המדד הזה
+    מודד את הדבר הלא נכון: הוא היה נכשל דווקא כשההתנהגות נכונה.
+    ההופעה נמדדת עכשיו לפי ``autoCodes``, ולצדה נטען במפורש שאין
+    סימון. הנעילה, השורה שמסבירה אותה ופתיחתה — ללא שינוי.
     """
     placeholders = page.evaluate(
         """() => ['select-program', 'select-year', 'select-term'].map(id => {
@@ -240,9 +260,10 @@ def test_a_fresh_visitor_has_nothing_chosen_and_step_two_locked(page):
 
     # ואז הבחירה — ורק אחריה מופיעה הרשימה.
     after = with_identity(page)
-    assert set(after["checked"]) == {
+    assert set(after["autoCodes"]) == {
         "11069", "61756", "61757", "62027", "61759", "61832"
     }, "ההמלצה מופיעה ברגע שיש מסלול, שנה וסמסטר"
+    assert after["checked"] == [], "מופיעה — ועדיין לא מסומנת"
     assert after["autoSemester"] == "5"
     assert not page.evaluate(
         "() => document.getElementById('step-courses').classList.contains('is-locked')"
@@ -255,11 +276,17 @@ def test_a_fresh_visitor_does_not_inherit_the_profile_selection(page):
     assert "61753" not in snap(page)["codes"]
 
 
-def test_changing_the_year_changes_what_is_marked(page):
+def test_changing_the_year_changes_what_is_recommended(page):
+    """‏עד 2026-09-09 הבדיקה נקראה ``..._changes_what_is_marked`` ובדקה את
+    ``checked``. מרגע שההמלצה אינה מסומנת אין שם מה למדוד — ``checked``
+    ריק בכל שנה, ולכן הבדיקה הייתה עוברת על כל שינוי ולא שומרת על דבר.
+    מה שכן משתנה עם השנה, ותמיד היה הנושא האמיתי כאן, הוא **ההמלצה**:
+    אותם חמישה קודים בדיוק, ובלי אף קורס מהסמסטר הקודם."""
     state = choose(page, 2, "א")
     assert state["autoSemester"] == "3"
-    assert set(state["checked"]) == {"11129", "61739", "61774", "61778", "61911"}
-    assert "61756" not in state["codes"], "קורסי הסמסטר הקודם יורדים"
+    assert set(state["autoCodes"]) == {"11129", "61739", "61774", "61778", "61911"}
+    assert "61756" not in state["autoCodes"], "קורסי הסמסטר הקודם יורדים"
+    assert "61756" not in state["codes"]
 
 
 # ==========================================================================
@@ -272,15 +299,29 @@ def test_placement_courses_are_shown_unchecked_with_a_reason(page):
         assert code in shown, f"{code} חייב להופיע — אחרת אי אפשר לבחור ביניהם"
         assert not shown[code]["checked"], f"{code} הוא חלופה ולא מסומן מראש"
         assert any("חלופה" in tag for tag in shown[code]["tags"]), "בלי הסבר זה נראה כמו תקלה"
-    assert set(state["checked"]) == {"251961", "11004", "11102", "61740", "61741"}
+    # ‏עד 2026-09-09 השורה הזאת הייתה ``set(state["checked"]) == {...}``,
+    # כלומר "החלופות אינן מסומנות — ואלה כן". החצי הראשון הוא הנושא של
+    # הבדיקה והוא נשאר כפי שהיה; החצי השני בוטל, כי ההמלצה כבר אינה
+    # מסומנת מראש. אותה הבחנה עצמה בין "בתוכנית" ל"חלופה" נבדקת עכשיו
+    # על ``autoCodes`` — אותם חמישה קודים בדיוק.
+    assert set(state["autoCodes"]) == {"251961", "11004", "11102", "61740", "61741"}
 
 
-def test_neither_physics_track_is_marked(page):
+def test_neither_physics_track_is_recommended(page):
+    """‏עד 2026-09-09 הבדיקה נקראה ``..._is_marked`` ובדקה ששלושת קורסי
+    הפיזיקה אינם מסומנים. מרגע שאין סימון אוטומטי הטענה הזאת נכונה
+    תמיד, על כל קורס, ולכן כבר אינה שומרת על דבר — היא הייתה עוברת גם
+    אם מסלול הפיזיקה נכנס לתוכנית. ההבחנה שהיא נועדה לשמור עליה עברה
+    ל-``autoCodes``: שלושתם מוצגים, אף אחד מהם אינו חלק מההמלצה,
+    וההמלצה היא בדיוק ארבעת האחרים."""
     state = choose(page, 2, "ב")
     shown = {row["code"]: row for row in state["rows"]}
     for code in ("61179", "61180", "61181"):
-        assert not shown[code]["checked"], f"{code} תלוי בפטור — הבחירה אינה של המערכת"
-    assert set(state["checked"]) == {"61751", "61752", "61753", "61755"}
+        assert code in shown, f"{code} חייב להופיע — אחרת אי אפשר לבחור בו"
+        assert code not in state["autoCodes"], (
+            f"{code} תלוי בפטור — הבחירה אינה של המערכת"
+        )
+    assert set(state["autoCodes"]) == {"61751", "61752", "61753", "61755"}
 
 
 # ==========================================================================
@@ -451,17 +492,31 @@ def test_an_existing_selection_is_adopted_and_not_overwritten(browser, server):
         assert sorted(state["codes"]) == sorted(OLD_STATE["codes"]), (
             "בחירה קיימת לא נמחקת ולא מוחלפת — רק מקבלת שיוך"
         )
-        # ‏61753 אינו ברשימת ההמלצה של סמסטר 5 ⇒ הוא ידני, ולכן ישרוד החלפה.
-        assert state["manualCodes"] == ["61753"]
-        # ‏61759 כן ברשימה אבל לא היה מסומן ⇒ נחשב "בוטל", ולא יחזור מעצמו.
-        assert state["autoDropped"] == ["61759"]
+        # ‏השיוך עצמו התהפך ב-2026-09-09, ובכוונה. הבדיקה טענה שהאימוץ
+        # **מפצל**: ‏61753 אינו בהמלצת סמסטר 5 ⇒ ידני, ואילו 61759 כן
+        # בהמלצה ואינו מסומן ⇒ "בוטל". הפיצול הזה נשען כולו על ההנחה
+        # שמה שמסומן סומן בידי המערכת. מרגע שהמערכת אינה מסמנת דבר, כל
+        # מה שמסומן במצב שמור הוא בחירה של הסטודנט/ית — ולכן הכול ידני,
+        # ואין "מומלץ שבוטל", כי איש לא סימן אותו מלכתחילה.
+        assert sorted(state["manualCodes"]) == sorted(OLD_STATE["codes"]), (
+            "הכול שלה: מה שהיה מסומן הוא בחירה, לא ניחוש של המערכת"
+        )
+        assert state["autoDropped"] == [], "ואין מה 'לבטל' כשאיש לא סימן"
 
         p.select_option("#select-year", "2")
         p.select_option("#select-term", "א")
         p.wait_for_timeout(1300)
         state = snap(p)
-        assert "61753" in state["checked"], "ההשלמה הידנית שורדת"
-        assert "61756" not in state["codes"], "ההמלצה של סמסטר 5 יורדת"
+        # ‏וכאן ההשלכה, שגם היא היפוך מכוון. הבדיקה טענה
+        # ``"61756" not in state["codes"]`` — כלומר שהחלפת סמסטר מורידה
+        # את ההמלצה הישנה. הכלל שמאחורי זה, "רק מה שהמערכת סימנה
+        # המערכת מסירה", לא השתנה; מה שהשתנה הוא שהמערכת לא סימנה דבר,
+        # ולכן אין לה מה להסיר. בחירה שמורה שנמחקת מתחת לידיים בהחלפת
+        # שנה היא בדיוק אובדן הנתונים שהמעבר הזה נועד למנוע.
+        assert sorted(state["codes"]) == sorted(OLD_STATE["codes"]), (
+            "החלפת שנה אינה נוגעת בבחירה שהסטודנט/ית עשו"
+        )
+        assert "61753" in state["codes"], "ההשלמה הידנית שורדת"
     finally:
         ctx.close()
 
