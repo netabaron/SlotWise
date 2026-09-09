@@ -107,6 +107,12 @@ def page(server):
             pytest.skip(f"אין דפדפן ל-Playwright: {exc}")
         pg = browser.new_page(viewport={"width": 1440, "height": 1000})
         pg.goto(server)
+        pg.wait_for_timeout(3000)
+        # ‏שלב 1 הוא זהות מאז 2026-09-09: בלי מסלול, שנה וסמסטר אין מערכת,
+        # ולכן אין גם ציון התאמה לבדוק.
+        pg.select_option("#select-program", "הנדסת תוכנה")
+        pg.select_option("#select-year", "3")
+        pg.select_option("#select-term", "א")
         pg.wait_for_timeout(5000)
         pg.evaluate("() => { const d = document.getElementById('compare');"
                     " if (d) d.open = true; }")

@@ -37,6 +37,12 @@ from werkzeug.serving import make_server  # noqa: E402
 
 from src.web.api import create_app  # noqa: E402
 
+#: המסלול שיש לו תוכנית לימודים. מאז 2026-09-09 שלב 1 הוא זהות ואין לו
+#: ברירת מחדל, ולכן בחירת שנה וסמסטר לבדה משאירה את שלבים 2..5 נעולים —
+#: וכל בדיקה כאן הייתה נכשלת על פקד נעול במקום על מה שהיא בודקת.
+CURRICULUM_PROGRAM = "הנדסת תוכנה"
+
+
 #: הסימן ש-T() מחזיר למפתח נוסח חסר.
 OPEN_MARK = "⟦"
 
@@ -173,6 +179,7 @@ def test_no_missing_keys_while_stepping_through(dev):
     hits: list[str] = []
     hits += scan(dev, "load")
 
+    dev.select_option("#select-program", CURRICULUM_PROGRAM)
     dev.select_option("#select-year", "3")
     dev.select_option("#select-term", "א")
     dev.wait_for_timeout(2500)
@@ -256,6 +263,7 @@ LABEL_SELECTORS = [
 
 
 def test_no_empty_labels(fresh):
+    fresh.select_option("#select-program", CURRICULUM_PROGRAM)
     fresh.select_option("#select-year", "3")
     fresh.select_option("#select-term", "א")
     fresh.wait_for_timeout(2500)
@@ -291,6 +299,7 @@ def test_no_empty_labels(fresh):
 
 def test_no_raw_key_names_on_screen(fresh):
     """שם מפתח פנימי כטקסט — למשל ‏compactness כתווית של פס קנס."""
+    fresh.select_option("#select-program", CURRICULUM_PROGRAM)
     fresh.select_option("#select-year", "3")
     fresh.select_option("#select-term", "א")
     fresh.wait_for_timeout(2500)
@@ -313,6 +322,7 @@ def test_no_raw_key_names_on_screen(fresh):
 
 def test_key_screens_carry_hebrew(fresh):
     """כל אזור מרכזי נושא עברית משלו, ולא נשען על הערה שבראש הקובץ."""
+    fresh.select_option("#select-program", CURRICULUM_PROGRAM)
     fresh.select_option("#select-year", "3")
     fresh.select_option("#select-term", "א")
     fresh.wait_for_timeout(2500)
@@ -352,6 +362,7 @@ def test_no_javascript_errors(fresh):
 # ==========================================================================
 def _with_schedule(page):
     """מביא את הדף למצב שבו יש מערכת מצוירת."""
+    page.select_option("#select-program", CURRICULUM_PROGRAM)
     page.select_option("#select-year", "3")
     page.select_option("#select-term", "א")
     page.wait_for_timeout(3000)
@@ -862,6 +873,7 @@ def test_section_marks_are_stateful(fresh):
     )
     assert set(marks()) == {"is-default"}, "בטעינה נקייה הכול אמור להיות ברירת מחדל"
 
+    fresh.select_option("#select-program", CURRICULUM_PROGRAM)
     fresh.select_option("#select-year", "3")
     fresh.select_option("#select-term", "א")
     fresh.wait_for_timeout(3000)
@@ -893,6 +905,7 @@ def test_progress_row_is_not_numbered(fresh):
 
 def test_semester_line_is_not_duplicated(fresh):
     """‏השנה והסמסטר נאמרים פעם אחת."""
+    fresh.select_option("#select-program", CURRICULUM_PROGRAM)
     fresh.select_option("#select-year", "3")
     fresh.select_option("#select-term", "א")
     fresh.wait_for_timeout(3000)
