@@ -550,9 +550,9 @@ ul { margin: 0; padding: 0; list-style: none; }
 .confirm-btn[aria-pressed="true"] .confirm-tick { visibility: visible; }
 
 .confirm-btn[aria-pressed="true"] {
-  border-color: var(--ok-line);
-  color: var(--ok-ink);
-  background: var(--ok-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .field { display: flex; flex-direction: column; gap: 4px; min-inline-size: 0; }
@@ -1014,11 +1014,17 @@ html.is-modal-open body { overflow: hidden; }
   color: var(--accent-ink);
 }
 
+/* ‏"החלטתי כאן" נצבע באקסנט, ולא בירוק ההצלחה.
+   ‏שלושת המקומות שאומרים את המשפט הזה — הסימן על הסעיף, השבב בשורת
+   ההתקדמות ומתג האישור — חייבים להיראות אותו דבר; אחרת אותה משמעות
+   מצוירת בשני צבעים במרחק סנטימטרים זה מזה. הירוק נשאר שמור למצב
+   (‏banner--ok, toast--ok, fact--ok) ולנעיצה, ומרגע שאינו מסמן גם
+   "הוכרע" הוא מפסיק לומר שני דברים. */
 .step.is-complete .step-title::before {
   content: "\2713";
-  background: var(--ok-bg);
-  border-color: var(--ok-line);
-  color: var(--ok-ink);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .step-hint {
@@ -2354,9 +2360,9 @@ html.is-modal-open body { overflow: hidden; }
 .progress-chip.is-conflict::before { content: "!"; font-weight: 800; }
 
 .progress-chip.is-chosen {
-  border-color: var(--ok-line);
-  background: var(--ok-bg);
-  color: var(--ok-ink);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .progress-chip.is-conflict {
