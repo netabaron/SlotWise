@@ -1288,6 +1288,11 @@ def _rows_to_groups(
                 f"השדה רוקן (lecturer column holds a component kind)."
             )
             lecturer = ""
+        # ‏אותו טיפול כמו בנתיב הבלוקים, בלי ה-span-ים: בטבלה אין סימון
+        # לתא, ולכן רק ההתאמה על הערך המלא ("טרם נקבע", "מיועד לחוזרים")
+        # רלוונטית כאן. ההפרדה נעשית **לפני** ההורשה מהשורה הקודמת, אחרת
+        # "טרם נקבע" היה עובר בירושה לשורות שמתחתיו כשם מרצה.
+        lecturer, row_status = _split_lecturer_status(lecturer, [])
         if not lecturer and inherited:
             lecturer = prev_lecturer
 
@@ -1314,6 +1319,7 @@ def _rows_to_groups(
                 meetings=[],
                 linked_to=[],
                 note=note,
+                status_note=row_status,
             )
             seen_meetings[key] = set()
             order.append(key)
@@ -1321,6 +1327,8 @@ def _rows_to_groups(
         group = by_key[key]
         if not group.lecturer and lecturer:
             group.lecturer = lecturer
+        if not group.status_note and row_status:
+            group.status_note = row_status
         if note and note not in group.note:
             group.note = (group.note + " | " + note) if group.note else note
 
@@ -1368,9 +1376,39 @@ _GROUP_KIND_RE = re.compile(r"קורס\s*מסוג\s*(.{0,60}?)\s*(?:קבוצה\s
 #: "קבוצה : 27103001" — המזהה נשמר כמות שהוא (GROUND_TRUTH סעיף 4.4).
 _GROUP_ID_RE = re.compile(r"קבוצה\s*:\s*(\d[\w.-]{0,19}(?:\s*/\s*\d{1,3})?)")
 #: "מרצה הקורס : ד"ר שפיגל הדר" (טקסט הכפתור כבר הוסר).
+#: ‏``(.*?)`` ולא ``(.+?)``, ו-"מערכת שעות" כעוגן נוסף. שתי התיקונים
+#: האלה הם אותו באג: כשהידיעון כותב "מרצה הקורס :" ואחריו **כלום**, גרסת
+#: ה-``+`` לא יכלה לעצור על "שפת הוראה" — היא חייבת תו אחד לפחות — ולכן
+#: המשיכה עד העוגן הבא או עד סוף הטקסט. בקורס 312781 זה נתן שדה מרצה
+#: שהכיל את כל שאר העמוד, "מדיניות הפרטיות הצהרת נגישות" ועד בכלל.
+#: ‏"פרטים נוספים" נשאר ברשימה אף שהוא כבר לא יכול להתאים — הוא בתוך
+#: ``<button>``, ו-``_visible_text`` מסיר כפתורים — כי הידיעון שינה את
+#: הרכיב הזה פעם אחת וייתכן שישנה שוב.
 _GROUP_LECTURER_RE = re.compile(
-    r"מרצה\s*ה?קורס\s*:\s*(.+?)\s*(?:שפת\s*הוראה|פרטים\s*נוספים|$)"
+    r"מרצה\s*ה?קורס\s*:\s*(.*?)\s*(?:שפת\s*הוראה|מערכת\s*שעות|פרטים\s*נוספים|$)"
 )
+
+#: ערכים ששדה המרצה מכיל **במקום** שם, כטקסט חשוף ולא בתוך אלמנט משלו.
+#: אלה אינם שמות, ולכן הם יורדים מהשדה. הצמד השני נשמר כהודעת מצב, כי
+#: "מיועד לחוזרים" הוא מידע אמיתי על הקבוצה — מי רשאי להירשם אליה.
+#: ההתאמה היא על **כל** הערך, לא על חלק ממנו: כך אי אפשר לפגוע בשם אמיתי.
+#: תוויות של הידיעון שדלפו לשדה המרצה במקום שם. בשונה מהמילון שמתחתיו,
+#: ההתאמה כאן היא על **תחילת** הערך, כי אחרי התווית בא ערך משתנה
+#: ("עברית", "אנגלית"). זה בטוח: שם של אדם אינו מתחיל ב"שפת הוראה".
+#: ‏3 שורות ב-``data/catalog.jsonl`` נשאו ``"שפת הוראה של הקורס : עברית"``
+#: כשם מרצה — שאריות מהבאג שהביטוי הרגולרי כבר לא יכול לייצר.
+_LECTURER_LABEL_LEAKS: tuple[str, ...] = (
+    "שפת הוראה",
+    "מערכת שעות",
+    "מרצה הקורס",
+)
+
+_LECTURER_INSTEAD_OF_NAME: dict[str, str] = {
+    "טרם נקבע": "",            # "עוד לא נקבע מרצה" — שדה ריק אומר בדיוק את זה
+    "טרם נקבעה": "",
+    "לא נקבע": "",
+    "מיועד לחוזרים": "מיועד לחוזרים",
+}
 #: "( קבוצות הקשורות לקורס זה : 27103005 , 27103006 )"
 _LINKED_IDS_RE = re.compile(r"קבוצ\w*\s*הקשור\w*\s*לקורס\s*זה\s*:?\s*([^)\]]*)")
 
@@ -1432,6 +1470,81 @@ def _visible_text(node: Any) -> str:
             continue
         parts.append(str(child))
     return _clean(" ".join(parts))
+
+
+def _status_spans(block: Any) -> list[str]:
+    """הודעות המצב של הידיעון בבלוק — ה-span-ים האדומים שלו.
+
+    ‏הידיעון מסמן "הקורס מלא" ו"בקורס זה קיימת רשימת המתנה" ב-span אדום
+    ומודגש משלהם, בדיוק כפי שהוא מסמן את מספר הקבוצה ב-span כחול. הם
+    יושבים **בין** שם המרצה לבין "שפת הוראה של הקורס", ו-``_visible_text``
+    משטח את הכול למחרוזת אחת — ומכאן "מר כהן אסף הקורס מלא".
+
+    ‏הקריאה היא מה-DOM ולא מרשימת ניסוחים, כדי שנוסח חדש של הודעה יטופל
+    מעצמו. שפת ההוראה יושבת גם היא ב-span אדום, אבל היא לעולם אינה נכנסת
+    לשם המרצה: היא באה **אחרי** "שפת הוראה של הקורס :", שהוא עוגן העצירה
+    של הביטוי — ולכן די בכך שנוריד רק סיומת שמתאימה בדיוק.
+    """
+    out: list[str] = []
+    for span in block.find_all("span"):
+        style = _clean(span.get("style", "")).lower()
+        classes = " ".join(_classes(span)).lower()
+        if "red" not in style and "red" not in classes:
+            continue
+        text = _clean(_visible_text(span))
+        if text and text not in out:
+            out.append(text)
+    return out
+
+
+def _split_lecturer_status(lecturer: str, statuses: list[str]) -> tuple[str, str]:
+    """מפריד שם מרצה מהודעת מצב שנדבקה אליו. מחזיר ``(שם, הודעה)``.
+
+    שני מסלולים, ושניהם שמרניים בכוונה:
+
+    1. **סיומת שהידיעון עצמו סימן.** אם הערך נגמר בדיוק בטקסט של אחד
+       מה-span-ים האדומים — הוא נחתך. חיתוך של מחרוזת שה-HTML סימן כאלמנט
+       נפרד אינו יכול לקצר שם אמיתי.
+    2. **הערך כולו אינו שם.** "טרם נקבע" ו"מיועד לחוזרים" מגיעים כטקסט
+       חשוף במקום השם, בלי שום סימון. ההתאמה היא על הערך **המלא**, ולכן
+       מרצה ששמו מכיל את המילים האלה אינו נפגע.
+
+    מה שבמפורש **לא** נעשה כאן: פיצול על פסיק. ‏"ד\"ר גזית שמואל, מר ברק
+    דני" הם שני מרצים אמיתיים לאותה קבוצה, ויש כעשרים כאלה — פיצול נאיבי
+    היה הופך אותם לזבל.
+    """
+    name = _clean(lecturer).strip(" ,;:-")
+    note = ""
+    for status in statuses:
+        if not status or name == status:
+            continue
+        if name.endswith(status):
+            trimmed = _clean(name[: -len(status)]).strip(" ,;:-")
+            if trimmed:
+                name, note = trimmed, status
+                break
+    # ‏"ד\"ר קליינגזינד שלום, טרם נקבע" — שני מרצים לקבוצה, והשני טרם מונה.
+    # מסירים **רק** מקטע שהוא בדיוק אחד הביטויים שאינם שם, ומחברים את
+    # השאר כפי שהיה. זה בטוח לשני מרצים אמיתיים ("ד"ר גזית שמואל, מר ברק
+    # דני"), שאף מקטע שלהם אינו ברשימה, ולכן נשארים שלמים.
+    if "," in name:
+        parts = [_clean(x).strip(" ,;:-") for x in name.split(",")]
+        kept = [x for x in parts if x and x not in _LECTURER_INSTEAD_OF_NAME]
+        if kept and len(kept) != len([x for x in parts if x]):
+            for x in parts:
+                if x in _LECTURER_INSTEAD_OF_NAME and _LECTURER_INSTEAD_OF_NAME[x]:
+                    note = note or _LECTURER_INSTEAD_OF_NAME[x]
+            name = ", ".join(kept)
+    if name.startswith(_LECTURER_LABEL_LEAKS):
+        return "", note
+    if name in _LECTURER_INSTEAD_OF_NAME:
+        replacement = _LECTURER_INSTEAD_OF_NAME[name]
+        note = note or replacement
+        name = ""
+    elif name and name in statuses:
+        # הודעת מצב לבדה בשדה, בקבוצה שאין לה מרצה כלל.
+        note, name = name, ""
+    return name, note
 
 
 def _is_group_block(node: Any) -> bool:
@@ -1648,6 +1761,7 @@ def _blocks_to_groups(blocks: list[Any], code: str, warnings: list[str]) -> list
         lecturer = _clean(m.group(1)).strip(" ,;:-") if m else ""
         if _is_kind_word(lecturer):
             lecturer = ""
+        lecturer, status_note = _split_lecturer_status(lecturer, _status_spans(block))
 
         # --- קבוצות קשורות + הערה ---
         linked: list[str] = []
@@ -1693,7 +1807,11 @@ def _blocks_to_groups(blocks: list[Any], code: str, warnings: list[str]) -> list
             if not lecturer:
                 row_lecturer = _text_at(row, col_map, "lecturer")
                 if row_lecturer and not _is_kind_word(row_lecturer):
-                    lecturer = row_lecturer
+                    row_name, row_status = _split_lecturer_status(
+                        row_lecturer, _status_spans(block)
+                    )
+                    lecturer = row_name
+                    status_note = status_note or row_status
 
         if not meetings:
             # קבוצה בלי אף שורת מפגש = קורס שנפתח אבל **אין לו מועד קבוע**:
@@ -1721,6 +1839,7 @@ def _blocks_to_groups(blocks: list[Any], code: str, warnings: list[str]) -> list
                 meetings=[],
                 linked_to=[],
                 note=note,
+                status_note=status_note,
                 semester=block_semester,
             )
             seen_meetings[key] = set()
@@ -1731,6 +1850,8 @@ def _blocks_to_groups(blocks: list[Any], code: str, warnings: list[str]) -> list
             group.semester = block_semester
         if not group.lecturer and lecturer:
             group.lecturer = lecturer
+        if not group.status_note and status_note:
+            group.status_note = status_note
         if note and note not in group.note:
             group.note = (group.note + " | " + note) if group.note else note
         for linked_id in linked:
@@ -2298,6 +2419,7 @@ def _group_from_dict(data: dict[str, Any], course_code: str) -> Group:
         meetings=[_meeting_from_dict(m) for m in (kw.get("meetings") or [])],
         linked_to=[str(x) for x in (kw.get("linked_to") or [])],
         note=str(kw.get("note", "")),
+        status_note=str(kw.get("status_note", "")),
     )
 
 

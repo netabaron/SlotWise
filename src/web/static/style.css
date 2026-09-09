@@ -1293,6 +1293,15 @@ html.is-modal-open body { overflow: hidden; }
 .tag--warn     { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
 .tag--dead     { border-color: var(--err-line);  background: var(--err-bg);  color: var(--err-ink); }
 
+/* ‏הודעת מצב של הידיעון בשורת קבוצה. תג בתוך תא צר, ולכן שורה משלו
+   ‏מתחת למספר הקבוצה ולא לצידו — אחרת הוא דוחף את הטבלה לרוחב. */
+.group-status {
+  display: block;
+  inline-size: fit-content;
+  margin-block-start: 4px;
+  white-space: normal;
+}
+
 /* ==========================================================================
    9. שלב 3 — כפתורי ימי הלימוד
    ========================================================================== */

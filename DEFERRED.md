@@ -305,6 +305,49 @@ ticks first and does genuinely untick.
 **What would fix it:** tick before unticking, exactly as the five mechanical
 repairs in `5c10640` do.
 
+### The shipped catalog is a build behind, and rebuilding it moves 15 pinned counts
+**Where:** `data/catalog.jsonl` / `data/catalog.meta.json`, built 2026-09-07.
+**Owner:** a decision waiting, not a loose end. Held back deliberately 2026-09-10.
+**What happened:** the lecturer fix above needs the catalog rebuilt to carry
+clean values at rest. `build_catalog.py --check` does it offline from
+`data/raw`, and it worked — all six quality gates passed, 134 polluted rows went
+to 0. It was **not committed**, because it also brings a data change that has
+nothing to do with lecturers:
+
+| | committed catalog (07/09) | rebuilt from today's `data/raw` |
+|---|---|---|
+| groups | 2166 | 2167 |
+| timed meetings | 1186 | 1187 |
+| 11069, semester א | 2 groups | **3** |
+
+The third group of 11069 (`271060310/2`) is real: the yedion added it in the
+2026-09-08 fetch, `data/db/sections.json` has had it since, and the app has been
+showing it. Only the committed catalog predates it.
+
+**Verified not to be caused by the parser change**, because that was the obvious
+suspicion: the *old* parser on today's `data/raw` also yields 3 groups for
+11069. The parser change moved lecturer strings and nothing else.
+
+**Why it is held:** one extra group in a shared course multiplies through the
+enumeration, and 15 assertions in `test_attendance.py` and `test_web.py` fail on
+it — 27 groups becomes 28, an enumeration of 83 becomes 152, 564 becomes 960.
+Those are the same count-pinned tests as the entry further down, and both files
+are covered by the standing rule against editing existing tests. With the
+committed catalog restored, all 112 tests in those two files pass.
+
+**So the fix ships without the rebuild:** `store._group_from_dict()` repairs the
+catalog's 134 rows as it reads them, so a fresh clone sees clean names anyway.
+That is a patch over stale data, not a substitute for rebuilding it.
+
+**Two ways out, for whoever picks this up:**
+1. Rebuild the catalog and update the 15 counts, saying in the message that the
+   yedion added a group on 2026-09-08. Honest, and it needs the test rule lifted.
+2. Do the invariants conversion the count-pinning entry already recommends, and
+   then the rebuild costs nothing.
+
+Not "leave the catalog stale": every further yedion change widens the gap, and
+the read-time repair only knows the phrases seen up to 2026-09-10.
+
 ### `עדכן נתונים מהידיעון` must disappear entirely if this is ever hosted
 **Where:** the button, `/api/scrape/start`, `/api/scrape/status`.
 **Owner:** whoever does the hosting work — see `HOSTING_NOTES.md` row 3.
@@ -411,7 +454,12 @@ live `data/db` in four places (module-level API probe, a `copytree`, and a direc
 `Store(DB_ROOT)`). It has not failed on drift, so this is prevention rather than a
 live problem — but it is the same exposure, and it is the last of it.
 
-### The lecturer field now holds a note **glued onto** a real name — worse than the entry below, 2026-09-09
+
+---
+
+## Closed
+
+### The lecturer field held a note glued onto a real name — closed 2026-09-10
 **Where:** `src/parser.py`, surfacing in `data/db/sections.json` →
 `groups[].lecturer`, rendered on every grid block and the printed sheet.
 **Owner:** parser. Raised with the owner 2026-09-09; not fixed, because the
@@ -447,6 +495,80 @@ the group, not in the lecturer field.
 `ד"ר קליימן ילנה הקורס מלא`. They fail on the current data and pass on the
 2026-09-06 copy — the tests are correct and the data is not.
 
+**Closed 2026-09-10.** The parser was scoped in for this specifically. Three
+distinct shapes turned out to be behind it, and each needed a different answer.
+
+**1. A status span glued to a real name.** The yedion puts `הקורס מלא` and
+`בקורס זה קיימת רשימת המתנה` in their own
+`<span class="text color-red">`, sitting between the name and
+`שפת הוראה של הקורס` — exactly as it puts the group id in a blue span.
+`_visible_text()` flattens the block to one string, so the non-greedy capture
+in `_GROUP_LECTURER_RE`, which stops only at `שפת הוראה`, swallowed the span
+too. The `פרטים נוספים` alternative in that regex had quietly become dead: the
+yedion moved that text into a `<button>`, and `_visible_text()` strips buttons.
+The fix reads the red spans off the DOM and removes one **only** where it is an
+exact suffix of the captured value, so it is driven by the yedion's own markup
+rather than by a list of phrases, and a new wording is handled by itself.
+
+**2. A note written instead of a name**, as bare text with no markup at all:
+`טרם נקבע` (26 rows) and `מיועד לחוזרים` (19). Nothing in the DOM distinguishes
+these, so they are matched against a short list — on the **whole** value, never
+a substring, which is what makes it safe. `טרם נקבע` empties the field, because
+that is what it means and the UI already renders "מרצה לא ידוע"; `מיועד לחוזרים`
+is kept as a status note, because who may register is real information.
+
+**3. No name at all.** `(.+?)` needs at least one character, so it could not
+stop at `שפת הוראה` when the yedion emitted `מרצה הקורס :` and nothing after
+it — the capture ran to the end of the page. Course 312781 stored a lecturer of
+`"שפת הוראה של הקורס : עברית מערכת שעות ... מדיניות הפרטיות הצהרת נגישות"`.
+`(.*?)` fixes it. This one was not in either entry above; it was found while
+fixing them.
+
+**Where the note went.** A new `Group.status_note`, separate from `Group.note`
+on purpose: `note` carries tie-group and attendance text, and
+`api.attendance_info()` scans it with a regex, so a status note landing there
+would change what the interface says about attendance. It is rendered as a chip
+in the group table in step 4, under the group id — never on a grid block, which
+Phase 10 just settled and which is already clipping.
+
+**What was deliberately not done: splitting on the comma.** 24 catalogue values
+are two or more real lecturers for one group, up to four in a single value
+(`ד"ר קלס סיון, ד"ר גזית שמואל, ד"ר יסעור קרוח לילך, פרופ' סבאח עיסאם`). A
+naive split would have turned all of them into rubbish. Only a segment that is
+**exactly** one of the non-name phrases is dropped, which is what repairs
+`ד"ר קליינגזינד שלום, טרם נקבע` without touching the other 23.
+
+**Measured, not asserted.**
+
+| | before | after |
+|---|---|---|
+| `data/raw`, all 572 saved pages | — | **0** lecturer values carrying a note |
+| `data/db/sections.json` | 44 of 346 values, 119 group rows | 0 |
+| shipped catalog, as `Store` returns it | **134** group rows | 0 |
+| multi-lecturer values kept whole | 24 | 24 |
+
+**The data was repaired too, not only the code**, by two different routes.
+
+`reparse.py` rebuilt the 76 affected courses from `data/raw` with no network:
+572 courses and 1445 groups before and after, none lost, and the only fields
+that moved were `lecturer` (108) and `status_note` (213).
+
+The other route is a **read-time** repair in `store._group_from_dict()`, and it
+covers two cases the reparse cannot. 12 courses have no fixed time in
+semester א, so `parse_course_page(..., semester="א")` returns `None` and
+`reparse` skips them entirely. And `data/catalog.jsonl` — committed, and what a
+fresh clone reads — could not be rebuilt at all; see the open entry below.
+Reading has no HTML and therefore no red span, so this path uses a two-item
+phrase list (`_LEGACY_STATUS_SUFFIXES`) plus a prefix check for labels that
+leaked into the field. It removes an **exact suffix only**, and only when a name
+remains after it, so it cannot shorten a real one. The parser itself stays
+DOM-driven; the list exists for bytes already on disk.
+
+**Tests:** `tests/test_lecturer_status_note.py`, 24 of them, including every
+shape above, the 24 multi-lecturer values, and three mutations that each had to
+fail: `(.+?)` restored, the suffix removal disabled, and the comma guard
+loosened.
+
 **A caution recorded with it.** Diagnosing this, the same investigation first
 reported that the database had been emptied and that an empty local overlay was
 masking the shipped catalog. Both were wrong, and both came from guessing a
@@ -456,7 +578,7 @@ JSON shape instead of reading it: groups live at
 program-semester number. Read the schema before reporting data loss — the
 restore that was nearly performed would have replaced 572 courses with 433.
 
-### The lecturer field in the yedion sometimes holds a note, not a name
+### The lecturer field sometimes held a note, not a name — closed 2026-09-10 with the entry above
 **Where:** `data/db/sections.json` → `groups[].lecturer`, now rendered in full on
 every grid block and on the printed sheet.
 **Owner:** unassigned — a parser question, not a display one.
@@ -473,9 +595,6 @@ two lecturers with the same surname — and it removes that accidental cap for t
 group note in the lecturer field at all, rather than in a display-layer guess
 about which strings are people.
 
----
-
-## Closed
 
 ### A running server served a three-day-old template — closed 2026-09-08
 Three Phase 10 header changes were reported as visible and were not. The code

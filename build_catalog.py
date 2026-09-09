@@ -149,6 +149,10 @@ def build_records(raw_dir: Path, census: RawCensus) -> dict[str, dict]:
                     "lecturer": g.lecturer,
                     "semester": g.semester,
                     "note": g.note,
+                    # ‏הודעת המצב של הידיעון ("הקורס מלא"). בלי השורה הזאת
+                    # היא נופלת בקטלוג, ומי שרץ על הקטלוג — כלומר כל
+                    # שיבוט טרי — לא רואה אותה כלל.
+                    "status_note": g.status_note,
                     "linked_to": list(g.linked_to or []),
                     "meetings": [
                         {

@@ -313,6 +313,8 @@ def group_to_json(group: models.Group) -> dict[str, Any]:
         "kind": group.kind,
         "lecturer": group.lecturer,
         "note": group.note,
+        # ‏שדה נפרד מ-``note`` בכוונה — ראו ההערה ב-``models.Group``.
+        "status_note": group.status_note,
         "linked_to": list(group.linked_to),
         "days": sorted(group.days()),
         "total_minutes": group.total_minutes(),

@@ -132,6 +132,29 @@ try:  # pragma: no cover - נתיב הייבוא נבדק בבדיקות ייע�
 except Exception:  # noqa: BLE001
     _shipped = None  # type: ignore[assignment]
 
+#: ‏אותה הפרדה שהפרסר עושה בזמן פענוח, מוחלת גם בזמן **קריאה**. מסד שנכתב
+#: לפני 2026-09-10 נושא ערכים כמו "מר כהן אסף הקורס מלא", ופענוח מחדש אינו
+#: מנקה את כולם: קורס שאין לו מועד קבוע בסמסטר הנבחר אינו נפתח ב-``reparse``
+#: בכלל, ולכן השורה הישנה שלו נשארת. ייבוא רך מאותה סיבה כמו הקטלוג —
+#: ‏``store`` נטען גם בהקשרים שאין בהם ‏BeautifulSoup.
+try:  # pragma: no cover
+    from parser import _split_lecturer_status as _split_status  # type: ignore
+except Exception:  # noqa: BLE001
+    _split_status = None  # type: ignore[assignment]
+
+#: ‏בזמן קריאה אין ‏HTML, ולכן אין ``span`` אדום להסתמך עליו — וזו הרשימה
+#: שמחליפה אותו, **לנתונים ישנים בלבד.** הפרסר עצמו נשאר מונחה-DOM; כאן
+#: מדובר בערכים שכבר נכתבו לדיסק לפני 2026-09-10, ובראשם ‏134 שורות
+#: ב-``data/catalog.jsonl`` שנשלח עם הקוד. בלי זה, שיבוט טרי — שקורא את
+#: הקטלוג ולא מסד מקומי — היה ממשיך לראות "מר כהן אסף הקורס מלא".
+#: ההסרה היא של **סיומת מדויקת** בלבד, ורק אם נשאר שם אחריה, ולכן היא
+#: אינה יכולה לקצר שם אמיתי. שני הניסוחים האלה הם כל מה שנמצא בפועל
+#: ב-572 הדפים השמורים.
+_LEGACY_STATUS_SUFFIXES: tuple[str, ...] = (
+    "בקורס זה קיימת רשימת המתנה",
+    "הקורס מלא",
+)
+
 CATALOG_FILE = "catalog.json"
 SECTIONS_FILE = "sections.json"
 DETAILS_FILE = "details.json"
@@ -500,14 +523,23 @@ def _group_from_dict(data: Any, course_code: str) -> Group:
     if not isinstance(data, dict):
         return Group(course_code=course_code, group_id="", kind=KIND_OTHER, lecturer="", meetings=[])
     kw = {k: v for k, v in data.items() if k in _GROUP_FIELDS}
+    _lecturer = str(kw.get("lecturer", "") or "")
+    _status = str(kw.get("status_note", "") or "")
+    if _split_status is not None:
+        # ‏אותה הפרדה, עם רשימת ניסוחים במקום ה-``span``-ים — ראו
+        # ``_LEGACY_STATUS_SUFFIXES``. זה מה שמנקה גם את הקטלוג שנשלח
+        # עם הקוד, בלי לבנות אותו מחדש.
+        _lecturer, _found = _split_status(_lecturer, list(_LEGACY_STATUS_SUFFIXES))
+        _status = _status or _found
     return Group(
         course_code=str(kw.get("course_code") or course_code),
         group_id=str(kw.get("group_id", "") or ""),
         kind=str(kw.get("kind") or KIND_OTHER),
-        lecturer=str(kw.get("lecturer", "") or ""),
+        lecturer=_lecturer,
         meetings=[_meeting_from_dict(m) for m in (kw.get("meetings") or [])],
         linked_to=[str(x) for x in (kw.get("linked_to") or [])],
         note=str(kw.get("note", "") or ""),
+        status_note=_status,
         # ‏semester **חייב** לעבור. כל עוד sections.json נכתב מסונן לסמסטר
         # אחד, אפשר היה לוותר עליו בלי שאיש ירגיש; מרגע שהקטלוג נושא את
         # כל הסמסטרים, קבוצה בלי תג סמסטר אינה ניתנת לסינון בזמן קריאה —

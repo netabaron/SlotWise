@@ -2188,6 +2188,9 @@
       kind: txt(rec.kind),
       lecturer: txt(rec.lecturer),
       note: txt(rec.note),
+      // ‏הודעת המצב של הידיעון על הקבוצה. שדה נפרד מ-``note``, שנושא
+      // הערות שיוך וחובת נוכחות — ראו ``models.Group``.
+      status_note: txt(rec.status_note),
       linked_to: Array.isArray(rec.linked_to) ? rec.linked_to.map(txt) : [],
       // ברירת המחדל של חובת הנוכחות אינה נקבעת כאן — היא תמיד "חובה".
       // השדות האלה משמשים רק כדי לומר *מאיפה* הגיעה ברירת המחדל.
@@ -5418,6 +5421,14 @@
     ]);
     if (group.note) {
       idCell.appendChild(el("div", { class: "course-meta", text: group.note }));
+    }
+    // ‏הודעת המצב של הידיעון — "הקורס מלא", "מיועד לחוזרים". עד 2026-09-10
+    // הטקסט הזה היה מודבק לתוך שם המרצה ונקרא כחלק ממנו; כאן הוא תג נפרד
+    // בתא הקבוצה, כי הוא אומר משהו על **הקבוצה** ולא על מי שמלמד אותה.
+    if (group.status_note) {
+      idCell.appendChild(
+        el("span", { class: "tag tag--warn group-status", text: group.status_note })
+      );
     }
     if (group.linked_to && group.linked_to.length) {
       // ‏"משויכת ל-271030210/1 ועוד 2" חזר בכל שורה כמעט ותפס עמודה שלמה.

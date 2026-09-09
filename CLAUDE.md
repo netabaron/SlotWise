@@ -100,6 +100,19 @@ precedent for changing scoring on your own initiative.
   `:root[data-theme="dark"]` (0,2,0) beat the print block's `:root` (0,1,0)
   and dark mode printed near-white ink on white paper.
   `tests/test_theme_tokens.py` enforces all of this.
+* **The yedion marks things up; `_visible_text()` flattens them.** Status text
+  like `הקורס מלא` lives in its own `<span class="text color-red">` between the
+  lecturer's name and `שפת הוראה של הקורס`, exactly as the group id lives in a
+  blue span. `_visible_text()` joins every text node into one string, so a
+  regex that stops at a *later* anchor swallows whatever the yedion put in
+  between — that is how 119 group rows came to store
+  `"מר כהן אסף הקורס מלא"` as a lecturer's name. When you pull a field out of a
+  block, check what the markup separates before trusting the flattened text,
+  and prefer the span to a list of phrases. Fixed 2026-09-10; see
+  `_split_lecturer_status()` and `tests/test_lecturer_status_note.py`.
+  **`Group.note` is not the place for it** — `api.attendance_info()` scans that
+  field with a regex, so anything added there changes what the interface says
+  about attendance. `Group.status_note` exists for this.
 * **`KIND_ORDER` and the term codes `"א"/"ב"/"קיץ"` stay in `app.js`**,
   not in `strings.json`. They arrive from the server and are used as
   comparison, sort and map keys; moving them into copy breaks sorting and
