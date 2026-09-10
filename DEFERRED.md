@@ -470,6 +470,47 @@ digit run); `נעיצה` computing `center`. `.gid` still `ltr`, the notes now `
 
 ---
 
+### `feasible_count` counts intentional overlaps too — the last display of it is gone, 2026-09-10
+**Where:** `_count_and_min_days` in `src/web/api.py`, over
+`scheduler.enumerate_selections`. Was displayed by `ui.fields.factFeasible`
+(the אריח) and `app.tech.found` (פרטים טכניים); both removed.
+**What it actually counts:** every complete selection the enumerator yields — one
+group per (course, component kind), pruned on *hard* conflicts and `linked_to`.
+With attendance required everywhere that is the count of conflict-free schedules.
+**But `allow_soft_conflicts` defaults to `True`**, so the moment a student waives
+attendance on one component, selections carrying a deliberate overlap are legal to
+the enumerator and are counted. They are explicitly **not** `Selection.is_feasible()`
+— `enumerate_selections`'s own docstring says so — and a student would not call them
+options.
+**Measured on the default six, semester א, target 4:**
+
+| attendance | `feasible_count` |
+|---|---|
+| required everywhere (default) | **152** |
+| one lecture waived | 960 |
+| two lectures waived | 1368 |
+| every lecture waived | 1368 |
+| every lecture *and* tutorial waived | 3600 |
+
+So the same six courses report anywhere from 152 to 3600 depending on a checkbox
+that has nothing to do with how many timetables exist. A bare number under the label
+`מערכות אפשריות` reads as "I have N options", and past 152 that is false.
+**Correction to what this file used to imply:** an earlier session reported the
+number as "the legal count, 152, not the search space" and kept the tile on that
+basis. That was measured only in the default all-attendance-required case and was
+wrong as a general statement. The reporter was right.
+**Also removed with it:** `app.schedule.noteFound`, `noteTruncated` and `noteElapsed`
+— three strings Phase 1 stopped rendering but left in `strings.json`, including
+`(חישוב: {ms} מ״ש)`, the millisecond timing the brief names by hand.
+**Left alone deliberately:** `app.relax.applied` (`{what} בוטל. {n} מערכות נמצאו.`)
+reports the relaxation engine's own per-suggestion measured count, not
+`feasible_count`. It is the one number in the app that means exactly what it says.
+**If a count is ever wanted again:** it has to be the count of selections where
+`is_feasible()` holds, computed separately, and labelled so the attendance waiver is
+visible in the wording. Do not re-point a tile at `feasible_count`.
+
+---
+
 ## Closed
 
 ### The shipped catalog was a build behind — closed 2026-09-10

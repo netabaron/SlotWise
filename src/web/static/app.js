@@ -2807,7 +2807,6 @@
       : [];
     ui.daysTarget = byId("days-target-label");
     ui.minDays = byId("min-days-label");
-    ui.feasibleCount = byId("feasible-count-label");
     ui.daysWarning = byId("days-warning");
     ui.daysRelax = byId("days-relax");
     ui.daysRelaxTitle = byId("days-relax-title");
@@ -3268,8 +3267,8 @@
   }
 
   /**
-   * מה שנועד למפתח/ת ולא לסטודנט/ית: כמה מערכות נמצאו, כמה זמן לקח החישוב,
-   * גודל הקטלוג, שנת הלימודים ויומן המשיכה.
+   * מה שנועד למפתח/ת ולא לסטודנט/ית: זמן החישוב, גודל הקטלוג, מספר
+   * הקבוצות, שנת הלימודים ויומן המשיכה.
    *
    * ‏**בלי ?debug=1 הבלוק אינו מוצג כלל.** קודם הוא היה מקופל בתחתית
    * העמוד וכל אחד יכול היה לפתוח אותו; אין בו שורה אחת שנועדה
@@ -3284,10 +3283,9 @@
     var boot = runtime.bootstrap;
     var cat = (boot && boot.catalog) || {};
     var bits = [];
-    if (s && num(s.feasible_count, null) !== null) {
-      bits.push(Tf("app.tech.found", { found: num(s.feasible_count, 0) }));
-      if (s.counts_truncated === true) bits.push(T("app.tech.truncated"));
-    }
+    // ‏"נמצאו N מערכות אפשריות" נמחק יחד עם האריח שהציג את אותו מספר.
+    // האזהרה שהספירה נקטעה נשארת: היא אומרת משהו על החיפוש עצמו.
+    if (s && s.counts_truncated === true) bits.push(T("app.tech.truncated"));
     if (s && num(s.elapsed_ms, null) !== null) {
       bits.push(Tf("app.tech.elapsed", { ms: num(s.elapsed_ms, 0) }));
     }
@@ -5018,10 +5016,11 @@
       ui.minDays,
       minDays === null ? "—" : Tf("app.days.daysCount", { days: minDays })
     );
-    setText(
-      ui.feasibleCount,
-      runtime.solve ? String(num(s.feasible_count, 0)) : "—"
-    );
+    // ‏אריח "מערכות אפשריות" הוסר 2026-09-10. ‏feasible_count סופר כל
+    // בחירה חוקית שהמונה מייצר, וכשחובת נוכחות מבוטלת ולו על רכיב אחד
+    // הוא סופר גם צירופים שיש בהם חפיפה מכוונת — 152 בלי ויתור, ‏1368
+    // עם שני ויתורים, ‏3600 כשמוותרים על הכול. מספר עירום בתווית
+    // "מערכות אפשריות" נקרא כ"יש לי N אפשרויות", וזה לא מה שהוא סופר.
     setClass(
       ui.minDays && ui.minDays.parentNode,
       "fact--warn",
