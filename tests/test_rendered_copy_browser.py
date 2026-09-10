@@ -443,25 +443,35 @@ def test_detail_panel_opens_by_keyboard_and_announces(fresh):
     ), "הפוקוס לא חזר לבלוק שממנו נפתח"
 
 
-def test_grid_crops_and_toggle_only_ever_grows(fresh):
-    """הקיצוץ לעולם אינו גדול מהטווח המלא.
+def test_the_grid_never_draws_past_the_day_window(fresh):
+    """הקיצוץ אינו חורג מ-08:00–20:00.
 
-    זו הייתה תקלה אמיתית: הריפוד של חצי שעה חרג מסוף היום, ולכן הרשת
-    ה"מקוצצת" יצאה גבוהה מזו של "הצג את כל השעות" — מתג שעושה את ההפך
-    ממה שכתוב עליו.
+    עד 2026-09-10 המתג "הצג את כל השעות" נתן להשוות: הריפוד של חצי שעה
+    חרג מסוף היום, והרשת ה"מקוצצת" יצאה גבוהה מזו של המתג. המתג הוסר,
+    ולכן אין מול מה להשוות — אבל החסימה שמנעה את החריגה נשארה, וזה מה
+    שנבדק כאן ישירות: שורת שעה אחרונה שאינה אחרי 20:00.
     """
     _with_schedule(fresh)
-    height = lambda: fresh.evaluate(
-        "Math.round(document.getElementById('schedule-grid').getBoundingClientRect().height)"
+    labels = fresh.evaluate(
+        "[...document.querySelectorAll('#schedule-grid .hour')]"
+        ".map(n => (n.textContent || '').trim()).filter(Boolean)"
     )
-    cropped = height()
-    fresh.check("#chk-all-hours")
-    fresh.wait_for_timeout(1500)
-    full = height()
-    assert full >= cropped, f"'כל השעות' ({full}) קטן מהמקוצץ ({cropped})"
-    fresh.uncheck("#chk-all-hours")
-    fresh.wait_for_timeout(1200)
-    assert height() == cropped
+    assert labels, "לא נמצאו תוויות שעה ברשת"
+
+    def minutes(text):
+        hh, mm = text.split(":")
+        return int(hh) * 60 + int(mm)
+
+    assert minutes(labels[0]) >= 8 * 60, f"הרשת מתחילה לפני 08:00: {labels[0]}"
+    assert minutes(labels[-1]) <= 20 * 60, f"הרשת נמשכת אחרי 20:00: {labels[-1]}"
+
+
+def test_the_all_hours_toggle_is_gone(fresh):
+    """‏"הצג את כל השעות" הוסר — לא הוסתר. ראו DEFERRED.md."""
+    _with_schedule(fresh)
+    assert fresh.evaluate("!document.getElementById('chk-all-hours')"), (
+        "תיבת 'הצג את כל השעות' עדיין בעמוד"
+    )
 
 
 def test_empty_days_collapse_but_stay_labelled(fresh):

@@ -343,8 +343,6 @@
       "kindGroup": "{kind} · קבוצה {group}",
       "clashSummary": "חפיפה מכוונת עם {list}",
       "clashBadge": "חפיפה",
-      "showAllHours": "הצג את כל השעות",
-      "showAllHoursTitle": "הרשת מוצגת לפי טווח השיעורים בפועל. סימון יחזיר את כל היום.",
       "emptyDay": "אין שיעורים",
       "openDetail": "פרטי השיעור: {name}, {day}׳ {from}–{to}, חדר {room}",
       "legendOverlap": "מסגרת מקווקוות — חפיפה מכוונת",

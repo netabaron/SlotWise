@@ -511,6 +511,54 @@ visible in the wording. Do not re-point a tile at `feasible_count`.
 
 ---
 
+### The full-day grid view is gone — `הצג את כל השעות` removed 2026-09-10
+**Where:** was `#chk-all-hours` in `index.html`, `state.allHours`, its listener, and
+the `if (state.allHours) return { start: fullStart, end: fullEnd };` branch in
+`gridBounds()` (`src/web/static/app.js`). Strings `app.grid.showAllHours` and
+`showAllHoursTitle` deleted with it.
+**Why it went:** the control did nothing on the reporter's schedules, and a control
+that does nothing is worse than no control.
+**It was not broken — this was checked before deleting, and the distinction matters.**
+The crop works. Measured through `/api/solve` on real data, cropped vs full range:
+
+| selection | classes run | cropped to | effect |
+|---|---|---|---|
+| 11069 alone | 10:30–12:20 | 10:00–13:00 | crops 9h00 |
+| 61753 alone | 08:30–12:20 | 08:00–13:00 | crops 7h00 |
+| 61832 alone | 09:30–15:50 | 09:00–16:30 | crops 4h30 |
+| 61753 + 61832 | 08:30–15:50 | 08:00–16:30 | crops 3h30 |
+| **the default six** | **08:30–19:50** | **08:00–20:00** | **nothing to crop** |
+
+End to end in a browser, grid height with the toggle off vs on: **514px vs 1130px**
+on a narrow schedule, **1130px vs 1130px** on the default six. So the wiring was
+intact all the way from the checkbox to the render; the six simply fill the
+08:00–20:00 window, and cropping a full window is a no-op. The reporter saw a dead
+control because their timetable spans the day, not because the feature was dead.
+**What this costs:** there is no longer any way to see the empty hours around a
+short day. That was the toggle's whole purpose, and for a student whose classes run
+10:30–12:20 the grid is now four hours tall with no way to widen it. Nobody asked
+for that view, but nobody had a short day either — the default six were the only
+data it was ever judged on.
+**If it comes back:** the branch was one line, and `gridBounds()` still computes
+`fullStart`/`fullEnd` for the clamp, so restoring it is re-adding the checkbox, the
+state field, and `if (state.allHours) return { start: fullStart, end: fullEnd };`.
+Do not restore it as a checkbox that looks inert on a full timetable — either label
+it with what it would do (`הצג 08:00–20:00`), or hide it when the crop would change
+nothing, which is the honest version of the same control.
+**The clamp stays either way.** `Math.max(fullStart, …)` / `Math.min(fullEnd, …)` in
+`gridBounds()` stopped a day ending 19:50 from padding out to 20:30. With the toggle
+present that produced a cropped grid *taller* than the full one; without it the
+clamp merely keeps the grid inside the day window, and
+`test_the_grid_never_draws_past_the_day_window` now pins that directly instead of by
+comparing the two modes.
+**Test churn:** `test_grid_crops_and_toggle_only_ever_grows` drove the checkbox and
+could not survive. Replaced in `tests/test_rendered_copy_browser.py` (a file this
+repo allows editing) by the test above plus
+`test_the_all_hours_toggle_is_gone`, which pins the removal so it is not
+reintroduced by accident.
+
+---
+
 ## Closed
 
 ### The shipped catalog was a build behind — closed 2026-09-10

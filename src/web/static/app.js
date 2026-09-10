@@ -635,8 +635,6 @@
       // ולכן מפתח חסר פירושו "לא הוכרע" — וזה מה שמתיר לקיפול האוטומטי
       // לפעול פעם אחת בלי לדרוס העדפה שנקבעה ביד.
       collapsed: {},
-      // ‏"הצג את כל השעות" — העדפת תצוגה, נשמרת כמו הקיפול.
-      allHours: false,
     };
   }
 
@@ -798,7 +796,6 @@
     if (!base.ranked || typeof base.ranked !== "object") base.ranked = {};
     if (!base.attendance || typeof base.attendance !== "object") base.attendance = {};
     if (!base.collapsed || typeof base.collapsed !== "object") base.collapsed = {};
-    base.allHours = base.allHours === true;
     base.allowSoftConflicts = true;  // גם מצב ישן שנשמר ב-localStorage מיושר
     if (!Array.isArray(base.blocked)) base.blocked = [];
     base.targetDays =
@@ -2860,7 +2857,6 @@
     ui.detail = byId("meeting-detail");
     ui.detailBody = byId("meeting-detail-body");
     ui.btnDetailClose = byId("btn-detail-close");
-    ui.chkAllHours = byId("chk-all-hours");
     ui.compare = byId("compare");
     ui.compareBody = byId("compare-body");
     ui.techDetails = byId("tech-details");
@@ -3072,11 +3068,6 @@
           ev.preventDefault();
           closeMeetingDetail();
         }
-      });
-    }
-    if (ui.chkAllHours) {
-      ui.chkAllHours.addEventListener("change", function (ev) {
-        setState({ allHours: ev.target.checked === true }, { solve: false });
       });
     }
     if (ui.btnBuild) {
@@ -6250,7 +6241,6 @@
       fitBlocks(ui.grid);
     }
     setHidden(ui.gridScroll, !sch);
-    if (ui.chkAllHours) ui.chkAllHours.checked = state.allHours === true;
 
     // שורת הכותרת של הדף המודפס. מוסתרת על המסך, ולכן היא נבנית תמיד
     // ואינה תלויה במצב כלשהו — הדפסה יכולה להתחיל בכל רגע.
@@ -6729,9 +6719,9 @@
   /**
    * טווח השעות של הרשת.
    *
-   * ברירת המחדל היא מה שמשובץ בפועל, בתוספת חצי שעה מכל צד — יום שנגמר
-   * ב-15:50 לא צריך לצייר עד 20:00. המתג "הצג את כל השעות" מחזיר את היום
-   * המלא, כי יש מי שרוצה לראות גם את מה שפנוי.
+   * הרשת מציגה את מה שמשובץ בפועל, בתוספת חצי שעה מכל צד — יום שנגמר
+   * ב-15:50 לא צריך לצייר עד 20:00. המתג "הצג את כל השעות" שהחזיר את
+   * היום המלא הוסר 2026-09-10; ראו DEFERRED.md.
    *
    * גם כשחוצים, הטווח נגזר מהמפגשים: מערכת שבאמת נמשכת 08:00–20:00 תצויר
    * במלואה, כולל החור הגדול באמצע. החור הזה **אמיתי**, והסתרתו הייתה
@@ -6750,12 +6740,11 @@
     // הטווח המלא: חלון היום, מורחב אם השיעורים חורגים ממנו.
     var fullStart = Math.min(GRID_DEFAULT_START, Math.floor(first / 60) * 60);
     var fullEnd = Math.max(GRID_DEFAULT_END, Math.ceil(last / 60) * 60);
-    if (state.allHours) return { start: fullStart, end: fullEnd };
-
     // חצי שעה מכל צד, מיושר לחצאי שעה כדי שתוויות השעה יישארו במקומן —
     // ו**לעולם לא מעבר לטווח המלא**. בלי החסימה הזאת יום שנגמר ב-19:50
-    // היה מקבל ריפוד עד 20:30, כלומר הרשת המקוצצת יוצאת גבוהה מזו של
-    // "הצג את כל השעות", והמתג נראה כאילו הוא עושה את ההפך מהכתוב עליו.
+    // היה מקבל ריפוד עד 20:30, כלומר רשת גבוהה מחלון היום עצמו. כשהיה
+    // כאן מתג "הצג את כל השעות" זו הייתה תקלה חמורה יותר — המקוצצת יצאה
+    // גבוהה מהמלאה — והחסימה נשארת גם בלעדיו.
     return {
       start: Math.max(fullStart, Math.floor((first - 30) / 30) * 30),
       end: Math.min(fullEnd, Math.ceil((last + 30) / 30) * 30),
