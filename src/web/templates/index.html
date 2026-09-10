@@ -36,7 +36,7 @@
                          אין בהם טקסט נראה, והשם הנגיש הוא aria-label.
     #btn-log-toggle      מציג/מסתיר את #scrape-log (יש לעדכן aria-expanded)
 
-  פרטים טכניים / #tech-details  — ‏?debug=1 פותח אותו מראש
+  פרטים טכניים / #tech-details  — ‏?debug=1 בלבד; אחרת מוסתר לגמרי
     #btn-refresh         "עדכן נתונים מהידיעון"  ->  POST /api/scrape/start
                          ‏עבר לכאן מהכותרת ב-2026-09-08: פעולת תחזוקה, לא
                          פעולה של סטודנט/ית.
@@ -529,8 +529,8 @@
 </main>
 
 <!-- ‏כל מה שהוא פירוט למפתח/ת ולא החלטה של הסטודנט/ית: ספירות, זמני
-     חישוב, ויומן המשיכה. מקופל, ובתחתית. ‏?debug=1 פותח אותו מראש. -->
-<details class="tech-details" id="tech-details">
+     חישוב, ויומן המשיכה. ‏hidden כברירת מחדל — ‏?debug=1 חושף ופותח. -->
+<details class="tech-details" id="tech-details" hidden>
   <summary class="tech-summary">{{ S.app.tech.title }}</summary>
   <div class="tech-body">
     <!-- ‏המשיכה מהידיעון נשארת — היא הדרך היחידה לבדוק אם קורס מסוים
