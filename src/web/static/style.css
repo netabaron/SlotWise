@@ -362,7 +362,6 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 
 .brand-title { font-size: 20px; letter-spacing: -.01em; }
-.brand-sub { color: var(--muted); font-size: 13px; margin-block-start: 2px; }
 
 .header-side {
   display: flex;

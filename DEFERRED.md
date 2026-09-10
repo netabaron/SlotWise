@@ -373,6 +373,63 @@ Option 1 is cleaner but pays a test-file edit for an endpoint nobody calls.
 
 ---
 
+### A thin local course entry masks a fuller shipped one — the merge is per course, not per group
+**Where:** `Store._load_sections_db` in `src/store.py:1080`, the `merged.update(courses)`
+line that is the whole merge.
+**Owner:** unassigned. Papered over in the data 2026-09-10; the mechanism is untouched.
+**What:** the shipped catalog is the base layer and `data/db/sections.json` overrides it
+**a whole course at a time**. So a local entry that carries *fewer* groups than the
+shipped record does not merge with it — it replaces it, and the groups only the catalog
+has disappear. Nothing warns, because the course still resolves and still has groups.
+**How it surfaced:** `61776` (פיתוח יישומי אינטרנט) and `62028` (נושאים מתקדמים ב-AI)
+came back `kind: "semester_mismatch"` — not offered — for a student on semester א.
+The shipped catalog had 3 semester-א groups with meetings for each; the local entry
+held only the semester-ב groups, which have no meetings. The local entry won, so at
+semester א both courses had nothing left to schedule.
+**Scope, measured rather than guessed:** swept all 572 courses through the read path at
+semester א, ב and unfiltered. Exactly **2 of 572** were affected, and both are outside
+the default six. No course anywhere returns zero groups. Local was never *ahead* of
+shipped on any course — 570 identical, 2 behind, 0 better.
+**What was done instead:** the two stale entries were deleted from `data/db/sections.json`
+(572 → 570 stored; still 572 visible, the catalog supplies the rest). Both now return
+3 groups / 3 meetings from `source: "shipped"`. Verified against the running server on
+port 5000, not a throwaway one.
+**Why the mechanism was not fixed:** making the merge group-aware changes read semantics
+for all 572 courses, and this was found the night before the presentation. The data fix
+is exact and reversible; the code fix is the right one and should be done when this area
+is next opened. Note the merge is also why `_store_for(semester)` is currently close to a
+no-op — a local entry that covers every code is never semester-filtered on read, only the
+shipped layer is.
+**Not to be confused with** "sections.json was emptied by a running server". It was not:
+the file was 1.5 MB with 572 courses and 1,445 groups throughout. The
+`Schedule_Builder_backup_20260906` copy is **smaller** — 433 courses, 1,169 groups, and
+one `הקורס מלא` lecturer value that `ba8a34e` had just fixed — so restoring it would have
+deleted 139 courses and reintroduced the pollution.
+
+---
+
+### The progress chips cannot tell "required and missing" from "left alone on purpose"
+**Where:** `sectionState()` / `renderProgress()` in `src/web/static/app.js`, and
+`app.progress.untouched` / `app.steps.stateDefault` in `src/strings.json`.
+**Owner:** Phase 5 item 1, which already asks for a stateful mark.
+**What:** the chips carry three states — untouched / chosen / conflict. Since the
+recommendation stopped arriving pre-ticked, "untouched" covers two opposite things:
+**מסלול** and **קורסים** are required and block a build, while **ימים** and
+**מרצים** are genuinely fine left alone. One label serves both.
+**What was done now:** the label said `— בברירת מחדל`, which claimed a default was
+in force. For identity and courses there is no default any more, so it was a false
+statement; it now reads `— לא נבחר`, which is true of all four but says nothing
+about which ones matter. The requirement moved into the hint line beneath the chips
+(`app.progress.hintDefault`), where it can be stated once instead of four times.
+**Why not fixed properly:** a fourth state is a design decision with a colour and a
+non-colour marker attached (Phase 7 rule 5), found the night before the
+presentation. The hint line carries the information correctly in the meantime.
+**Also noticed:** `app.header.refresh` is referenced by `T()` in `app.js` but does
+not exist in `strings.json` — pre-existing, and it survives only because `T()` falls
+back. Not touched here.
+
+---
+
 ## Closed
 
 ### The shipped catalog was a build behind — closed 2026-09-10
