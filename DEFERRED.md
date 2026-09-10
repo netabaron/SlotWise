@@ -419,8 +419,17 @@ recommendation stopped arriving pre-ticked, "untouched" covers two opposite thin
 **What was done now:** the label said `— בברירת מחדל`, which claimed a default was
 in force. For identity and courses there is no default any more, so it was a false
 statement; it now reads `— לא נבחר`, which is true of all four but says nothing
-about which ones matter. The requirement moved into the hint line beneath the chips
-(`app.progress.hintDefault`), where it can be stated once instead of four times.
+about which ones matter. The hint line beneath the chips carries that instead, and
+it **names the two**: `כדי לבנות מערכת: מסלול, שנה וסמסטר · קורסים`. The two names
+are quoted from `ui.steps.yearTitle` and `ui.steps.coursesTitle` character for
+character, which is what lets a student match the line to a chip — change either
+title and this line has to change with it.
+**Known limit of that line:** `hintDefault` renders whenever there is no conflict,
+so it stays on screen after a schedule has been built, where it reads as a legend
+rather than an instruction. The version that names only what is still missing, and
+goes quiet once both are satisfied, was written up and deliberately not built the
+night before the presentation — `sectionState()` already computes everything it
+would need.
 **Why not fixed properly:** a fourth state is a design decision with a colour and a
 non-colour marker attached (Phase 7 rule 5), found the night before the
 presentation. The hint line carries the information correctly in the meantime.
