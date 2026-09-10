@@ -290,12 +290,18 @@ ul { margin: 0; padding: 0; list-style: none; }
 
 [hidden] { display: none !important; }
 
-/* מספרים, שעות וקודי קורס — תמיד משמאל לימין, מבודדים מהטקסט העברי */
+/* מספרים, שעות וקודי קורס — תמיד משמאל לימין, מבודדים מהטקסט העברי.
+   ‏**רק על האסימון עצמו, לא על התא שמכיל אותו.** ‏.cell-group ישב כאן
+   ‏עד 2026-09-10 והוא ``<td>``: ‏direction: ltr עליו הפך את
+   ‏text-align: start של הטבלה משמאל לימין, ולכן עמודת "קבוצה" יושרה
+   ‏שמאלה בזמן שכל השאר — והכותרת שלה עצמה — יושרו ימינה. הוא גם הפך
+   ‏לטיני את הערת הקבוצה ואת תג "הקורס מלא", שהם עברית. קוד הקבוצה
+   ‏מבודד ב-.gid שבתוך התא, בדיוק כפי שטווח השעות מבודד ב-.cell-time
+   ‏בתוך תא היום — אותה תבנית, ועכשיו בשני המקומות. */
 .ltr,
 .fresh-meta,
 .course-code,
 .cell-time,
-.cell-group,
 .log-lines {
   direction: ltr;
   unicode-bidi: isolate;
@@ -1497,8 +1503,12 @@ html.is-modal-open body { overflow: hidden; }
 .when-day { font-weight: 600; }
 
 /* ---- נעיצה: סמל, לא תווית ---- */
-.th-pin,
-.cell-pin { text-align: center; inline-size: 1px; white-space: nowrap; }
+/* ‏.lect-table td הוא (0,1,1) ו-.cell-pin לבדו (0,1,0), ולכן ה-center
+   ‏כאן הפסיד ל-text-align: start של הטבלה ומעולם לא נכנס לתוקף. העמודה
+   ‏רחבה כמו התוכן שלה, ולכן איש לא ראה זאת — עד שיוחלף האמוג'י בכפתור
+   ‏SVG רחב יותר בשלב 7, ואז ההצהרה הייתה מתבררת כשקרית. */
+.lect-table .th-pin,
+.lect-table .cell-pin { text-align: center; inline-size: 1px; white-space: nowrap; }
 
 .pin-btn {
   font: inherit;
@@ -2288,7 +2298,6 @@ html.is-modal-open body { overflow: hidden; }
 @media print {
   .code,
   .cell-time,
-  .cell-group,
   .gid { direction: ltr; unicode-bidi: isolate; }
 }
 

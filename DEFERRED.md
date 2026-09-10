@@ -439,6 +439,37 @@ back. Not touched here.
 
 ---
 
+### Two alignment faults in the step-4 group tables — closed 2026-09-10
+**Where:** `src/web/static/style.css` — the `direction: ltr` group at the top, and
+`.th-pin, .cell-pin`.
+**What was reported:** the `קבוצה` column was left-aligned while every other column,
+including its own `<th>`, was right-aligned.
+**Cause:** `.cell-group` is a `<td>`, and it sat in the list of tokens forced to
+`direction: ltr`. The table aligns with the logical `text-align: start`, so an LTR
+cell resolved `start` to **left** while the RTL cells around it resolved it to
+**right**. The header was unaffected because it has no such class — which is why the
+column and its own title disagreed.
+**The rule it broke:** the isolation belongs on the **token**, never on the cell.
+`.cell-time` already does it correctly — the day cell stays RTL and only the time
+span is isolated, with a comment saying so — and `.gid` inside `.cell-group` already
+carried its own `direction: ltr; unicode-bidi: isolate`. The cell-level rule was
+redundant for the group id and wrong for everything else in the cell.
+**Second effect, not in the report:** the same rule made `group.note` and the
+`status_note` tag (`הקורס מלא`) render LTR. Both are Hebrew. Fixed by the same
+deletion.
+**Found while checking the rest of the table:** `.th-pin, .cell-pin` declares
+`text-align: center`, but `.lect-table td` is `(0,1,1)` against its `(0,1,0)`, so the
+centring never applied and the pin column was `start` like the others. Invisible
+today because the column is content-width around one emoji; it would have surfaced
+as soon as Phase 7 replaces that emoji with a wider SVG button. Fixed by scoping the
+selector to `.lect-table`.
+**Verified** by measuring, in a real browser with step 4 expanded, the distance from
+each cell's right content edge to its text: 0px for `סוג`, `מרצה`, `יום ושעה`, `חדר`;
+1.5px for `קבוצה`, matching its own header exactly (the side-bearing of the isolated
+digit run); `נעיצה` computing `center`. `.gid` still `ltr`, the notes now `rtl`.
+
+---
+
 ## Closed
 
 ### The shipped catalog was a build behind — closed 2026-09-10
