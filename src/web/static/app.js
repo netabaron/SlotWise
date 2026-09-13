@@ -3869,6 +3869,68 @@
 
   /* --- כותרת: טריות, כפתורים, יומן ---------------------------------- */
 
+  /**
+   * טריות לפי מה שנבחר, ולא לפי כל המסד.
+   *
+   * ‏**באג של אוכלוסייה, לא של חישוב.** ‏``Store.freshness`` מדווח את
+   * החותמת ה**ישנה ביותר** — כיוון בטוח, כי הוא נוטה להחמיר — אבל חישב
+   * אותה על כל 572 הרשומות. התוצאה: הכותרת אמרה "הנתונים עודכנו לפני
+   * 11 ימים" בזמן שששת הקורסים שנבחרו נשלפו באותו בוקר. הרשומה הישנה
+   * ביותר במסד אינה תשובה לשאלה "כמה עדכני מה שאני רואה".
+   *
+   * הצבירה נשארת "הישן ביותר" ורק האוכלוסייה משתנה, ולכן הנטייה
+   * להחמיר נשמרת: קורס נבחר אחד שלא רוענן מושך את כל השורה אחורה. זה
+   * הכיוון הבטוח — מי שרואה "לפני 11 ימים" בטעות מרענן לחינם, ומי
+   * שרואה "היום" בטעות בוטח בנתונים ישנים.
+   *
+   * Returns:
+   *   ``{kind, age, built, stale}``. ‏``kind``: ‏``"none"`` (לא נבחר
+   *   דבר), ‏``"fetched"`` (כל הנבחרים נשלפו כאן), ‏``"catalog"`` (כולם
+   *   מהקטלוג), ‏``"mixed"``, ‏``"unknown"`` (לקורס נבחר אין חותמת
+   *   שימושית). בכל מה שאינו ``"fetched"``/``"mixed"`` לא נטענת שום
+   *   טענה על שליפה — רק תאריך הבנייה, שהוא היחיד שידוע.
+   */
+  function selectedFreshness(db) {
+    var perCourse = (db && db.courses) || {};
+    var codes = state.codes || [];
+    var stamps = [];
+    var fromCatalog = 0;
+    var noStamp = 0;
+    var stale = false;
+
+    codes.forEach(function (code) {
+      var m = perCourse[txt(code)];
+      // קוד שאין עליו מטא, או שמעולם לא נשלף בהצלחה, אינו "טרי" ואינו
+      // "ישן" — הוא לא ידוע, וזה מספיק כדי לא לטעון עליו כלום.
+      if (!m || m.known === false || !txt(m.fetched_at)) {
+        noStamp += 1;
+        stale = true;
+        return;
+      }
+      if (m.stale === true) stale = true;
+      if (txt(m.origin) === "shipped") {
+        fromCatalog += 1;
+        return;
+      }
+      stamps.push(txt(m.fetched_at));
+    });
+
+    var kind;
+    if (!codes.length) kind = "none";
+    else if (noStamp) kind = "unknown";
+    else if (stamps.length && fromCatalog) kind = "mixed";
+    else if (stamps.length) kind = "fetched";
+    else kind = "catalog";
+
+    return {
+      kind: kind,
+      // ‏ISO-8601 ב-UTC ממוין לקסיקוגרפית = כרונולוגית, כמו ב-store.py.
+      age: stamps.length ? agoHebrew(stamps.slice().sort()[0]) : "",
+      built: agoHebrew(txt(db && db.catalog_built_at)),
+      stale: stale
+    };
+  }
+
   function renderHeader() {
     setHidden(ui.busy, !anyBusy());
 
@@ -3876,53 +3938,57 @@
     var db = (boot && boot.db) || {};
     var cat = (boot && boot.catalog) || {};
 
+    var selFresh = selectedFreshness(db);
+
+    // הנקודה נשאלת על אותה אוכלוסייה כמו השורה שלידה. קודם היא קראה את
+    // ‏db.any_stale על כל המסד — ‏566 מתוך 572 מיושנים — ולכן הייתה
+    // כתומה תמיד, גם ליד טקסט שאומר שהנתונים נשלפו לפני חצי שעה.
     var dotState = "unknown";
     if (boot) {
       if (!num(db.count, 0)) dotState = "empty";
-      else if (db.any_stale === true) dotState = "stale";
+      else if (selFresh.kind === "none") dotState = "unknown";
+      else if (selFresh.stale) dotState = "stale";
       else dotState = "fresh";
     }
     if (ui.freshDot) ui.freshDot.setAttribute("data-state", dotState);
 
-    var ageText =
-      txt(db.age_text) || agoHebrew(db.newest || db.updated_at || db.fetched_at);
+    var builtLine = selFresh.built
+      ? Tf("app.header.builtAt", { age: selFresh.built })
+      : txt(db.text);
     if (runtime.bootstrapError) {
       setText(ui.freshText, T("app.header.offline"));
     } else if (!boot) {
       setText(ui.freshText, T("app.header.loading"));
     } else if (!num(db.count, 0)) {
       setText(ui.freshText, T("app.header.empty"));
-    } else if (txt(db.origin) === "shipped") {
-      // כל הנתונים הגיעו עם התוכנה. מה שידוע הוא **מתי הקטלוג נבנה**,
-      // ולא "מתי הנתונים עודכנו" — האפליקציה אינה בודקת את הידיעון
-      // ואינה יכולה לדעת אם משהו השתנה שם מאז.
-      var builtAge = agoHebrew(txt(db.catalog_built_at)) || ageText;
-      setText(
-        ui.freshText,
-        builtAge ? Tf("app.header.builtAt", { age: builtAge }) : txt(db.text)
-      );
-      if (ui.freshText) {
-        ui.freshText.setAttribute("title", T("app.header.builtAtTitle"));
-      }
-    } else if (txt(db.origin) === "mixed" && txt(db.catalog_built_at)) {
-      // חלק מהנתונים נשלפו כאן וחלק הגיעו עם התוכנה. "הנתונים עודכנו"
+    } else if (selFresh.kind === "fetched" && selFresh.age) {
+      // כל הקורסים שנבחרו נשלפו על המכשיר הזה, ולכן יש תאריך שליפה
+      // אמיתי לכולם — וזו התשובה לשאלה "כמה עדכני מה שאני רואה".
+      setText(ui.freshText, Tf("app.header.fetched", { age: selFresh.age }));
+      if (ui.freshText) ui.freshText.removeAttribute("title");
+    } else if (selFresh.kind === "mixed" && selFresh.age && selFresh.built) {
+      // חלק מהנבחרים נשלפו כאן וחלק הגיעו עם התוכנה. "הנתונים עודכנו"
       // לבדו הוא טענה שגויה על החצי שנשלח, ולכן שני התאריכים נאמרים.
+      // מאז שהחישוב מוגבל לנבחרים זה קורה רק כשקורס נבחר הוא באמת
+      // מהקטלוג — ולא, כמו קודם, בכל טעינה.
       setText(
         ui.freshText,
         Tf("app.header.builtAtMixed", {
-          age: ageText,
-          built: agoHebrew(txt(db.catalog_built_at)),
+          age: selFresh.age,
+          built: selFresh.built,
         })
       );
       if (ui.freshText) {
         ui.freshText.setAttribute("title", T("app.header.builtAtTitle"));
       }
     } else {
-      setText(
-        ui.freshText,
-        ageText ? Tf("app.header.fetched", { age: ageText }) : txt(db.text)
-      );
-      if (ui.freshText) ui.freshText.removeAttribute("title");
+      // ‏none / catalog / unknown — ומה שמשותף לשלושתם הוא שאין תאריך
+      // שליפה אמיתי לומר. תאריך הבנייה הוא היחיד שידוע, והוא נאמר
+      // בשמו. עדיף לומר פחות מאשר לטעון טריות שלא הוכחה.
+      setText(ui.freshText, builtLine);
+      if (ui.freshText) {
+        ui.freshText.setAttribute("title", T("app.header.builtAtTitle"));
+      }
     }
 
     // שורת מצב אחת ותו לא. כל הספירות — כמה קורסים במסד, כמה קבוצות,
