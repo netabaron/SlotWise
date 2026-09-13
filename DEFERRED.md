@@ -595,6 +595,41 @@ about the build date rather than claiming a fetch.
 
 ---
 
+### Ten fields in the `/api/bootstrap` `db` payload have no reader — settle in one pass
+**Where:** `_db_snapshot()` in `src/web/api.py`.
+**Owner:** one deliberate pass, **after the presentation**. Deleting fields from a
+public surface during the week it is being demonstrated is not a trade worth making
+for tidiness.
+**What:** of the fifteen keys `_db_snapshot()` returns, ten are read by nothing —
+not `app.js`, not the tests, not `refresh.py`, not the CLI:
+
+| no reader | still read | read by |
+|---|---|---|
+| `codes`, `tracked`, `stale`, `failed`, `any_stale`, `age_hours`, `age_text`, `newest`, `oldest`, `max_age_hours` | `count` | `app.js` (6 sites, incl. the `bootDb` alias) |
+| | `text` | `app.js` — the header's build-line fallback |
+| | `origin` | `app.js` banners, one test |
+| | `catalog_built_at` | `app.js` header, one test |
+| | `courses` | `app.js` — the per-course metas `selectedFreshness()` runs on |
+
+**How it was counted:** every key matched against `app.js` with comments stripped
+(a field named in prose is not a read — `any_stale` appears only in the comment
+warning people off it), plus `tests/*.py`, `refresh.py` and `src/cli.py`. The only
+alias of the payload, `bootDb` at `app.js:2596`, reads `count` and nothing else.
+**Three of the ten already carry a warning comment.** `any_stale`, `age_text` and
+`newest` are the whole-database freshness fields the header used to read; the
+comment above them records the bug that removed them and says not to wire the
+header back. The other seven have no note.
+**Why they are not all dead weight.** `stale` and `failed` are genuine per-run
+information the interface simply never used, and `oldest`/`newest` are the only
+place the database's span is exposed at all. The pass should decide per field
+whether it is unused because nothing needs it or unused because the thing that
+needed it was never built — those want opposite outcomes.
+**Related:** the header stopped reading the whole-database fields on 2026-09-13;
+see the commit that added `selectedFreshness()`. That change is what left most of
+this block unreferenced, so the two belong together in whoever's head does the pass.
+
+---
+
 ## Closed
 
 ### The shipped catalog was a build behind — closed 2026-09-10
