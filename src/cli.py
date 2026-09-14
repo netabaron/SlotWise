@@ -1,5 +1,5 @@
 """
-cli.py — הזרימה האינטראקטיבית של SlotWise (סעיף 7 ב-SPEC.md).
+cli.py — הזרימה האינטראקטיבית של SlotWise (סעיף 7 ב-docs/SPEC.md).
 
 השלבים, בדיוק לפי הסדר שסוכם:
     1. טעינת הפרופיל (data/profile.json) ואישור שנה / סמסטר / מספר ימים רצוי.
@@ -197,7 +197,7 @@ SEMESTERS: tuple[str, ...] = ("א", "ב", "קיץ")
 SEMESTER_LABELS: dict[str, str] = {"א": "א' (חורף)", "ב": "ב' (אביב)", "קיץ": "קיץ"}
 
 #: קישור ישיר לדף קורס בידיעון, לבדיקה ידנית.
-#: (GROUND_TRUTH.md §1 — the search endpoint answers a plain GET.)
+#: (docs/GROUND_TRUTH.md §1 — the search endpoint answers a plain GET.)
 YEDION_COURSE_URL = (
     "https://info.braude.ac.il/yedion/fireflyweb.aspx"
     "?prgname=S_LOOK_FOR_NOSE&arguments=-N{code}"
@@ -1770,7 +1770,7 @@ def inspect_other_semester(entry: dict, semester: str) -> None:
 def report_not_offered(entries: list[dict], semester: str, year: str) -> str:
     """מדווח על קורסים שאינם נפתחים בסמסטר המבוקש, ושואל מה לעשות.
 
-    GROUND_TRUTH.md §6: דף שחוזר תקין ובלי אף קבוצה אינו קריסה — זה בדיוק
+    docs/GROUND_TRUTH.md §6: דף שחוזר תקין ובלי אף קבוצה אינו קריסה — זה בדיוק
     הסימן ש"הקורס לא נפתח בסמסטר הזה". זה רלוונטי מאוד ל-61753 אלגוריתמים,
     שהוא קורס של סמסטר 4 (אביב) ונלקח מוקדם.
 
@@ -2057,7 +2057,7 @@ def scrape_and_parse(
         if result.course is not None and result.course.groups:
             courses[code] = result.course
         else:
-            # GROUND_TRUTH.md §6: דף תקין בלי אף קבוצה בסמסטר המבוקש אינו
+            # docs/GROUND_TRUTH.md §6: דף תקין בלי אף קבוצה בסמסטר המבוקש אינו
             # קריסה — זה הסימן ש"הקורס לא נפתח בסמסטר הזה".
             print(
                 f"  אין קבוצות ל-{code} בסמסטר {semester_geresh(semester)}. "

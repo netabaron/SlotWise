@@ -367,7 +367,7 @@ class CourseMeta:
         last_error: תיאור קצר של הכישלון האחרון (ריק כשהכול תקין).
 
     Note:
-        סדר השדות הראשונים זהה לחוזה שב-SPEC_AUTOREFRESH.md, כדי שבנייה
+        סדר השדות הראשונים זהה לחוזה שב-docs/SPEC_AUTOREFRESH.md, כדי שבנייה
         פוזיציונית תמשיך לעבוד. שני השדות האחרונים נוספו עם ערכי ברירת מחדל,
         ולכן הם תוספת תואמת לאחור.
     """
@@ -680,7 +680,7 @@ def _diff_meetings(code: str, gid: str, old: list[Meeting], new: list[Meeting]) 
 def diff_courses(previous: Course | None, current: Course | None, code: str = "") -> list[str]:
     """משווה שתי גרסאות של אותו קורס ומחזיר תיאורי שינוי בעברית.
 
-    הפורמט זהה לדוגמאות שב-SPEC_AUTOREFRESH.md::
+    הפורמט זהה לדוגמאות שב-docs/SPEC_AUTOREFRESH.md::
 
         61753: נוספה קבוצה 22 (הרצאה, ד"ר רווה אלנה)
         61753: קבוצה 21 — המרצה השתנה: פרופ' וולקוביץ' זאב -> ד"ר גולני מתתיהו

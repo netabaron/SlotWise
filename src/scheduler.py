@@ -1096,7 +1096,7 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
     """
     נותנת ניקוד למערכת אחת. ניקוד גבוה = מערכת טובה יותר.
 
-    הנוסחה (בדיוק כמו ב-SPEC.md, בתוספת הרכיב החמישי של SPEC_V2 §2):
+    הנוסחה (בדיוק כמו ב-docs/SPEC.md, בתוספת הרכיב החמישי של SPEC_V2 §2):
         score = w_lecturer * L  -  w_days * D  -  w_gaps * (G/60)
                                 -  w_compactness * (S/60)  -  w_soft_conflict * C
 

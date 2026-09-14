@@ -3,7 +3,7 @@
 Four issues raised by the student, in their priority order (functionality first — they explicitly
 said the visual design comes **after** this, so do not spend effort on styling here).
 
-Read `GROUND_TRUTH.md` §9 first. It changes the premise of the whole scraping layer.
+Read `docs/GROUND_TRUTH.md` §9 first. It changes the premise of the whole scraping layer.
 
 ---
 
@@ -89,7 +89,7 @@ required as well — the student opts *out* deliberately, never by accident.
 
 ## 3. Refreshing must not require signing in to Citrix
 
-**Verified and written up in `GROUND_TRUTH.md` §9: the course search needs no login.** Only
+**Verified and written up in `docs/GROUND_TRUTH.md` §9: the course search needs no login.** Only
 `Enter_Search` is gated; `S_LOOK_FOR_NOSE` and `S_LOOK_FOR_NOSE_AB` are public.
 
 ### New module `src/yedion_http.py`

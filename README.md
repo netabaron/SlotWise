@@ -1,262 +1,158 @@
-# בונה מערכת שעות — בראודה, הנדסת תוכנה
-### SlotWise
+# SlotWise
 
-בונה מערכת שעות לסמסטר: מושך את הקבוצות האמיתיות מהידיעון, שואל איזה מרצה מעדיפים
-בכל קורס, ומרכיב את המערכת הטובה ביותר לפי מרצים / מספר ימים בקמפוס / חורים בין שיעורים.
+**A local web app that reads Braude College's course catalogue (the *yedion*) and builds the best possible semester timetable — for any department, on your own machine, without ever seeing your password.**
 
-**היעד הנוכחי:** שנה ג', סמסטר א' תשפ"ז (2026/27) — סמסטר 5 בתוכנית הלימודים.
-6 קורסים, 19.0 נ"ז, 26 שעות שבועיות, יעד 4 ימים בקמפוס.
+<!-- TODO: screenshot of the timetable grid goes here -->
 
----
+```mermaid
+flowchart LR
+    A["Braude yedion<br/>public course search"]
+    B["Fetch<br/>plain HTTP, no sign-in"]
+    C["Raw HTML on disk<br/>data/raw/"]
+    D["Parse<br/>groups · lecturers · days · rooms"]
+    E["Local JSON database<br/>data/db/"]
+    F["Solve<br/>enumerate · score · rank"]
+    G["Browser UI<br/>127.0.0.1"]
+    H["Change report<br/>lecturer / time / group moved"]
 
-## התקנה מאפס (fresh clone)
+    A -->|one GET per course code| B --> C --> D --> E --> F --> G
+    G -.->|refresh| B
+    E -.->|diff vs. stored| H
+```
 
-שני קבצים **אינם** נמצאים במאגר, בכוונה:
+## Why it exists
 
-| קובץ | למה הוא לא כאן | מה לעשות |
-| --- | --- | --- |
-| `data/profile.json` | מידע אישי — שנה, סמסטר ורשימת קורסים | `copy data\profile.example.json data\profile.json` ולערוך |
-| `rec.pdf` | פרק השנתון של המחלקה — מסמך של המכללה | להוריד מאתר המכללה. **לא חובה**: `data/curriculum.json` כבר גזור ממנו ונמצא כאן |
+Registration at Braude means opening the yedion, reading one course page at a
+time, and assembling a timetable by hand. Every course has several lecture,
+tutorial and lab groups, some groups are only valid together, and the things you
+actually care about — *which lecturer, how many days on campus, how long the
+gaps are* — are invisible until the grid is already drawn. Doing it by hand gets
+you **a** timetable; it cannot tell you whether a better one existed, or that
+four days on campus is impossible and five is the minimum. SlotWise enumerates
+every legal combination, scores each one, shows you the best — then keeps
+watching, so a lecturer or time that changes after you registered is noticed.
+
+## How it works
+
+1. **Fetch.** The yedion's course-search screen is readable without signing in,
+   so the fetcher is plain `urllib` — one polite GET per course code, no browser
+   and no credentials. Every page is written to `data/raw/` *before* it is
+   parsed, so a parser fix can be re-run without touching the college's server.
+2. **Parse and store.** Each page becomes `Meeting ⊂ Group ⊂ Course` in a JSON
+   database under `data/db/`. Each refresh diffs against what was stored and
+   reports what moved.
+3. **Solve.** Backtracking enumeration walks every legal selection with pruning,
+   scores each one, keeps the best. Exhaustive rather than heuristic — only a full
+   count can say "no timetable satisfies this" or "these really are the top five".
+4. **Show.** A Flask server bound to `127.0.0.1` serves a five-step Hebrew RTL
+   interface: program and semester → courses → target days → lecturers → the
+   grid. Every change re-solves immediately. Plain HTML, CSS and JS — no
+   framework, no build step, no CDN.
+
+A catalog of all **572 courses** the college opens this year ships in the repo,
+so a fresh clone has data on the first run. All eight Braude degree programs are
+listed, and seven also ship a parsed curriculum, so the course list for a given
+semester comes pre-filled rather than typed.
+
+## What the engine enforces
+
+Hard constraints — these reject a combination outright:
+
+- **No overlaps**, as a half-open interval `[start, end)`: a class ending at
+  10:15 and one starting at 10:15 do not collide.
+- **Linked groups.** The yedion marks "groups related to this course" — a given
+  lecture requires a given tutorial. Ignoring it would produce timetables you
+  cannot actually register for.
+- **Tied courses.** Courses the curriculum declares inseparable are taken
+  together or not at all; a missing one is a loud error, not a wrong timetable.
+- **One group per component** — exactly one lecture, one tutorial, one lab.
+- **Semester filter.** A course can open in both semesters and the yedion shows
+  both on one page; only the requested semester's meetings are kept.
+- **Your availability** — earliest start, latest finish, blocked windows, and an
+  optional "no Friday".
+
+Soft preferences only move the score:
+
+```
+score = 10.0 × preferred_lecturers      (rank 0 = 1.0, rank i = 1/(i+1), unranked = 0)
+      -  8.0 × max(0, campus_days − target_days)
+      -  4.0 × billable_gap_hours       (the fixed 12:20–12:50 lunch window is free)
+      -  1.0 × total_day_span_hours
+      -  4.0 × hours_running_past_14:00
+      -  6.0 × deliberate_overlaps      (only for components you marked as no-attendance)
+```
+
+Lecturer preference is weighted by component: a lecture counts full, a tutorial
+or lab 0.4 — you can compromise on a tutor to shorten a day, not on who gives the
+lecture. A day holding no attendance-required component is not counted as a
+campus day at all. The day target is **soft**: if four days is impossible you get
+the best five-day timetable with a penalty, not a failure. If nothing is
+feasible, the solver raises with a concrete explanation — which course, which
+group, which day and hour collide — plus suggested relaxations.
+
+## Quick start
 
 ```bash
-python -m pip install flask playwright beautifulsoup4 lxml pytest
-python -m playwright install chromium
-
-copy data\profile.example.json data\profile.json    # Windows
-# cp data/profile.example.json data/profile.json      # macOS / Linux
-
-python main.py            # פותח את הממשק בדפדפן
+# Python 3.10+
+git clone https://github.com/netabaron/Schedule_Builder.git
+cd Schedule_Builder
+python -m pip install flask beautifulsoup4 lxml pytest
+python main.py
 ```
 
-אפשר גם להריץ בלי `profile.json` בכלל — הממשק פשוט ייפתח בלי ערכי ברירת מחדל,
-ובוחרים שנה וסמסטר בשלב 1. הפרופיל רק חוסך את ההקלדה הזאת בכל פעם.
+That starts the local server and opens the app. There is nothing to configure —
+pick a program and semester in step 1 and go. Copying `data/profile.example.json`
+to `data/profile.json` pre-fills those choices, but it is optional; `playwright`
+is needed only for the fallback browser fetcher and the browser tests.
 
-**אין במאגר הזה שום סיסמה, עוגייה או סשן.** ההתחברות לידיעון היא תמיד ידנית
-בחלון דפדפן אמיתי, ותיקיית `data/.browser_profile/` (שמכילה את עוגיות ה-Citrix
-החיות) חסומה ב-`.gitignore` ולעולם לא תעלה לגיט.
+The terminal flow, the scheduled refresh job and offline re-parsing are
+documented in **[docs/CLI.md](docs/CLI.md)**.
 
-## התקנה מקומית (כבר בוצעה במחשב הזה)
+## Privacy
+
+- **The app never handles your password.** It has no username or password field
+  anywhere, because the default fetch path is anonymous — the yedion's course
+  search answers a plain GET. The cookie jar lives in memory and is never written
+  to disk.
+- **Nothing is hosted.** The server binds to `127.0.0.1` only. Your selections
+  live in your browser's `localStorage`; there is no account and no backend.
+- On the optional `--browser` fallback path you sign in yourself, in a real
+  browser window. Even there nothing reads, asks for or stores credentials, and a
+  page that is not from `info.braude.ac.il` is **never written to disk** — not as
+  HTML, not as a screenshot — so an autofilled login page cannot reach
+  `data/raw/`.
+
+## Layout
+
+```
+main.py                 launcher: the browser app by default, --cli for the terminal
+webapp.py               the local Flask server (127.0.0.1)
+src/yedion_http.py      login-free fetcher — stdlib only, verified year protocol
+src/parser.py           yedion HTML -> model; models.py = Meeting / Group / Course
+src/scheduler.py        the engine: constraints, scoring, search, infeasibility diagnosis
+src/store.py            JSON database: freshness, change detection, atomic writes
+src/curriculum.py       curricula, prerequisites, tied courses; discovery.py = live catalog
+src/web/                the JSON API and the interface (plain HTML/CSS/JS)
+refresh.py              the scheduled refresh job; reparse.py re-parses saved HTML offline
+data/catalog.jsonl      the shipped catalog: 572 courses, so a fresh clone has data
+docs/                   CLI reference, the verified yedion protocol, the specs
+tests/                  751 tests, no network
+```
+
+## Tests
 
 ```bash
-python -m pip install playwright beautifulsoup4 lxml pytest
-python -m playwright install chromium
+python -m pytest tests/ -q     # 751 tests, none of which touch the network
 ```
 
-## הרצה
+About 20 of them drive a local Chromium to cover interface rules that live in
+`app.js`; they skip themselves when no browser is installed.
 
-```bash
-cd C:\Users\netab\.claude\projects\Schedule_Builder
+## Roadmap
 
-python main.py                 # ריצה מלאה: פותח דפדפן, מתחבר, סורק, בונה
-python main.py --offline       # בלי דפדפן — מהקאש, או נתוני דמו אם אין קאש
-python main.py --refresh       # לסרוק מחדש את הידיעון גם אם יש קאש
-python main.py --top 3 --days 3
-python main.py --codes 61756,61757,62027
-python main.py --semester א --year 2027
-```
-
-| דגל | משמעות |
-| --- | --- |
-| `--refresh` | לסרוק מחדש גם אם יש קאש |
-| `--offline` | בלי דפדפן בכלל (קאש/דמו) |
-| `--top N` | כמה מערכות להציג (ברירת מחדל 5) |
-| `--days N` | יעד ימים בקמפוס |
-| `--html PATH` | לאן לכתוב את קובץ ה-HTML |
-| `--codes ...` | רשימת קודי קורסים, במקום הפרופיל |
-| `--semester א\|ב\|קיץ` | לפי איזה סמסטר לסנן מפגשים |
-| `--year YYYY` | שנה אקדמית לועזית (2027 = תשפ"ז) |
-| `--pick` | בחירת קורסים מהקטלוג החי של הידיעון (חיפוש לפי קוד/תחילית/שם) |
-| `--track ...` | הוספת קודים לרשימת הרענון היומי |
-| `--untrack ...` | הסרת קודים מרשימת הרענון היומי |
-
-## מה קורה בהרצה
-
-1. **אישור נתונים** — שנה, סמסטר, שנה אקדמית, יעד ימים, ורשימת הקורסים עם נ"ז מצטבר.
-2. **פתיחת דפדפן** — נפתח חלון Chromium אמיתי בשער ההתחברות של בראודה.
-   **ההתחברות היא ידנית ושלכם בלבד.** הסקריפט לא מבקש, לא קורא ולא שומר שם משתמש או
-   סיסמה — הוא רק מסתכל על כתובת ה-URL ומחכה שהיא תחזור ל-`info.braude.ac.il`.
-   *אין לסגור את החלון עד שהסריקה נגמרת.*
-3. **החלפת שנה** — הידיעון נפתח כברירת מחדל בשנה הקודמת (תשפ"ו). הכלי מחליף במפורש
-   לתשפ"ז **ומאמת בכל דף** שהשנה נכונה. אם האימות נכשל — הריצה נעצרת בשגיאה ברורה
-   ולא מחזירה נתונים שגויים.
-4. **סריקה** — קורס אחר קורס, עם השהיה מנומסת של 1.5 שניות. כל דף נשמר גולמי
-   ל-`data/raw/` לפני פענוח.
-5. **בחירת מרצים** — לכל קורס מוצגים כל המרצים הזמינים, אילו רכיבים הם מלמדים
-   ובאילו ימים ושעות. אפשר לדרג (`1,3`), להשאיר ריק (אין העדפה), `s` לוותר על קורס,
-   `q` ליציאה.
-6. **חישוב** — כל הצירופים החוקיים נסרקים עם גיזום, מנוקדים, והטובים ביותר מוצגים.
-7. **פלט** — טבלה בטרמינל + קובץ `schedule.html` (RTL, מתאים להדפסה, עובד גם במצב כהה).
-
-## אילוצים שהמנוע אוכף
-
-- **אין חפיפות.** חפיפה נבדקת כקטע חצי-פתוח `[start, end)` — שיעור שנגמר ב-10:15
-  ואחד שמתחיל ב-10:15 אינם מתנגשים.
-- **קורסים צמודים.** 61756 + 61757 + 62027 נלקחים יחד או בכלל לא. אם אחד מהם חסר —
-  שגיאה מפורשת, לא מערכת שקטה ושגויה.
-- **קבוצות קשורות.** הידיעון מציין "קבוצות הקשורות לקורס זה" — הרצאה מסוימת מחייבת
-  תרגול מסוים. המנוע מכבד את זה, אחרת היה מציע שילוב שאי אפשר להירשם אליו.
-- **קבוצה אחת מכל רכיב.** בדיוק הרצאה אחת + תרגול אחד + מעבדה אחת לכל קורס.
-- **סינון סמסטר.** קורס יכול להיפתח בשני הסמסטרים, והידיעון מציג את שניהם באותו עמוד.
-  נשמרים רק מפגשי הסמסטר המבוקש.
-
-## ניקוד
-
-```
-score = 10.0 * מרצים_מועדפים
-      -  8.0 * max(0, ימים_בקמפוס - יעד)
-      -  4.0 * (דקות_חורים / 60)
-      -  1.0 * (אורך_ימי_הלימודים / 60)
-```
-
-מרצה בדירוג ראשון = 1.0 נקודה, דירוג `i` = `1/(i+1)`, מרצה שלא דורג = 0.
-יעד הימים הוא **העדפה רכה** — אם 4 ימים בלתי אפשריים, תוצג המערכת הטובה ביותר עם קנס,
-ולא כישלון.
-
-אם אין בכלל פתרון, נזרקת `Infeasible` עם הסבר קונקרטי בעברית — איזה קורס, איזו קבוצה,
-איזה יום ואיזו שעה מתנגשים — ועם הצעות הרפיה.
-
-## מבנה
-
-```
-data/curriculum.json      תוכנית הלימודים של הנדסת תוכנה: 8 סמסטרים + 74 קורסי בחירה ב-6 אשכולות
-data/curricula/           תוכנית לימודים לכל מחלקה שיש לה פרק שנתון (אזרחית, חשמל, מכונות, מערכות מידע)
-data/profile.json         העדפות הסטודנט/ית והקורסים שנבחרו
-data/sections.json        קאש הקבוצות מהידיעון (נוצר בריצה)
-data/db/                  מסד הנתונים המתרענן — קטלוג, קבוצות, יומנים, סנפשוטים
-data/raw/                 דפי HTML גולמיים מהידיעון (נוצר בריצה)
-src/models.py             מודל הנתונים המשותף — Meeting / Group / Course / Selection
-src/curriculum.py         קריאת תוכנית הלימודים, קדם, קורסים צמודים
-src/scraper.py            Playwright + התחברות ידנית + הפרוטוקול המאומת
-src/parser.py             HTML -> מודל
-src/scheduler.py          המנוע: אילוצים, ניקוד, חיפוש, אבחון חוסר-פתרון
-src/store.py              מסד ה-JSON: טריות, גילוי שינויים, כתיבה אטומית
-src/discovery.py          הקטלוג החי — אילו קורסים באמת נפתחים
-refresh.py                עבודת הרענון היומית + התקנה ל-Task Scheduler
-reparse.py                פענוח מחדש של דפי ה-HTML השמורים, בלי רשת ובלי התחברות
-src/render.py             טרמינל + HTML
-src/cli.py, main.py       הזרימה האינטראקטיבית
-tests/                    548 בדיקות, רצות לגמרי בלי רשת (20 מהן בכרומיום מקומי)
-tests/fixtures/real_yedion/  6 דפי ידיעון אמיתיים (כולל קטלוג מלא) לבדיקת הפענוח
-GROUND_TRUTH.md           הפרוטוקול המאומת של הידיעון — המסמך הכי חשוב כאן
-SPEC.md                   חוזה הממשקים המקורי
-SPEC_AUTOREFRESH.md       חוזה הגילוי, מסד הנתונים והרענון היומי
-```
-
-## בדיקות
-
-```bash
-python -m pytest tests/ -q     # 548 עוברות, ללא רשת
-```
-
-‏`tests/test_recommended_defaults_browser.py` מריץ את שלב 2 בכרומיום מקומי — זו
-הדרך היחידה לבדוק את הכלל שקובע מה מסומן, כי הוא חי ב-`app.js` ואין לפרויקט
-מריץ בדיקות ל-JavaScript. הקובץ מדלג על עצמו בשקט כשאין דפדפן מותקן
-(`python -m playwright install chromium`). אין בו רשת החוצה.
-
-## פרטיות ואבטחה
-
-- אין בקוד שום טיפול בשם משתמש או סיסמה. ההתחברות מוקלדת בדפדפן האמיתי בלבד.
-- דף שאינו מ-`info.braude.ac.il` **לעולם לא נכתב לדיסק** — לא כ-HTML ולא כצילום מסך.
-  זה נועד למנוע מצב שבו דף התחברות עם מילוי אוטומטי נשמר ל-`data/raw/`.
-- הסשן נשמר ב-`data/.browser_profile` כדי לא להתחבר בכל ריצה. זו תיקיית פרופיל של
-  Chromium — אין להעלות אותה לגיט ואין לשתף אותה.
-
-## הערה על הנתונים
-
-הדפים ב-`tests/fixtures/real_yedion/` הגיעו ממופע ציבורי של **אותה תוכנת ידיעון**
-(המכללה האקדמית תל-אביב יפו), לא מבראודה. המבנה זהה, אבל בהרצה האמיתית הראשונה כדאי
-להשוות את מה שנשמר ב-`data/raw/` מול הדפים האלה, ולוודא שהפענוח תפס הכל.
-
----
-
-## תוכנית הלימודים היא המלצה, לא גדר
-
-קורסים חוזרים מסמסטרים קודמים, ומה שנרשמים אליו בפועל לא תמיד תואם ל-PDF.
-לכן **מקור האמת לשאלה "מה נפתח" הוא הידיעון בלבד**, לא `curriculum.json`.
-
-```bash
-python main.py --pick
-```
-
-מציג את הקטלוג החי (בקשה אחת מחזירה את *כל* הקורסים הנפתחים באותה שנה) ומאפשר
-לחפש לפי קוד מלא, תחילת קוד, או חלק משם בעברית. כל תוצאה מסומנת:
-
-```
-[בתוכנית-סמסטר 5]   הקורס בסמסטר הנוכחי בתוכנית
-[בתוכנית-סמסטר 4]   קורס מסמסטר אחר — השלמה או חזרה
-[מחוץ לתוכנית]      לא מופיע בתוכנית בכלל
-```
-
-**כל השלוש ניתנות לבחירה.** קורס מסמסטר אחר הוא מקרה רגיל ולא שגיאה — הכלי יציין
-זאת כמידע וימשיך. `curriculum.json` משמש רק לשמות, נ"ז, קורסי קדם וקורסים צמודים.
-
-## רענון אוטומטי — `refresh.py`
-
-מושך את הנתונים ישירות מתחנת המידע הרשמית אל מסד JSON תחת `data/db/`.
-
-```bash
-python refresh.py                 # ריענון אחד, ברקע, עם הסשן השמור
-python refresh.py --headful       # פותח דפדפן כדי להתחבר מחדש
-python refresh.py --status        # מצב המסד — בלי שום פנייה לרשת
-python refresh.py --codes 61753   # רק קודים מסוימים
-python refresh.py --catalog-only  # רק הקטלוג, בלי פירוט קבוצות
-python refresh.py --max-age 12    # לרענן רק מה שישן מ-12 שעות
-python refresh.py --install-task  # להתקין משימה יומית ב-Windows
-python refresh.py --uninstall-task
-```
-
-קודי יציאה: `0` הצליח · `2` **הסשן פג, נדרשת התחברות** · `3` כשל חלקי · `1` שגיאה.
-
-### מה נשמר
-
-```
-data/db/catalog.json       כל הקורסים שנפתחים — קוד, שם, סטטוס
-data/db/sections.json      הקבוצות המפורטות + מטא לכל קורס (fetched_at, שנה, סמסטר, sha1)
-data/db/tracked.json       הקודים שמתרעננים אוטומטית
-data/db/refresh_log.jsonl  שורה לכל ריצה
-data/db/changes.jsonl      שורה לכל שינוי שזוהה
-data/db/snapshots/         גיבוי לפני כל דריסה (30 האחרונים)
-```
-
-### גילוי שינויים — הסיבה שהמנגנון הזה קיים
-
-בכל ריענון הנתונים מושווים למה שנשמר, ושינוי מדווח בקול:
-
-```
-61753: קבוצה 21 — המרצה השתנה: ד"ר לוי נטלי -> ד"ר גולני מתתיהו
-61753: קבוצה 21 — השעה השתנתה: יום ב 10:15-12:00 -> יום ב 14:00-15:45
-61753: נוספה קבוצה 22 (תרגול, מר גל תומר)
-61753: בוטלה קבוצה 27 (תרגול)
-```
-
-שינוי מרצה או שעה *אחרי* הרישום הוא הדבר הכי חשוב שהכלי הזה יכול להגיד.
-
-### המגבלה — נאמרת במפורש ולא מוסתרת
-
-הידיעון מוגן בשער Citrix. פרופיל הדפדפן השמור מחזיק את הסשן זמן מה, אבל הוא **יפוג**,
-וההזדהות מחדש היא ידנית מעצם טבעה. הכלי הזה לעולם לא ישמור סיסמאות, ולכן **ריצה יומית
-אוטומטית לחלוטין אינה אפשרית לנצח**.
-
-מה שקורה בפועל כשהסשן פג:
-
-- הנתונים הקיימים **נשארים כמו שהם** — שום דבר לא נמחק ולא נדרס
-- הרשומה מסומנת כישנה, והיומן מקבל `needs_login`
-- מודפסת הודעה ברורה עם התאריך האמיתי של הנתונים והפקודה להתחברות
-- יציאה בקוד `2`
-- **נתונים ישנים לעולם לא מוצגים כעדכניים**
-
-בפועל: התחברות אחת כל כמה ימים, והכלי אומר בדיוק מתי.
-
-## פענוח מחדש בלי רשת — `reparse.py`
-
-כל דף שנשלף נשמר גולמי ב-`data/raw/`. לכן אחרי תיקון בפרסר אין צורך להתחבר
-שוב ולהטריח את השרת של המכללה:
-
-```bash
-python reparse.py                # כל הקודים שבמעקב + הקטלוג
-python reparse.py --codes 61753
-python reparse.py --semester ב   # לראות מה יש בסמסטר האחר
-```
-
-חותמת הזמן שנשמרת היא **זמן השליפה האמיתי** (זמן השינוי של קובץ ה-HTML) ולא
-"עכשיו" — פענוח מחדש אינו שליפה מחדש, ואסור שיגרום לנתונים ישנים להיראות טריים.
+- **Export to `.ics` calendar** — drop the finished timetable straight into
+  Google Calendar
+- Exam dates in the model, so timetables can be scored on exam spacing too
+- A parsed curriculum for the one remaining degree program
+- Semester ב timetabling: the groups are already published, but the yedion
+  carries no times for them yet

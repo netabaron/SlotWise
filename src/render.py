@@ -1,5 +1,5 @@
 """
-render.py — שכבת התצוגה של SlotWise (section 6 of SPEC.md).
+render.py — שכבת התצוגה של SlotWise (section 6 of docs/SPEC.md).
 
 שלוש פונקציות ציבוריות:
     render_terminal(sched, courses)              -> טבלה שבועית כטקסט מיושר למסך
