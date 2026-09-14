@@ -710,32 +710,99 @@ LINES = """(sel) => {
 }"""
 
 
+#: מפתח ה-localStorage של האפליקציה. **אין לשנותו** — ראו CLAUDE.md.
+STORAGE_KEY = "braude_schedule_builder_v1"
+
+#: כמה מערכות לבקש כשמחפשים חפיפה מכוונת. ‏app.js חוסם את ``topN`` ל-1..20,
+#: ולכן אין טעם לבקש יותר: מערכת מעבר לזה לא תקבל לשונית ואי אפשר להציג אותה.
+SOFT_PROBE_TOP_N = 20
+
+#: ה-JS שמאתר את הדירוג של המערכת הראשונה עם חפיפה מכוונת. הוא רץ **בתוך
+#: הדף** ומקבל את גוף הבקשה שהדף עצמו שלח — לא שחזור שלו — כדי שהדירוג
+#: שיתקבל יהיה הדירוג שהדף באמת יצייר.
+SOFT_RANK = """async (body) => {
+  const res = await fetch('/api/solve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const list = (await res.json()).schedules || [];
+  for (let i = 0; i < list.length; i++) {
+    if ('soft_conflict' in (list[i].breakdown || {})) return i;
+  }
+  return -1;
+}"""
+
+#: מעלה את ``topN`` במצב השמור. הדף קורא אותו בטעינה, ולכן אחרי reload
+#: יש לשוניות עד הדירוג המבוקש. כל שאר המצב — הקורסים, חובת הנוכחות —
+#: נשמר באותו מפתח וחוזר איתו.
+RAISE_TOP_N = """(args) => {
+  const s = JSON.parse(localStorage.getItem(args.key) || '{}');
+  s.topN = args.n;
+  localStorage.setItem(args.key, JSON.stringify(s));
+}"""
+
+
 def _overlap_on(page):
     """מכבה חובת נוכחות ברכיב אחד, ועובר ללשונית שבה יש חפיפה מכוונת.
 
     בלי זה בדיקות החפיפה ריקות מתוכן: המערכת שנבנית בברירת המחדל אינה
     מכילה חפיפה כלל, וכל תנאי ``if softCount`` היה עובר בלי לבדוק דבר.
-    שני השלבים הם פעולות ממשק אמיתיות — מתג ולחיצה על לשונית — ולא מצב
-    מוזרע.
 
-    למה צריך גם לעבור לשונית: מרגע שהפסקת הצהריים אינה נספרת, מערכת בלי
-    חפיפה כבר אינה מפסידה 2 נקודות על החור שסביב הצהריים, ולכן היא
-    מנצחת את זו שקונה את החור הזה בוויתור על נוכחות. החפיפה ירדה
-    למקום שלישי — קיימת, ולא נבחרת ראשונה. זה בדיוק מה שהשינוי נועד
-    לעשות, ולכן הבדיקה מחפשת אותה ולא מניחה שהיא במקום הראשון.
+    **הדירוג של החפיפה זז, ולכן אסור לנחש אותו.** מרגע שהפסקת הצהריים
+    אינה נספרת, מערכת בלי חפיפה כבר אינה מפסידה 2 נקודות על החור שסביב
+    הצהריים, ולכן היא מנצחת את זו שקונה את החור הזה בוויתור על נוכחות.
+    ב-09/2026 החפיפה הייתה שלישית; היום היא שביעית (‎-69.00 מול ‎-65.33),
+    כלומר מחוץ לחמש הלשוניות שהממשק מצייר — וגרסה קודמת של העוזרת הזאת,
+    שסרקה את הלשוניות המוצגות, נכשלה על כך שלא מצאה מה לבדוק.
+
+    לכן: הדף נשאל **בשאלה אחת** איפה נמצאת החפיפה, ואז מוצגות מספיק
+    לשוניות כדי להגיע אליה. גוף הבקשה אינו משוחזר כאן אלא נלכד מהבקשה
+    שהדף עצמו שלח, כדי שהדירוג שיתקבל יהיה הדירוג שהדף יצייר.
     """
-    page.uncheck('input[data-fk="att-61759-הרצאה"]', force=True)
-    page.wait_for_timeout(3000)
-    tabs = page.locator("#schedule-tabs .tab")
-    for i in range(tabs.count()):
-        if i:
-            tabs.nth(i).click()
-            page.wait_for_timeout(1200)
-        if page.locator("#schedule-grid .ev.is-soft").count():
-            return
-    raise AssertionError(
-        "אף אחת מהמערכות המוצגות אינה מכילה חפיפה מכוונת — "
-        "הבדיקה אינה בודקת דבר, ויש למצוא הגדרה שמייצרת אחת"
+    captured: dict = {}
+
+    def _grab(request):
+        if request.method == "POST" and request.url.endswith("/api/solve"):
+            try:
+                captured["body"] = request.post_data_json
+            except Exception:  # גוף שאינו JSON — לא הבקשה שאנחנו מחפשים
+                pass
+
+    page.on("request", _grab)
+    try:
+        page.uncheck('input[data-fk="att-61759-הרצאה"]', force=True)
+        page.wait_for_timeout(3000)
+    finally:
+        page.remove_listener("request", _grab)
+
+    body = captured.get("body")
+    assert body, "הדף לא שלח /api/solve אחרי כיבוי חובת הנוכחות"
+    # אם הכיבוי לא הגיע לשרת, אין ולא תהיה חפיפה — ועדיף לומר זאת כאן
+    # מאשר להיכשל אחר כך על "לא נמצאה חפיפה" ולחפש אותה במקום הלא נכון.
+    assert ((body.get("attendance") or {}).get("61759") or {}).get("הרצאה") is False, (
+        "הבקשה האחרונה עדיין מסמנת חובת נוכחות ב-61759 הרצאה: " + repr(body.get("attendance"))
+    )
+
+    rank = page.evaluate(SOFT_RANK, dict(body, top_n=SOFT_PROBE_TOP_N))
+    if rank < 0:
+        raise AssertionError(
+            f"אף מערכת מתוך {SOFT_PROBE_TOP_N} אינה מכילה חפיפה מכוונת — "
+            "הבדיקה אינה בודקת דבר, ויש למצוא הגדרה שמייצרת אחת"
+        )
+
+    if rank >= page.locator("#schedule-tabs .tab").count():
+        page.evaluate(RAISE_TOP_N, {"key": STORAGE_KEY, "n": SOFT_PROBE_TOP_N})
+        page.reload()
+        page.wait_for_timeout(4000)
+        page.wait_for_selector("#schedule-grid .ev", timeout=15000)
+
+    tab = page.locator(f'#schedule-tabs [data-fk="tab-{rank}"]')
+    assert tab.count(), f"אין לשונית למערכת מספר {rank + 1}"
+    tab.click()
+    page.wait_for_timeout(1200)
+    assert page.locator("#schedule-grid .ev.is-soft").count(), (
+        f"מערכת {rank + 1} אמורה להכיל חפיפה מכוונת, ואין בה אף בלוק חופף"
     )
 
 
