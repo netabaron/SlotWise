@@ -100,19 +100,25 @@ def test_a_final_project_survives_and_is_marked_unscheduled():
 
 @pytest.mark.skipif(_raw("61753") is None, reason="אין דמפ של 61753")
 def test_unscheduled_groups_of_another_term_do_not_leak_in():
-    """‏61753: 4 קבוצות בסמסטר א', ו-4 קבוצות ב' שטרם נקבע להן מועד.
+    """‏61753: 5 קבוצות בסמסטר א', ו-4 קבוצות ב' שטרם נקבע להן מועד.
 
     בלי קוד הסמסטר מהכפתור, ארבע קבוצות ה-ב' היו נראות כמו "אין מועד"
     ומחליקות פנימה — והסטודנט/ית היה/תה בוחר/ת קבוצה שאינה קיימת בסמסטר.
+
+    המספרים נלקחים מהדמפ שב-``data/raw``, ולכן הם זזים כשהידיעון זז: ב-09/2026
+    נוספה הרצאה 271070330 וסמסטר א' עלה מ-4 ל-5. ההפרדה בין הסמסטרים היא מה
+    שהבדיקה שומרת עליו — הספירה רק מוודאת שהדמפ עדיין מכיל את שני המקרים.
     """
     html = _raw("61753")
     first = parser_mod.parse_course_page(html, "61753", semester="א")
     second = parser_mod.parse_course_page(html, "61753", semester="ב")
 
-    assert len(first.course.groups) == 4
+    ids_of = lambda result: sorted(g.group_id for g in result.course.groups)
+
+    assert len(first.course.groups) == 5, ids_of(first)
     assert all(g.meetings for g in first.course.groups), "בסמסטר א' לכולן יש מועד"
 
-    assert len(second.course.groups) == 4
+    assert len(second.course.groups) == 4, ids_of(second)
     assert all(not g.meetings for g in second.course.groups), "בסמסטר ב' טרם נקבע מועד"
 
     ids_a = {g.group_id for g in first.course.groups}
