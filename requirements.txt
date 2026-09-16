@@ -1,0 +1,43 @@
+# SlotWise — API runtime dependencies.
+#
+# This is what the hosted API image installs, and nothing else. It is the
+# serve-the-catalog path: read data/, solve, render. It does NOT scrape.
+# See requirements-scraper.txt for the catalog-rebuild job and
+# requirements-dev.txt for the test suite.
+#
+# Versions are pinned to what the project is known to run on (2026-09-16).
+
+# --- web layer -------------------------------------------------------------
+Flask==3.1.3
+Werkzeug==3.1.8
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+itsdangerous==2.2.0
+click==8.3.2
+blinker==1.9.0
+
+# --- WSGI server -----------------------------------------------------------
+# Gunicorn does not run on Windows (it needs fcntl). It installs fine there,
+# but `python main.py` is the local dev path — see DEPLOY.md.
+gunicorn==23.0.0
+
+# --- HTML parsing ----------------------------------------------------------
+# src/web/api.py imports `parser` and `discovery` at module level, and both
+# import bs4. Required even with SLOTWISE_ALLOW_NETWORK off: the modules are
+# imported whether or not anything is ever fetched.
+beautifulsoup4==4.15.0
+soupsieve==2.9.2
+# lxml is the preferred soup backend; parser.py falls back to html.parser if
+# it is missing, so this is a strong recommendation rather than a hard need.
+lxml==6.0.2
+
+# --- PDF ------------------------------------------------------------------
+# Load-bearing for GET /api/program/electives, which is not obvious: the
+# endpoint only reads data/curricula.json, but it gets there via
+# `from shnaton import load_curricula`, and src/shnaton.py imports pymupdf at
+# module level. The import is inside a try/except, so dropping pymupdf does
+# not crash — the endpoint silently returns `available: false` and the
+# electives UI disappears. Verified 2026-09-16: with pymupdf present the
+# endpoint returns real cluster data for הנדסת תוכנה.
+# Drop this line only if you accept losing the electives section (~20 MB).
+pymupdf==1.28.2

@@ -1,0 +1,25 @@
+# SlotWise — catalog-rebuild dependencies.
+#
+# Install this ON TOP of requirements.txt, and only where the catalog is
+# actually rebuilt: the cron/one-off job that runs build_catalog.py or
+# refresh.py. The API image must NOT install this file — keeping Playwright
+# and its ~400 MB of browser binaries out of the serving image is the entire
+# reason this is a separate file.
+#
+#     pip install -r requirements.txt -r requirements-scraper.txt
+#
+# Note what is NOT here: the default fetch path (src/yedion_http.py) is
+# standard library only — urllib.request + http.cookiejar. Parsing needs
+# beautifulsoup4/lxml, which requirements.txt already pins. So the normal,
+# anonymous, headless catalog build needs NOTHING from this file.
+
+# --- browser fallback ------------------------------------------------------
+# Needed ONLY for `refresh.py --browser`, the Playwright path kept for the day
+# Braude closes the public S_LOOK_FOR_NOSE endpoints. That path requires a
+# visible window and a manual Citrix login, so it cannot run unattended and
+# cannot run per-request — it is a local maintainer tool, not a server job.
+# Also required by the browser-based tests in tests/.
+#
+# Remember the extra step after pip install:
+#     python -m playwright install chromium
+playwright==1.62.0

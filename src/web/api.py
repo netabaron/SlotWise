@@ -54,7 +54,6 @@ import re
 import sys
 import threading
 import time
-from collections import deque
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
@@ -105,9 +104,6 @@ LOG = logging.getLogger("slotwise.web")
 
 #: קוד קורס בבראודה — 4 עד 7 ספרות (11069 בן 5, 251961 בן 6).
 CODE_RE = re.compile(r"^\d{4,7}$")
-
-#: תקרת שורות ביומן הגרידה שנשמר בזיכרון. יומן שגדל בלי גבול הוא דליפה.
-MAX_LOG_LINES = 500
 
 #: תקרת קבוצות שעבורה עוד שווה לחשב viability (‏~1ms לקבוצה).
 MAX_VIABILITY_GROUPS = 300
@@ -1299,18 +1295,6 @@ def _profile() -> dict:
     return cache["profile"]
 
 
-def _import_root_module(name: str):
-    """מייבא מודול מ*שורש* הפרויקט (``refresh``/``reparse``).
-
-    מוסיפים את השורש ל-``sys.path`` ב**סוף** — כדי ש-``src/`` ימשיך לגבור
-    ולא ניצור התנגשות שמות בשוגג.
-    """
-    root = str(PROJECT_ROOT)
-    if root not in sys.path:
-        sys.path.append(root)
-    return importlib.import_module(name)
-
-
 # ===========================================================================
 # 5א. נ"ז ותנאי קדם — בלי תלות בתוכנית הלימודים  (SPEC_MULTIFACULTY §3)
 #
@@ -1969,8 +1953,8 @@ def _build_courses(
                     "code": code,
                     "name": curr_name,
                     "reason": (
-                        "אין נתונים שמורים לקורס הזה. יש להריץ רענון מהידיעון "
-                        "כדי למשוך את הקבוצות שלו."
+                        "הקטלוג הנוכחי אינו מכיל את הקבוצות של הקורס הזה. "
+                        "ייתכן שהן יופיעו בבנייה הבאה שלו."
                     ),
                     "kind": "missing_data",
                     "needs_scrape": True,
@@ -2000,8 +1984,7 @@ def _build_courses(
                     "code": code,
                     "name": course.name or curr_name,
                     "reason": (
-                        f"הנתונים השמורים הם לסמסטר {stored_semester}, ולא לסמסטר {semester}. "
-                        f"יש להריץ רענון מהידיעון לסמסטר המבוקש."
+                        f"הנתונים שבקטלוג הם לסמסטר {stored_semester}, ולא לסמסטר {semester}."
                     ),
                     "kind": "semester_mismatch",
                     "needs_scrape": True,
@@ -2454,8 +2437,8 @@ def _make_fetcher(
     cls = getattr(module, "YedionHTTP", None) if module is not None else None
     if cls is None:
         return None, (
-            "שליפה ישירה מהידיעון אינה זמינה כרגע (הרכיב yedion_http חסר). "
-            "אפשר להריץ רענון מלא, או לפענח מחדש את הנתונים השמורים."
+            "שליפה ישירה מהידיעון אינה זמינה (הרכיב yedion_http חסר). "
+            "הנתונים מוגשים מהקטלוג כפי שנבנה."
         ), False
     try:
         obj = _construct(
@@ -3099,445 +3082,36 @@ def _stale_or_missing(
 
 
 # ===========================================================================
-# 7. מצב הגרידה — thread אחד בלבד, יומן חסום בזיכרון
+# 7. כותב יחיד ל-data/db, וחותמת זמן
+#
+# ‏עד לאריזה לאירוח ישבה כאן כל מכונת הגרידה החיה: ``_scrape_state``,
+# ‏``_scrape_log``, ``_scrape_thread``, ומעטפת ה-stdout שקלטה את הפלט של
+# ‏``refresh.main`` / ``reparse.main`` ליומן שבזיכרון. כולם הוסרו יחד עם
+# ‏``POST /api/scrape/start``, ``GET /api/scrape/status`` ו-``POST /api/reparse``.
+#
+# ‏למה: אלה משתנים גלובליים ברמת המודול, כלומר אחד לכל *תהליך* — ותהליך
+# ‏מאורח משרת את כולם בבת אחת. גרידה אחת הייתה מדווחת על עצמה לכל
+# ‏הסטודנטים; ``/api/scrape/start`` היה ממסר פתוח, בלי הזדהות ובלי מגבלת
+# ‏קצב, אל השרת של המכללה; והריצה עצמה קרתה **בתוך** תהליך ה-web ולא
+# ‏בתת-תהליך. ‏HOSTING_NOTES.md §1 שורות 2–4, ו-§4 כלל 5 ("אין משתנים
+# ‏גלובליים חדשים ב-api.py — הם פר-תהליך, ותהליך מאורח משרת את כולם").
+#
+# ‏בניית הקטלוג היא עכשיו עבודת cron נפרדת (``build_catalog.py`` /
+# ‏``refresh.py``), והממשק מציג **מתי הקטלוג נבנה** דרך
+# ‏``GET /api/catalog/meta`` במקום יומן חי. ‏HOSTING_NOTES.md §3 ו-§4 כלל 2.
+#
+# ‏מה שנשאר כאן הוא מה ש**אינו** שייך לגרידה ועדיין משרת את השליפה
+# ‏על-פי-דרישה (סעיף 6א).
 # ===========================================================================
-_scrape_lock = threading.Lock()
-
 #: כותב אחד בלבד ל-``data/db``. ``Store._atomic_write_text`` מקנה לקובץ הזמני
-#: שם לפי **מזהה התהליך** בלבד, ולכן שני כותבים באותו שרת (thread הגרידה
-#: ובקשת ``/api/reparse``) מתנגשים על אותו ``<path>.<pid>.tmp`` ונופלים
-#: ב-WinError 32. הנעילה נלקחת בבקשה שמתחילה את הכתיבה ומשוחררת בסופה
-#: (בגרידה — ב-thread שסיים; ‏``threading.Lock`` מתיר שחרור מ-thread אחר).
+#: שם לפי **מזהה התהליך** בלבד, ולכן שני כותבים באותו תהליך מתנגשים על אותו
+#: ``<path>.<pid>.tmp`` ונופלים ב-WinError 32. הנעילה נלקחת בבקשה שמתחילה את
+#: הכתיבה ומשוחררת בסופה.
 _db_write_lock = threading.Lock()
-
-#: הצינור של ה-thread הנוכחי עבור ``_thread_stdout``.
-_stdout_local = threading.local()
-_stdout_proxy_lock = threading.Lock()
-_stdout_proxy: Any = None
-_stdout_users = 0
-_scrape_log: deque[str] = deque(maxlen=MAX_LOG_LINES)
-_scrape_state: dict[str, Any] = {
-    "running": False,
-    "phase": "idle",
-    "exit_code": None,
-    # ‏GROUND_TRUTH §9: במסלול ברירת המחדל אין התחברות בכלל, ולכן זה תמיד
-    # ‏False. השדה נשאר קיים בשביל מסלול הדפדפן (``mode == "browser"``).
-    "needs_login": False,
-    "mode": "http",
-    "started_at": None,
-    "finished_at": None,
-    "error": "",
-    "codes": [],
-    "message": "עדיין לא בוצע רענון בהרצה הזו.",
-    "dropped_lines": 0,
-}
-_scrape_thread: threading.Thread | None = None
-
-#: קודי היציאה של refresh.py (מתועדים ב-epilog שלו).
-_EXIT_MESSAGES: dict[int, str] = {
-    0: "הרענון הסתיים בהצלחה — הנתונים מעודכנים.",
-    # קוד 2 שייך אך ורק למסלול הדפדפן. במסלול ברירת המחדל אין התחברות,
-    # ולכן כישלון שם מדווח כשגיאה אמיתית ולא כ"צריך להתחבר".
-    2: "נדרשת התחברות לידיעון. יש להשלים את ההתחברות בחלון הדפדפן שנפתח, ואז להריץ רענון שוב.",
-    3: "הרענון הסתיים חלקית — חלק מהקורסים לא נשלפו. פירוט ביומן שלמטה.",
-    1: "הרענון נכשל. פירוט ביומן שלמטה.",
-    130: "הרענון הופסק.",
-}
-
-#: מילות מפתח שמזהות שלב מתוך שורת היומן שהגורד/הרענון הדפיסו.
-#: ‏(תת-מחרוזת, שלב, מה לעשות עם needs_login) — ``None`` = לא לגעת.
-#: הסדר קובע: המחרוזות הספציפיות לפני הכלליות, אחרת "התחברות זוהתה" הייתה
-#: נקראת בטעות כ"ממתינים להתחברות".
-_PHASE_MARKERS: tuple[tuple[str, str, bool | None], ...] = (
-    ("התחברות זוהתה", "connected", False),
-    ("Login detected", "connected", False),
-    ("כבר מחוברים", "connected", False),
-    ("התחברות ידנית לידיעון", "login", True),
-    ("נדרשת התחברות", "login", True),
-    ("ממתין להתחברות", "login", True),
-    ("לא בוצעה התחברות", "login", True),
-    ("יש להתחבר", "login", True),
-    ("בודק אם הסשן", "session", None),
-    ("שנת הלימודים", "year", None),
-    ("מעבר שנה", "year", None),
-    ("קטלוג", "catalog", None),
-    ("מביא קורס", "fetching", None),
-    ("נשמר", "saving", None),
-    ("סיום", "finishing", None),
-)
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _scrape_emit(line: str, *, internal: bool = False) -> None:
-    """שורה אחת ליומן, עם זיהוי שלב. בטוח לקריאה מה-thread של הגרידה.
-
-    ``internal=True`` = שורה שאנחנו כתבנו (מסגור, הסבר), ולכן **אין** להסיק
-    ממנה שלב. אחרת המשפט שמסביר שאיננו נוגעים בסיסמאות היה נקרא בטעות
-    כ"נדרשת התחברות" עוד לפני שהדפדפן בכלל נפתח.
-    """
-    text = str(line).rstrip()
-    if not text:
-        return
-    with _scrape_lock:
-        if len(_scrape_log) == _scrape_log.maxlen:
-            _scrape_state["dropped_lines"] = int(_scrape_state.get("dropped_lines", 0)) + 1
-        _scrape_log.append(text)
-        if internal:
-            return
-        for marker, phase, needs_login in _PHASE_MARKERS:
-            if marker in text:
-                _scrape_state["phase"] = phase
-                if needs_login is not None:
-                    _scrape_state["needs_login"] = bool(needs_login)
-                break
-
-
-def _scrape_snapshot() -> dict[str, Any]:
-    """תמונת מצב עקבית של הגרידה, להחזרה ב-JSON."""
-    with _scrape_lock:
-        snapshot = dict(_scrape_state)
-        snapshot["log"] = list(_scrape_log)
-    return snapshot
-
-
-class _LogStream:
-    """קובץ-מדומה שמפצל את מה שנכתב אליו לשורות יומן, ומשקף למסוף.
-
-    ‏``refresh.main`` ו-``reparse.main`` מדפיסים ב-``print``; זו הדרך לקלוט
-    את ההתקדמות שלהם בלי לגעת בהם.
-    """
-
-    def __init__(self, emit: Callable[[str], None], mirror: Any = None) -> None:
-        self._emit = emit
-        self._mirror = mirror
-        self._buffer = ""
-
-    def write(self, text: str) -> int:
-        data = str(text)
-        if self._mirror is not None:
-            try:
-                self._mirror.write(data)
-            except Exception:  # noqa: BLE001 - מסוף שלא יודע עברית לא יפיל גרידה
-                pass
-        self._buffer += data
-        while "\n" in self._buffer:
-            line, self._buffer = self._buffer.split("\n", 1)
-            self._emit(line)
-        return len(data)
-
-    def flush(self) -> None:
-        if self._buffer.strip():
-            self._emit(self._buffer)
-        self._buffer = ""
-        if self._mirror is not None:
-            try:
-                self._mirror.flush()
-            except Exception:  # noqa: BLE001
-                pass
-
-    def isatty(self) -> bool:
-        return False
-
-
-class _ThreadStdout:
-    """‏מחליף את ``sys.stdout`` פעם אחת, ומנתב כל כתיבה לפי ה-thread הכותב.
-
-    למה לא ``contextlib.redirect_stdout``: הוא גלובלי לתהליך. הגרידה רצה
-    ב-thread רקע ונמשכת דקות (היא ממתינה להתחברות ידנית), והשרת רץ
-    ‏``threaded=True`` — כך שכל הדפסה של כל בקשה מקבילה, של werkzeug ושל כל
-    ספרייה הייתה נבלעת ליומן הגרידה. גרוע מזה: שני redirect-ים שנסגרים בסדר
-    לא-מקונן (גרידה + ``/api/reparse``) משאירים את ``sys.stdout`` תקוע על
-    יומן של ריצה שכבר הסתיימה — ומאותו רגע המסוף שותק לצמיתות, בדיוק כשה-API
-    מפנה את הסטודנט/ית "לחלון הטרמינל שבו רץ השרת".
-
-    כאן כל thread רושם את הצינור שלו ב-``_stdout_local``; מי שלא רשם ממשיך
-    למסוף האמיתי כרגיל.
-    """
-
-    def __init__(self, base: Any) -> None:
-        self.base = base
-
-    def _target(self) -> Any:
-        return getattr(_stdout_local, "sink", None) or self.base
-
-    def write(self, text: str) -> int:
-        target = self._target()
-        try:
-            return target.write(text)
-        except Exception:  # noqa: BLE001 - מסוף סגור לא מפיל גרידה
-            fallback = sys.__stdout__
-            if fallback is not None and fallback is not target:
-                try:
-                    return fallback.write(text)
-                except Exception:  # noqa: BLE001
-                    pass
-            return len(str(text))
-
-    def flush(self) -> None:
-        try:
-            self._target().flush()
-        except Exception:  # noqa: BLE001
-            pass
-
-    def isatty(self) -> bool:
-        try:
-            return bool(self.base.isatty())
-        except Exception:  # noqa: BLE001
-            return False
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self.base, name)
-
-
-@contextlib.contextmanager
-def _thread_stdout(stream: Any):
-    """מנתב את ``print`` של ה-thread הנוכחי בלבד אל ``stream``.
-
-    ה-proxy מותקן פעם אחת ומשותף לכל ה-threads, ולכן סדר היציאה לא משנה:
-    הוא מוסר רק כשהמשתמש/ת האחרון/ה סיים/ה.
-    """
-    global _stdout_proxy, _stdout_users
-    with _stdout_proxy_lock:
-        if _stdout_proxy is None or sys.stdout is not _stdout_proxy:
-            _stdout_proxy = _ThreadStdout(sys.stdout)
-            sys.stdout = _stdout_proxy
-        proxy = _stdout_proxy
-        _stdout_users += 1
-
-    previous = getattr(_stdout_local, "sink", None)
-    _stdout_local.sink = stream
-    try:
-        yield
-    finally:
-        _stdout_local.sink = previous
-        with _stdout_proxy_lock:
-            _stdout_users = max(0, _stdout_users - 1)
-            if _stdout_users == 0 and sys.stdout is proxy:
-                sys.stdout = proxy.base
-                _stdout_proxy = None
-
-
-def _run_root_script(
-    name: str,
-    argv: list[str],
-    emit: Callable[[str], None],
-    *,
-    mirror: bool = False,
-) -> int:
-    """מריץ ``<name>.main(argv)`` משורש הפרויקט וקולט את הפלט שלו ליומן.
-
-    הקליטה היא **לכל thread בנפרד** (``_thread_stdout``), כך שהדפסות של בקשות
-    אחרות לא נבלעות לכאן.
-
-    ``mirror=False`` (ברירת המחדל) = **שום שורה לא מגיעה למסך**. זו דרישה
-    מפורשת: שורות הריצה שהופיעו על המסך בזמן רענון הן בדיוק מה שביקשו שלא
-    יופיע. ההתקדמות נשמרת ביומן שבזיכרון ומוגשת ב-``/api/scrape/status``,
-    ומה שנשבר באמת נרשם דרך ``LOG`` בצד השרת.
-    """
-    module = _import_root_module(name)
-    stream = _LogStream(emit, mirror=sys.__stdout__ if mirror else None)
-    with _thread_stdout(stream):
-        try:
-            return int(module.main(list(argv)))
-        finally:
-            stream.flush()
-
-
-def _argv_has(argv: list[str], flag: str) -> bool:
-    return flag in list(argv or [])
-
-
-def _argv_value(argv: list[str], flag: str, default: str = "") -> str:
-    """הערך שאחרי ``flag`` ב-argv, או ``flag=value``. חסר → ``default``."""
-    items = [str(a) for a in (argv or [])]
-    for i, item in enumerate(items):
-        if item == flag and i + 1 < len(items):
-            return items[i + 1]
-        if item.startswith(flag + "="):
-            return item.split("=", 1)[1]
-    return default
-
-
-def _http_scrape_runner(argv: list[str], emit: Callable[[str], None]) -> int:
-    """רענון ישיר ב-HTTP בתוך התהליך — בלי דפדפן ובלי התחברות.
-
-    מסלול גיבוי ל-``refresh.main``: אותו שולף (``yedion_http.YedionHTTP``),
-    אותו פענוח ואותה שמירה, דרך ``fetch_courses_into_store``. ה-``log`` של
-    השולף מוזרם ליומן שבזיכרון, ולכן שום שורה לא מגיעה למסך.
-
-    Returns:
-        ‏0 הצלחה, 3 הצלחה חלקית, 1 כישלון. **אף פעם לא 2** — אין כאן התחברות.
-    """
-    student = _profile().get("student") or {}
-    year_gregorian = _argv_value(argv, "--year") or _gregorian_for(
-        student.get("academic_year")
-    )
-    year_he = _hebrew_year_for(year_gregorian) or str(student.get("academic_year") or "")
-    semester = _argv_value(argv, "--semester") or str(student.get("term") or "")
-    codes = [c for c in re.split(r"[,\s]+", _argv_value(argv, "--codes")) if c]
-    catalog_only = _argv_has(argv, "--catalog-only")
-    max_age_text = _argv_value(argv, "--max-age")
-
-    fetcher, error, injected = _make_fetcher(
-        year_gregorian=year_gregorian, log=emit, delay_s=FETCH_DELAY_S
-    )
-    if fetcher is None:
-        emit(error)
-        return 1
-    error = _open_fetcher_session(fetcher, year_he)
-    if error:
-        emit(error)
-        return 1
-    delay_s = 0.0 if injected else FETCH_DELAY_S
-
-    if catalog_only:
-        result = fetch_catalog_into_store(
-            year_he=year_he,
-            year_gregorian=year_gregorian,
-            emit=emit,
-            fetcher=fetcher,
-        )
-        return 0 if result.get("ok") else 1
-
-    store = _store()
-    if not codes:
-        codes = store.tracked()
-    if not codes:
-        emit("אין קורסים במעקב, ולכן אין מה לרענן.")
-        return 0
-
-    # נימוס: מרעננים רק מה שבאמת התיישן (GROUND_TRUTH §9).
-    if max_age_text:
-        try:
-            stale = store.stale_codes(codes, float(max_age_text))
-        except (TypeError, ValueError):
-            stale = list(codes)
-        fresh = [c for c in codes if c not in stale]
-        if fresh:
-            emit(f"מדלגים על {len(fresh)} קורסים שהנתונים שלהם עדיין טריים.")
-        codes = stale
-        if not codes:
-            emit("כל הנתונים טריים — אין מה לרענן.")
-            return 0
-
-    emit(f"מרענן {len(codes)} קורסים…")
-    report = fetch_courses_into_store(
-        codes,
-        semester=semester,
-        year_he=year_he,
-        year_gregorian=year_gregorian,
-        emit=emit,
-        cap=len(codes),
-        delay_s=delay_s,
-        fetcher=fetcher,
-    )
-    fetched = list(report.get("fetched") or [])
-    failed = list(report.get("failed") or [])
-    changed = sum(len(v) for v in (report.get("changes") or {}).values())
-    emit(f"עודכנו {len(fetched)} קורסים, {changed} שינויים.")
-    if failed and not fetched:
-        return 1
-    return 3 if failed else 0
-
-
-def _default_scrape_runner(argv: list[str], emit: Callable[[str], None]) -> int:
-    """ברירת המחדל של הרענון: ``refresh.main`` — **בלי דפדפן ובלי התחברות**.
-
-    מאז ‏GROUND_TRUTH §9 חיפוש הקורסים בידיעון פתוח לקריאה, ו-``refresh.py``
-    שולף ב-HTTP ישיר אלא אם התבקש ``--browser`` במפורש. קוראים לו ולא כותבים
-    כאן רענון מקביל, כי הוא זה שמנהל גם את יומן השינויים, את רשימת המעקב ואת
-    דוח הריצה — ורענון "משלנו" היה מאבד את כל אלה בשקט.
-
-    אם ``refresh`` בכלל לא ניתן לטעינה, עוברים לשליפה ישירה בתוך התהליך
-    (``_http_scrape_runner``) במקום להשאיר את הסטודנט/ית בלי רענון.
-    """
-    try:
-        return _run_root_script("refresh", argv, emit)
-    except (ImportError, ModuleNotFoundError) as exc:
-        if _argv_has(argv, "--browser"):
-            raise
-        LOG.warning("refresh.py אינו זמין (%s) — עוברים לשליפה ישירה", exc)
-        emit("רכיב הרענון הראשי אינו זמין — ממשיכים בשליפה ישירה מהידיעון.")
-        return _http_scrape_runner(argv, emit)
-
-
-#: שם היסטורי, נשמר כדי שקוד קיים שמצביע עליו ימשיך לעבוד.
-_default_refresh_runner = _default_scrape_runner
-
-
-def _default_reparse_runner(argv: list[str], emit: Callable[[str], None]) -> int:
-    """ברירת המחדל: ``reparse.main`` — פענוח מחדש מ-data/raw, בלי רשת."""
-    return _run_root_script("reparse", argv, emit)
-
-
-def _scrape_worker(
-    runner: Callable[[list[str], Callable[[str], None]], int],
-    argv: list[str],
-    intro: Iterable[str] = (),
-) -> None:
-    """ה-thread של הרענון. אף פעם לא זורק — מסיים תמיד עם exit_code.
-
-    ``intro`` הן שורות הפתיחה של היומן, והן תלויות במסלול: ברירת המחדל היא
-    ‏HTTP ישיר בלי דפדפן, ורק ``--browser`` פותח חלון.
-    """
-    exit_code = 1
-    error = ""
-    try:
-        _scrape_emit("מתחיל רענון מהידיעון…", internal=True)
-        for line in intro:
-            _scrape_emit(line, internal=True)
-        exit_code = int(runner(argv, _scrape_emit))
-    except Exception as exc:  # noqa: BLE001 - thread שנופל בשקט הוא הגרוע מכול
-        LOG.exception("הרענון נכשל")
-        error = f"{type(exc).__name__}: {exc}"
-        _scrape_emit(f"תקלה: {error}", internal=True)
-        exit_code = 1
-    finally:
-        with _scrape_lock:
-            _scrape_state["running"] = False
-            _scrape_state["exit_code"] = exit_code
-            _scrape_state["finished_at"] = _now_iso()
-            _scrape_state["error"] = error
-            _scrape_state["phase"] = "done" if exit_code == 0 else "failed"
-            if exit_code == 2:
-                _scrape_state["needs_login"] = True
-                _scrape_state["phase"] = "needs_login"
-            _scrape_state["message"] = _EXIT_MESSAGES.get(
-                exit_code, f"הרענון הסתיים עם קוד {exit_code}."
-            )
-
-
-def reset_scrape_state() -> None:
-    """מאפס את מצב הגרידה. נועד לבדיקות — לא נקרא בזרימה רגילה."""
-    global _scrape_thread
-    with _scrape_lock:
-        _scrape_log.clear()
-        _scrape_state.update(
-            {
-                "running": False,
-                "phase": "idle",
-                "exit_code": None,
-                "needs_login": False,
-                "mode": "http",
-                "started_at": None,
-                "finished_at": None,
-                "error": "",
-                "codes": [],
-                "message": "עדיין לא בוצע רענון בהרצה הזו.",
-                "dropped_lines": 0,
-            }
-        )
-    # אין thread חי — אין סיבה שהנעילה על המסד תישאר תפוסה. אם יש thread חי
-    # הנעילה שייכת לו, ושחרור מכאן היה גוזל אותה ממנו.
-    if _scrape_thread is None or not _scrape_thread.is_alive():
-        try:
-            _db_write_lock.release()
-        except RuntimeError:
-            pass
-    _scrape_thread = None
 
 
 # ===========================================================================
@@ -3842,14 +3416,12 @@ def bootstrap():
             },
             "db": _db_snapshot(),
             "catalog": catalog_summary,
-            "scrape": _scrape_snapshot(),
             "day_names": {str(k): v for k, v in models.DAY_NAMES_HE.items()},
             "day_letters": {str(k): v for k, v in models.DAY_LETTERS_HE.items()},
             "kind_order": list(models.KIND_ORDER),
             "limits": {
                 "max_codes": MAX_CODES,
                 "max_top_n": MAX_TOP_N,
-                "max_log_lines": MAX_LOG_LINES,
                 "max_ondemand_fetches": MAX_ONDEMAND_FETCHES,
                 "max_ondemand_detail_fetches": MAX_ONDEMAND_DETAIL_FETCHES,
                 "fetch_delay_s": FETCH_DELAY_S,
@@ -4205,8 +3777,7 @@ def catalog_browse():
 
     if not catalog:
         note = (
-            "הקטלוג עדיין לא נטען. יש להריץ רענון מהידיעון כדי למשוך את רשימת "
-            "הקורסים המלאה."
+            "הקטלוג אינו טעון, ולכן רשימת הקורסים המלאה אינה זמינה כרגע."
         )
     elif not results:
         note = "לא נמצאו קורסים שמתאימים לחיפוש הזה בקטלוג."
@@ -4310,16 +3881,9 @@ def _ondemand_fetch(
         )
     if not _network_allowed():
         return skip_all(
-            "פנייה לידיעון מושבתת בהרצה הזו, ולכן לא נשלפו נתונים חדשים. "
-            "אפשר להריץ רענון מהידיעון כדי להשלים אותם."
+            "הנתונים מוגשים מהקטלוג כפי שנבנה, בלי פנייה לידיעון."
         )
-    with _scrape_lock:
-        if _scrape_state["running"]:
-            return skip_all(
-                "רענון מהידיעון רץ כרגע. הנתונים יושלמו בסיומו — אפשר לעקוב "
-                "אחריו ביומן הרענון."
-            )
-    # כותב יחיד ל-data/db: אותה נעילה שמפרידה בין הרענון לפענוח מחדש.
+    # כותב יחיד ל-data/db — ראו ‏_db_write_lock.
     if not _db_write_lock.acquire(blocking=False):
         return skip_all(
             "פעולה אחרת כותבת כרגע לנתונים. אפשר לנסות שוב בעוד רגע."
@@ -4697,7 +4261,7 @@ def solve():
             p["reason"] for p in problems
         ] or ["לא נבחר אף קורס עם נתונים שמורים."]
         base_common["suggestions"] = [
-            "יש להריץ רענון מהידיעון (הכפתור 'רענון מהידיעון') כדי למשוך את נתוני הקבוצות."
+            "לקורסים שנבחרו אין נתוני קבוצות בקטלוג הנוכחי."
         ]
         base_common["target_message"] = ""
         return _ok(base_common)
@@ -4868,260 +4432,36 @@ def solve():
     return _ok(base_common)
 
 
-# ----------------------------------------------------------- scrape start
-@bp.post("/scrape/start")
+# ------------------------------------------------------------ catalog meta
+@bp.get("/catalog/meta")
 @_endpoint
-def scrape_start():
-    """מתחיל רענון מהידיעון ב-thread רקע. חוזר מיד; ההתקדמות ב-/api/scrape/status.
+def catalog_meta():
+    """מתי נבנה הקטלוג וכמה קורסים יש בו — במקום יומן הגרידה החי.
 
-    ‏**ברירת המחדל אינה דורשת התחברות ואינה פותחת דפדפן.** חיפוש הקורסים
-    בידיעון פתוח לקריאה (GROUND_TRUTH §9), ולכן הרענון רץ בשקט ברקע ואפשר
-    להריץ אותו גם כמשימה יומית. ההתקדמות נכתבת ליומן שבזיכרון בלבד —
-    אף שורה לא מגיעה למסך.
+    ‏זו נקודת הקצה שהחליפה את ``/api/scrape/status``, וההבדל אינו טכני בלבד:
+    ‏סטודנט/ית מאורח/ת אינם מריצים גרידה משלהם ואין להם יומן לצפות בו. השאלה
+    ‏שהממשק צריך לענות עליה היא **"מתי נבנה הקטלוג"**, לא "איך הולך הרענון
+    ‏שלך". ‏HOSTING_NOTES.md §4 כלל 2.
 
-    ``browser: true`` בוחר את מסלול הגיבוי דרך Playwright, שבו יש חלון
-    התחברות ידני. גם שם האפליקציה אינה מבקשת, אינה רואה ואינה שומרת פרטי
-    התחברות — אין בה שדה כזה בכלל.
+    ``built_at`` הוא ‏ISO-8601 ב-UTC, או ``""`` כשאין קטלוג כלל.
+    ``source``: ``"shipped"`` = תאריך הבנייה של הקטלוג שנשלח עם הקוד;
+    ``"db"`` = חותמת השליפה של קטלוג מקומי; ``""`` = אין קטלוג.
     """
-    global _scrape_thread
-
-    body = _read_body(required=False)
-    student = _profile().get("student") or {}
-
-    codes = _clean_codes(body.get("codes"), field="codes", allow_empty=True)
-    if not codes:
-        codes = [str(c) for c in (_profile().get("scrape_codes") or [])]
-        codes = _clean_codes(codes, field="codes", allow_empty=True)
-    semester = str(body.get("semester") or student.get("term") or "")
-    year_he = str(body.get("year") or student.get("academic_year") or "")
-    year_greg = str(body.get("year_gregorian") or "") or _gregorian_for(year_he)
-    catalog_only = _as_bool(body.get("catalog_only"), False)
-    max_age = body.get("max_age")
-    # מסלול הדפדפן נבחר רק כשמבקשים אותו במפורש. ברירת המחדל: HTTP ישיר.
-    browser = _as_bool(body.get("browser"), False)
-    mode = "browser" if browser else "http"
-
-    argv: list[str] = ["--browser", "--headful"] if browser else []
-    if codes and not catalog_only:
-        argv += ["--codes", ",".join(codes)]
-    if catalog_only:
-        argv.append("--catalog-only")
-    if year_greg:
-        argv += ["--year", year_greg]
-    if semester:
-        argv += ["--semester", semester]
-    if max_age is not None and max_age != "":
-        argv += ["--max-age", str(float(max_age))]
-
-    from flask import current_app
-
-    runner = current_app.config.get("SCRAPE_RUNNER") or _default_scrape_runner
-    # ה-thread צריך את ההגדרות, את ה-Store ואת הפרופיל — כולם נקראים דרך
-    # ``current_app``. לוכדים את האובייקט עכשיו ודוחפים לו הקשר שם.
-    app_object = current_app._get_current_object()  # noqa: SLF001
-
-    intro = (
-        (
-            "בעוד רגע ייפתח חלון דפדפן. יש להשלים בו את ההתחברות לידיעון — "
-            "האפליקציה אינה מבקשת, אינה רואה ואינה שומרת פרטי התחברות.",
-        )
-        if browser
-        else (
-            "הרענון רץ ברקע בלי דפדפן ובלי הזדהות — חיפוש הקורסים בידיעון "
-            "פתוח לקריאה.",
-        )
-    )
-
-    with _scrape_lock:
-        if _scrape_state["running"]:
-            raise ApiError(
-                409,
-                "רענון מהידיעון כבר רץ כרגע. יש להמתין לסיומו — אפשר לעקוב אחריו "
-                "בחלון היומן — ורק אז להתחיל רענון נוסף.",
-                "a scrape is already running",
-            )
-        # כותב אחד בלבד למסד. הנעילה נלקחת כאן ומשוחררת ב-thread שיסיים.
-        if not _db_write_lock.acquire(blocking=False):
-            raise ApiError(
-                409,
-                "פענוח מחדש של הנתונים רץ כרגע. יש להמתין לסיומו ורק אז להתחיל "
-                "רענון מהידיעון — שתי הפעולות כותבות לאותם קבצים.",
-                "a db write (reparse) is already in progress",
-            )
-        _scrape_log.clear()
-        _scrape_state.update(
-            {
-                "running": True,
-                "phase": "starting",
-                "exit_code": None,
-                "needs_login": False,
-                "mode": mode,
-                "started_at": _now_iso(),
-                "finished_at": None,
-                "error": "",
-                "codes": codes,
-                "message": (
-                    "הרענון התחיל. ייפתח חלון דפדפן להתחברות ידנית."
-                    if browser
-                    else "הרענון התחיל ורץ ברקע — בלי דפדפן ובלי התחברות."
-                ),
-                "dropped_lines": 0,
-            }
-        )
-
-    def _guarded_worker() -> None:
-        """מריץ את ה-worker ומבטיח ניקוי — תהיה אשר תהיה התנהגותו.
-
-        הנעילה על המסד נלקחה ב-thread של הבקשה, ורק כאן היא משוחררת — פעם
-        אחת בדיוק. בלי הרשת הזו, worker שנופל, נתלה או מוחלף היה משאיר את
-        כפתור הרענון ואת ``/api/reparse`` נעולים עד סוף חיי התהליך.
-        """
-        try:
-            with app_object.app_context():
-                _scrape_worker(runner, argv, intro)
-        finally:
-            with _scrape_lock:
-                if _scrape_state["running"]:
-                    _scrape_state["running"] = False
-                    _scrape_state["finished_at"] = _scrape_state["finished_at"] or _now_iso()
-                    if _scrape_state["phase"] in ("starting", "idle"):
-                        _scrape_state["phase"] = "done"
-            try:
-                _db_write_lock.release()
-            except RuntimeError:  # pragma: no cover - כבר שוחררה
-                pass
-
-    thread = threading.Thread(
-        target=_guarded_worker,
-        name="slotwise-scrape",
-        daemon=True,
-    )
-    _scrape_thread = thread
-    try:
-        thread.start()
-    except BaseException:  # noqa: BLE001 - לא משאירים נעילה תלויה באוויר
-        _db_write_lock.release()
-        with _scrape_lock:
-            _scrape_state["running"] = False
-            _scrape_state["phase"] = "failed"
-            _scrape_state["message"] = "לא הצלחנו להתחיל את הרענון."
-        raise
+    _catalog, summary = _catalog_snapshot()
+    shipped_at = _shipped_built_at()
+    built_at = shipped_at or str(summary.get("fetched_at") or "")
+    age = store_mod.age_hours_since(built_at) if built_at else None
 
     return _ok(
         {
-            "started": True,
-            "argv": argv,
-            "codes": codes,
-            "mode": mode,
-            "note": (
-                "ייפתח חלון דפדפן. יש להשלים בו את ההתחברות ידנית — "
-                "האפליקציה אינה מבקשת ואינה שומרת פרטי התחברות."
-                if browser
-                else "הרענון רץ ברקע. אין צורך להתחבר ואין חלון שנפתח."
-            ),
-            "scrape": _scrape_snapshot(),
-        },
-        status=202,
-    )
-
-
-# ---------------------------------------------------------- scrape status
-@bp.get("/scrape/status")
-@_endpoint
-def scrape_status():
-    """מצב הרענון לתשאול (polling): running, phase, log, exit_code, needs_login."""
-    snapshot = _scrape_snapshot()
-    snapshot["ok"] = True
-    response = jsonify(snapshot)
-    response.status_code = 200
-    return response
-
-
-# ---------------------------------------------------------------- reparse
-@bp.post("/reparse")
-@_endpoint
-def reparse():
-    """בונה מחדש את המסד מ-``data/raw`` — בלי רשת, בלי דפדפן, בלי התחברות."""
-    body = _read_body(required=False)
-    student = _profile().get("student") or {}
-
-    codes = _clean_codes(body.get("codes"), field="codes", allow_empty=True)
-    semester = str(body.get("semester") or "")
-    year = str(body.get("year") or "")
-
-    argv: list[str] = []
-    if codes:
-        argv += ["--codes", ",".join(codes)]
-    if semester:
-        if semester not in {"א", "ב", "קיץ"}:
-            raise ApiError(
-                400,
-                "סמסטר לא תקין. הערכים האפשריים הם א, ב או קיץ.",
-                f"semester={semester!r}",
-            )
-        argv += ["--semester", semester]
-    if year:
-        argv += ["--year", year]
-
-    from flask import current_app
-
-    runner = current_app.config.get("REPARSE_RUNNER") or _default_reparse_runner
-
-    lines: list[str] = []
-
-    def emit(line: str) -> None:
-        if len(lines) < MAX_LOG_LINES:
-            lines.append(str(line).rstrip())
-
-    # ── כותב אחד בלבד ל-data/db ──
-    # גם הרענון וגם הפענוח מחדש שומרים דרך ``Store.save_course``, ושם הקובץ
-    # הזמני נגזר ממזהה **התהליך** — כך ששני כותבים בתוך אותו שרת מתנגשים על
-    # אותו ``<path>.<pid>.tmp``. בלי המשמר הזה קליק על "פענוח מחדש" בזמן
-    # שחלון ההתחברות פתוח היה יכול להפיל את השמירה של הגרידה באמצע.
-    with _scrape_lock:
-        if _scrape_state["running"]:
-            raise ApiError(
-                409,
-                "רענון מהידיעון רץ כרגע. יש להמתין לסיומו ורק אז להריץ פענוח "
-                "מחדש — שתי הפעולות כותבות לאותם קבצים.",
-                "a scrape is running",
-            )
-    if not _db_write_lock.acquire(blocking=False):
-        raise ApiError(
-            409,
-            "פעולה שכותבת לנתונים כבר רצה כרגע. יש להמתין לסיומה ורק אז לנסות שוב.",
-            "a db write is already in progress",
-        )
-
-    started = time.perf_counter()
-    try:
-        exit_code = int(runner(argv, emit))
-    except Exception as exc:  # noqa: BLE001
-        LOG.exception("reparse נכשל")
-        raise ApiError(
-            500,
-            "הפענוח מחדש נכשל. הנתונים הקיימים לא נמחקו.",
-            f"{type(exc).__name__}: {exc}",
-        ) from exc
-    finally:
-        _db_write_lock.release()
-
-    message = {
-        0: "הפענוח מחדש הסתיים בהצלחה.",
-        3: "הפענוח מחדש הסתיים חלקית — חלק מהקורסים אינם שמורים או אינם נפתחים בסמסטר הזה.",
-    }.get(exit_code, f"הפענוח מחדש הסתיים עם קוד {exit_code}.")
-
-    # הקאש של הקורסים נקרא מהדיסק בכל פעם, אבל התוכנית והפרופיל בקאש —
-    # אחרי reparse נכון להחזיר תמונת מסד עדכנית.
-    return _ok(
-        {
-            "exit_code": exit_code,
-            "message": message,
-            "log": lines,
-            "elapsed_ms": int((time.perf_counter() - started) * 1000),
-            "db": _db_snapshot(),
-            "argv": argv,
-            "student_semester": student.get("term", ""),
+            "built_at": built_at,
+            "age_hours": age,
+            "age_text": store_mod.format_hebrew_age(age),
+            "course_count": int(summary.get("count") or 0),
+            "year": summary.get("year", ""),
+            "year_gregorian": summary.get("year_gregorian", ""),
+            "source": "shipped" if shipped_at else ("db" if built_at else ""),
+            "empty": bool(summary.get("empty")),
         }
     )
 
@@ -5141,9 +4481,8 @@ def create_app(
         config: דריסות לנתיבים ולהגדרות. מפתחות מוכרים: ``db_root``,
             ``curriculum_path``, ``profile_path``, ``raw_dir``,
             ``browser_profile_dir``, ``max_age_hours``, ``allow_network``
-            (‏``None`` = אוטומטי: אין רשת בתוך בדיקות), ``scrape_runner``,
-            ``reparse_runner``, ``course_fetcher`` (הזרקות לבדיקות — כדי שלא
-            ייפתח דפדפן ושלא תיפתח פנייה אמיתית לידיעון).
+            (‏``None`` = אוטומטי: אין רשת בתוך בדיקות), ``course_fetcher``
+            (הזרקה לבדיקות — כדי שלא תיפתח פנייה אמיתית לידיעון).
         db_root: קיצור דרך ל-``config["db_root"]``, כדי שאפשר יהיה להריץ
             את האפליקציה מול עותק זמני של המסד בלי לגעת באמיתי.
         serve_ui: האם להגיש גם את ``templates/index.html`` ואת ``static/``.
@@ -5170,8 +4509,6 @@ def create_app(
         "allow_network": None,
     }
     overrides = dict(config or {})
-    scrape_runner = overrides.pop("scrape_runner", None)
-    reparse_runner = overrides.pop("reparse_runner", None)
     course_fetcher = overrides.pop("course_fetcher", None)
     settings.update({k: v for k, v in overrides.items() if k in settings})
     if db_root is not None:
@@ -5218,8 +4555,6 @@ def create_app(
     app.jinja_env.auto_reload = True
 
     app.config["SLOTWISE"] = settings
-    app.config["SCRAPE_RUNNER"] = scrape_runner
-    app.config["REPARSE_RUNNER"] = reparse_runner
     app.config["COURSE_FETCHER"] = course_fetcher
     app.config["JSON_SORT_KEYS"] = False
 

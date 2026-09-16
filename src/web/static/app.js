@@ -154,7 +154,6 @@
   var SEARCH_DEBOUNCE_MS = 250;
   /** כמה שורות קטלוג להביא בכל עיון. מספיק כדי לגלול, מעט מספיק כדי לטעון מיד. */
   var BROWSE_LIMIT = 60;
-  var SCRAPE_POLL_MS = 2000;
   var TOAST_MS = 5000;
 
   /** רזולוציית הרשת השבועית: שורה לכל רבע שעה (כמו בחוזה שב-index.html). */
@@ -692,26 +691,8 @@
     solveBusy: false,
     solveAbort: null,       // ‏AbortController של החישוב הרץ
     solveCancelled: false,  // בוטל ביודעין — לא תקלה
-    scrape: {
-      running: false,
-      phase: "idle",
-      log: [],
-      exit_code: null,
-      needs_login: false,
-      message: "",
-      error: "",
-      // סיכום השורה האחת שמוצג בכותרת; היומן המלא נשאר מקופל.
-      codes: [],
-      total: null,
-      done: null,
-      updated: null,
-      changed: null,
-      summary: "",
-    },
-    scrapeError: null,
-    logShown: 0,
-    polling: false,
-    reparseBusy: false,
+    // גיל הקטלוג מ-/api/catalog/meta. ‏null = עוד לא נטען, או שאין קטלוג.
+    catalogMeta: null,
     // ההיפוך של הוויתור האחרון — ממוקד, לא צילום מצב. ראי undoRelaxation.
     lastRelax: null,
     colors: Object.create(null),
@@ -1804,7 +1785,6 @@
     return (
       runtime.solveBusy ||
       runtime.coursesBusy ||
-      runtime.reparseBusy ||
       !runtime.ready
     );
   }
@@ -1827,7 +1807,7 @@
           runtime.programs = data.programs;
         }
         applyBootstrapDefaults(data);
-        if (isScrapeRunning(data)) startPolling();
+        fetchCatalogMeta();
         runtime.ready = true;
         render();
         syncData(true);
@@ -1840,11 +1820,6 @@
       });
   }
 
-  function isScrapeRunning(data) {
-    if (!data) return false;
-    if (data.scrape_running === true) return true;
-    return !!(data.scrape && data.scrape.running === true);
-  }
 
   var appliedDefaults = false;
 
@@ -2558,191 +2533,59 @@
     scheduleSolve();
   }
 
-  function refreshAllData() {
-    lastSig.semester = null;
-    lastSig.courses = null;
-    getJSON("/api/bootstrap")
-      .then(function (data) {
-        runtime.bootstrap = data;
-        runtime.bootstrapError = null;
-        render();
-      })
-      .catch(function (err) {
-        runtime.bootstrapError = errorText(err);
-        render();
-      });
-    syncData(true);
-  }
-
   /* =====================================================================
-   * 7. רענון מהידיעון (scrape) ובנייה מחדש (reparse)
+   * 7. גיל הקטלוג  (catalog age)
+   *
+   * ‏עד לאריזה לאירוח ישב כאן רענון חי מול הידיעון: ‏startScrape, תשאול של
+   * ‏/api/scrape/status, ויומן ששורותיו הוזרמו למסך. הכול הוסר יחד עם
+   * ‏נקודות הקצה עצמן.
+   *
+   * ‏למה: לסטודנט/ית מאורח/ת אין גרידה משלהם ואין יומן לצפות בו, ולכן
+   * ‏המצב שהממשק צריך לתאר הוא **"הקטלוג ישן"** ולא "הרענון שלך נכשל".
+   * ‏HOSTING_NOTES.md §4 כלל 2. בנייה מחדש היא עכשיו עבודת cron, והשאלה
+   * ‏היחידה שנשארה לממשק היא מתי היא רצה — ‏GET /api/catalog/meta.
    * ===================================================================== */
 
-  var pollTimer = null;
-
-  function startScrape() {
-    runtime.scrapeError = null;
-    runtime.scrape.log = [];
-    runtime.logShown = 0;
-    runtime.scrape.running = true;
-    runtime.scrape.phase = "starting";
-    runtime.scrape.exit_code = null;
-    runtime.scrape.summary = "";
-    runtime.scrape.done = null;
-    runtime.scrape.updated = null;
-    runtime.scrape.changed = null;
-    // הערכה זמנית עד שהתשובה הראשונה מ-/api/scrape/status מגיעה, כדי ששורת
-    // הסיכום תגיד "מרענן N קורסים…" כבר מהרגע הראשון.
-    var bootDb = (runtime.bootstrap && runtime.bootstrap.db) || {};
-    runtime.scrape.total = num(bootDb.count, state.codes.length || null);
-    // ‏SPEC_V2 §4: היומן נשאר מקופל. אין פלט טכני על המסך בלי בקשה מפורשת.
-    renderHeader();
-    postJSON("/api/scrape/start", {})
-      .then(function () {
-        startPolling();
-      })
-      .catch(function (err) {
-        // 409 = כבר רצה סריקה. זו לא שגיאה — פשוט מתחילים לעקוב אחריה.
-        if (err && err.status === 409) {
-          startPolling();
-          return;
-        }
-        runtime.scrape.running = false;
-        runtime.scrapeError = errorText(err);
-        toast(errorText(err), "error");
-        renderHeader();
-      });
-  }
-
-  function startPolling() {
-    if (runtime.polling) return;
-    runtime.polling = true;
-    pollOnce();
-  }
-
-  function stopPolling() {
-    runtime.polling = false;
-    if (pollTimer) {
-      clearTimeout(pollTimer);
-      pollTimer = null;
-    }
-  }
-
-  function pollOnce() {
-    if (!runtime.polling) return;
-    getJSON("/api/scrape/status")
+  function fetchCatalogMeta() {
+    return getJSON("/api/catalog/meta")
       .then(function (data) {
-        var wasRunning = runtime.scrape.running;
-        runtime.scrape = {
-          running: data.running === true,
-          phase: txt(data.phase),
-          log: pickList(data, ["log", "lines"], null),
-          exit_code:
-            data.exit_code === undefined || data.exit_code === null
-              ? null
-              : num(data.exit_code, null),
-          needs_login: data.needs_login === true,
-          message: txt(data.message),
-          error: txt(data.error),
-          // שדות שורת הסיכום. כולם אופציונליים — מה שחסר פשוט לא נאמר.
-          codes: pickList(data, ["codes"], null).map(txt).filter(Boolean),
-          total: num(data.total, null),
-          done: num(data.done, null),
-          updated: num(data.updated, null),
-          changed: num(
-            data.changed !== undefined ? data.changed : data.changes,
-            null
-          ),
-          summary: txt(data.summary),
-        };
-        runtime.scrapeError = null;
-        render();
-        if (runtime.scrape.running) {
-          pollTimer = setTimeout(pollOnce, SCRAPE_POLL_MS);
-          return;
-        }
-        stopPolling();
-        if (wasRunning) {
-          var code = runtime.scrape.exit_code;
-          toast(
-            runtime.scrape.message ||
-              (code === 0
-                ? T("app.toasts.scrapeDone")
-                : T("app.toasts.scrapeFailed")),
-            code === 0 ? "ok" : "warn"
-          );
-          refreshAllData();
-        }
+        runtime.catalogMeta = data || null;
+        renderHeader();
       })
-      .catch(function (err) {
-        runtime.scrapeError = errorText(err);
-        render();
-        pollTimer = setTimeout(pollOnce, SCRAPE_POLL_MS * 2);
+      .catch(function () {
+        // גיל הקטלוג הוא מידע משלים בלבד: כל שאר העמוד עובד בלעדיו. לכן
+        // כישלון כאן אינו תקלה שמוצגת — התווית פשוט לא מופיעה.
+        runtime.catalogMeta = null;
       });
   }
 
-  // ‏startReparse הוסר יחד עם הכפתור. ‏/api/reparse עצמו נשאר: הוא כלי
-  // של מתחזק/ת (וגם ‏tests/test_web.py §6ב בודק אותו), אבל הוא קורא מ-
-  // data/raw שאינו נכנס לגיט — כלומר בשכפול נקי הוא היה פועל על תיקייה
-  // ריקה, תמיד. כפתור שאינו יכול לעבוד גרוע מכפתור שאינו קיים.
+  /** ‏"הקטלוג נבנה ב-9 בספטמבר 2026 · 572 קורסים", או "" כשאין קטלוג. */
+  function catalogBuiltText() {
+    var meta = runtime.catalogMeta;
+    if (!meta || !txt(meta.built_at)) return "";
+    var when = formatBuiltAt(txt(meta.built_at));
+    var count = num(meta.course_count, null);
+    return count === null
+      ? Tf("app.catalog.builtAt", { when: when })
+      : Tf("app.catalog.builtAtWithCount", { when: when, count: count });
+  }
 
   /**
-   * שורת הסיכום היחידה שמופיעה על המסך בזמן רענון ואחריו (SPEC_V2 §4).
-   * כל שאר הפירוט נשאר ביומן המקופל.
+   * ‏ISO-8601 ב-UTC -> תאריך מקומי קריא. מחרוזת שאינה תאריך חוזרת כמות
+   * שהיא: עדיף להראות את מה שהשרת אמר מאשר "Invalid Date".
    */
-  function refreshSummaryText() {
-    if (runtime.reparseBusy) return T("app.scrape.reparseRunning");
-    var sc = runtime.scrape;
-    var codes = pickList(sc, ["codes"], null).map(txt).filter(Boolean);
-    var total = num(sc.total, codes.length || null);
-
-    if (sc.running === true) {
-      var done = num(sc.done, null);
-      if (total !== null) {
-        return done !== null
-          ? Tf("app.scrape.refreshingWithDone", { total: total, done: done })
-          : Tf("app.scrape.refreshing", { total: total });
-      }
-      return T("app.scrape.refreshingNoCount");
+  function formatBuiltAt(iso) {
+    try {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      return d.toLocaleDateString("he-IL", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    } catch (e) {
+      return iso;
     }
-
-    if (txt(sc.summary)) return txt(sc.summary);
-    if (sc.exit_code === null || sc.exit_code === undefined) return "";
-    if (num(sc.exit_code, 1) === 0) {
-      var updated = num(sc.updated, total);
-      var changed = num(sc.changed, null);
-      var line =
-        updated === null
-          ? changed === null
-            ? T("app.scrape.doneNoCount")
-            : Tf("app.scrape.doneNoCountWithChanges", { changed: changed })
-          : changed === null
-          ? Tf("app.scrape.doneUpdated", { updated: updated })
-          : Tf("app.scrape.doneUpdatedWithChanges", {
-              updated: updated,
-              changed: changed,
-            });
-      return line;
-    }
-    return txt(sc.message) || T("app.scrape.failedSeeLog");
-  }
-
-  function logLineText(entry) {
-    if (entry === null || entry === undefined) return "";
-    if (typeof entry === "string") return entry;
-    if (typeof entry === "object") {
-      var body = txt(entry.line || entry.message || entry.text || entry.msg);
-      var when = txt(entry.ts || entry.time || "");
-      if (!body) {
-        try {
-          return JSON.stringify(entry);
-        } catch (e) {
-          return "";
-        }
-      }
-      return when ? when + "  " + body : body;
-    }
-    return txt(entry);
   }
 
   /* =====================================================================
@@ -2756,13 +2599,7 @@
     ui.freshDot = byId("freshness-dot");
     ui.freshText = byId("freshness-text");
     ui.freshMeta = byId("freshness-meta");
-    ui.btnRefresh = byId("btn-refresh");
-    ui.logToggle = byId("btn-log-toggle");
-    ui.logClose = byId("btn-log-close");
-    ui.log = byId("scrape-log");
-    ui.logPhase = byId("scrape-phase");
-    ui.logLines = byId("scrape-log-lines");
-    ui.refreshSummary = byId("refresh-summary");
+    ui.catalogBuilt = byId("catalog-built");
     ui.banners = byId("banners");
     ui.toasts = byId("toasts");
     ui.tplBanner = byId("tpl-banner");
@@ -3005,25 +2842,6 @@
       });
     }
 
-    if (ui.btnRefresh) {
-      ui.btnRefresh.addEventListener("click", function () {
-        if (runtime.scrape.running) return;
-        startScrape();
-      });
-    }
-    if (ui.logToggle) {
-      ui.logToggle.addEventListener("click", function () {
-        var showing = ui.log ? !ui.log.hidden : false;
-        setHidden(ui.log, showing);
-        ui.logToggle.setAttribute("aria-expanded", showing ? "false" : "true");
-      });
-    }
-    if (ui.logClose) {
-      ui.logClose.addEventListener("click", function () {
-        setHidden(ui.log, true);
-        if (ui.logToggle) ui.logToggle.setAttribute("aria-expanded", "false");
-      });
-    }
     if (ui.btnPrint) {
       ui.btnPrint.addEventListener("click", function () {
         try {
@@ -3496,17 +3314,6 @@
       });
     }
 
-    // ‏SPEC_V2 §3: משיכת הקורסים מהידיעון אינה דורשת התחברות, ולכן זה כבר לא
-    // המסלול הרגיל. הבאנר נשאר רק למקרה שהרענון רץ במסלול הדפדפן (--browser)
-    // ובכל זאת דיווח שנדרשת הזדהות — שתיקה במצב כזה הייתה משאירה תקוע בלי הסבר.
-    if (runtime.scrape.needs_login === true) {
-      wanted.push({
-        key: "needs-login",
-        kind: "warn",
-        text: T("app.banners.needsLogin"),
-      });
-    }
-
     if (runtime.fetchSkipped.length) {
       var skippedCodes = runtime.fetchSkipped.map(function (rec) {
         return rec.code;
@@ -3531,29 +3338,6 @@
     // החלוקה הפנימית היא לפי מה שנוגע לסטודנט/ית — לא לפי סוג התקלה.
     // ‏רגע אחד שבו היומן מפסיק להיות פירוט טכני: כשהרענון נכשל. אז הוא
     // התשובה לשאלה "למה", ולכן הוא נפתח כאן ולא בתחתית העמוד.
-    if (runtime.scrape.phase === "failed" || txt(runtime.scrapeError)) {
-      var failLines = pickList(runtime.scrape, ["log"], null)
-        .map(txt)
-        .filter(Boolean)
-        .slice(-12);
-      wanted.push({
-        key: "scrape-failed",
-        kind: "error",
-        text:
-          txt(runtime.scrape.error) ||
-          txt(runtime.scrapeError) ||
-          T("app.toasts.scrapeFailed"),
-        details: failLines.length
-          ? {
-              label: T("app.tech.failureDetails"),
-              lines: failLines,
-            }
-          : null,
-        action: runtime.scrape.running
-          ? null
-          : { label: T("app.banners.staleAction"), run: startScrape },
-      });
-    }
 
     var db = (runtime.bootstrap && runtime.bootstrap.db) || {};
     var staleCodes = uniq(pickList(db, ["stale"], null).map(txt).filter(Boolean));
@@ -3634,9 +3418,6 @@
           failed: failedSet,
           note: db.courses || {},
         },
-        action: runtime.scrape.running
-          ? null
-          : { label: T("app.banners.staleAction"), run: startScrape },
       });
     }
 
@@ -4012,48 +3793,9 @@
     }
     setText(ui.freshMeta, meta.join(" · "));
 
-    if (ui.btnRefresh) {
-      ui.btnRefresh.disabled = runtime.scrape.running === true;
-      ui.btnRefresh.textContent = runtime.scrape.running
-        ? T("app.header.refreshRunning")
-        : T("app.header.refreshIdle");
-    }
-
-    // ‏SPEC_V2 §4: על המסך שורה אחת. השורות הגולמיות נשארות ביומן המקופל.
-    var summaryLine = refreshSummaryText();
-    setText(ui.refreshSummary, summaryLine);
-    setHidden(ui.refreshSummary, !summaryLine);
-
-    var sc = runtime.scrape;
-    var phase =
-      txt(sc.message) ||
-      PHASE_HE[txt(sc.phase)] ||
-      txt(sc.phase) ||
-      T("app.header.phaseIdle");
-    if (runtime.reparseBusy) phase = T("app.header.phaseReparse");
-    if (runtime.scrapeError) {
-      phase = Tf("app.header.phaseError", { error: runtime.scrapeError });
-    }
-    setText(ui.logPhase, phase);
-
-    // שורות היומן מתווספות בלבד — לא מציירים אותו מחדש בכל רינדור
-    var lines = sc.log || [];
-    if (ui.logLines) {
-      if (lines.length < runtime.logShown) {
-        clear(ui.logLines);
-        runtime.logShown = 0;
-      }
-      for (var i = runtime.logShown; i < lines.length; i++) {
-        var line = logLineText(lines[i]);
-        if (line) ui.logLines.appendChild(el("div", { text: line }));
-      }
-      if (lines.length !== runtime.logShown) {
-        runtime.logShown = lines.length;
-        ui.logLines.scrollTop = ui.logLines.scrollHeight;
-      }
-    }
-    // אין כאן פתיחה אוטומטית של היומן: משיכת הנתונים אינה דורשת התחברות,
-    // ולכן אין שום שלב שבו הסטודנט/ית *חייב/ת* לראות פלט טכני על המסך.
+    // ‏תווית "הקטלוג נבנה ב-…" במקום כפתור רענון ויומן חי: מארח לא מריץ
+    // גרידה משלו, ולכן זו השאלה היחידה שנשארה לו על טריות הנתונים.
+    setText(ui.catalogBuilt, catalogBuiltText());
   }
 
   /* --- שלב 1: שנה וסמסטר -------------------------------------------- */

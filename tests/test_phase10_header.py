@@ -186,39 +186,54 @@ def test_theme_state_is_not_signalled_by_colour_alone(page):
 
 
 # --------------------------------------------------------------------------
-# 3. פקדי התחזוקה מחוץ למסך של הסטודנט/ית
+# 3. אין פקדי תחזוקה במסך — הם הוסרו יחד עם נקודות הקצה שמאחוריהם
 # --------------------------------------------------------------------------
-def test_the_scrape_control_left_the_header_and_is_in_the_technical_section(page):
-    """שני הכיוונים. בדיקה של צד אחד עוברת גם אם הכפתור פשוט נמחק."""
+# ‏עד לאריזה לאירוח היו כאן שלוש בדיקות ששמרו על **מיקומו** של כפתור
+# ‏"עדכן נתונים מהידיעון": שהוא עזב את הכותרת, שהוא יושב בפרטים הטכניים,
+# ‏ושרק ‎?debug=1‎ חושף אותו. הכפתור עצמו נמחק עכשיו, ואיתו
+# ‏``POST /api/scrape/start`` ויומן הגרידה — ‏HOSTING_NOTES.md §1 שורה 3.
+# ‏לכן השאלה התהפכה: לא "איפה הוא", אלא "ודאו שהוא איננו".
+def test_no_maintenance_controls_reach_the_page(page):
+    """כפתור הרענון ויומן הגרידה אינם קיימים ב-DOM — לא מוסתרים, אלא אינם."""
+    got = page.evaluate(
+        """() => ({
+          refresh: !!document.getElementById('btn-refresh'),
+          summary: !!document.getElementById('refresh-summary'),
+          log: !!document.getElementById('scrape-log'),
+          logLines: !!document.getElementById('scrape-log-lines'),
+        })"""
+    )
+    assert not got["refresh"], "כפתור המשיכה מהידיעון עדיין בעמוד"
+    assert not got["summary"], "שורת סיכום המשיכה עדיין בעמוד"
+    assert not got["log"], "יומן הגרידה עדיין בעמוד"
+    assert not got["logLines"], "שורות יומן הגרידה עדיין בעמוד"
+
+
+def test_the_header_says_when_the_catalog_was_built(page):
+    """‏#catalog-built הוא מה שהחליף אותם, והוא בכותרת — לא מאחורי ‎?debug=1‎.
+
+    ‏זה חיווי הטריות היחיד שיש לסטודנט/ית מאורח/ת, ולכן הוא חייב להיות
+    ‏גלוי בלי לפתוח שום סעיף. ‏HOSTING_NOTES.md §3.
+    """
+    page.wait_for_timeout(1500)
     got = page.evaluate(
         """() => {
-          const b = document.getElementById('btn-refresh');
-          if (!b) return {exists: false};
+          const el = document.getElementById('catalog-built');
+          if (!el) return {exists: false};
           return {exists: true,
-                  inHeader: !!b.closest('.app-header'),
-                  inTech: !!b.closest('#tech-details'),
-                  text: (b.textContent || '').trim(),
-                  summaryInTech: !!document.getElementById('refresh-summary')
-                                   ?.closest('#tech-details')};
+                  inHeader: !!el.closest('.app-header'),
+                  inTech: !!el.closest('#tech-details'),
+                  text: (el.textContent || '').trim()};
         }"""
     )
-    assert got["exists"], "הכפתור נמחק. הוא אמור לעבור, לא להיעלם"
-    assert not got["inHeader"], "המשיכה מהידיעון עדיין בכותרת"
-    assert got["inTech"], "המשיכה מהידיעון אינה בפרטים הטכניים"
-    assert got["summaryInTech"], "שורת הסיכום נשארה מאחור, בלי הכפתור שלה"
-    assert "ידיעון" in got["text"], got["text"]
-
-
-def test_the_student_does_not_see_it_until_the_section_is_opened(page):
-    """‏<details> סגור בטעינה רגילה, ולכן הכפתור אינו מצויר כלל."""
-    assert page.evaluate(
-        "() => !document.getElementById('tech-details').open"
-    ), "פרטים טכניים פתוח בטעינה רגילה"
-    assert not page.is_visible("#btn-refresh"), "הכפתור נראה בלי לפתוח את הסעיף"
+    assert got["exists"], "אין תווית 'הקטלוג נבנה ב-…' בעמוד"
+    assert got["inHeader"], "תווית בניית הקטלוג אינה בכותרת"
+    assert not got["inTech"], "תווית בניית הקטלוג נקברה בפרטים הטכניים"
+    assert "הקטלוג" in got["text"], f"התווית ריקה או לא בעברית: {got['text']!r}"
 
 
 def test_debug_opens_the_technical_section(browser, server):
-    """‏?debug=1 הוא הדלת שהתדריך מצביע עליה עבור פקדי התחזוקה."""
+    """‏?debug=1 עדיין פותח את הפרטים הטכניים — שם יושבות הספירות."""
     ctx = browser.new_context(viewport={"width": 1440, "height": 900})
     pg = ctx.new_page()
     try:
@@ -227,6 +242,5 @@ def test_debug_opens_the_technical_section(browser, server):
         assert pg.evaluate(
             "() => document.getElementById('tech-details').open"
         ), "‏?debug=1 אינו פותח את הפרטים הטכניים"
-        assert pg.is_visible("#btn-refresh")
     finally:
         ctx.close()

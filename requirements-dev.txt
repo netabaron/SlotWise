@@ -1,0 +1,15 @@
+# SlotWise — development and test dependencies.
+#
+# Install on top of the runtime requirements:
+#
+#     pip install -r requirements.txt -r requirements-dev.txt
+#
+# The browser-driven tests (test_*_browser.py, test_phase10_header.py) also
+# need Playwright, which lives in requirements-scraper.txt:
+#
+#     pip install -r requirements-scraper.txt
+#     python -m playwright install chromium
+
+pytest==9.1.1
+iniconfig==2.3.0
+pluggy==1.6.0

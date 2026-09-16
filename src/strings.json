@@ -129,7 +129,7 @@
     },
     "course": {
       "staleWarning": "",
-      "yearMismatch": "הנתונים השמורים הם לשנת {stored}, ולא לשנת {wanted}. יש להריץ רענון מהידיעון כדי לוודא."
+      "yearMismatch": "הנתונים שבקטלוג הם לשנת {stored}, ולא לשנת {wanted}."
     },
     "pins": {
       "kindMissing": "בקורס {code} אין שיעור מסוג {kind}, ולכן אי אפשר לנעוץ בו קבוצה. הנעיצה שוחררה.",
@@ -164,7 +164,7 @@
     "header": {
       "offline": "אין חיבור לשרת המקומי",
       "loading": "בטעינת נתונים…",
-      "empty": "אין עדיין נתונים במסד — יש להריץ רענון מהידיעון",
+      "empty": "אין נתונים בקטלוג הנוכחי",
       "fetched": "הנתונים עודכנו {age}",
       "metaCourses": "{count} קורסים",
       "metaGroups": "{count} קבוצות",
@@ -383,9 +383,11 @@
       "browseFailed": "החיפוש בקטלוג נכשל: {error}",
       "loading": "טוען מהקטלוג…",
       "noResults": "לא נמצא קורס מתאים בקטלוג.",
-      "empty": "הקטלוג ריק — יש להריץ רענון מהידיעון.",
+      "empty": "הקטלוג אינו טעון כרגע.",
       "showing": "מוצגים {count} קורסים",
-      "showingOfTotal": "מוצגים {count} קורסים מתוך {total} — אפשר לצמצם בחיפוש"
+      "showingOfTotal": "מוצגים {count} קורסים מתוך {total} — אפשר לצמצם בחיפוש",
+      "builtAt": "הקטלוג נבנה ב-{when}",
+      "builtAtWithCount": "הקטלוג נבנה ב-{when} · {count} קורסים"
     },
     "electives": {
       "titleTracks": "מסלולי התמחות",

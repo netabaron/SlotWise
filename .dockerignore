@@ -1,0 +1,60 @@
+# SlotWise — what never enters the API image.
+#
+# Two reasons a line is here: size, or it has no business on a server.
+
+# --- scraped data and live session state -----------------------------------
+# 16 MB of raw course HTML. Only reparse.py reads it, and reparse is not a
+# hosted operation.
+data/raw/
+# 21 MB of one machine's locally scraped store. Gitignored, so a clean checkout
+# does not have it — but a build from a working directory would bake it in.
+# Leaving it out is also correct, not just smaller: Store falls back to
+# data/catalog.jsonl as its base layer, so an empty data/db still serves all
+# 572 courses. Verified 2026-09-16. The Dockerfile mkdir's the empty directory.
+data/db/
+# 29 MB, and it holds LIVE Citrix session cookies. This must never be baked
+# into a shared image — it is gitignored for the same reason.
+data/.browser_profile/
+**/.browser_profile/
+
+# One student's identity: program, year, term, selected courses. A hosted
+# instance has no single student; the UI keeps its state in localStorage.
+data/profile.json
+
+# --- tests -----------------------------------------------------------------
+tests/
+.pytest_cache/
+**/__pycache__/
+*.py[cod]
+
+# --- vcs and tooling -------------------------------------------------------
+.git/
+.gitignore
+.gitattributes
+.github/
+.venv/
+venv/
+.idea/
+.vscode/
+
+# --- source documents ------------------------------------------------------
+# The college's own shnaton PDFs, ~3.2 MB. data/curricula.json is the parsed
+# product and is what the app actually reads, so the PDFs stay out.
+*.pdf
+Screenshot.png
+
+# --- docs ------------------------------------------------------------------
+# Kept out of the image, not out of the repo. DEPLOY.md is deliberately NOT in
+# this list: it is worth having next to the thing it describes.
+BRIEFING.md
+DEVELOPMENT_LOG.md
+DEFERRED.md
+SPEC_*.md
+ui-overhaul-prompt.md
+docs/
+
+# --- local artefacts -------------------------------------------------------
+schedule.html
+*.log
+.env
+.env.*

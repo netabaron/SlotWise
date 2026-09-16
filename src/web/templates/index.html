@@ -34,13 +34,14 @@
     #freshness-meta      "6 קורסים · 27 קבוצות · קטלוג: 1412"
     #theme-toggle        ‏role=radiogroup. שלושה .theme-btn עם aria-checked;
                          אין בהם טקסט נראה, והשם הנגיש הוא aria-label.
-    #btn-log-toggle      מציג/מסתיר את #scrape-log (יש לעדכן aria-expanded)
+    #catalog-built       "הקטלוג נבנה ב-9 בספטמבר 2026 · 572 קורסים"
+                         ‏GET /api/catalog/meta. ריק = אין קטלוג, ואז
+                         התווית נשארת ריקה במקום להמציא תאריך.
 
   פרטים טכניים / #tech-details  — ‏?debug=1 בלבד; אחרת מוסתר לגמרי
-    #btn-refresh         "עדכן נתונים מהידיעון"  ->  POST /api/scrape/start
-                         ‏עבר לכאן מהכותרת ב-2026-09-08: פעולת תחזוקה, לא
-                         פעולה של סטודנט/ית.
-    #refresh-summary     שורת סיכום אחרי משיכה. עברה יחד איתו.
+    #tech-facts          ספירות וזמני חישוב. אין כאן יותר כפתור רענון ואין
+                         יומן גרידה: שניהם הוסרו עם נקודות הקצה שמאחוריהם
+                         באריזה לאירוח. ‏HOSTING_NOTES.md §1 ו-§4 כלל 2.
 
   סרגל מצוף ושכבת המערכת / sticky bar + grid overlay
     #sticky-bar          ‏position: fixed בראש העמוד. מקבל class "is-visible"
@@ -64,15 +65,6 @@
     tpl-banner / tpl-toast   שלד מוכן לשכפול (בתחתית העמוד)
       המחלקה על השורש קובעת גוון:
       banner--info | banner--warn | banner--error | banner--ok
-
-  יומן משיכה / scrape log
-    #refresh-summary     שורת סיכום אחת ("מרענן 6 קורסים…" / "עודכנו 6 קורסים, 0 שינויים").
-                         זה מה שמופיע על המסך; שורות היומן הגולמיות נשארות מקופלות.
-    #scrape-log          מוסתר כברירת מחדל, וגם בזמן רענון — נפתח רק בלחיצה על "יומן".
-                         יש להשתמש ב-el.hidden, לא ב-style.display
-    #scrape-phase        טקסט השלב הנוכחי
-    #scrape-log-lines    שורות היומן
-    #btn-log-close       סגירה
 
   חמשת השלבים / the five steps
     #step-year #step-courses #step-days #step-lecturers #step-schedule
@@ -174,6 +166,11 @@
       <span class="fresh-lines">
         <span class="fresh-text" id="freshness-text">{{ S.ui.header.freshnessLoading }}</span>
         <span class="fresh-meta" id="freshness-meta"></span>
+        <!-- ‏מתי נבנה הקטלוג שמוגש כרגע. ‏GET /api/catalog/meta.
+             ‏החליף את כפתור הרענון ואת יומן הגרידה: מארח לא מריץ גרידה
+             ‏משלו, ולכן "הקטלוג ישן" הוא המצב שיש לתאר, לא "הרענון שלך
+             ‏נכשל". ‏HOSTING_NOTES.md §4 כלל 2. ריק -> נשאר ריק. -->
+        <span class="fresh-meta" id="catalog-built"></span>
       </span>
     </div>
     <!-- ‏שלושה אייקונים ולא שלוש מילים. השם הנגיש עובר ל-aria-label, כי
@@ -528,24 +525,7 @@
 <details class="tech-details" id="tech-details" hidden>
   <summary class="tech-summary">{{ S.app.tech.title }}</summary>
   <div class="tech-body">
-    <!-- ‏המשיכה מהידיעון נשארת — היא הדרך היחידה לבדוק אם קורס מסוים
-         השתנה מאז שנבנה הקטלוג — אבל היא אינה פעולה של סטודנט/ית, ולכן
-         אינה יושבת בכותרת. אם האפליקציה תתארח אי־פעם היא נמחקת לגמרי:
-         למשתמש מארח אין משיכה משלו, ולנקודת הקצה אין אימות ולא מגן קצב.
-         ראו HOSTING_NOTES.md שורה 3 ו-DEFERRED.md. -->
-    <div class="header-actions">
-      <button type="button" class="btn btn-outline" id="btn-refresh">{{ S.ui.header.btnRefresh }}</button>
-      <p class="fresh-meta" id="refresh-summary" role="status" aria-live="polite" hidden></p>
-    </div>
     <ul class="tech-facts" id="tech-facts"></ul>
-    <section class="panel log-panel" id="scrape-log" aria-labelledby="scrape-log-title">
-      <div class="log-head">
-        <h2 class="log-title" id="scrape-log-title">{{ S.app.tech.logTitle }}</h2>
-        <span class="log-phase" id="scrape-phase">{{ S.ui.log.phaseIdle }}</span>
-      </div>
-      <p class="log-note">{{ S.ui.log.note }}</p>
-      <pre class="log-lines" id="scrape-log-lines" tabindex="0" aria-live="polite"></pre>
-    </section>
   </div>
 </details>
 
