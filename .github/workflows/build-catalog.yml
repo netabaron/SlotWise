@@ -73,6 +73,11 @@ jobs:
         with:
           # Needed so the commit at the end can be pushed back.
           persist-credentials: true
+          # Full history, because the commit step rebases onto the new tip of
+          # main before pushing. The default shallow clone has no merge base
+          # to rebase against, and the rebase fails at the end of a 90-minute
+          # build — the one moment it must not.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -165,6 +170,25 @@ jobs:
           # a stray artifact cannot ride along unnoticed.
           git add data/catalog/catalog.jsonl data/catalog/catalog.meta.json
           git commit -m "catalog: nightly build ${{ steps.inputs.outputs.date }}"
+
+          # main almost certainly moved while we were fetching. This job runs
+          # for ~90 minutes from a checkout of the commit that triggered it, so
+          # any push in that window makes this a non-fast-forward and the push
+          # fails — after an hour and a half of polite requests the college's
+          # server already served. Rebase our one commit onto the new tip.
+          #
+          # --autostash is deliberate: data/db and data/raw are gitignored so
+          # they do not block a rebase, but a stray tracked change would, and
+          # failing there would waste the whole run.
+          git fetch origin "${{ github.ref_name }}"
+          if ! git pull --rebase --autostash origin "${{ github.ref_name }}"; then
+            git rebase --abort || true
+            echo "::error::rebase onto origin/${{ github.ref_name }} conflicted."
+            echo "::error::Something else changed data/catalog while this build was running."
+            echo "::error::The built catalog is in the run log; nothing was pushed."
+            exit 1
+          fi
+
           git push
           echo "changed=true" >> "$GITHUB_OUTPUT"
           echo "::notice::catalog updated and pushed"

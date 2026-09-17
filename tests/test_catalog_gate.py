@@ -76,12 +76,19 @@ def test_coverage_below_the_floor_fails(tmp_path):
 
 
 def test_a_lost_course_fails_the_regression_check():
-    """קורס שהיה בקטלוג הקודם ונעלם — הבדיקה שתופסת פרסר שבור."""
+    """קורס שהיה בקטלוג הקודם ונעלם — הבדיקה שתופסת פרסר שבור.
+
+    ‏**עודכן 2026-09-18:** האינדקס שמועבר לשער חייב להכיל את 61757. מאז
+    שהשער מבחין בין נסיגה לגריעה, קוד שאינו באינדקס נחשב קורס שהמכללה
+    גרעה — וזה **אינו** פוסל. כאן הכוונה היא ההפך: הידיעון עדיין מפרסם
+    אותו ואנחנו לא הפקנו אותו. ראו tests/test_catalog_gate_withdrawn.py.
+    """
     prev = {"counts": {"timed_meetings": 1000}, "codes": ["61756", "61757"]}
     records = {"61756": {"groups": [{"semester": "א", "meetings": [
         {"start": 510, "end": 630}] * 1000}]}}
     census = B.RawCensus(intact=["61756"])
-    result = B.validate(records, census, _catalog(1), prev, expected_year='תשפ"ז')
+    still_listed = {"61756": {"name": "קורס"}, "61757": {"name": "קורס"}}
+    result = B.validate(records, census, still_listed, prev, expected_year='תשפ"ז')
     assert not result.passed
     assert any("נסיגה" in f and "61757" in f for f in result.failures)
 

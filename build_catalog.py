@@ -298,14 +298,33 @@ def validate(
     if previous_meta and previous_meta.get("counts"):
         prev = previous_meta["counts"]
         prev_codes = set(previous_meta.get("codes") or [])
-        lost = sorted(prev_codes - set(records)) if prev_codes else []
+        gone = prev_codes - set(records)
+        # ‏קורס שנעלם משתי סיבות שונות לגמרי, והשער הזה אמור לתפוס רק אחת
+        # מהן. ‏**נסיגה** היא קורס שהידיעון עדיין מפרסם ואנחנו לא הצלחנו
+        # להפיק — פרסר שנשבר, שליפה שנכשלה. ‏**גריעה** היא קורס שהידיעון
+        # עצמו כבר אינו מפרסם, וזה אירוע רגיל לגמרי במכללה.
+        #
+        # ‏עד 2026-09-18 השער לא הבחין ביניהן ונפל על ``not lost``, בלי שום
+        # סובלנות. הריצה הראשונה של הצינור (‏1h39m, ‏571/571 נשלפו, אפס
+        # כישלונות) נפלה בגלל קורס אחד מתוך 572 — ‏51961, שהמכללה גרעה —
+        # בזמן שהחצי השני של אותו שער, שימור המפגשים, עבר ב-99.7% מול רף
+        # של 95%. כלומר: אחד מהשניים נכתב כטווח סבילות והשני כמספר מוחלט.
+        #
+        # ‏``catalog`` הוא אינדקס הקורסים **הטרי** שנשלף בתחילת הריצה, ולכן
+        # הוא בדיוק מה שמבדיל: קוד שאינו בו — המכללה גרעה אותו.
+        lost = sorted(gone & set(catalog)) if prev_codes else []
+        withdrawn = sorted(gone - set(catalog)) if prev_codes else []
         prev_timed = int(prev.get("timed_meetings") or 0)
         retention = (counts["timed_meetings"] / prev_timed) if prev_timed else 1.0
         check(
             "4. אין נסיגה מול הקטלוג הקודם",
             not lost and retention >= MIN_MEETING_RETENTION,
-            f"קורסים שנעלמו: {len(lost)}"
+            f"קורסים שנעלמו למרות שהם עדיין בקטלוג: {len(lost)}"
             + (f" ({', '.join(lost[:5])})" if lost else "")
+            # ‏נאמר בקול ואינו פוסל: שינוי אמיתי אצל המכללה ראוי שיופיע
+            # ביומן, ולא שייעלם בשקט רק מפני שאינו תקלה.
+            + (f"; נגרעו מהקטלוג של המכללה: {len(withdrawn)} "
+               f"({', '.join(withdrawn[:5])})" if withdrawn else "")
             + f"; מפגשים מתוזמנים {counts['timed_meetings']} מול {prev_timed} "
               f"= {retention:.1%} (נדרש {MIN_MEETING_RETENTION:.0%})",
         )
