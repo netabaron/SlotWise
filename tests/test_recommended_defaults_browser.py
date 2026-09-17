@@ -363,7 +363,8 @@ def test_summer_drops_the_plan_and_keeps_the_manual_pick(page):
 #: "מסלול בלי תוכנית" חייבות להצביע עליו במפורש: מאז שכל מחלקה שיש לה פרק
 #: קיבלה תוכנית משלה, "המסלול הראשון שאינו הנדסת תוכנה" הוא כבר מסלול
 #: שכן יש לו תוכנית, והבדיקות היו בודקות את ההפך ממה שכתוב בשמן.
-NO_CURRICULUM_PROGRAM = "הנדסת ביוטכנולוגיה"
+#: ‏עודכן 2026-09-17: היה "הנדסת ביוטכנולוגיה", ומאז יש לה תוכנית.
+NO_CURRICULUM_PROGRAM = "מתמטיקה שימושית עם התמחות ב-AI ובאלגוריתמיקה"
 
 
 def other_program(page) -> str:
@@ -681,10 +682,10 @@ def test_track_courses_are_shown_but_never_auto_checked(page):
 
 
 def test_a_department_with_no_chapter_stays_on_the_catalog(page):
-    """להנדסת ביוטכנולוגיה אין פרק שנתון כלל. אסור שתקבל לוח סמסטרים של
-    מחלקה אחרת, ואסור שתראה "סמסטר 5 בתוכנית הלימודים"."""
+    """למסלול בלי תוכנית אסור לקבל לוח סמסטרים של מחלקה אחרת, ואסור
+    שיראה "סמסטר 5 בתוכנית הלימודים"."""
     with_identity(page)
-    page.select_option("#select-program", "הנדסת ביוטכנולוגיה")
+    page.select_option("#select-program", NO_CURRICULUM_PROGRAM)
     page.wait_for_timeout(2200)
     state = snap(page)
     assert state["autoSemester"] == ""

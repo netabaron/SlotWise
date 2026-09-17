@@ -119,8 +119,14 @@ def test_a_student_of_another_program_is_not_shown_software_courses(client):
 
 
 def test_a_program_with_no_chapter_at_all_is_shown_nothing(client):
-    """להנדסת ביוטכנולוגיה אין קובץ ‏PDF ואין תוכנית — והיא עוברת לקטלוג."""
-    data = client.get("/api/semester/5/courses?program=הנדסת ביוטכנולוגיה").get_json()
+    """מסלול בלי תוכנית עובר לקטלוג.
+
+    ‏**עודכן 2026-09-17:** הדוגמה הייתה הנדסת ביוטכנולוגיה, ומאז הגיע לה
+    מסמך קורסי חובה ויש לה תוכנית. המסלול שנשאר בלי תוכנית הוא מתמטיקה
+    שימושית, ושם זו החלטה ולא פער — השנתון מדפיס שתי תוכניות לפי מועד
+    הכניסה בלי סמסטר משותף. ראו tests/test_curriculum_absence.py.
+    """
+    data = client.get("/api/semester/5/courses?program=מתמטיקה שימושית עם התמחות ב-AI ובאלגוריתמיקה").get_json()
     assert data["curriculum_available"] is False
     assert data["courses"] == []
 
