@@ -16,12 +16,29 @@
 name: nightly catalog build
 
 on:
-  schedule:
-    # 23:00 UTC. Israel has no fixed UTC offset and GitHub cron has no DST,
-    # so one expression cannot mean 02:00 all year: this is 02:00 IDT in
-    # summer (UTC+3) and 01:00 IST in winter (UTC+2). Both are firmly in the
-    # quiet hours, which is the property that actually matters.
-    - cron: "0 23 * * *"
+  # The nightly schedule is DISABLED. Manual runs still work — use
+  # workflow_dispatch below, or `gh workflow run build-catalog.yml`.
+  #
+  # Two open questions have to be settled before this runs unattended, and
+  # both are cheap to get wrong at 02:00 with nobody watching:
+  #
+  #   1. Whether Braude answers a GitHub datacenter IP at all. Untested. If
+  #      it does not, the job goes red every night — safely (the committed
+  #      catalog keeps serving) but noisily.
+  #   2. A successful run commits a fresh catalog, and several tests pin
+  #      exact values derived from catalog data. Rebuilding from the current
+  #      data/raw gives 61753 five semester-א groups instead of four, which
+  #      shifts the optimal schedule and fails
+  #      test_web.py::test_solve_returns_schedules_with_the_full_shape.
+  #      So a green build would hand the next push a red CI.
+  #
+  # To re-enable: uncomment the two lines below. 23:00 UTC is 02:00 IDT in
+  # summer (UTC+3) and 01:00 IST in winter (UTC+2) — Israel has no fixed
+  # offset and GitHub cron has no DST, so one expression cannot mean 02:00
+  # all year. Both land in the quiet hours, which is what actually matters.
+  #
+  # schedule:
+  #   - cron: "0 23 * * *"
   workflow_dispatch:
     inputs:
       year:
