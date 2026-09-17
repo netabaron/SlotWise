@@ -1082,6 +1082,27 @@
    * ‏``curriculum_available`` מהשרת. השדה חדש, ושרת שאינו מכיר אותו פשוט
    * לא שולח אותו — ואז התשובה היא ``null`` ("לא ידוע") והממשק מסיק מהרשימה.
    */
+  /**
+   * ‏למה אין תוכנית לימודים למסלול הנוכחי, לפי ``curriculum_absence``
+   * שהשרת מחזיר. מוחזר כמפתח של ``app.terms.fallbackNote``.
+   *
+   * ‏הערך מגיע פר-מסלול ברשימת ``programs`` של ‏/api/bootstrap, כי החלפת
+   * מסלול אינה מביאה את ‏bootstrap מחדש. בלי זה, מסלול שהמכללה כן מפרסמת
+   * לו תוכנית — אבל לא בצורה שאפשר להציג — היה נראה בדיוק כמו מסלול שאין
+   * לו תוכנית בכלל.
+   */
+  function curriculumAbsenceKey() {
+    var chosen = txt(state.program);
+    var list = runtime.programs || [];
+    for (var i = 0; i < list.length; i++) {
+      if (txt(list[i].id) === chosen) {
+        return txt(list[i].curriculum_absence).replace(/_/g, "-");
+      }
+    }
+    var boot = runtime.bootstrap || {};
+    return txt(boot.curriculum_absence).replace(/_/g, "-");
+  }
+
   function readCurriculumAvailable(data) {
     if (!data || typeof data !== "object") return null;
     if (typeof data.curriculum_available === "boolean") return data.curriculum_available;
@@ -3894,7 +3915,13 @@
         ui.semesterSummary,
         yearLabel + " · " + Tf("app.year.summaryTerm", { term: txt(state.term) })
       );
-      setText(ui.yearNote, FALLBACK_NOTE["no-curriculum"]);
+      // ‏"אין תוכנית" ו"יש תוכנית שאי אפשר להציג" הם שני מצבים שונים,
+      // ועד כאן הם אמרו לסטודנט/ית בדיוק את אותו משפט.
+      var absence = curriculumAbsenceKey();
+      setText(
+        ui.yearNote,
+        FALLBACK_NOTE[absence] || FALLBACK_NOTE["no-curriculum"]
+      );
     } else {
       setText(ui.semesterSummary, T("app.year.summaryNoPlan"));
       setText(

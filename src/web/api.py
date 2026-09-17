@@ -165,6 +165,28 @@ CURRICULUM_MISSING_NOTE = (
     "תוכנית הלימודים של המחלקה אינה טעונה — אפשר לבחור כל קורס מהקטלוג"
 )
 
+#: למה אין תוכנית לימודים למסלול. ‏"" = יש תוכנית.
+#:
+#: ‏עד כאן הממשק לא יכול היה להבחין בין "המכללה אינה מפרסמת תוכנית למסלול
+#: הזה" לבין "היא כן מפרסמת, אבל לא בצורה שאפשר להציג כרשימה אחת לסמסטר".
+#: שתי התשובות היו אותו ``curriculum_available: false`` ואותו נוסח כללי,
+#: והסטודנט/ית נפלו לעיון בקטלוג בלי לדעת למה.
+CURRICULUM_ABSENCE_NONE = ""
+CURRICULUM_ABSENCE_MISSING = "no_curriculum"
+CURRICULUM_ABSENCE_NOT_REPRESENTABLE = "not_representable"
+
+#: מסלולים שהמכללה **כן** מפרסמת להם תוכנית, אבל היא אינה ניתנת לייצוג
+#: כרשימה אחת לכל סמסטר — ולכן אין כאן קובץ תוכנית, בכוונה.
+#:
+#: ‏מתמטיקה שימושית: השנתון מדפיס את התוכנית פעמיים, אחת לכל מועד כניסה
+#: (חורף/אביב), ואין ולו סמסטר אחד משותף לשתיהן. גם מספר הסמסטר עצמו
+#: מציין דבר אחר בכל מועד. בחירה שרירותית באחת מהן הייתה נכונה לחצי
+#: מהמחלקה ושגויה לחצי השני. ראו את הביקורת ב-commit 5aa6f17.
+CURRICULUM_ABSENCE_BY_PROGRAM: dict[str, str] = {
+    "מתמטיקה שימושית עם התמחות ב-AI ובאלגוריתמיקה":
+        CURRICULUM_ABSENCE_NOT_REPRESENTABLE,
+}
+
 #: מה שאומרים כשהתוכנית טעונה אבל אין בה קורסים לסמסטר שנבחר.
 CURRICULUM_EMPTY_SEMESTER_NOTE = (
     "אין קורסים לסמסטר הזה בתוכנית הלימודים — אפשר לבחור כל קורס מהקטלוג"
@@ -1784,18 +1806,29 @@ def _program_choices(curr: dict | None = None) -> list[dict]:
                 # לפי המרשם, לא לפי תוכנית ברירת המחדל: לכל מחלקה שיש לה
                 # קובץ תוכנית משלה מגיע "יש תוכנית", לא רק להנדסת תוכנה.
                 "has_curriculum": _norm_program(name) in _curricula(),
+                # למה אין תוכנית, כשאין. הממשק מחליף מסלול בלי לבקש שוב
+                # ‏/api/bootstrap, ולכן הסיבה חייבת להגיע כאן לכל מסלול.
+                "curriculum_absence": (
+                    CURRICULUM_ABSENCE_NONE
+                    if _norm_program(name) in _curricula()
+                    else _curriculum_absence(name, {})
+                ),
                 "url": entry.get("url", ""),
                 "description": entry.get("description", ""),
                 "tracks_text": entry.get("tracks_text", ""),
             }
         )
     if mine and not any(p["id"] == mine for p in out):
-        out.insert(0, {"id": mine, "label": mine, "has_curriculum": True})
+        out.insert(0, {"id": mine, "label": mine, "has_curriculum": True,
+                       "curriculum_absence": CURRICULUM_ABSENCE_NONE})
     out.append(
         {
             "id": OTHER_PROGRAM,
             "label": "תוכנית אחרת / לא ברשימה",
             "has_curriculum": False,
+            # ‏"לא ברשימה" אינו מסלול, ולכן אין לו סיבה להיעדר תוכנית —
+            # הוא **הוא** הבחירה לעבוד מול הקטלוג.
+            "curriculum_absence": CURRICULUM_ABSENCE_MISSING,
         }
     )
     return out
@@ -1830,6 +1863,23 @@ def _program_matches_curriculum(program: Any, curr: dict | None = None) -> bool:
         return False
     norm = lambda t: re.sub(r"[\s\"'׳״-]", "", str(t))
     return norm(wanted) == norm(mine)
+
+
+def _curriculum_absence(program: Any = None, curr: dict | None = None) -> str:
+    """למה אין תוכנית לימודים למסלול הזה. ‏"" כשיש אחת.
+
+    ‏``not_representable`` = המכללה מפרסמת תוכנית, אבל לא בצורה שאפשר
+    להציג כרשימה אחת לסמסטר. ‏``no_curriculum`` = אין תוכנית ידועה.
+    ההבחנה קיימת כדי שהממשק יוכל להסביר, במקום ליפול לקטלוג בשקט.
+    """
+    if _curriculum_available(curr, program):
+        return CURRICULUM_ABSENCE_NONE
+    norm = _norm_program(program)
+    if norm:
+        for name, reason in CURRICULUM_ABSENCE_BY_PROGRAM.items():
+            if _norm_program(name) == norm:
+                return reason
+    return CURRICULUM_ABSENCE_MISSING
 
 
 def _curriculum_available(curr: dict | None = None, program: Any = None) -> bool:
@@ -3416,6 +3466,9 @@ def bootstrap():
             # שני השדות האלה נמצאים גם ברמה העליונה בכוונה: הממשק בודק אותם
             # לפני שהוא מצייר את שלב 2, ולא צריך לחפור בשביל זה.
             "curriculum_available": has_curriculum,
+            "curriculum_absence": _curriculum_absence(
+                (profile.get("student") or {}).get("program"), curr
+            ),
             # מה התוכנית הטעונה מכסה, ומה אפשר לבחור. יש לנו קובץ תוכנית
             # אחד בלבד (הנדסת תוכנה); כל השאר עובדים מול הקטלוג, שהוא ממילא
             # מלא ומכסה את כל המחלקות.
@@ -3612,6 +3665,7 @@ def semester_courses(sem: str):
             # להישען כאן, ולא "משהו נשבר".
             "curriculum_available": bool(courses),
             "curriculum_loaded": has_curriculum,
+            "curriculum_absence": _curriculum_absence(program, curr),
             "program": str(curr.get("program", "") or ""),
             "note": note,
             "fallback": {
