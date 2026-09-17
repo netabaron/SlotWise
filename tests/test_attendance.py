@@ -76,11 +76,15 @@ from store import Store  # noqa: E402
 #: המאגר המקומי אינו במאגר הקוד והאפליקציה הרצה כותבת אותו מחדש, ולכן כל
 #: מספר שמקובע מולו זז מתחת לבדיקה. מול הקטלוג המספרים יוצאים בדיוק כפי
 #: שנכתבו — 27 קבוצות — והם גם יציבים.
-CATALOG = ROOT / "data" / "catalog" / "catalog.jsonl"
+#: ‏הקטלוג **הקפוא**, לא ``data/catalog/``. ראו tests/conftest.py: הקטלוג
+#: שנשלח הוא הפלט של הצינור הלילי, והבדיקות כאן מקבעות ערכים שנגזרים ממנו
+#: (ספירת קבוצות לכל קורס). קריאה ממנו הייתה הופכת כל עדכון נתונים לכישלון
+#: בדיקה. הקובץ הקפוא משתנה רק דרך scripts/update_test_fixture.py.
+CATALOG = ROOT / "tests" / "fixtures" / "catalog" / "catalog.jsonl"
 
 pytestmark = pytest.mark.skipif(
     not CATALOG.is_file(),
-    reason="אין data/catalog/catalog.jsonl — יש להריץ build_catalog.py פעם אחת",
+    reason="אין tests/fixtures/catalog/catalog.jsonl — יש להריץ scripts/update_test_fixture.py",
 )
 
 # --------------------------------------------------------------------------

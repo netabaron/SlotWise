@@ -69,13 +69,13 @@ jobs:
 
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Needed so the commit at the end can be pushed back.
           persist-credentials: true
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -134,6 +134,12 @@ jobs:
           esac
           exit "$rc"
 
+      # Note what is deliberately absent: the test suite. The nightly job
+      # runs verify_catalog.py and nothing else, because the suite is pinned
+      # to the FROZEN catalog (tests/fixtures/catalog) and would be testing
+      # yesterday's data against today's build — it would either pass
+      # vacuously or fail for the wrong reason. The artifact is checked by
+      # its own gates and by verify_catalog.py; the code is checked by ci.yml.
       - name: Verify the built catalog
         # Separate from the gates on purpose. The gates check the *build*
         # (raw dumps, coverage, non-regression); this checks the *artifact*
@@ -166,7 +172,7 @@ jobs:
       - name: Upload the build log
         # always(): the log is most useful precisely when the build failed.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-log-${{ steps.inputs.outputs.date }}-${{ github.run_id }}
           path: build.log

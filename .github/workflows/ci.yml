@@ -1,8 +1,16 @@
 # CI: the test suite, and proof that the image actually serves.
 #
-# Neither job touches the network beyond pip and Docker Hub. Nothing here
-# fetches from the yedion — that is the nightly job's business, and only its
-# business.
+# Neither job touches the network beyond pip, Docker Hub and the Playwright
+# browser download. Nothing here fetches from the yedion — that is the nightly
+# job's business, and only its business.
+#
+# The two jobs read DIFFERENT catalogs, on purpose:
+#
+#   test   -> tests/fixtures/catalog  (frozen; nightly data cannot break CI)
+#   docker -> data/catalog            (the real one; it is what ships)
+#
+# See tests/conftest.py for why, and tests/test_catalog_invariants.py for the
+# one test that does look at the real catalog.
 
 name: ci
 
@@ -18,48 +26,75 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
-    # ~6 min locally for this subset. 30 leaves room for a slower runner
-    # without letting a pathological solve hang the job for an hour.
+    # The full suite is ~14 min locally, most of it Playwright. 30 leaves
+    # room for a slower runner without letting a wedged browser hang the job.
     timeout-minutes: 30
+
+    env:
+      # Belt and braces: tests/conftest.py sets this too, but setting it at
+      # job level means the seed step below reads the frozen catalog as well,
+      # not just pytest.
+      SLOTWISE_CATALOG_DIR: tests/fixtures/catalog
 
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          pip install -r requirements.txt -r requirements-dev.txt -r requirements-scraper.txt
+
+      - name: Install the Playwright browser
+        # NOT optional, and the reason is a bug this workflow already had.
+        # Nine test modules open with `pytest.importorskip("playwright...")`
+        # at module level. Without the package that raises at import time, so
+        # the whole module is skipped and its tests are never collected — one
+        # line of "s" in the output and nothing else. The first two CI runs
+        # looked green in 32 seconds while silently not running 36 tests,
+        # including the 8 colour-token tests CLAUDE.md calls load-bearing.
+        #
+        # Installing the browser is what lets the suite run in full, which is
+        # why there is no --ignore list below any more: a hand-maintained list
+        # of "browser tests" is exactly what drifted out of date.
+        run: python -m playwright install --with-deps chromium
 
       - name: Seed the gitignored fixtures
         # data/db/ and data/profile.json are gitignored — correctly, they are
         # college content and personal data — but part of the suite needs
-        # them. Measured on a clean checkout 2026-09-16: 4 failures and 33
-        # errors, all FileNotFoundError, from tests/test_multifaculty.py
-        # (which copytree's data/db) and tests/test_web.py (which reads
-        # profile.json for the defaults). The seed builds a minimal store
-        # from the catalog that IS committed, so the tests see what a clean
-        # clone sees rather than fixtures invented for them.
-        run: python scripts/seed_dev_data.py
+        # them. On a clean checkout without this: 4 failures and 33 errors,
+        # all FileNotFoundError. --fixture builds them from the frozen
+        # catalog, so the store the tests run against is frozen too.
+        run: python scripts/seed_dev_data.py --fixture
+
+      - name: Guard against silently skipped modules
+        # The failure this catches is the one above: a module that skips at
+        # import collects zero tests and says almost nothing. A floor on the
+        # collected count turns that back into a red job.
+        #
+        # Raise MIN_TESTS when you add tests; lower it only when you have
+        # deliberately deleted some, and say so in the commit.
+        run: |
+          set -euo pipefail
+          MIN_TESTS=760
+          collected=$(python -m pytest --collect-only -q | tail -1 | grep -oE '^[0-9]+')
+          echo "collected: $collected (floor $MIN_TESTS)"
+          if [ "$collected" -lt "$MIN_TESTS" ]; then
+            echo "::error::only $collected tests collected, expected at least $MIN_TESTS."
+            echo "::error::A test module probably skipped at import. Run pytest -ra to see which."
+            exit 1
+          fi
 
       - name: Run the test suite
-        # The browser-driven tests are excluded: they need Playwright plus a
-        # browser download and a display, which is minutes of setup for a job
-        # that should stay fast. test_phase10_header.py is on this list even
-        # though its name does not end in _browser — it drives a real page
-        # through the `page` fixture just like the others do.
-        run: |
-          python -m pytest -q \
-            --ignore=tests/test_phase6_states_browser.py \
-            --ignore=tests/test_recommended_defaults_browser.py \
-            --ignore=tests/test_relax_ui_browser.py \
-            --ignore=tests/test_rendered_copy_browser.py \
-            --ignore=tests/test_phase10_header.py
+        # The whole suite. No --ignore: see the Playwright step.
+        # -ra prints the reason for every skip, so a skip can never again be
+        # invisible in the log.
+        run: python -m pytest -q -ra
 
   docker:
     name: docker
@@ -68,7 +103,7 @@ jobs:
 
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Build the image
         # No registry login and no push: this job proves the Dockerfile
@@ -83,8 +118,8 @@ jobs:
       - name: Wait for the container to report healthy
         # The image declares a HEALTHCHECK that polls /api/catalog/meta, so
         # "healthy" already means the catalog loaded — not merely that the
-        # port is open. Polling that status is therefore a stronger check
-        # than curling the port ourselves, and we do both.
+        # port is open. Polling that status is a stronger check than curling
+        # the port ourselves, and we do both.
         run: |
           set -euo pipefail
           for i in $(seq 1 60); do
@@ -104,6 +139,10 @@ jobs:
           exit 1
 
       - name: GET /api/catalog/meta must be 200
+        # This job deliberately serves the REAL data/catalog, not the frozen
+        # fixture: the image is what ships, so what it serves is what matters.
+        # The assertions are invariants (non-zero count, a timestamp), never
+        # pinned values, so a nightly catalog update cannot turn this red.
         run: |
           set -euo pipefail
           code=$(curl -s -o response.json -w '%{http_code}' http://127.0.0.1:8000/api/catalog/meta)

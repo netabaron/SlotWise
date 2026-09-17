@@ -354,9 +354,10 @@ Citrix login and therefore cannot run unattended anywhere.
 
 `.github/workflows/ci.yml` runs on every push and pull request.
 
-**`test`** — Python 3.12, installs `requirements.txt` + `requirements-dev.txt`,
-seeds the gitignored fixtures, then runs pytest with the browser-driven tests
-excluded (they need Playwright, a browser download and a display).
+**`test`** — Python 3.12, installs `requirements.txt` + `requirements-dev.txt`
++ `requirements-scraper.txt` and the Playwright browser, seeds the gitignored
+fixtures from the **frozen** catalog, then runs the whole suite. No tests are
+excluded; see [Why CI installs Playwright](#why-ci-installs-playwright).
 
 The seed step is not optional. `data/db/` and `data/profile.json` are gitignored
 — correctly; they are college content and personal data — but part of the suite
@@ -404,6 +405,92 @@ to report healthy, then asserts `GET /api/catalog/meta` returns 200 *and* that
 the payload carries a non-zero `course_count`. A 200 with an empty catalog would
 mean the image built but shipped no data: green CI, dead app. Nothing is pushed
 to any registry.
+
+### Why CI installs Playwright
+
+Nine test modules open with `pytest.importorskip("playwright.sync_api")` at
+module level. Without the package that raises **at import time**, so the entire
+module is skipped and its tests are never collected — one `s` in the output and
+nothing else. The first two CI runs looked green in 32 seconds while silently
+not running 36 tests, including the eight colour-token tests `CLAUDE.md` calls
+load-bearing.
+
+So the `test` job installs `requirements-scraper.txt` and runs
+`playwright install --with-deps chromium`, and there is no `--ignore` list any
+more. A hand-maintained list of "the browser tests" is exactly what drifted out
+of date — `test_settings_screen.py`, `test_fit_percentage.py` and
+`test_theme_tokens.py` were browser-driven and not on it. The browsers launch
+headless (`pw.chromium.launch()` with no arguments), so no display is needed.
+
+A **Guard against silently skipped modules** step fails the job if fewer than
+`MIN_TESTS` are collected. That is the backstop for this whole class of bug:
+a module that skips at import collects zero tests and says almost nothing.
+Raise the floor when you add tests; lower it only when you have deliberately
+deleted some.
+
+---
+
+## The frozen test catalog
+
+The test suite does **not** read `data/catalog/`. It reads a frozen copy at
+`tests/fixtures/catalog/`.
+
+**The problem this solves.** Dozens of tests pin values derived from the
+catalog — the optimal schedule's days, per-course group counts, a lecturer's
+name. `data/catalog/` is the nightly pipeline's output. Once that pipeline
+runs, any real change at the yedion turns those tests red: not because the code
+broke, but because a course gained a group. Measured, not predicted: rebuilding
+from the current `data/raw` gives 61753 nine groups instead of eight, which
+moves the best timetable from days `[1,2,3,4]` to `[1,3,4,5]` and fails
+`tests/test_web.py::test_solve_returns_schedules_with_the_full_shape`.
+
+**How it works.** `src/shipped_catalog.py` reads `SLOTWISE_CATALOG_DIR` at
+import time, and `tests/conftest.py` sets it to the fixture at module level —
+before pytest imports any test module. Every test that goes through
+`shipped_catalog` (which is all of them, via `tests/catalog_source.py`) gets the
+frozen data. Each run prints which catalog it used in the pytest header:
+
+```
+catalog: .../tests/fixtures/catalog/catalog.jsonl (572 courses, built 2026-09-09T22:35:44Z) [frozen fixture]
+```
+
+`scripts/seed_dev_data.py --fixture` builds `data/db` from the same frozen
+catalog, so the store the tests run against is frozen too. CI passes
+`--fixture` and also sets `SLOTWISE_CATALOG_DIR` at job level.
+
+**The one exception.** `tests/test_catalog_invariants.py` is the only test that
+reads `data/catalog/`, and it asserts **invariants only, never values**: the
+catalog loads, has at least 400 courses, every record has `code` and a `groups`
+list, at least one meeting has times, the meta carries a timestamp and a year,
+the meta's counts and code list match the catalog beside it, and every line is
+valid JSON. Nothing there can be broken by a course gaining a group; everything
+there would be broken by a truncated or mismatched build. It loads
+`shipped_catalog.py` as a separate module instance so it does not disturb the
+global redirect.
+
+### Re-pinning the tests on purpose
+
+When the pipeline brings a real change you want the tests to describe:
+
+```bash
+python scripts/update_test_fixture.py --check --diff   # what would move
+python scripts/update_test_fixture.py                  # copy it in
+python -m pytest -q                                    # expect failures
+```
+
+The failures are the point — read each one, update the pinned values to what
+the data now says, and **commit the fixture and the test edits together**. A
+commit that updates the fixture without the values leaves `main` red; one that
+updates the values without the fixture is not reproducible.
+
+`--diff` reports which courses changed group counts, which is the change that
+actually moves pinned schedules — a course gaining a group shifts the optimal
+timetable without changing any visible total.
+
+Do **not** run it to make a red test green. If you did not update the fixture,
+the data did not move; the code did, and the test is doing its job. The nightly
+pipeline never runs this script — if it did, the whole separation would be
+worthless.
 
 ---
 

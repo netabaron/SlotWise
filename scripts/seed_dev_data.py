@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -73,7 +74,13 @@ DEFAULT_SEMESTER = "א"
 
 
 def seed_db(*, force: bool, semester: str = DEFAULT_SEMESTER) -> None:
-    """בונה ``data/db`` מהקטלוג שנשלח עם הקוד."""
+    """בונה ``data/db`` מהקטלוג — זה שעליו ``SLOTWISE_CATALOG_DIR`` מצביע.
+
+    ‏בהרצה רגילה זה ``data/catalog``. ב-CI ובבדיקות זה
+    ``tests/fixtures/catalog``, הקטלוג הקפוא — אחרת המסד שהבדיקות רצות
+    מולו היה נבנה מנתונים שהצינור הלילי משנה, וזו בדיוק הצמידות שההפרדה
+    באה לנתק. ראו ``tests/conftest.py``.
+    """
     import shipped_catalog  # type: ignore
 
     if not shipped_catalog.available():
@@ -82,6 +89,7 @@ def seed_db(*, force: bool, semester: str = DEFAULT_SEMESTER) -> None:
             "(no catalog at data/catalog; nothing to seed from)"
         )
 
+    print(f"  מקור: {shipped_catalog.CATALOG_PATH}")
     stamp = shipped_catalog.built_at()
 
     # ‏sections.json — מסונן לסמסטר אחד. ראו DEFAULT_SEMESTER למה.
@@ -181,7 +189,24 @@ def main(argv: list[str] | None = None) -> int:
                     help="לדרוס קבצים קיימים (ברירת מחדל: לא לגעת)")
     ap.add_argument("--semester", default=DEFAULT_SEMESTER,
                     help=f"הסמסטר שהמסד נבנה עבורו (ברירת מחדל {DEFAULT_SEMESTER})")
+    ap.add_argument("--catalog-dir", default=None, metavar="DIR",
+                    help="מאיזה קטלוג לבנות. ברירת המחדל היא "
+                         "SLOTWISE_CATALOG_DIR, ואחריה data/catalog. "
+                         "לבדיקות: tests/fixtures/catalog")
+    ap.add_argument("--fixture", action="store_true",
+                    help="קיצור ל---catalog-dir tests/fixtures/catalog")
     args = ap.parse_args(argv)
+
+    # ‏חייב להיקבע **לפני** ש-shipped_catalog מיובא: הוא קורא את המשתנה
+    # בזמן ייבוא. ‏seed_db מייבא אותו בתוך הפונקציה, ולכן כאן זה בזמן.
+    if args.fixture and args.catalog_dir:
+        ap.error("‏--fixture ו---catalog-dir סותרים זה את זה")
+    if args.fixture:
+        os.environ["SLOTWISE_CATALOG_DIR"] = str(
+            PROJECT_ROOT / "tests" / "fixtures" / "catalog"
+        )
+    elif args.catalog_dir:
+        os.environ["SLOTWISE_CATALOG_DIR"] = str(Path(args.catalog_dir).expanduser())
 
     print("מסד מינימלי מהקטלוג:")
     seed_db(force=args.force, semester=args.semester)

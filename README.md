@@ -135,16 +135,17 @@ src/curriculum.py       curricula, prerequisites, tied courses; discovery.py = l
 src/web/                the JSON API and the interface (plain HTML/CSS/JS)
 refresh.py              the scheduled refresh job; reparse.py re-parses saved HTML offline
 data/catalog/           the shipped catalog: 572 courses, so a fresh clone has data
-scripts/                verify_catalog.py (checks a build), seed_dev_data.py (fixtures)
+scripts/                verify_catalog.py, seed_dev_data.py, update_test_fixture.py
 .github/workflows/      nightly catalog build, and CI
 docs/                   CLI reference, the verified yedion protocol, the specs
-tests/                  751 tests, no network
+tests/                  765 tests, no network; they read tests/fixtures/catalog,
+                        a frozen copy, so nightly data cannot break them
 ```
 
 ## Tests
 
 ```bash
-python -m pytest tests/ -q     # 751 tests, none of which touch the network
+python -m pytest tests/ -q     # 765 tests, none of which touch the network
 ```
 
 About 20 of them drive a local Chromium to cover interface rules that live in
