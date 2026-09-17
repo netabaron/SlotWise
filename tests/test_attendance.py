@@ -76,11 +76,11 @@ from store import Store  # noqa: E402
 #: המאגר המקומי אינו במאגר הקוד והאפליקציה הרצה כותבת אותו מחדש, ולכן כל
 #: מספר שמקובע מולו זז מתחת לבדיקה. מול הקטלוג המספרים יוצאים בדיוק כפי
 #: שנכתבו — 27 קבוצות — והם גם יציבים.
-CATALOG = ROOT / "data" / "catalog.jsonl"
+CATALOG = ROOT / "data" / "catalog" / "catalog.jsonl"
 
 pytestmark = pytest.mark.skipif(
     not CATALOG.is_file(),
-    reason="אין data/catalog.jsonl — יש להריץ build_catalog.py פעם אחת",
+    reason="אין data/catalog/catalog.jsonl — יש להריץ build_catalog.py פעם אחת",
 )
 
 # --------------------------------------------------------------------------

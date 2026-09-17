@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-בונה את הקטלוג שנשלח יחד עם הקוד — ``data/catalog.jsonl``.
+בונה את הקטלוג שנשלח יחד עם הקוד — ``data/catalog/catalog.jsonl``.
 
 למה הקובץ הזה קיים
 -------------------
@@ -22,8 +22,12 @@
 
 הרצה
 -----
-    python build_catalog.py --check          # רק לבדוק את מה שיש, בלי רשת
+    python build_catalog.py --check          # רק לבדוק את מה שיש, בלי רשת ובלי כתיבה
     python build_catalog.py --year 2027      # גרידה מלאה, בקצב בטוח, ואז בנייה
+    python build_catalog.py --year 2027 --out out/   # לתיקייה אחרת
+
+הצינור הלילי (.github/workflows/build-catalog.yml) מריץ בדיוק את הפקודה
+השנייה, ואז ``scripts/verify_catalog.py``. קודי היציאה מתועדים ב---help.
 """
 
 from __future__ import annotations
@@ -51,8 +55,27 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 DB_DIR = PROJECT_ROOT / "data" / "db"
-CATALOG_PATH = PROJECT_ROOT / "data" / "catalog.jsonl"
-META_PATH = PROJECT_ROOT / "data" / "catalog.meta.json"
+
+#: תיקיית הפלט. ‏--out דורס אותה, ואיתה את שני הנתיבים שמתחתיה.
+#: ‏נשארים משתני מודול (ולא נסגרים בתוך main) כי ``tests/test_catalog_gate.py``
+#: מחליף אותם ב-monkeypatch כדי לכתוב לתיקייה זמנית.
+CATALOG_DIR = PROJECT_ROOT / "data" / "catalog"
+CATALOG_PATH = CATALOG_DIR / "catalog.jsonl"
+META_PATH = CATALOG_DIR / "catalog.meta.json"
+
+# ---- קודי יציאה (ה-CI קורא אותם) ----------------------------------------
+#: הצלחה. הקטלוג נכתב, או שלא היה מה לשנות.
+EXIT_OK = 0
+#: שער איכות נכשל. הפלט הקודם **לא** נגע.
+EXIT_GATE_FAILED = 1
+#: תקלה בלתי צפויה.
+EXIT_ERROR = 2
+#: הידיעון החזיר דף השהיה. לא באג — הקצב היה מהיר מדי, או שמישהו אחר
+#: שלף מאותה כתובת. ריצה חוזרת מאוחר יותר היא התגובה הנכונה.
+EXIT_THROTTLED = 3
+#: הבקשה הופנתה אל מחוץ לידיעון, כלומר אל שער ההתחברות. זה היום שבו
+#: בראודה סגרה את נקודות הקצה הציבוריות — ואז שום ריצה אוטומטית לא תעזור.
+EXIT_GATED = 4
 
 #: מתחת לזה שום תשובה אינה דף. זהה ל-``yedion_http._MIN_REAL_PAGE_CHARS``.
 MIN_REAL_PAGE_CHARS = 500
@@ -312,19 +335,32 @@ def validate(
 # ==========================================================================
 # 4. כתיבה אטומית
 # ==========================================================================
-def write_catalog(records: dict[str, dict], meta: dict) -> None:
-    """כותב לקובץ זמני ומחליף. אף פעם לא משאיר קטלוג חצי-כתוב."""
-    tmp = CATALOG_PATH.with_suffix(".jsonl.tmp")
+def write_catalog(
+    records: dict[str, dict],
+    meta: dict,
+    catalog_path: Path | None = None,
+    meta_path: Path | None = None,
+) -> None:
+    """כותב לקובץ זמני ומחליף. אף פעם לא משאיר קטלוג חצי-כתוב.
+
+    ‏שני הנתיבים אופציונליים ונופלים למשתני המודול, כדי ש-monkeypatch
+    עליהם (‏tests/test_catalog_gate.py) ימשיך לעבוד כמו שהוא.
+    """
+    catalog_path = catalog_path or CATALOG_PATH
+    meta_path = meta_path or META_PATH
+    catalog_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = catalog_path.with_suffix(".jsonl.tmp")
     with tmp.open("w", encoding="utf-8", newline="\n") as fh:
         for code in sorted(records):
             fh.write(json.dumps(records[code], ensure_ascii=False,
                                 separators=(",", ":")) + "\n")
-    os.replace(tmp, CATALOG_PATH)
+    os.replace(tmp, catalog_path)
 
-    tmp_meta = META_PATH.with_suffix(".json.tmp")
+    tmp_meta = meta_path.with_suffix(".json.tmp")
     tmp_meta.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
                         encoding="utf-8")
-    os.replace(tmp_meta, META_PATH)
+    os.replace(tmp_meta, meta_path)
 
 
 def load_previous_meta() -> dict | None:
@@ -348,6 +384,21 @@ def load_catalog_index() -> dict[str, Any]:
 # ==========================================================================
 # 5. שליפה בקצב בטוח
 # ==========================================================================
+def _yedion_errors():
+    """‏(ThrottledError, GatedEndpointError) כטאפלים — ריקים אם המודול חסר.
+
+    ‏מוחזרים כטאפלים ולא כמחלקות כדי שאפשר יהיה למסור אותם ל-``except``
+    גם כשהמודול לא נטען: ``except ()`` פשוט אינו תופס כלום, במקום לזרוק.
+    """
+    try:
+        import yedion_http  # type: ignore
+    except Exception:  # noqa: BLE001
+        return (), ()
+    throttled = getattr(yedion_http, "ThrottledError", None)
+    gated = getattr(yedion_http, "GatedEndpointError", None)
+    return ((throttled,) if throttled else ()), ((gated,) if gated else ())
+
+
 def fetch_missing(codes: list[str], year: str, pace: float) -> tuple[int, int]:
     """
     שולף רק את מה שחסר או פסול, בקצב ``pace`` שניות לבקשה.
@@ -355,8 +406,17 @@ def fetch_missing(codes: list[str], year: str, pace: float) -> tuple[int, int]:
     ניתן להפסקה ולהמשך: דמפ תקין קיים לא נשלף שוב, ולכן ריצה שנקטעה
     ממשיכה מאיפה שהפסיקה. ‏6.9.2026 הפיק שלוש הפסקות בשעתיים (כישלוני
     פענוח, נפילת DNS, ונקודת קצה שנתקעה), ולכן זה לא מותרות.
+
+    **שתי תקלות אינן נספרות ככישלון של קורס בודד — הן עוצרות את הבנייה.**
+    ‏``ThrottledError`` אומרת שהידיעון חסם, ומכאן כל בקשה נוספת גם תיחסם
+    וגם תהיה חוסר נימוס. ‏``GatedEndpointError`` אומרת שנחתנו בשער
+    ההתחברות, כלומר שנקודת הקצה הציבורית נסגרה — ושום ריצה אוטומטית לא
+    תפתור זאת. שתיהן עולות למעלה ומתורגמות לקוד יציאה משלהן, כדי שה-CI
+    יבדיל בין "בראודה חסמה אותנו" לבין "הפרסר נשבר".
     """
     import yedion_http  # type: ignore
+
+    throttled_exc, gated_exc = _yedion_errors()
 
     fetcher = yedion_http.YedionHTTP(
         year=year, delay_s=pace, raw_dir=str(RAW_DIR),
@@ -372,12 +432,12 @@ def fetch_missing(codes: list[str], year: str, pace: float) -> tuple[int, int]:
         try:
             fetcher.fetch_course(code)
             ok += 1
-        except Exception as exc:  # noqa: BLE001
+        except (throttled_exc + gated_exc) as exc:
+            print(f"  ({i}/{total}) {code}: {type(exc).__name__}: {exc}", flush=True)
+            raise
+        except Exception as exc:  # noqa: BLE001 - קורס בודד שנכשל אינו עוצר
             failed += 1
             print(f"  ({i}/{total}) {code}: {type(exc).__name__}: {exc}", flush=True)
-            if isinstance(exc, getattr(yedion_http, "ThrottledError", ())):
-                print("  הידיעון חסם — עוצר כאן.", flush=True)
-                break
         if i % 25 == 0:
             print(f"  ({i}/{total}) נשלפו {ok}, נכשלו {failed}", flush=True)
     return ok, failed
@@ -386,14 +446,82 @@ def fetch_missing(codes: list[str], year: str, pace: float) -> tuple[int, int]:
 # ==========================================================================
 # 6. CLI
 # ==========================================================================
+def _apply_out_dir(out: str) -> None:
+    """מפנה את הפלט לתיקייה אחרת. משנה את משתני המודול בכוונה.
+
+    ‏``CATALOG_PATH``/``META_PATH`` הם מה ש-``write_catalog`` נופל אליו,
+    וגם מה שהבדיקות מחליפות ב-monkeypatch. שינוי שלהם כאן שומר על מקור
+    אמת אחד לנתיב, במקום להשחיל אותו דרך כל קריאה.
+    """
+    global CATALOG_DIR, CATALOG_PATH, META_PATH
+    CATALOG_DIR = Path(out).expanduser().resolve()
+    CATALOG_PATH = CATALOG_DIR / "catalog.jsonl"
+    META_PATH = CATALOG_DIR / "catalog.meta.json"
+
+
+def build_meta(
+    records: dict[str, dict],
+    census: RawCensus,
+    catalog: dict,
+    result: GateResult,
+    *,
+    expected_year: str,
+    year_gregorian: str,
+) -> dict:
+    """המטא שנכתב לצד הקטלוג, כולל סיכום שער האיכות.
+
+    ‏``validation`` נוסף ב-2026-09-16, כשהבנייה הפכה לעבודת cron: מי
+    שמסתכל על הקטלוג בגיט צריך לדעת **שהוא עבר את השערים, ומתי**, בלי
+    לחפש את יומן הריצה שייצרה אותו — והיומן של ריצת cron נמחק.
+    ‏scripts/verify_catalog.py קורא את הבלוק הזה ומצליב אותו מול הקטלוג.
+    """
+    counts = tally(records)
+    return {
+        "schema": "slotwise/catalog",
+        "version": 1,
+        "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "year": expected_year,
+        "year_gregorian": str(year_gregorian),
+        "semesters": sorted({g.get("semester") or "?"
+                             for r in records.values() for g in r["groups"]}),
+        "counts": counts,
+        "codes": sorted(records),
+        "source": {"catalog_entries": len(catalog), "dumps_used": len(census.intact)},
+        "validation": {
+            "passed": bool(result.passed),
+            "gate_count": len(result.checks),
+            "gates": [
+                {"name": name, "passed": bool(ok), "detail": detail}
+                for name, ok, detail in result.checks
+            ],
+            "failures": list(result.failures),
+        },
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="בונה את הקטלוג שנשלח עם הקוד.")
+    ap = argparse.ArgumentParser(
+        description="בונה את הקטלוג שנשלח עם הקוד.",
+        epilog=(
+            "קודי יציאה: 0 הצלחה · 1 שער איכות נכשל · 2 תקלה · "
+            "3 הידיעון חסם · 4 נקודת הקצה נסגרה (שער התחברות).\n"
+            "בכל קוד שאינו 0 קובצי הפלט **לא** נגעו."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     ap.add_argument("--year", default="2027", help="שנה לועזית (2027 = תשפ\"ז)")
+    ap.add_argument("--out", default=None, metavar="DIR",
+                    help="תיקיית הפלט (ברירת מחדל: data/catalog)")
     ap.add_argument("--check", action="store_true",
-                    help="רק להריץ את השער על מה שכבר על הדיסק, בלי רשת")
+                    help="רק להריץ את השער על מה שכבר על הדיסק — בלי רשת "
+                         "ובלי לכתוב שום דבר")
     ap.add_argument("--pace", type=float, default=PACE_SECONDS,
                     help=f"שניות בין בקשות (ברירת מחדל {PACE_SECONDS:g})")
     args = ap.parse_args(argv)
+
+    if args.out:
+        _apply_out_dir(args.out)
+    print(f"פלט: {CATALOG_PATH}")
 
     try:
         from yedion_http import hebrew_year_label  # type: ignore
@@ -402,6 +530,7 @@ def main(argv: list[str] | None = None) -> int:
         expected_year = ""
 
     catalog = load_catalog_index()
+    throttled_exc, gated_exc = _yedion_errors()
 
     if not args.check:
         census = scan_raw(RAW_DIR)
@@ -409,7 +538,16 @@ def main(argv: list[str] | None = None) -> int:
         if need:
             print(f"חסרים או פסולים: {len(need)} קורסים. "
                   f"בקצב {args.pace:g} שניות לבקשה זה כ-{len(need)*args.pace/60:.0f} דקות.")
-            fetch_missing(need, args.year, args.pace)
+            try:
+                fetch_missing(need, args.year, args.pace)
+            except gated_exc as exc:
+                print(f"\nנקודת הקצה הציבורית נסגרה: {exc}")
+                print("הקטלוג הקודם נשאר כמו שהוא. ריצה אוטומטית לא תפתור זאת.")
+                return EXIT_GATED
+            except throttled_exc as exc:
+                print(f"\nהידיעון חסם: {exc}")
+                print("הקטלוג הקודם נשאר כמו שהוא. כדאי לנסות שוב מאוחר יותר.")
+                return EXIT_THROTTLED
         else:
             print("כל הקטלוג כבר על הדיסק ותקין — לא נדרשת שליפה.")
 
@@ -426,25 +564,25 @@ def main(argv: list[str] | None = None) -> int:
     if not result.passed:
         print(f"\nנכשל — הקטלוג **לא** נכתב. {len(result.failures)} בדיקות נכשלו.")
         print("הקטלוג הקודם נשאר כמו שהוא — עדיף על קטלוג חדש ושבור.")
-        return 1
+        return EXIT_GATE_FAILED
 
-    counts = tally(records)
-    meta = {
-        "schema": "slotwise/catalog",
-        "version": 1,
-        "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "year": expected_year,
-        "year_gregorian": str(args.year),
-        "semesters": sorted({g.get("semester") or "?"
-                             for r in records.values() for g in r["groups"]}),
-        "counts": counts,
-        "codes": sorted(records),
-        "source": {"catalog_entries": len(catalog), "dumps_used": len(census.intact)},
-    }
+    if args.check:
+        # ‏--check הוא בדיקה, לא בנייה. עד 2026-09-16 הוא כן כתב כששער
+        # האיכות עבר, וזה הפתיע בדיוק כפי שנשמע: ריצה שנועדה "רק להסתכל"
+        # החליפה קטלוג שנמצא במאגר הקוד. עכשיו הוא קורא בלבד.
+        counts = tally(records)
+        print(f"\nהשער עבר. ‏--check אינו כותב; היו נכתבים "
+              f"{counts['courses']} קורסים, {counts['groups']} קבוצות, "
+              f"{counts['timed_meetings']} מפגשים.")
+        return EXIT_OK
+
+    meta = build_meta(records, census, catalog, result,
+                      expected_year=expected_year, year_gregorian=args.year)
     write_catalog(records, meta)
-    print(f"\nנכתב בהצלחה: {CATALOG_PATH.name}: {counts['courses']} קורסים, "
+    counts = meta["counts"]
+    print(f"\nנכתב בהצלחה: {CATALOG_PATH}: {counts['courses']} קורסים, "
           f"{counts['groups']} קבוצות, {counts['timed_meetings']} מפגשים.")
-    return 0
+    return EXIT_OK
 
 
 if __name__ == "__main__":

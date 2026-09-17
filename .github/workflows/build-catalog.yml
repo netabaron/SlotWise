@@ -1,0 +1,157 @@
+# Nightly catalog build.
+#
+# This is HOSTING_NOTES.md §2 made real: the maintainer command with a
+# different trigger. It reuses the paced fetch loop, the throttle guard, all
+# six validation gates and the atomic write exactly as they are — only the
+# trigger ("I run it") and the destination ("git commit") changed.
+#
+# It replaces per-user scraping, which is the thing that cannot be hosted:
+# fifty students each fetching 572 pages is fifty times over a limit already
+# measured being hit at ~400 requests/hour.
+#
+# Read before changing the schedule: a full build is ~86 minutes of paced
+# requests against a college server. Do not make this run more than nightly,
+# and do not lower --pace.
+
+name: nightly catalog build
+
+on:
+  schedule:
+    # 23:00 UTC. Israel has no fixed UTC offset and GitHub cron has no DST,
+    # so one expression cannot mean 02:00 all year: this is 02:00 IDT in
+    # summer (UTC+3) and 01:00 IST in winter (UTC+2). Both are firmly in the
+    # quiet hours, which is the property that actually matters.
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Gregorian academic year (2027 = תשפ\"ז)"
+        required: false
+        default: "2027"
+      pace:
+        description: "Seconds between requests. Lower it only if you know why."
+        required: false
+        default: "9"
+
+# One build at a time, ever. cancel-in-progress is false on purpose: killing a
+# run halfway leaves a half-fetched data/raw and wastes an hour of polite
+# requests that the college server already served.
+concurrency:
+  group: nightly-catalog
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # ~86 min of fetching plus parse and validation. 180 leaves room for a
+    # slow day without letting a wedged run burn hours.
+    timeout-minutes: 180
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          # Needed so the commit at the end can be pushed back.
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # requirements-scraper.txt installs the Playwright *package* only.
+          # `playwright install` is deliberately NOT run: the default fetch
+          # path (src/yedion_http.py) is standard library only and needs no
+          # browser, and the ~400 MB of browser binaries would be pure waste.
+          pip install -r requirements.txt -r requirements-scraper.txt
+
+      - name: Resolve build inputs
+        id: inputs
+        run: |
+          echo "year=${{ github.event.inputs.year || '2027' }}" >> "$GITHUB_OUTPUT"
+          echo "pace=${{ github.event.inputs.pace || '9' }}" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the course index
+        # build_catalog.py reads data/db/catalog.json to learn which course
+        # codes exist this year, and data/db is gitignored — so on a clean
+        # checkout that index is empty, every coverage ratio divides by zero,
+        # and gate 2 fails before a single page is fetched. Verified
+        # 2026-09-16. This is ONE request (S_LOOK_FOR_NOSE_AB returns the
+        # whole catalog), and it is what lets a new course appear at all:
+        # seeding the index from the shipped catalog instead would freeze the
+        # course list at whatever it was the day the pipeline was written.
+        run: |
+          set -o pipefail
+          mkdir -p data/db data/raw
+          python refresh.py --catalog-only --year "${{ steps.inputs.outputs.year }}" 2>&1 | tee -a build.log
+
+      - name: Build the catalog
+        id: build
+        run: |
+          set -o pipefail
+          set +e
+          python build_catalog.py \
+            --year "${{ steps.inputs.outputs.year }}" \
+            --pace "${{ steps.inputs.outputs.pace }}" \
+            --out data/catalog 2>&1 | tee -a build.log
+          rc=${PIPESTATUS[0]}
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          # Exit codes are build_catalog.py's contract (see its --help):
+          # 0 ok · 1 gate failed · 2 error · 3 throttled · 4 endpoint gated.
+          # In every non-zero case the output files were NOT touched, so the
+          # previously committed catalog stays live. That is the design:
+          # "the previous catalog beats a new broken one, always."
+          case "$rc" in
+            0) echo "::notice::catalog built" ;;
+            1) echo "::error::a validation gate failed - the committed catalog was left alone" ;;
+            3) echo "::error::the yedion throttled us - try again later, do not lower --pace" ;;
+            4) echo "::error::the public endpoint is gated (login wall). Automation cannot fix this; see DEPLOY.md" ;;
+            *) echo "::error::build failed with exit code $rc" ;;
+          esac
+          exit "$rc"
+
+      - name: Verify the built catalog
+        # Separate from the gates on purpose. The gates check the *build*
+        # (raw dumps, coverage, non-regression); this checks the *artifact*
+        # that is about to be committed, including the one failure no build
+        # gate can see: a meta.json that does not match the catalog beside it.
+        run: |
+          set -o pipefail
+          python scripts/verify_catalog.py --dir data/catalog --year "${{ steps.inputs.outputs.year }}" 2>&1 | tee -a build.log
+
+      - name: Commit and push if the catalog changed
+        id: commit
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- data/catalog; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::catalog unchanged - nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Only ever these two files. data/raw and data/db are gitignored,
+          # and .gitignore denies everything else under data/ by default, so
+          # a stray artifact cannot ride along unnoticed.
+          git add data/catalog/catalog.jsonl data/catalog/catalog.meta.json
+          git commit -m "catalog: nightly build ${{ steps.inputs.outputs.date }}"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::catalog updated and pushed"
+
+      - name: Upload the build log
+        # always(): the log is most useful precisely when the build failed.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ steps.inputs.outputs.date }}-${{ github.run_id }}
+          path: build.log
+          if-no-files-found: warn
+          retention-days: 14

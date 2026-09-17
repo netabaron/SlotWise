@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-הקטלוג שנשלח יחד עם הקוד — ``data/catalog.jsonl``.
+הקטלוג שנשלח יחד עם הקוד — ``data/catalog/catalog.jsonl``.
 
 למה הוא קיים
 -------------
@@ -39,8 +39,20 @@ from typing import Any
 #: שורש הפרויקט — שתי רמות מעל הקובץ הזה (src/ -> root).
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-CATALOG_PATH = PROJECT_ROOT / "data" / "catalog.jsonl"
-META_PATH = PROJECT_ROOT / "data" / "catalog.meta.json"
+#: תיקיית הקטלוג. ‏``SLOTWISE_CATALOG_DIR`` דורס — כך מגישים קטלוג שנבנה
+#: אחרי שנבנתה התמונה, בלי לבנות אותה מחדש (‏DEPLOY.md).
+#:
+#: ‏הקטלוג עבר מ-``data/`` ל-``data/catalog/`` ב-2026-09-16, כשהבנייה
+#: הפכה לעבודת cron: שני הקבצים הם עכשיו **הפלט** של הצינור, והם היחידים
+#: תחת ``data/`` שהוא כותב. תיקייה משלהם היא מה שמאפשר ל-.gitignore
+#: להבחין בין פלט שנכנס לגיט לבין ``data/raw`` ו-``data/db`` שאינם.
+CATALOG_DIR = Path(
+    os.environ.get("SLOTWISE_CATALOG_DIR", "").strip()
+    or (PROJECT_ROOT / "data" / "catalog")
+).expanduser()
+
+CATALOG_PATH = CATALOG_DIR / "catalog.jsonl"
+META_PATH = CATALOG_DIR / "catalog.meta.json"
 
 #: מקור הרשומה, כפי שהוא נרשם ב-CourseMeta.source_url. מאפשר להבחין
 #: בין "נשלח עם הקוד" ל"נשלף כאן" בלי לנחש לפי היעדר שדות.

@@ -134,7 +134,9 @@ src/store.py            JSON database: freshness, change detection, atomic write
 src/curriculum.py       curricula, prerequisites, tied courses; discovery.py = live catalog
 src/web/                the JSON API and the interface (plain HTML/CSS/JS)
 refresh.py              the scheduled refresh job; reparse.py re-parses saved HTML offline
-data/catalog.jsonl      the shipped catalog: 572 courses, so a fresh clone has data
+data/catalog/           the shipped catalog: 572 courses, so a fresh clone has data
+scripts/                verify_catalog.py (checks a build), seed_dev_data.py (fixtures)
+.github/workflows/      nightly catalog build, and CI
 docs/                   CLI reference, the verified yedion protocol, the specs
 tests/                  751 tests, no network
 ```

@@ -3258,6 +3258,25 @@ def _shipped_built_at() -> str:
     return shipped_catalog.built_at()
 
 
+def _shipped_meta() -> dict[str, Any]:
+    """‏data/catalog/catalog.meta.json כמות שהוא, או ``{}``.
+
+    ‏זה המקור ל-``/api/catalog/meta``: הקובץ שהצינור הלילי כותב, ולא
+    ספירה שנגזרת מהמסד. ההבדל חשוב כשהשניים אינם מסכימים — למשל כשמישהו
+    שלף קורס בודד למסד המקומי — ואז מה שהכותרת צריכה לומר הוא מתי נבנה
+    **הקטלוג**, לא כמה שורות יש במסד.
+    """
+    try:
+        import shipped_catalog  # type: ignore
+    except Exception:  # noqa: BLE001
+        return {}
+    try:
+        return shipped_catalog.meta() or {}
+    except Exception:  # noqa: BLE001
+        LOG.exception("קריאת catalog.meta.json נכשלה")
+        return {}
+
+
 def _db_origin(metas: dict) -> str:
     """‏"shipped" אם אף רשומה לא נשלפה על המכשיר הזה, אחרת "mixed"/"db"."""
     kinds = {_origin_of(m) for m in metas.values()} or {"db"}
@@ -4447,23 +4466,40 @@ def catalog_meta():
     ``source``: ``"shipped"`` = תאריך הבנייה של הקטלוג שנשלח עם הקוד;
     ``"db"`` = חותמת השליפה של קטלוג מקומי; ``""`` = אין קטלוג.
     """
+    meta = _shipped_meta()
     _catalog, summary = _catalog_snapshot()
-    shipped_at = _shipped_built_at()
-    built_at = shipped_at or str(summary.get("fetched_at") or "")
-    age = store_mod.age_hours_since(built_at) if built_at else None
 
-    return _ok(
-        {
-            "built_at": built_at,
-            "age_hours": age,
-            "age_text": store_mod.format_hebrew_age(age),
-            "course_count": int(summary.get("count") or 0),
-            "year": summary.get("year", ""),
-            "year_gregorian": summary.get("year_gregorian", ""),
-            "source": "shipped" if shipped_at else ("db" if built_at else ""),
-            "empty": bool(summary.get("empty")),
+    built_at = str(meta.get("built_at") or "") or str(summary.get("fetched_at") or "")
+    age = store_mod.age_hours_since(built_at) if built_at else None
+    counts = meta.get("counts") if isinstance(meta.get("counts"), dict) else {}
+    course_count = int(counts.get("courses") or 0) or int(summary.get("count") or 0)
+
+    payload: dict[str, Any] = {
+        "built_at": built_at,
+        "age_hours": age,
+        "age_text": store_mod.format_hebrew_age(age),
+        "course_count": course_count,
+        "year": meta.get("year") or summary.get("year", ""),
+        "year_gregorian": meta.get("year_gregorian") or summary.get("year_gregorian", ""),
+        "source": "shipped" if meta.get("built_at") else ("db" if built_at else ""),
+        "empty": course_count == 0,
+    }
+
+    # ‏סיכום שערי האיכות של הבנייה שייצרה את הקטלוג. ‏הצינור הלילי כותב
+    # אותו (‏build_catalog.build_meta), ו-scripts/verify_catalog.py מצליב
+    # אותו. נחשף כאן כדי שאפשר יהיה לשאול מכונה שרצה **האם הקטלוג שהיא
+    # מגישה עבר את השערים** — בלי גישה ליומן של ריצת ה-cron שנמחק.
+    # ‏נשלחים רק הדגלים והמונים, לא רשימת השערים המלאה: היא ארוכה, היא
+    # בעברית, והממשק אינו מציג אותה.
+    validation = meta.get("validation")
+    if isinstance(validation, dict):
+        payload["validation"] = {
+            "passed": validation.get("passed") is True,
+            "gate_count": int(validation.get("gate_count") or 0),
+            "failure_count": len(validation.get("failures") or []),
         }
-    )
+
+    return _ok(payload)
 
 
 # ===========================================================================

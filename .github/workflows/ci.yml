@@ -1,0 +1,135 @@
+# CI: the test suite, and proof that the image actually serves.
+#
+# Neither job touches the network beyond pip and Docker Hub. Nothing here
+# fetches from the yedion — that is the nightly job's business, and only its
+# business.
+
+name: ci
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    # ~6 min locally for this subset. 30 leaves room for a slower runner
+    # without letting a pathological solve hang the job for an hour.
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Seed the gitignored fixtures
+        # data/db/ and data/profile.json are gitignored — correctly, they are
+        # college content and personal data — but part of the suite needs
+        # them. Measured on a clean checkout 2026-09-16: 4 failures and 33
+        # errors, all FileNotFoundError, from tests/test_multifaculty.py
+        # (which copytree's data/db) and tests/test_web.py (which reads
+        # profile.json for the defaults). The seed builds a minimal store
+        # from the catalog that IS committed, so the tests see what a clean
+        # clone sees rather than fixtures invented for them.
+        run: python scripts/seed_dev_data.py
+
+      - name: Run the test suite
+        # The browser-driven tests are excluded: they need Playwright plus a
+        # browser download and a display, which is minutes of setup for a job
+        # that should stay fast. test_phase10_header.py is on this list even
+        # though its name does not end in _browser — it drives a real page
+        # through the `page` fixture just like the others do.
+        run: |
+          python -m pytest -q \
+            --ignore=tests/test_phase6_states_browser.py \
+            --ignore=tests/test_recommended_defaults_browser.py \
+            --ignore=tests/test_relax_ui_browser.py \
+            --ignore=tests/test_rendered_copy_browser.py \
+            --ignore=tests/test_phase10_header.py
+
+  docker:
+    name: docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Build the image
+        # No registry login and no push: this job proves the Dockerfile
+        # builds and the container serves. Publishing is a separate decision.
+        run: docker build -t slotwise:ci .
+
+      - name: Start the container
+        run: |
+          docker run -d --name slotwise-ci -p 8000:8000 slotwise:ci
+          echo "started"
+
+      - name: Wait for the container to report healthy
+        # The image declares a HEALTHCHECK that polls /api/catalog/meta, so
+        # "healthy" already means the catalog loaded — not merely that the
+        # port is open. Polling that status is therefore a stronger check
+        # than curling the port ourselves, and we do both.
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' slotwise-ci 2>/dev/null || echo "unknown")
+            echo "attempt $i: $status"
+            case "$status" in
+              healthy) echo "container is healthy"; exit 0 ;;
+              unhealthy) echo "::error::container reported unhealthy"; exit 1 ;;
+            esac
+            if [ "$(docker inspect --format '{{.State.Running}}' slotwise-ci)" != "true" ]; then
+              echo "::error::container stopped while starting up"
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "::error::container never became healthy within 120s"
+          exit 1
+
+      - name: GET /api/catalog/meta must be 200
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o response.json -w '%{http_code}' http://127.0.0.1:8000/api/catalog/meta)
+          echo "HTTP $code"
+          cat response.json
+          echo
+          if [ "$code" != "200" ]; then
+            echo "::error::expected HTTP 200, got $code"
+            exit 1
+          fi
+          # A 200 carrying an empty catalog would mean the image built but
+          # shipped no data — green CI, dead app. Assert the payload too.
+          python - <<'PY'
+          import json, sys
+          data = json.load(open("response.json", encoding="utf-8"))
+          assert data.get("ok") is True, data
+          count = data.get("course_count") or 0
+          assert count > 0, f"the image serves an empty catalog: {data}"
+          assert data.get("built_at"), f"no build timestamp: {data}"
+          print(f"OK: {count} courses, built {data['built_at']}")
+          PY
+
+      - name: Container logs
+        if: always()
+        run: docker logs slotwise-ci || true
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f slotwise-ci || true

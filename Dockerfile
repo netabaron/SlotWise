@@ -17,7 +17,8 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     LANG=C.UTF-8 \
-    LC_ALL=C.UTF-8
+    LC_ALL=C.UTF-8 \
+    SLOTWISE_CATALOG_DIR=/app/data/catalog
 
 WORKDIR /app
 
@@ -29,8 +30,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Application code. .dockerignore keeps out data/raw (16 MB of scraped HTML),
 # data/db (21 MB of one machine's store), data/.browser_profile (29 MB, and it
 # holds live session cookies), data/profile.json, tests, and the shnaton PDFs.
-# What does come in is data/catalog.jsonl + catalog.meta.json — the 572-course
-# shipped catalog this image serves.
+# What does come in is data/catalog/ — catalog.jsonl + catalog.meta.json, the
+# 572-course catalog this image serves — plus the curriculum/program JSONs.
 COPY . .
 
 # Non-root. Created after COPY so the chown covers everything in one layer.
@@ -38,7 +39,7 @@ COPY . .
 # Store builds its paths at construction time, and a missing directory turns
 # into a startup failure rather than an empty database.
 RUN useradd --create-home --shell /usr/sbin/nologin --uid 10001 slotwise \
-    && mkdir -p /app/data/db /app/data/raw \
+    && mkdir -p /app/data/db /app/data/raw /app/data/catalog \
     && chown -R slotwise:slotwise /app
 
 USER slotwise

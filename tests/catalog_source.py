@@ -9,7 +9,7 @@
 סוויטה, ומספר הכישלונות עלה משתיים בבוקר לשמונה־עשרה בערב בלי שורת קוד
 אחת שהשתנתה בין לבין.
 
-‏``data/catalog.jsonl`` הוא ההפך: הוא **כן** במאגר, הוא נבנה בכוונה
+‏``data/catalog/catalog.jsonl`` הוא ההפך: הוא **כן** במאגר, הוא נבנה בכוונה
 ובשליטה (``build_catalog.py``, עם שש שערי איכות), והוא אותו מקור שהשרת
 נופל אליו כשאין נתונים מקומיים.
 
@@ -56,7 +56,7 @@ def catalog_db_dir() -> Path:
     entries = shipped_catalog.as_sections_entries(SEMESTER)
     if not entries:
         raise RuntimeError(
-            "‏data/catalog.jsonl ריק או חסר — אי אפשר להריץ בדיקות נתונים בלעדיו"
+            "‏data/catalog/catalog.jsonl ריק או חסר — אי אפשר להריץ בדיקות נתונים בלעדיו"
         )
     out = Path(tempfile.mkdtemp(prefix="slotwise-catalog-"))
     (out / "sections.json").write_text(

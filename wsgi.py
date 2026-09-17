@@ -37,12 +37,16 @@ path the local app uses. See DEPLOY.md for the full table.
     SLOTWISE_RAW_DIR                 data/raw
     SLOTWISE_MAX_AGE_HOURS           24.0
     SLOTWISE_DETAILS_MAX_AGE_HOURS   168.0
+    SLOTWISE_CATALOG_DIR             data/catalog
     HOST                             0.0.0.0     (python wsgi.py only)
     PORT                             8000        (python wsgi.py only)
 
-Note that ``data/catalog.jsonl`` is NOT on that list. ``src/shipped_catalog``
-resolves it relative to the project root at import time, so the shipped
-catalog must sit at ``<app>/data/catalog.jsonl`` — see DEPLOY.md.
+``SLOTWISE_CATALOG_DIR`` is the odd one out: it is read by
+``src/shipped_catalog`` **at import time**, not passed through ``create_app``,
+so it is not in ``build_settings()``. Setting it in the process environment
+before startup is what works — which is what a container env var does anyway.
+The directory holds ``catalog.jsonl`` and ``catalog.meta.json``, the two files
+the nightly pipeline writes; see DEPLOY.md.
 """
 
 from __future__ import annotations
@@ -123,7 +127,33 @@ def build_app():
     except ImportError:
         from web.api import create_app  # type: ignore[import-not-found]
 
-    return create_app(build_settings())
+    app = create_app(build_settings())
+
+    # Say which catalog this process is serving, once, at startup. A wrong
+    # SLOTWISE_CATALOG_DIR is otherwise completely silent: shipped_catalog
+    # falls back to an empty catalog, the app starts happily, and every
+    # course list is empty with no error anywhere. One line here turns that
+    # into something you can see in `docker logs`.
+    try:
+        import shipped_catalog  # type: ignore
+
+        stamp = shipped_catalog.built_at() or "(none)"
+        count = len(shipped_catalog.courses())
+        print(
+            f"[slotwise] catalog: {shipped_catalog.CATALOG_PATH} "
+            f"({count} courses, built {stamp})",
+            flush=True,
+        )
+        if not count:
+            print(
+                "[slotwise] WARNING: the catalog is empty. Check "
+                "SLOTWISE_CATALOG_DIR and that catalog.jsonl is mounted.",
+                flush=True,
+            )
+    except Exception as exc:  # noqa: BLE001 - reporting must never break startup
+        print(f"[slotwise] could not report the catalog: {exc}", flush=True)
+
+    return app
 
 
 #: What gunicorn imports: `gunicorn -c gunicorn.conf.py wsgi:app`.

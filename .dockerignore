@@ -9,9 +9,13 @@ data/raw/
 # 21 MB of one machine's locally scraped store. Gitignored, so a clean checkout
 # does not have it — but a build from a working directory would bake it in.
 # Leaving it out is also correct, not just smaller: Store falls back to
-# data/catalog.jsonl as its base layer, so an empty data/db still serves all
-# 572 courses. Verified 2026-09-16. The Dockerfile mkdir's the empty directory.
+# data/catalog/catalog.jsonl as its base layer, so an empty data/db still
+# serves all 572 courses. Verified 2026-09-16. The Dockerfile mkdir's it.
 data/db/
+
+# NOT excluded, deliberately: data/catalog/ is what this image serves. It holds
+# catalog.jsonl + catalog.meta.json, the nightly pipeline's only two outputs.
+# Mount over /app/data/catalog to serve a newer build — see DEPLOY.md.
 # 29 MB, and it holds LIVE Citrix session cookies. This must never be baked
 # into a shared image — it is gitignored for the same reason.
 data/.browser_profile/

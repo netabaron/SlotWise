@@ -90,7 +90,7 @@ keepalive = 2
 # Preloading
 # ---------------------------------------------------------------------------
 #: Import the app once in the master, then fork. Two reasons:
-#:   1. data/catalog.jsonl (572 courses, 583 KB) plus the sections DB are
+#:   1. data/catalog/catalog.jsonl (572 courses, 583 KB) plus the sections DB are
 #:      parsed once instead of `workers` times, and the pages are shared
 #:      copy-on-write.
 #:   2. A broken build fails at startup, in the master, with one clear
