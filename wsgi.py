@@ -129,6 +129,26 @@ def build_app():
 
     app = create_app(build_settings())
 
+    # ---- one proxy hop, and exactly one -----------------------------------
+    # Hosted, the chain is: client -> Cloudflare -> Railway's edge -> gunicorn.
+    # Without this, request.remote_addr is Railway's internal proxy address on
+    # every request and request.scheme is http even though the student is on
+    # https — so access logs record one IP for everybody, and any rate limit
+    # added later would throttle the proxy rather than an abuser.
+    #
+    # x_for=1 / x_proto=1, not more. Each unit of trust says "one hop I
+    # control appends a value I can believe". Trusting two would let a client
+    # forge the left-hand entry of X-Forwarded-For and appear as any address
+    # it likes. Railway terminates and re-appends, so from gunicorn's seat
+    # there is one trustworthy hop, whatever Cloudflare did upstream.
+    #
+    # Deliberately NOT applied in webapp.py: that binds 127.0.0.1 with no
+    # proxy in front, so honouring these headers there would mean trusting
+    # whatever a local process chose to send.
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=0, x_prefix=0)
+
     # Say which catalog this process is serving, once, at startup. A wrong
     # SLOTWISE_CATALOG_DIR is otherwise completely silent: shipped_catalog
     # falls back to an empty catalog, the app starts happily, and every

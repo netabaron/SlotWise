@@ -47,10 +47,12 @@ USER slotwise
 EXPOSE 8000
 
 # Fails the container if the app stops serving. Uses urllib rather than curl so
-# the slim image does not need another package. /api/catalog/meta is the right
-# probe: it touches the catalog, so it fails if the data did not load, not just
-# if the port is open.
+# the slim image does not need another package. /healthz is the right probe and
+# the same one Railway uses (railway.json): it returns 503 when the catalog is
+# empty, so a container that came up with a wrong SLOTWISE_CATALOG_DIR or an
+# unmounted volume is reported unhealthy instead of serving empty course lists
+# behind a cheerful 200.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD ["python", "-c", "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8000')+'/api/catalog/meta', timeout=4)"]
+    CMD ["python", "-c", "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8000')+'/healthz', timeout=4)"]
 
 CMD ["gunicorn", "-c", "gunicorn.conf.py", "wsgi:app"]

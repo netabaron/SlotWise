@@ -165,6 +165,31 @@ CURRICULUM_MISSING_NOTE = (
     "תוכנית הלימודים של המחלקה אינה טעונה — אפשר לבחור כל קורס מהקטלוג"
 )
 
+#: כמה שניות מותר למטמון משותף (‏Cloudflare) להחזיק תשובה קריאה-בלבד.
+#: ‏חמש דקות: הקטלוג משתנה פעם בלילה לכל היותר, אבל תשובה ישנה ליותר מכך
+#: מתחילה לסתור את מה שהכותרת אומרת על תאריך הבנייה.
+PUBLIC_CACHE_SECONDS = 300
+
+#: נכסים סטטיים. ‏**אין חתימת גיבוב בשמות הקבצים** (‏/static/app.js ולא
+#: ‏/static/app.<hash>.js), ולכן אי אפשר לסמן ``immutable``: פריסה מחליפה את
+#: התוכן מאחורי אותה כתובת, ומבקר חוזר עלול להריץ ‏JS ישן עד תפוגת המטמון.
+#: ‏יממה היא הפשרה שנבחרה; ראו DEPLOY.md.
+STATIC_CACHE_SECONDS = 24 * 60 * 60
+
+#: נקודות הקצה שמותר להגיש ממטמון משותף: ‏GET, קריאה בלבד, ותשובתן זהה לכל
+#: מי ששואל. ‏**רשימת היתר ולא רשימת איסור** — ברירת המחדל היא ``no-store``,
+#: כדי שנקודת קצה חדשה לא תודלף למטמון רק מפני שאיש לא חשב עליה.
+#:
+#: ‏``api.bootstrap`` אינו כאן בכוונה: הוא מחזיר את ``data/profile.json``,
+#: והוא המועמד הסביר ביותר לצבור תוכן תלוי-משתמש בעתיד.
+CACHEABLE_GET_ENDPOINTS: frozenset[str] = frozenset({
+    "api.catalog_meta",
+    "api.catalog_search",
+    "api.catalog_browse",
+    "api.semester_courses",
+    "api.program_electives",
+})
+
 #: למה אין תוכנית לימודים למסלול. ‏"" = יש תוכנית.
 #:
 #: ‏עד כאן הממשק לא יכול היה להבחין בין "המכללה אינה מפרסמת תוכנית למסלול
@@ -3308,6 +3333,17 @@ def _shipped_built_at() -> str:
     return shipped_catalog.built_at()
 
 
+def _shipped_catalog_path() -> str:
+    """היכן ‏shipped_catalog מחפש. ‏מוחזר ב-/healthz כי נתיב שגוי הוא
+    בדיוק התקלה שהבדיקה הזאת נועדה לתפוס, ובלי זה היא אומרת "ריק" בלי לומר
+    "ריק *איפה*"."""
+    try:
+        import shipped_catalog  # type: ignore
+    except Exception:  # noqa: BLE001
+        return ""
+    return str(getattr(shipped_catalog, "CATALOG_PATH", ""))
+
+
 def _shipped_meta() -> dict[str, Any]:
     """‏data/catalog/catalog.meta.json כמות שהוא, או ``{}``.
 
@@ -4678,11 +4714,74 @@ def create_app(
         )
 
     @app.after_request
-    def _no_store(response):
-        # מצב המסד והגרידה משתנים תוך כדי — קאש של הדפדפן רק היה משקר.
+    def _cache_control(response):
+        """מה מותר לשמור במטמון, ולכמה זמן.
+
+        ‏עד לפריסה מאחורי ‏Cloudflare היה כאן ``no-store`` גורף על כל
+        ‏``/api``. זה היה נכון לאפליקציה מקומית שבה המסד משתנה תוך כדי, והוא
+        מבזבז לגמרי מטמון קצה שמשרת מאות סטודנטים את אותו קטלוג בדיוק.
+
+        ‏ברירת המחדל נשארה ``no-store``. רק מה שברשימת ההיתר נפתח.
+        """
+        endpoint = request.endpoint or ""
+
+        if endpoint == "static":
+            response.headers["Cache-Control"] = (
+                f"public, max-age={STATIC_CACHE_SECONDS}"
+            )
+            return response
+
         if request.path.startswith("/api"):
+            cacheable = (
+                request.method == "GET"
+                and endpoint in CACHEABLE_GET_ENDPOINTS
+                and response.status_code == 200
+            )
+            response.headers["Cache-Control"] = (
+                f"public, max-age={PUBLIC_CACHE_SECONDS}" if cacheable else "no-store"
+            )
+            return response
+
+        # ‏הדף עצמו: תמיד לאמת מחדש. שמות הנכסים אינם נושאים גיבוב, ולכן דף
+        # ‏ישן מהמטמון היה מצביע על אותן כתובות בדיוק — אבל לפחות הוא עצמו
+        # לא יהיה ישן, וזה מה שקובע מתי משתמש רואה שינוי בתבנית.
+        if endpoint == "index":
+            response.headers["Cache-Control"] = "no-cache"
+        elif endpoint == "healthz":
             response.headers["Cache-Control"] = "no-store"
         return response
+
+    @app.get("/healthz")
+    def healthz():
+        """בדיקת בריאות ל-Railway: ‏200 רק אם באמת יש מה להגיש.
+
+        ‏**לא "השרת עונה" אלא "השרת עונה עם קטלוג".** התקלה שהבדיקה הזאת
+        קיימת בשבילה היא ‏SLOTWISE_CATALOG_DIR שגוי או ‏volume שלא עלה: השרת
+        עולה בשמחה, כל בקשה מחזירה ‏200, וכל רשימת קורסים ריקה. בדיקה שבודקת
+        רק שהפורט פתוח הייתה מכריזה על פריסה כזאת כתקינה.
+
+        ‏רשום מחוץ ל-``serve_ui`` כדי שיעבוד גם בפריסת ‏API בלבד.
+        """
+        try:
+            meta = _shipped_meta()
+            counts = meta.get("counts") if isinstance(meta.get("counts"), dict) else {}
+            count = int(counts.get("courses") or 0)
+            if not count:
+                _catalog, summary = _catalog_snapshot()
+                count = int(summary.get("count") or 0)
+            built_at = str(meta.get("built_at") or "")
+        except Exception as exc:  # noqa: BLE001 - בדיקת בריאות לא מפילה את עצמה
+            LOG.exception("בדיקת הבריאות נכשלה")
+            return jsonify({"ok": False, "course_count": 0,
+                            "error": f"{type(exc).__name__}: {exc}"}), 503
+
+        healthy = count > 0
+        return jsonify({
+            "ok": healthy,
+            "course_count": count,
+            "built_at": built_at,
+            "catalog": str(_shipped_catalog_path()),
+        }), (200 if healthy else 503)
 
     if serve_ui:
         _strings_stamp: dict[str, float] = {}

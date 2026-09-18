@@ -507,6 +507,29 @@ worthless.
 
 ## Health check and smoke test
 
+`GET /healthz` is the liveness probe, and it is deliberately stricter than "the
+port is open":
+
+```bash
+curl -si localhost:8000/healthz
+```
+
+```json
+{"ok": true, "course_count": 572, "built_at": "2026-09-09T22:35:44Z",
+ "catalog": "/app/data/catalog/catalog.jsonl"}
+```
+
+**200 only when a catalog is actually loaded; 503 otherwise.** The failure it
+exists for is a wrong `SLOTWISE_CATALOG_DIR` or a volume that did not mount: the
+server starts happily, every request returns 200, and every course list is
+empty. A probe that only checked the port would call that deployment healthy. It
+reports which path it looked at, because "empty" without "empty *where*" is not
+enough to fix a deployment.
+
+Both `railway.json` and the Dockerfile's `HEALTHCHECK` use it.
+
+For catalog detail:
+
 ```bash
 curl -s localhost:8000/api/catalog/meta
 ```
@@ -521,6 +544,146 @@ curl -s localhost:8000/api/catalog/meta
 a locally fetched one. `course_count: 0` or `empty: true` means the catalog did
 not load — check that `data/catalog/catalog.jsonl` is where the app expects it,
 and read the `[slotwise] catalog:` line the process prints at startup.
+
+---
+
+## Railway + Cloudflare setup
+
+Target: `slotwise.co.il`, served by Railway from the Dockerfile, with Cloudflare
+in front. `railway.json` pins the build and the health check; everything below is
+console configuration that does not live in the repo.
+
+### 1. Railway service
+
+Point a service at this repo. `railway.json` does the rest:
+
+```json
+{ "build":  { "builder": "DOCKERFILE", "dockerfilePath": "Dockerfile" },
+  "deploy": { "healthcheckPath": "/healthz", "healthcheckTimeout": 60,
+              "restartPolicyType": "ON_FAILURE", "restartPolicyMaxRetries": 5 } }
+```
+
+**Do not set `PORT`.** Railway injects it, and `gunicorn.conf.py` binds
+`0.0.0.0:$PORT` — verified: with `PORT=7777` the computed bind is
+`0.0.0.0:7777`. Setting it by hand is how you bind the wrong port and fail the
+health check.
+
+### 2. Environment variables to set on Railway
+
+Everything is optional except `WEB_CONCURRENCY`, which you want explicitly
+because the default is computed from CPUs the container may not actually have.
+
+| Name | Value | Why |
+| --- | --- | --- |
+| `WEB_CONCURRENCY` | `4` | **Set this.** The `2 × CPU + 1` default reads the host's cores, not the container's quota — on a big host it would start dozens of workers. Raise it only if `/api/solve` queues. |
+| `SLOTWISE_CATALOG_DIR` | `/app/data/catalog` | Already set in the Dockerfile; set it here only if you mount a catalog elsewhere. |
+| `GUNICORN_LOGLEVEL` | `info` | `warning` if the access log is noisy. |
+| `SLOTWISE_MAX_AGE_HOURS` | `24` | Default. Only change it if the catalog is deliberately stale. |
+| `TZ` | `Asia/Jerusalem` | Cosmetic — makes container log timestamps readable. |
+
+Do **not** set `HOST`, `SLOTWISE_DB_ROOT`, `SLOTWISE_CURRICULUM_PATH`,
+`SLOTWISE_CURRICULA_DIR` or `SLOTWISE_RAW_DIR` unless you are mounting a volume:
+the image defaults are correct, and `allow_network` is pinned `False` in
+`wsgi.py` and cannot be turned on by configuration.
+
+### 3. Cloudflare DNS
+
+Railway gives the service a domain like `slotwise-production.up.railway.app`.
+Add its target in Cloudflare's DNS tab:
+
+| Type | Name | Target | Proxy |
+| --- | --- | --- | --- |
+| CNAME | `@` | `<service>.up.railway.app` | **Proxied** (orange cloud) |
+| CNAME | `www` | `<service>.up.railway.app` | **Proxied** (orange cloud) |
+
+Cloudflare flattens the CNAME at the apex, so `@` as a CNAME is fine there even
+though plain DNS forbids it. Add both `slotwise.co.il` and
+`www.slotwise.co.il` as custom domains on the Railway service too, or Railway
+will not answer for them.
+
+### 4. Cloudflare SSL
+
+**SSL/TLS mode: Full (strict).** Railway serves a valid publicly-trusted
+certificate on its own domain, so strict verification succeeds and there is no
+reason to accept less.
+
+- *Flexible* would make Cloudflare talk plain HTTP to Railway — the connection
+  the student sees would be encrypted and the one carrying their data would not.
+- *Full* without strict accepts any certificate, including one an attacker
+  presents.
+
+Also switch on **Always Use HTTPS**. `wsgi.py` trusts `X-Forwarded-Proto` from
+one hop, so the app sees `https` correctly once that is on.
+
+### 5. Caching at the edge
+
+The app already sends the right headers:
+
+| Response | `Cache-Control` |
+| --- | --- |
+| `/static/*` | `public, max-age=86400` |
+| `/api/catalog/meta`, `/api/catalog/search`, `/api/catalog/browse`, `/api/semester/<n>/courses`, `/api/program/electives` | `public, max-age=300` |
+| `/` | `no-cache` |
+| `/api/bootstrap`, `/api/courses`, `/api/solve`, `/healthz`, any error | `no-store` |
+
+Two things to know:
+
+**Cloudflare does not cache `/api/*` by default.** Its default rules key on file
+extension, so those `max-age=300` headers are honoured by browsers but ignored
+by the edge until you add a Cache Rule — match `starts_with(http.request.uri.path, "/api/")`
+and set *Eligible for cache*, respecting origin TTL. Without that rule nothing
+breaks; you simply get no CDN caching.
+
+**Static filenames are not content-hashed.** `/static/app.js` is a fixed path,
+so a deploy replaces the content behind the same URL and a returning visitor can
+run up to a day of stale JavaScript. `/` is `no-cache` so the page itself is
+always fresh, but it references the same asset paths. Purge the Cloudflare cache
+after a deploy that changes frontend assets, or accept the delay. The durable
+fix is hashed filenames, which the app does not do today.
+
+### 6. Smoke test after DNS propagates
+
+```bash
+# 1. Health, through the whole chain. Expect 200 and course_count > 0.
+curl -si https://slotwise.co.il/healthz | head -20
+
+# 2. Cloudflare is actually in front (expect a cf-ray header and server: cloudflare)
+curl -sI https://slotwise.co.il/healthz | grep -iE "^(server|cf-ray|cf-cache-status)"
+
+# 3. HTTP redirects to HTTPS (Always Use HTTPS)
+curl -sI http://slotwise.co.il/ | grep -iE "^(HTTP|location)"
+
+# 4. www resolves the same way
+curl -si https://www.slotwise.co.il/healthz | head -5
+
+# 5. The page renders and carries the catalog date
+curl -s https://slotwise.co.il/ | grep -c "catalog-built"
+
+# 6. Cache headers survive the edge
+curl -sI https://slotwise.co.il/api/catalog/meta | grep -i cache-control   # public, max-age=300
+curl -sI https://slotwise.co.il/static/app.js    | grep -i cache-control   # public, max-age=86400
+
+# 7. A solve really runs end to end (expect ok:true and a schedules array)
+curl -s -X POST https://slotwise.co.il/api/solve      -H 'content-type: application/json'      -d '{"codes":["61753","61756"],"semester":"א","top_n":3}' | head -c 300
+
+# 8. The removed scrape surface is still gone (expect 404 on all three)
+for p in /api/scrape/start /api/scrape/status /api/reparse; do
+  echo -n "$p -> "; curl -s -o /dev/null -w '%{http_code}
+' "https://slotwise.co.il$p"
+done
+```
+
+Then check the Railway logs for the startup line, which names the catalog the
+process actually loaded:
+
+```
+[slotwise] catalog: /app/data/catalog/catalog.jsonl (572 courses, built 2026-09-09T22:35:44Z)
+```
+
+and confirm the access log shows **real client IPs** rather than one repeated
+internal address — that is `ProxyFix` doing its job. If every line shows the
+same address, `X-Forwarded-For` is not arriving and the trust setting needs
+revisiting.
 
 ---
 
