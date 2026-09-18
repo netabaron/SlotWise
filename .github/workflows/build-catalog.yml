@@ -16,29 +16,21 @@
 name: nightly catalog build
 
 on:
-  # The nightly schedule is DISABLED. Manual runs still work — use
-  # workflow_dispatch below, or `gh workflow run build-catalog.yml`.
+  # Both questions that kept this disabled have been answered:
   #
-  # Two open questions have to be settled before this runs unattended, and
-  # both are cheap to get wrong at 02:00 with nobody watching:
+  #   1. Does Braude answer a GitHub datacenter IP? YES. Runs 35262996905 and
+  #      35284235638 each fetched 571/571 course pages with zero failures.
+  #   2. Would a fresh catalog turn CI red? NO, not since the suite was
+  #      decoupled from it: tests read the frozen tests/fixtures/catalog,
+  #      and only test_catalog_invariants.py looks at the shipped one — and
+  #      it asserts invariants, never pinned values.
   #
-  #   1. Whether Braude answers a GitHub datacenter IP at all. Untested. If
-  #      it does not, the job goes red every night — safely (the committed
-  #      catalog keeps serving) but noisily.
-  #   2. A successful run commits a fresh catalog, and several tests pin
-  #      exact values derived from catalog data. Rebuilding from the current
-  #      data/raw gives 61753 five semester-א groups instead of four, which
-  #      shifts the optimal schedule and fails
-  #      test_web.py::test_solve_returns_schedules_with_the_full_shape.
-  #      So a green build would hand the next push a red CI.
-  #
-  # To re-enable: uncomment the two lines below. 23:00 UTC is 02:00 IDT in
-  # summer (UTC+3) and 01:00 IST in winter (UTC+2) — Israel has no fixed
-  # offset and GitHub cron has no DST, so one expression cannot mean 02:00
-  # all year. Both land in the quiet hours, which is what actually matters.
-  #
-  # schedule:
-  #   - cron: "0 23 * * *"
+  # 23:00 UTC is 02:00 IDT in summer (UTC+3) and 01:00 IST in winter (UTC+2).
+  # Israel has no fixed offset and GitHub cron has no DST, so one expression
+  # cannot mean 02:00 all year; both land in the quiet hours, which is the
+  # property that matters.
+  schedule:
+    - cron: "0 23 * * *"
   workflow_dispatch:
     inputs:
       year:
@@ -171,21 +163,33 @@ jobs:
           git add data/catalog/catalog.jsonl data/catalog/catalog.meta.json
           git commit -m "catalog: nightly build ${{ steps.inputs.outputs.date }}"
 
-          # main almost certainly moved while we were fetching. This job runs
-          # for ~90 minutes from a checkout of the commit that triggered it, so
-          # any push in that window makes this a non-fast-forward and the push
-          # fails — after an hour and a half of polite requests the college's
-          # server already served. Rebase our one commit onto the new tip.
+          # A fresh checkout of this repo is NOT clean, and rebase refuses to
+          # run with unstaged changes. .gitattributes declares
+          # tests/fixtures/real_yedion/*.html as eol=lf while the stored blobs
+          # still contained CRLF, so git rewrote them on checkout and they
+          # showed as modified before this job did anything at all. That is
+          # what killed run 35284235638 at the final step, after 100 minutes
+          # of fetching — and --autostash turned it into a misleading "stash
+          # apply conflicted" instead of saying so.
           #
-          # --autostash is deliberate: data/db and data/raw are gitignored so
-          # they do not block a rebase, but a stray tracked change would, and
-          # failing there would waste the whole run.
+          # The blobs were renormalised on 2026-09-18 so a fresh clone is
+          # clean again, but this step no longer depends on that: the two
+          # files we care about are committed above, data/raw and data/db are
+          # gitignored, and anything else in the tree at this point is
+          # disposable.
+          git checkout -- .
+
+          # main almost certainly moved while we were fetching. This job runs
+          # for ~100 minutes from a checkout of the commit that triggered it,
+          # so any push in that window is a non-fast-forward — after an hour
+          # and a half of polite requests the college's server already served.
+          # Rebase our one commit onto the new tip.
           git fetch origin "${{ github.ref_name }}"
-          if ! git pull --rebase --autostash origin "${{ github.ref_name }}"; then
+          if ! git rebase "origin/${{ github.ref_name }}"; then
             git rebase --abort || true
-            echo "::error::rebase onto origin/${{ github.ref_name }} conflicted."
-            echo "::error::Something else changed data/catalog while this build was running."
-            echo "::error::The built catalog is in the run log; nothing was pushed."
+            echo "::error::could not rebase the catalog commit onto origin/${{ github.ref_name }}."
+            echo "::error::Most likely something else changed data/catalog/ while this build ran."
+            echo "::error::The built catalog is in the build log artifact; nothing was pushed."
             exit 1
           fi
 

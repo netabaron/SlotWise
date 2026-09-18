@@ -241,33 +241,43 @@ describes: the maintainer command with a different trigger. It reuses the paced
 fetch loop, the throttle guard, all six validation gates and the atomic write
 unchanged — only the trigger and the destination moved.
 
-**Schedule: currently disabled.** The `schedule:` block is commented out, so
-the pipeline runs only when you trigger it by hand. Two things have to be
-settled before it runs unattended:
+**Schedule: `cron: "0 23 * * *"`, enabled 2026-09-18.** 23:00 UTC is 02:00 IDT
+in summer (UTC+3) and 01:00 IST in winter (UTC+2). Israel has no fixed UTC
+offset and GitHub cron has no DST, so one expression cannot mean 02:00 all
+year; both land in the quiet hours, which is the property that matters.
 
-1. **Whether Braude answers a GitHub datacenter IP at all.** Untested. If it
-   does not, the job goes red every night — safely, since the committed
-   catalog keeps serving, but noisily.
-2. **A successful run commits a fresh catalog, and several tests pin exact
-   values derived from catalog data.** Rebuilding from the current `data/raw`
-   gives 61753 five semester-א groups instead of four, which shifts the optimal
-   schedule and fails
-   `tests/test_web.py::test_solve_returns_schedules_with_the_full_shape`. So a
-   green nightly build would hand the next push a red CI. Either relax those
-   tests to assert shape rather than exact days, or accept that a catalog
-   update is a change that needs the pinned values updated with it.
+Both questions that kept it disabled are now answered:
 
-To re-enable, uncomment the two lines in `.github/workflows/build-catalog.yml`:
+1. **Does Braude answer a GitHub datacenter IP?** **Yes.** Runs `35262996905`
+   and `35284235638` each fetched 571/571 course pages with zero failures, at
+   9 s/request over ~100 minutes.
+2. **Would a fresh catalog turn CI red?** **No**, not since the suite was
+   decoupled from the shipped catalog. Tests read the frozen
+   `tests/fixtures/catalog`; only `test_catalog_invariants.py` looks at
+   `data/catalog/`, and it asserts invariants rather than pinned values.
 
-```yaml
-schedule:
-  - cron: "0 23 * * *"
-```
+### What the first two runs taught
 
-23:00 UTC is 02:00 IDT in summer (UTC+3) and 01:00 IST in winter (UTC+2).
-Israel has no fixed UTC offset and GitHub cron has no DST, so one expression
-cannot mean 02:00 all year; both land in the quiet hours, which is the property
-that matters.
+Both failed, and each failure was worth having.
+
+**Run 1** died on validation gate 4 after 1h39m. The college had withdrawn
+course 51961, and the gate's course-loss half had **zero** tolerance while its
+meeting-retention half allowed 5% — so one withdrawal in 572 failed the build.
+The gate now separates a *regression* (a course the yedion still lists that we
+failed to produce — fails) from a *withdrawal* (a course it no longer lists —
+reported, does not fail).
+
+**Run 2** passed all six gates, built a valid catalog, committed it on the
+runner — and died at `git push`. The cause was not the catalog: a fresh
+checkout of this repo was **already dirty**. `.gitattributes` declared
+`tests/fixtures/real_yedion/*.html` as `eol=lf` while the stored blobs held
+CRLF, so git rewrote them on checkout, and `git rebase` refuses to run with
+unstaged changes. `--autostash` turned that into a misleading "stash apply
+conflicted" at the very end of a 100-minute build.
+
+Both are fixed: the blobs were renormalised to LF (a fresh clone is clean
+again), and the commit step now runs `git checkout -- .` after committing the
+two catalog files, so it no longer depends on the tree being pristine.
 
 **What a run does:**
 
@@ -340,8 +350,9 @@ git push
 
 That is byte-for-byte what the workflow runs — same gates, same atomic write,
 same two files — so a hand-built catalog and a CI-built one are
-indistinguishable downstream. The schedule is already disabled, so this is the
-normal path today and nothing fails nightly while it stays that way.
+indistinguishable downstream. If this becomes the normal path, comment out the
+`schedule:` block so the job stops failing nightly, and keep `workflow_dispatch`
+for when you want to try the runner again.
 
 If the cause is code **4**, no amount of re-running helps: the college has
 closed the anonymous endpoints, and the only remaining route is the Playwright
@@ -540,8 +551,10 @@ Honest list of what this step does **not** settle.
    meaning "this course has no stored data". The name is a leftover from the
    scrape era and is now misleading, but it is load-bearing for the frontend and
    for tests, so renaming it was out of scope here.
-7. **The nightly build has never run, and its schedule is switched off.**
-   Everything in it was exercised locally —
+7. **The nightly build has run twice, both times failing at a different late
+   step, and both causes are fixed** (see "What the first two runs taught").
+   The schedule is enabled as of 2026-09-18, so the next unattended run is the
+   first genuine end-to-end test. Everything in it was exercised locally —
    the CLI, `--out`, the exit codes, the gates, `verify_catalog.py` — but the
    workflow itself has not executed on a runner even once, and a GitHub-hosted
    runner has never been pointed at the yedion. Whether Braude answers a
