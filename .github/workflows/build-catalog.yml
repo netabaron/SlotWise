@@ -83,7 +83,10 @@ jobs:
           # `playwright install` is deliberately NOT run: the default fetch
           # path (src/yedion_http.py) is standard library only and needs no
           # browser, and the ~400 MB of browser binaries would be pure waste.
-          pip install -r requirements.txt -r requirements-scraper.txt
+          # requirements-dev.txt is here for pytest alone: the step below runs
+          # tests/test_catalog_invariants.py against the freshly built
+          # catalog. It pulls in no browser and costs a couple of seconds.
+          pip install -r requirements.txt -r requirements-scraper.txt -r requirements-dev.txt
 
       - name: Resolve build inputs
         id: inputs
@@ -145,6 +148,30 @@ jobs:
         run: |
           set -o pipefail
           python scripts/verify_catalog.py --dir data/catalog --year "${{ steps.inputs.outputs.year }}" 2>&1 | tee -a build.log
+
+      - name: Check the built catalog against the app's assumptions
+        # The last gate before this reaches main, and the only one that asks
+        # "would the application accept this?" rather than "is this file
+        # internally consistent?". verify_catalog.py already covers the
+        # latter; this covers records missing a groups list, a catalog with
+        # no timed meeting anywhere, and a meta whose Hebrew year label does
+        # not match its Gregorian year.
+        #
+        # It matters here more than anywhere else because **CI never sees
+        # this commit**. A push authenticated with GITHUB_TOKEN does not
+        # trigger workflow runs — verified 2026-09-19, zero runs for e11a4af,
+        # the first nightly commit to land. Without this step the catalog
+        # reaches main with nothing but its own build gates behind it.
+        #
+        # Exactly one file, deliberately. tests/conftest.py points the whole
+        # suite at the FROZEN tests/fixtures/catalog, and
+        # test_catalog_invariants.py is the single test that loads the real
+        # data/catalog instead — so it is the only one that would be testing
+        # what was just built. Running more here would test yesterday's
+        # fixture and prove nothing about tonight's catalog.
+        run: |
+          set -o pipefail
+          python -m pytest tests/test_catalog_invariants.py -q -ra 2>&1 | tee -a build.log
 
       - name: Commit and push if the catalog changed
         id: commit
