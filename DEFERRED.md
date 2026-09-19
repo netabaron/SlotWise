@@ -559,42 +559,6 @@ reintroduced by accident.
 
 ---
 
-### Local `sections.json` shadows the shipped catalog with an older build's stamp
-**Where:** `Store._load_sections_db` in `src/store.py` (`merged.update(courses)`), the
-records in `data/db/sections.json` whose `meta.source_url` is `shipped-catalog`.
-**Owner:** unassigned. Found 2026-09-13 while scoping the header freshness line.
-**What:** the local database holds **135 entries that came from the shipped catalog**,
-not from a fetch. **133 of them carry `fetched_at: 2026-09-07T14:07:54Z`** — the stamp
-of the *previous* catalog build. The current catalog was built `2026-09-09T22:35:44Z`.
-Because local wins the merge whole-course-at-a-time, those 133 shadow the current
-shipped layer, and `_origin_of` still labels them `shipped`.
-**So the header's own build date is wrong about most of the data it describes.**
-`הקטלוג נבנה לפני 3 ימים` reads `catalog.meta.json`, which is true of the *file*; the
-records that line is describing are from a build two days older. A date that is wrong
-about its own data is the same class of problem as the fetch line that reported the
-stalest record in the database as though it were the last update — which is what was
-just fixed in `renderHeader()`.
-**Content is fine, the stamp is not.** Checked 2026-09-10: zero polluted lecturer
-values across the whole database, because `_LEGACY_STATUS_SUFFIXES` cleans the two
-known suffixes at read time. So this is not the Sep 7 lecturer bug surviving in the
-shadow copies — it is only the provenance stamp that is stale.
-**How they got there:** not established. A refresh or reparse run that persisted the
-merged view rather than only the fetched half would do it, since `save_course` writes
-whatever it is handed. Worth confirming before fixing, because the fix depends on
-which path wrote them.
-**Why it was not fixed now:** deleting the 133 shadow entries would let the current
-catalog show through and is the obvious repair — it is the same shape as the
-`61776`/`62028` fix on 2026-09-10 — but it edits the student's database on a hunch
-about how the rows appeared. That was fine for two courses with a measured symptom;
-it is not fine for 133 without knowing the writer. Establish the path first.
-**What it is not costing today:** nothing visible. The merge is per course, the
-content matches, and no line in the interface reads `fetched_at` off these records
-now that the header is scoped to the student's selection — and a *selected*
-catalog-only course puts the header into the `mixed`/`catalog` wording, which talks
-about the build date rather than claiming a fetch.
-
----
-
 ### Ten fields in the `/api/bootstrap` `db` payload have no reader — settle in one pass
 **Where:** `_db_snapshot()` in `src/web/api.py`.
 **Owner:** one deliberate pass, **after the presentation**. Deleting fields from a
@@ -631,6 +595,75 @@ this block unreferenced, so the two belong together in whoever's head does the p
 ---
 
 ## Closed
+
+### Local `sections.json` shadows the shipped catalog with an older build's stamp — closed 2026-09-20
+**Where:** `Store._load_sections_db` in `src/store.py` (`merged.update(courses)`), the
+records in `data/db/sections.json` whose `meta.source_url` is `shipped-catalog`.
+**Owner:** unassigned. Found 2026-09-13 while scoping the header freshness line.
+**What:** the local database holds **135 entries that came from the shipped catalog**,
+not from a fetch. **133 of them carry `fetched_at: 2026-09-07T14:07:54Z`** — the stamp
+of the *previous* catalog build. The current catalog was built `2026-09-09T22:35:44Z`.
+Because local wins the merge whole-course-at-a-time, those 133 shadow the current
+shipped layer, and `_origin_of` still labels them `shipped`.
+**So the header's own build date is wrong about most of the data it describes.**
+`הקטלוג נבנה לפני 3 ימים` reads `catalog.meta.json`, which is true of the *file*; the
+records that line is describing are from a build two days older. A date that is wrong
+about its own data is the same class of problem as the fetch line that reported the
+stalest record in the database as though it were the last update — which is what was
+just fixed in `renderHeader()`.
+**Content is fine, the stamp is not.** Checked 2026-09-10: zero polluted lecturer
+values across the whole database, because `_LEGACY_STATUS_SUFFIXES` cleans the two
+known suffixes at read time. So this is not the Sep 7 lecturer bug surviving in the
+shadow copies — it is only the provenance stamp that is stale.
+**How they got there:** not established. A refresh or reparse run that persisted the
+merged view rather than only the fetched half would do it, since `save_course` writes
+whatever it is handed. Worth confirming before fixing, because the fix depends on
+which path wrote them.
+**Why it was not fixed now:** deleting the 133 shadow entries would let the current
+catalog show through and is the obvious repair — it is the same shape as the
+`61776`/`62028` fix on 2026-09-10 — but it edits the student's database on a hunch
+about how the rows appeared. That was fine for two courses with a measured symptom;
+it is not fine for 133 without knowing the writer. Establish the path first.
+**What it is not costing today:** nothing visible. The merge is per course, the
+content matches, and no line in the interface reads `fetched_at` off these records
+now that the header is scoped to the student's selection — and a *selected*
+catalog-only course puts the header into the `mixed`/`catalog` wording, which talks
+about the build date rather than claiming a fetch.
+
+**Closed 2026-09-20 — by changing who wins the merge, not by deleting the rows.**
+This entry was held because the obvious repair edits the student's database on a
+hunch about which code path wrote those rows, and 133 rows is too many to do that
+to without knowing. That question turned out not to need an answer: the fix was a
+line higher up. `Store._load_sections_db` now takes `prefer_newer_catalog=True`
+from the web layer and resolves each code **newest-first**, so a row stamped with
+an older build simply loses to the catalog. Nothing in `data/db` was touched — the
+135 rows are still on disk, they are just never served.
+
+Measured on the machine that reported it, 2026-09-20:
+
+| | |
+|---|---|
+| rows in `data/db/sections.json` | 572 |
+| rows stamped `shipped-catalog` | 135 — **133 at `2026-09-07T14:07:54Z`**, 2 at `2026-09-09T22:35:44Z` |
+| current catalog `built_at` | `2026-09-19T02:34:09Z` |
+| shadow rows now superseded | **135 of 135** |
+| courses served carrying the catalog's stamp | 571 of 572 |
+
+The single exception is `51961`, which the catalog does not carry at all, so there
+is nothing to supersede it with — it keeps its own `2026-09-06` fetch, which is
+correct and is why `db.origin` reads `mixed` rather than `shipped`.
+
+**The other half closed with it.** This entry's real complaint was a date that was
+wrong about its own data — `הקטלוג נבנה לפני 3 ימים` describing records from a
+build two days older. The header line is now `מעודכן מהידיעון · …`, and since the
+merge gives every catalog-served record `fetched_at = built_at`, the date it shows
+and the records it describes are the same stamp by construction.
+
+**Still not established:** how those rows came to be written with a build stamp in
+the first place. It is no longer blocking anything, and it is no longer costing
+anything, but it was never answered.
+
+---
 
 ### The shipped catalog was a build behind — closed 2026-09-10
 **Where:** `data/catalog.jsonl` / `data/catalog.meta.json`, built 2026-09-07.
