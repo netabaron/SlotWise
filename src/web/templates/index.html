@@ -30,13 +30,21 @@
     #busy-bar            סרגל טעינה דק בראש העמוד. hidden כברירת מחדל.
     #freshness           אזור טריות הנתונים (role=status)
     #freshness-dot       נקודת מצב. data-state = "fresh" | "stale" | "empty" | "unknown"
-    #freshness-text      "הנתונים נמשכו לפני 3 שעות"
-    #freshness-meta      "6 קורסים · 27 קבוצות · קטלוג: 1412"
+    #freshness-text      ‏**שורת הטריות היחידה.** "מעודכן מהידיעון · לפני 19 שעות",
+                         ‏ועליה title עם הפירוט המלא: "הנתונים נמשכו מהידיעון
+                         ‏ב-19.9.2026 14:35 · 571 קורסים". ‏data-state =
+                         ‏"fresh" | "stale" — ‏"stale" כשמה שהשורה מדווחת עליו
+                         ‏חצה את SLOTWISE_MAX_AGE_HOURS, והוא מה שצובע אותה
+                         ‏באזהרה. בלי המאפיין כשאין מה לדווח (טעינה, ניתוק,
+                         ‏מסד ריק). ‏#freshness-dot מציג את אותו מצב בדיוק.
+    #freshness-meta      "6 קורסים · 27 קבוצות · קטלוג: 1412" — ‏?debug=1 בלבד
     #theme-toggle        ‏role=radiogroup. שלושה .theme-btn עם aria-checked;
                          אין בהם טקסט נראה, והשם הנגיש הוא aria-label.
-    #catalog-built       "הקטלוג נבנה ב-9 בספטמבר 2026 · 572 קורסים"
-                         ‏GET /api/catalog/meta. ריק = אין קטלוג, ואז
-                         התווית נשארת ריקה במקום להמציא תאריך.
+    ‏(‏#catalog-built נמחק ב-2026-09-20. הוא היה שורה שנייה, "הקטלוג נבנה
+                         ‏ב-9 בספטמבר 2026 · 572 קורסים", שחזרה על מה
+                         ‏ש-#freshness-text כבר אמר בניסוח של מי שבונה את
+                         ‏הקטלוג ולא של מי שמשתמש בו. מספר הקורסים
+                         ‏מ-GET /api/catalog/meta עבר לתווית ההצפה שם.)
 
   פרטים טכניים / #tech-details  — ‏?debug=1 בלבד; אחרת מוסתר לגמרי
     #tech-facts          ספירות וזמני חישוב. אין כאן יותר כפתור רענון ואין
@@ -164,13 +172,14 @@
     <div class="freshness" id="freshness" role="status" aria-live="polite">
       <span class="fresh-dot" id="freshness-dot" data-state="unknown" aria-hidden="true"></span>
       <span class="fresh-lines">
+        <!-- ‏מתי נמשכו הנתונים שמוגשים כרגע — גיל יחסי, שורה אחת.
+             ‏החליפה את כפתור הרענון ואת יומן הגרידה: מארח לא מריץ גרידה
+             ‏משלו, ולכן "מתי זה נמשך" הוא המצב שיש לתאר, לא "הרענון שלך
+             ‏נכשל". ‏HOSTING_NOTES.md §4 כלל 2.
+             ‏התאריך המדויק ומספר הקורסים יושבים ב-title ש-app.js קובע,
+             ‏ולא בשורה שנייה מתחת. -->
         <span class="fresh-text" id="freshness-text">{{ S.ui.header.freshnessLoading }}</span>
         <span class="fresh-meta" id="freshness-meta"></span>
-        <!-- ‏מתי נבנה הקטלוג שמוגש כרגע. ‏GET /api/catalog/meta.
-             ‏החליף את כפתור הרענון ואת יומן הגרידה: מארח לא מריץ גרידה
-             ‏משלו, ולכן "הקטלוג ישן" הוא המצב שיש לתאר, לא "הרענון שלך
-             ‏נכשל". ‏HOSTING_NOTES.md §4 כלל 2. ריק -> נשאר ריק. -->
-        <span class="fresh-meta" id="catalog-built"></span>
       </span>
     </div>
     <!-- ‏שלושה אייקונים ולא שלוש מילים. השם הנגיש עובר ל-aria-label, כי

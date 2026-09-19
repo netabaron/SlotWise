@@ -174,17 +174,25 @@ def test_shipped_courses_do_not_trigger_the_per_course_stale_banner(browser, ser
         ctx.close()
 
 
-def test_the_header_reports_the_build_date_not_a_fetch(browser, server, monkeypatch):
+def test_the_header_reports_when_the_data_was_pulled(browser, server, monkeypatch):
+    """שורה אחת על **מתי הנתונים נמשכו**, וההסתייגות בתווית ההצפה.
+
+    ‏עד 2026-09-20 השורה אמרה "הקטלוג נבנה …" והייתה מתחתיה שורה שנייה עם
+    אותו תאריך במילים אחרות. הנוסח החדש הוא של מי שמשתמש ולא של מי שבונה,
+    אבל **התנאי לא התרופף**: ההסתייגות — שהאפליקציה אינה יודעת אם הידיעון
+    השתנה מאז — עדיין חייבת להופיע, ועכשיו היא בתווית ההצפה.
+    """
     _age_catalog(monkeypatch, 60)
     ctx, page = _page(browser, server)
     try:
         head = page.evaluate(
             "document.getElementById('freshness-text').textContent.trim()"
         )
-        assert "הקטלוג נבנה" in head, head
+        assert "מעודכן מהידיעון" in head, head
         title = page.evaluate(
             "document.getElementById('freshness-text').getAttribute('title') || ''"
         )
+        assert "נמשכו מהידיעון" in title, title
         assert "אין דרך לדעת" in title or "לדעת" in title, title
     finally:
         ctx.close()

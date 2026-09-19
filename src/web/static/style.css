@@ -390,6 +390,13 @@ ul { margin: 0; padding: 0; list-style: none; }
 .fresh-text { font-size: 13px; font-weight: 600; }
 .fresh-meta { font-size: 13px; color: var(--muted); }
 
+/* ‏אותה שורה בדיוק, בצבע אזהרה — לא משפט אחר ולא אייקון נוסף. מה שהשתנה
+   הוא הגיל, לא מה שהאפליקציה יודעת, ולכן הנוסח נשאר זהה.
+   ‏--warn-ink ולא --warn-line: זה טקסט על רקע הכותרת הרגיל, ו--warn-line
+   הוא טוקן של מסגרות ונקודות. ‏#freshness-dot כבר נושא את אותו מצב,
+   ולכן הצבע אינו הסימון היחיד — כלל 7.1. */
+.fresh-text[data-state="stale"] { color: var(--warn-ink); }
+
 .fresh-dot {
   inline-size: 10px;
   block-size: 10px;

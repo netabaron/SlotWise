@@ -26,8 +26,9 @@ was an open relay to Braude's server (`HOSTING_NOTES.md` §1, row 3). Rebuilding
 the catalog is now a separate job — see [Rebuilding the catalog](#rebuilding-the-catalog).
 
 The UI reflects this. The refresh button and the live scrape log are gone; in
-their place the header shows **"הקטלוג נבנה ב-…"**, read from the new
-`GET /api/catalog/meta`.
+their place the header shows one line, **"מעודכן מהידיעון · לפני 19 שעות"**,
+with the exact timestamp and course count in its tooltip. It is fed by
+`bootstrap.db.catalog_built_at` and `GET /api/catalog/meta`.
 
 ---
 
@@ -100,11 +101,13 @@ only when you want to serve a catalog newer than the image.
 ## Where the freshness date comes from
 
 There is one source of truth: **`data/catalog/catalog.meta.json` → `built_at`**.
-Two labels read it, and they cannot disagree because there is nothing else to
-read.
+Everything the student sees about freshness reads it, and nothing reads
+anything else.
 
-* The header line `הקטלוג נבנה …` comes from `bootstrap.db.catalog_built_at`,
-  which is `shipped_catalog.built_at()`.
+* The header line `מעודכן מהידיעון · …` comes from
+  `bootstrap.db.catalog_built_at`, which is `shipped_catalog.built_at()`. The
+  same stamp drives the relative age, the exact date in the tooltip, and the
+  warning colour — one value, three renderings, so they cannot disagree.
 * `GET /api/catalog/meta` returns the same `built_at` — that is the whole
   point of the endpoint.
 
@@ -731,8 +734,9 @@ curl -sI http://slotwise.co.il/ | grep -iE "^(HTTP|location)"
 # 4. www resolves the same way
 curl -si https://www.slotwise.co.il/healthz | head -5
 
-# 5. The page renders and carries the catalog date
-curl -s https://slotwise.co.il/ | grep -c "catalog-built"
+# 5. The page renders and carries the freshness line
+#    (#catalog-built was removed on 2026-09-20 -- one line now, not two)
+curl -s https://slotwise.co.il/ | grep -c "freshness-text"
 
 # 6. Cache headers survive the edge
 curl -sI https://slotwise.co.il/api/catalog/meta | grep -i cache-control   # public, max-age=300

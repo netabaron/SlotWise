@@ -209,27 +209,42 @@ def test_no_maintenance_controls_reach_the_page(page):
     assert not got["logLines"], "שורות יומן הגרידה עדיין בעמוד"
 
 
-def test_the_header_says_when_the_catalog_was_built(page):
-    """‏#catalog-built הוא מה שהחליף אותם, והוא בכותרת — לא מאחורי ‎?debug=1‎.
+def test_the_header_says_when_the_data_was_pulled(page):
+    """‏#freshness-text הוא מה שהחליף אותם, והוא בכותרת — לא מאחורי ‎?debug=1‎.
 
     ‏זה חיווי הטריות היחיד שיש לסטודנט/ית מאורח/ת, ולכן הוא חייב להיות
     ‏גלוי בלי לפתוח שום סעיף. ‏HOSTING_NOTES.md §3.
+
+    ‏עד 2026-09-20 הבדיקה הזאת חיפשה ``#catalog-built`` ואת המילה "הקטלוג".
+    ‏השורה ההיא נמחקה: היא הייתה שנייה מתוך שתיים שאמרו את אותו דבר,
+    ‏ובניסוח של מי שבונה את הקטלוג ולא של מי שמשתמש בו. הכוונה של הבדיקה
+    ‏לא השתנתה — רק המזהה והנוסח שהיא מודדת.
     """
     page.wait_for_timeout(1500)
     got = page.evaluate(
         """() => {
-          const el = document.getElementById('catalog-built');
+          const el = document.getElementById('freshness-text');
           if (!el) return {exists: false};
           return {exists: true,
                   inHeader: !!el.closest('.app-header'),
                   inTech: !!el.closest('#tech-details'),
-                  text: (el.textContent || '').trim()};
+                  text: (el.textContent || '').trim(),
+                  title: el.getAttribute('title') || '',
+                  second: !!document.getElementById('catalog-built')};
         }"""
     )
-    assert got["exists"], "אין תווית 'הקטלוג נבנה ב-…' בעמוד"
-    assert got["inHeader"], "תווית בניית הקטלוג אינה בכותרת"
-    assert not got["inTech"], "תווית בניית הקטלוג נקברה בפרטים הטכניים"
-    assert "הקטלוג" in got["text"], f"התווית ריקה או לא בעברית: {got['text']!r}"
+    assert got["exists"], "אין שורת טריות בעמוד"
+    assert got["inHeader"], "שורת הטריות אינה בכותרת"
+    assert not got["inTech"], "שורת הטריות נקברה בפרטים הטכניים"
+    assert "מעודכן מהידיעון" in got["text"], (
+        f"השורה ריקה או לא בנוסח שסוכם: {got['text']!r}"
+    )
+    assert not got["second"], "‏#catalog-built חזר — שוב שתי שורות על אותו דבר"
+    # הפירוט לא נמחק, הוא עבר לתווית ההצפה. בלי הצד הזה אפשר "לעבור" את
+    # הבדיקה בכך שפשוט מוחקים את המידע.
+    assert "נמשכו מהידיעון" in got["title"], (
+        f"אין תווית הצפה עם התאריך המלא: {got['title']!r}"
+    )
 
 
 def test_debug_opens_the_technical_section(browser, server):

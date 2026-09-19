@@ -165,7 +165,6 @@
       "offline": "אין חיבור לשרת המקומי",
       "loading": "בטעינת נתונים…",
       "empty": "אין נתונים בקטלוג הנוכחי",
-      "fetched": "הנתונים עודכנו {age}",
       "metaCourses": "{count} קורסים",
       "metaGroups": "{count} קבוצות",
       "metaCatalog": "קטלוג: {count}",
@@ -174,9 +173,10 @@
       "phaseIdle": "ממתין",
       "phaseReparse": "בונה מחדש מהקבצים השמורים",
       "phaseError": "שגיאה: {error}",
-      "builtAt": "הקטלוג נבנה {age}",
-      "builtAtTitle": "התאריך שבו נבנה קטלוג הקורסים שמגיע עם התוכנה. זה כל מה שידוע כאן — לאפליקציה אין דרך לדעת אם הידיעון השתנה מאז.",
-      "builtAtMixed": "הנתונים עודכנו {age} · הקטלוג נבנה {built}"
+      "updated": "מעודכן מהידיעון · {age}",
+      "updatedTitle": "הנתונים נמשכו מהידיעון ב-{when} · {count} קורסים",
+      "updatedTitleNoCount": "הנתונים נמשכו מהידיעון ב-{when}",
+      "updatedTitleNote": "האפליקציה יודעת רק מתי הנתונים נמשכו. אין לה דרך לדעת אם הידיעון השתנה מאז."
     },
     "scrape": {
       "refreshing": "מרענן {total} קורסים…",
@@ -385,9 +385,7 @@
       "noResults": "לא נמצא קורס מתאים בקטלוג.",
       "empty": "הקטלוג אינו טעון כרגע.",
       "showing": "מוצגים {count} קורסים",
-      "showingOfTotal": "מוצגים {count} קורסים מתוך {total} — אפשר לצמצם בחיפוש",
-      "builtAt": "הקטלוג נבנה ב-{when}",
-      "builtAtWithCount": "הקטלוג נבנה ב-{when} · {count} קורסים"
+      "showingOfTotal": "מוצגים {count} קורסים מתוך {total} — אפשר לצמצם בחיפוש"
     },
     "electives": {
       "titleTracks": "מסלולי התמחות",

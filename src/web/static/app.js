@@ -469,6 +469,15 @@
     if (node) node.hidden = !!hidden; // ‏[hidden] מטופל ב-CSS, בלי style.display
   }
 
+  /** תווית הצפה. ריק = **מסירים** את המאפיין, ולא ``title=""``: תווית
+   *  ריקה עדיין נחשבת תווית, וחלק מהקוראים הקוליים מכריזים עליה. */
+  function setTitle(node, value) {
+    if (!node) return;
+    var text = txt(value);
+    if (text) node.setAttribute("title", text);
+    else node.removeAttribute("title");
+  }
+
   function setClass(node, name, on) {
     if (!node) return;
     var parts = txt(node.className).split(/\s+/).filter(Boolean);
@@ -2580,30 +2589,58 @@
       });
   }
 
-  /** ‏"הקטלוג נבנה ב-9 בספטמבר 2026 · 572 קורסים", או "" כשאין קטלוג. */
-  function catalogBuiltText() {
+  /**
+   * ‏התווית הצפה של שורת הטריות: ‏"הנתונים נמשכו מהידיעון ב-19.9.2026
+   * ‏14:35 · 571 קורסים", ואחריה שורה שאומרת מה **לא** ידוע.
+   *
+   * ‏כאן, ולא בשורה עצמה, יושב כל הפירוט. השורה עונה על "האם לסמוך על
+   * המסך"; התווית עונה על "מתי בדיוק, וכמה". ‏מספר הקורסים מגיע
+   * מ-``/api/catalog/meta`` ולכן הוא מתאר את הקטלוג שמוגש — כשהוא עוד לא
+   * נטען, או שאין קטלוג, הנוסח בלעדיו ולא עם אפס.
+   *
+   * ‏שורת ההערה אינה קישוט. ‏``src/shipped_catalog.py`` מחייב שכל נוסח
+   * שנשען על הקטלוג ידבר על מתי הוא נמשך ולא ירמוז על מצב הידיעון החי,
+   * והיא הדבר היחיד שאומר את זה עכשיו — קודם היא ישבה ב-``builtAtTitle``.
+   */
+  function updatedTitle(stamp) {
+    var when = formatStampFull(txt(stamp));
+    if (!when) return "";
     var meta = runtime.catalogMeta;
-    if (!meta || !txt(meta.built_at)) return "";
-    var when = formatBuiltAt(txt(meta.built_at));
-    var count = num(meta.course_count, null);
-    return count === null
-      ? Tf("app.catalog.builtAt", { when: when })
-      : Tf("app.catalog.builtAtWithCount", { when: when, count: count });
+    var count = meta ? num(meta.course_count, null) : null;
+    var head =
+      count === null
+        ? Tf("app.header.updatedTitleNoCount", { when: when })
+        : Tf("app.header.updatedTitle", { when: when, count: count });
+    return head + "\n" + T("app.header.updatedTitleNote");
   }
 
   /**
-   * ‏ISO-8601 ב-UTC -> תאריך מקומי קריא. מחרוזת שאינה תאריך חוזרת כמות
-   * שהיא: עדיף להראות את מה שהשרת אמר מאשר "Invalid Date".
+   * ‏ISO-8601 ב-UTC -> ‏"19.9.2026 14:35" בשעון המקומי. אותו סדר שבו
+   * ‏``todayLabel()`` כותב תאריך, ועם שעה: התווית קיימת בשביל הדיוק
+   * שהשורה מוותרת עליו, ותאריך בלי שעה מחזיר חצי ממנו.
+   *
+   * מחרוזת שאינה תאריך חוזרת כמות שהיא: עדיף להראות את מה שהשרת אמר
+   * מאשר ‏"Invalid Date".
    */
-  function formatBuiltAt(iso) {
+  function formatStampFull(iso) {
+    if (!iso) return "";
     try {
       var d = new Date(iso);
       if (isNaN(d.getTime())) return iso;
-      return d.toLocaleDateString("he-IL", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
+      var pad = function (n) {
+        return (n < 10 ? "0" : "") + n;
+      };
+      return (
+        d.getDate() +
+        "." +
+        (d.getMonth() + 1) +
+        "." +
+        d.getFullYear() +
+        " " +
+        pad(d.getHours()) +
+        ":" +
+        pad(d.getMinutes())
+      );
     } catch (e) {
       return iso;
     }
@@ -2620,7 +2657,6 @@
     ui.freshDot = byId("freshness-dot");
     ui.freshText = byId("freshness-text");
     ui.freshMeta = byId("freshness-meta");
-    ui.catalogBuilt = byId("catalog-built");
     ui.banners = byId("banners");
     ui.toasts = byId("toasts");
     ui.tplBanner = byId("tpl-banner");
@@ -3686,11 +3722,17 @@
    * שרואה "היום" בטעות בוטח בנתונים ישנים.
    *
    * Returns:
-   *   ``{kind, age, built, stale}``. ‏``kind``: ‏``"none"`` (לא נבחר
-   *   דבר), ‏``"fetched"`` (כל הנבחרים נשלפו כאן), ‏``"catalog"`` (כולם
-   *   מהקטלוג), ‏``"mixed"``, ‏``"unknown"`` (לקורס נבחר אין חותמת
-   *   שימושית). בכל מה שאינו ``"fetched"``/``"mixed"`` לא נטענת שום
-   *   טענה על שליפה — רק תאריך הבנייה, שהוא היחיד שידוע.
+   *   ``{kind, stamp, stale}``. ‏``kind``: ‏``"none"`` (לא
+   *   נבחר דבר), ‏``"fetched"`` (כל הנבחרים נשלפו כאן), ‏``"catalog"``
+   *   (כולם מהקטלוג), ‏``"mixed"``, ‏``"unknown"`` (לקורס נבחר אין
+   *   חותמת שימושית).
+   *
+   *   ‏``stamp`` היא החותמת ש**השורה בכותרת מדברת עליה**: הישנה מבין
+   *   השליפות שנבחרו, הישנה מבין השתיים כש-``kind`` הוא ``"mixed"``,
+   *   ותאריך בניית הקטלוג בכל השאר. ‏ISO-8601 גולמי ולא טקסט מוכן,
+   *   כי הכותרת צריכה גם את הגיל היחסי, גם את התאריך המלא לתווית
+   *   הצפה, וגם להשוות אותה מול ``max_age_hours`` — שלושה שימושים
+   *   שאי אפשר לגזור ממחרוזת שכבר עברה ניסוח.
    */
   function selectedFreshness(db) {
     var perCourse = (db && db.courses) || {};
@@ -3724,11 +3766,24 @@
     else if (stamps.length) kind = "fetched";
     else kind = "catalog";
 
+    // ‏ISO-8601 ב-UTC ממוין לקסיקוגרפית = כרונולוגית, כמו ב-store.py.
+    var oldestFetch = stamps.length ? stamps.slice().sort()[0] : "";
+    var builtStamp = txt(db && db.catalog_built_at);
+
+    var stamp;
+    if (kind === "fetched") stamp = oldestFetch;
+    else if (kind === "mixed") {
+      // הישנה מבין השתיים. ‏הצבירה נשארת "הישן ביותר" גם כאן, ומאותה
+      // סיבה שהיא כזאת למעלה: מי שרואה תאריך ישן בטעות מרענן לחינם, ומי
+      // שרואה תאריך טרי בטעות בוטח בנתונים ישנים.
+      stamp = !builtStamp || (oldestFetch && oldestFetch < builtStamp)
+        ? oldestFetch
+        : builtStamp;
+    } else stamp = builtStamp;
+
     return {
       kind: kind,
-      // ‏ISO-8601 ב-UTC ממוין לקסיקוגרפית = כרונולוגית, כמו ב-store.py.
-      age: stamps.length ? agoHebrew(stamps.slice().sort()[0]) : "",
-      built: agoHebrew(txt(db && db.catalog_built_at)),
+      stamp: stamp,
       stale: stale
     };
   }
@@ -3742,14 +3797,34 @@
 
     var selFresh = selectedFreshness(db);
 
+    // ‏**שורה אחת, ולא שתיים.** עד 2026-09-20 ישבו כאן שני משפטים זה מעל
+    // זה — "הקטלוג נבנה לפני 19 שעות" ו-"הקטלוג נבנה ב-19 בספטמבר 2026 ·
+    // ‏571 קורסים" — שאמרו את אותו דבר פעמיים, אחת מהן במילים של מי
+    // שבונה את הקטלוג ולא של מי שמשתמש בו. הגיל היחסי הוא מה שסטודנט/ית
+    // צריכים כדי להחליט אם לסמוך על המסך; התאריך המדויק ומספר הקורסים הם
+    // פירוט, ופירוט מקומו בתווית הצפה.
+    //
+    // ‏הכול נגזר מחותמת אחת, ``selFresh.stamp`` — אותה חותמת לשורה,
+    // לתווית ולמצב. שלוש תצוגות של אותו נתון אינן יכולות לסתור זו את זו.
+    var stamp = txt(selFresh.stamp);
+    var age = stamp ? agoHebrew(stamp) : "";
+
+    // ‏מיושן = מה שהשורה מדווחת עליו חצה את ``SLOTWISE_MAX_AGE_HOURS``,
+    // או שלקורס נבחר אין חותמת שימושית בכלל. אותו סף שהשרת מודד בו, ומאז
+    // מיזוג "החדש מנצח" הוא נמדד מול תאריך בניית הקטלוג.
+    var window_h = num(db.max_age_hours, 0);
+    var ageHours = stamp ? ageInDays(stamp) * 24 : null;
+    var stale =
+      Boolean(selFresh.stale) ||
+      (ageHours !== null && window_h > 0 && ageHours > window_h);
+
     // הנקודה נשאלת על אותה אוכלוסייה כמו השורה שלידה. קודם היא קראה את
     // ‏db.any_stale על כל המסד — ‏566 מתוך 572 מיושנים — ולכן הייתה
     // כתומה תמיד, גם ליד טקסט שאומר שהנתונים נשלפו לפני חצי שעה.
     var dotState = "unknown";
     if (boot) {
       if (!num(db.count, 0)) dotState = "empty";
-      else if (selFresh.kind === "none") dotState = "unknown";
-      else if (selFresh.stale) dotState = "stale";
+      else if (stale) dotState = "stale";
       else dotState = "fresh";
     }
     if (ui.freshDot) ui.freshDot.setAttribute("data-state", dotState);
@@ -3759,43 +3834,27 @@
     // ‏ליד קטלוג שנבנה באותו לילה. מאז שהמיזוג ב-Store מעדיף את הקטלוג
     // כשהוא חדש יותר, השורה הזאת נבחרת רק כשאין קטלוג בכלל — ואז אין שום
     // דבר אחר לומר. ‏**אין להחזיר אותה כברירת מחדל.**
-    var builtLine = selFresh.built
-      ? Tf("app.header.builtAt", { age: selFresh.built })
-      : txt(db.text);
+    var lineState = "";
     if (runtime.bootstrapError) {
       setText(ui.freshText, T("app.header.offline"));
+      setTitle(ui.freshText, "");
     } else if (!boot) {
       setText(ui.freshText, T("app.header.loading"));
+      setTitle(ui.freshText, "");
     } else if (!num(db.count, 0)) {
       setText(ui.freshText, T("app.header.empty"));
-    } else if (selFresh.kind === "fetched" && selFresh.age) {
-      // כל הקורסים שנבחרו נשלפו על המכשיר הזה, ולכן יש תאריך שליפה
-      // אמיתי לכולם — וזו התשובה לשאלה "כמה עדכני מה שאני רואה".
-      setText(ui.freshText, Tf("app.header.fetched", { age: selFresh.age }));
-      if (ui.freshText) ui.freshText.removeAttribute("title");
-    } else if (selFresh.kind === "mixed" && selFresh.age && selFresh.built) {
-      // חלק מהנבחרים נשלפו כאן וחלק הגיעו עם התוכנה. "הנתונים עודכנו"
-      // לבדו הוא טענה שגויה על החצי שנשלח, ולכן שני התאריכים נאמרים.
-      // מאז שהחישוב מוגבל לנבחרים זה קורה רק כשקורס נבחר הוא באמת
-      // מהקטלוג — ולא, כמו קודם, בכל טעינה.
-      setText(
-        ui.freshText,
-        Tf("app.header.builtAtMixed", {
-          age: selFresh.age,
-          built: selFresh.built,
-        })
-      );
-      if (ui.freshText) {
-        ui.freshText.setAttribute("title", T("app.header.builtAtTitle"));
-      }
+      setTitle(ui.freshText, "");
+    } else if (age) {
+      setText(ui.freshText, Tf("app.header.updated", { age: age }));
+      setTitle(ui.freshText, updatedTitle(stamp));
+      lineState = stale ? "stale" : "fresh";
     } else {
-      // ‏none / catalog / unknown — ומה שמשותף לשלושתם הוא שאין תאריך
-      // שליפה אמיתי לומר. תאריך הבנייה הוא היחיד שידוע, והוא נאמר
-      // בשמו. עדיף לומר פחות מאשר לטעון טריות שלא הוכחה.
-      setText(ui.freshText, builtLine);
-      if (ui.freshText) {
-        ui.freshText.setAttribute("title", T("app.header.builtAtTitle"));
-      }
+      setText(ui.freshText, txt(db.text));
+      setTitle(ui.freshText, "");
+    }
+    if (ui.freshText) {
+      if (lineState) ui.freshText.setAttribute("data-state", lineState);
+      else ui.freshText.removeAttribute("data-state");
     }
 
     // שורת מצב אחת ותו לא. כל הספירות — כמה קורסים במסד, כמה קבוצות,
@@ -3819,9 +3878,9 @@
     }
     setText(ui.freshMeta, meta.join(" · "));
 
-    // ‏תווית "הקטלוג נבנה ב-…" במקום כפתור רענון ויומן חי: מארח לא מריץ
-    // גרידה משלו, ולכן זו השאלה היחידה שנשארה לו על טריות הנתונים.
-    setText(ui.catalogBuilt, catalogBuiltText());
+    // ‏כאן ישבה פעם שורה שנייה, ‏#catalog-built, עם "הקטלוג נבנה ב-…".
+    // ‏היא נמחקה ב-2026-09-20: היא חזרה על מה שהשורה שמעליה כבר אמרה,
+    // והפירוט שהיה בה עבר לתווית ההצפה של ‏#freshness-text.
   }
 
   /* --- שלב 1: שנה וסמסטר -------------------------------------------- */
