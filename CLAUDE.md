@@ -43,39 +43,51 @@ not after.
 
 * Show the diff and wait for a go-ahead. Never commit unprompted.
 * Commit each phase separately where the changes are genuinely separable.
-* **Never rename the local project directory.** It stays
-  `Schedule_Builder`, and it is not going to be brought in line with the
-  SlotWise name. Renaming it moves the Claude Code project directory,
-  every absolute path written down in `docs/SPEC.md`, and the working
-  directory of anything the user has running.
+* **Never rename the repository or the project directory on your own
+  initiative; the user does that explicitly.** The GitHub repo is
+  `netabaron/SlotWise`; the local directory is `SlotWise` (renamed from
+  `Schedule_Builder` on 2026-09-20).
 
-### The GitHub repository is `SlotWise` — renamed 2026-09-20, deliberately
-
-The rule above used to read "never rename the git repository or the
-project directory". Half of it is now out of date: the user renamed the
-GitHub repository from `Schedule_Builder` to `SlotWise` on **2026-09-20**
-and authorised pointing the remote at it in the same breath.
+### The rename, and what still points at the old name
 
 ```
 origin  https://github.com/netabaron/SlotWise.git
 ```
 
-Three things that follow, and none of them are guesses:
+The GitHub rename and the `git remote set-url` happened on 2026-09-20.
+The **directory** rename is the user's own next step, performed outside
+any session — so a session that opens on a checkout still called
+`Schedule_Builder` is looking at the state before that step, not at
+something broken.
 
-* **The old URL still works**, because GitHub redirects a renamed
-  repository. Between the rename and the `set-url`, every push printed
-  `remote: This repository moved.` and then succeeded. So a stale clone
-  URL anywhere is a wart, not a breakage.
-* **The local directory did not move**, and the local checkout is still
-  `.../projects/Schedule_Builder`. Remote name and directory name are
-  now deliberately different. Do not "fix" that.
-* **`STORAGE_KEY` is still not up for renaming**, and the rename is not
-  an argument for it. See the footgun below — that one is about the
-  user's saved selections, not about what the project is called.
+**The old URL still works**, because GitHub redirects a renamed
+repository. Every push between the rename and the `set-url` printed
+`remote: This repository moved.` and then succeeded. A stale clone URL is
+therefore a wart, not a breakage — worth fixing, never urgent.
 
-Do not rename the GitHub repository again on your own initiative. This
-entry records a rename the user performed and asked to be reflected; it
-is not a precedent for doing one.
+#### Files carrying the old directory name — for the session after the rename
+
+Swept with `git grep -in schedule_builder` over tracked files on
+2026-09-20. Setting aside the `braude_schedule_builder_v1` matches below,
+and this file — whose own mentions are this entry describing the rename —
+the whole list is three lines in two files:
+
+| File | Line | What it is | Action |
+| --- | --- | --- | --- |
+| `docs/SPEC.md` | 6 | `Project root: C:\Users\netab\.claude\projects\Schedule_Builder` — **the only absolute path in the repo** | update to `...\SlotWise` |
+| `docs/SPEC.md` | 9 | `Schedule_Builder/` — the root label of the directory tree below it | update to `SlotWise/` |
+| `DEFERRED.md` | 405 | `Schedule_Builder_backup_20260906` | **leave it.** The name of a backup folder as it existed on 2026-09-06. Renaming it falsifies the record. |
+
+`DEVELOPMENT_LOG.md:4` says `~/.claude/projects/` with no directory name,
+so it needs nothing.
+
+**Do not sweep with a blind find-and-replace.**
+`braude_schedule_builder_v1` matches case-insensitively on
+`schedule_builder` and appears in seven places — `app.js:133`,
+`HOSTING_NOTES.md:12`, four browser tests, and the footgun below. It is
+the localStorage key. Renaming it wipes every saved user selection, and
+the rename is not an argument for touching it: that footgun is about the
+student's saved state, not about what the project is called.
 
 ## Out of scope unless asked explicitly
 
