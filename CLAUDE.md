@@ -43,7 +43,39 @@ not after.
 
 * Show the diff and wait for a go-ahead. Never commit unprompted.
 * Commit each phase separately where the changes are genuinely separable.
-* Never rename the git repository or the project directory.
+* **Never rename the local project directory.** It stays
+  `Schedule_Builder`, and it is not going to be brought in line with the
+  SlotWise name. Renaming it moves the Claude Code project directory,
+  every absolute path written down in `docs/SPEC.md`, and the working
+  directory of anything the user has running.
+
+### The GitHub repository is `SlotWise` — renamed 2026-09-20, deliberately
+
+The rule above used to read "never rename the git repository or the
+project directory". Half of it is now out of date: the user renamed the
+GitHub repository from `Schedule_Builder` to `SlotWise` on **2026-09-20**
+and authorised pointing the remote at it in the same breath.
+
+```
+origin  https://github.com/netabaron/SlotWise.git
+```
+
+Three things that follow, and none of them are guesses:
+
+* **The old URL still works**, because GitHub redirects a renamed
+  repository. Between the rename and the `set-url`, every push printed
+  `remote: This repository moved.` and then succeeded. So a stale clone
+  URL anywhere is a wart, not a breakage.
+* **The local directory did not move**, and the local checkout is still
+  `.../projects/Schedule_Builder`. Remote name and directory name are
+  now deliberately different. Do not "fix" that.
+* **`STORAGE_KEY` is still not up for renaming**, and the rename is not
+  an argument for it. See the footgun below — that one is about the
+  user's saved selections, not about what the project is called.
+
+Do not rename the GitHub repository again on your own initiative. This
+entry records a rename the user performed and asked to be reflected; it
+is not a precedent for doing one.
 
 ## Out of scope unless asked explicitly
 

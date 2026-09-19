@@ -102,8 +102,8 @@ group, which day and hour collide — plus suggested relaxations.
 
 ```bash
 # Python 3.10+
-git clone https://github.com/netabaron/Schedule_Builder.git
-cd Schedule_Builder
+git clone https://github.com/netabaron/SlotWise.git
+cd SlotWise
 python -m pip install flask beautifulsoup4 lxml pytest
 python main.py
 ```
