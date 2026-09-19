@@ -3754,6 +3754,11 @@
     }
     if (ui.freshDot) ui.freshDot.setAttribute("data-state", dotState);
 
+    // ‏db.text הוא **מוצא אחרון ותו לא**: הוא נגזר מהחותמת הישנה ביותר
+    // ‏ב-data/db, והוא הטקסט שהראה "הנתונים עודכנו לאחרונה: 2026-09-01"
+    // ‏ליד קטלוג שנבנה באותו לילה. מאז שהמיזוג ב-Store מעדיף את הקטלוג
+    // כשהוא חדש יותר, השורה הזאת נבחרת רק כשאין קטלוג בכלל — ואז אין שום
+    // דבר אחר לומר. ‏**אין להחזיר אותה כברירת מחדל.**
     var builtLine = selFresh.built
       ? Tf("app.header.builtAt", { age: selFresh.built })
       : txt(db.text);

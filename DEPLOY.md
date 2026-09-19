@@ -36,6 +36,13 @@ their place the header shows **"הקטלוג נבנה ב-…"**, read from the n
 Every variable is optional. Each falls back to the same path the local app
 uses, so an instance with no configuration at all still starts.
 
+The `SLOTWISE_*` rows are read by `create_app()` itself (`api.env_path` /
+`api.env_float`), which means **`python main.py` honours every one of them
+too**. Until 2026-09-20 they were read in `wsgi.py`, so they were a hosted-only
+feature and a local run silently used the hardcoded defaults. `wsgi.py` now
+passes exactly one setting of its own, `allow_network=False`, which is the one
+thing that must not be configurable.
+
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SLOTWISE_DB_ROOT` | `<app>/data/db` | The sections/catalog/details store. Read-only in practice for a hosted instance, but the directory must exist. |
@@ -61,10 +68,10 @@ output:
 
 `SLOTWISE_CATALOG_DIR` moves it. The one wrinkle: `src/shipped_catalog.py`
 reads that variable **at import time**, so it is not passed through
-`create_app()` and does not appear in `wsgi.build_settings()`. Setting it in
-the process environment before startup is what works — which is what a
-container env var or a `docker run -e` does anyway. The Docker image sets it to
-`/app/data/catalog` explicitly.
+`create_app()` and is the one `SLOTWISE_*` name absent from the settings dict.
+Setting it in the process environment before startup is what works — which is
+what a container env var or a `docker run -e` does anyway. The Docker image
+sets it to `/app/data/catalog` explicitly.
 
 `SLOTWISE_DB_ROOT` is a different thing and does not move the catalog:
 `SLOTWISE_DB_ROOT` is the *store*, the catalog is the base layer beneath it.
@@ -78,9 +85,77 @@ and warns when the count is zero. Check `docker logs` if courses go missing:
 [slotwise] catalog: /app/data/catalog/catalog.jsonl (572 courses, built 2026-09-09T22:35:44Z)
 ```
 
+`webapp.py` prints the same facts in its startup box, for the same reason plus
+a local one: a server started days ago keeps listening on the same port, and
+the browser shows what *that* process serves. Comparing the date in the box to
+the date in the page header answers "which server am I looking at" without
+guessing.
+
 Both files are committed to git, so a fresh clone or a plain `docker build`
 already has 572 courses and needs no volume at all. Mount over the directory
 only when you want to serve a catalog newer than the image.
+
+---
+
+## Where the freshness date comes from
+
+There is one source of truth: **`data/catalog/catalog.meta.json` → `built_at`**.
+Two labels read it, and they cannot disagree because there is nothing else to
+read.
+
+* The header line `הקטלוג נבנה …` comes from `bootstrap.db.catalog_built_at`,
+  which is `shipped_catalog.built_at()`.
+* `GET /api/catalog/meta` returns the same `built_at` — that is the whole
+  point of the endpoint.
+
+`data/db/sections.json` does **not** get a say, and this is the fix made on
+2026-09-20. `Store._load_sections_db` merges the shipped catalog underneath the
+local store, and the local store used to win unconditionally. A laptop that had
+scraped the yedion weeks earlier therefore kept serving those records after a
+`git pull` brought in a catalog built the same night, and the header reported
+the old scrape date — `הנתונים עודכנו לאחרונה: 2026-09-01`. The hosted image
+never showed this only because it has no `data/db` at all, so the difference
+between local and hosted was a difference in *data*, not in code.
+
+The merge rule is now **newer wins, per course code**: a local record survives
+only when its `fetched_at` is at or after the catalog's `built_at`. Ties stay
+local, a code the catalog does not carry stays local, and a hand-written entry
+with no `meta` stays local. Everything else is served from the catalog, so
+`git pull` is all it takes to refresh a local app.
+
+It is opt-in — `Store(root, use_shipped=True, prefer_newer_catalog=True)` — and
+`src/web/api.py` is the only caller that turns it on, exactly as it is the only
+caller that turns on `use_shipped`. Both are display-layer policy. A plain
+`Store(root, use_shipped=True)` keeps the original meaning of `use_shipped`
+("the catalog fills in the rest, local always wins"), which is what
+`refresh.py`'s change detection and `tests/test_shipped_catalog.py` depend on.
+
+Because a record served from the catalog carries `fetched_at = built_at`,
+`Store.freshness()`, `Store.is_stale()` and therefore `SLOTWISE_MAX_AGE_HOURS`
+are all measured against the catalog build time. The separate 45-day
+"catalog is old" banner is `CATALOG_STALE_DAYS` in `app.js` and is not
+configurable.
+
+### Rebuilding `data/db` from the shipped catalog
+
+`data/db` is gitignored and is still where course *details* (credits,
+prerequisites) live, which the catalog does not carry. One command rebuilds the
+rest of it from whatever catalog `SLOTWISE_CATALOG_DIR` points at — by default
+the one that was just pulled:
+
+```bash
+python scripts/seed_dev_data.py --force
+```
+
+`--force` is the point: without it the script leaves existing files alone and
+prints `קיים, לא נגעתי`. It writes `sections.json`, `catalog.json`,
+`details.json` (empty on purpose) and `tracked.json`.
+
+Since the merge rule above, this is a convenience rather than a requirement —
+the app serves the fresh catalog either way. Run it when you want `data/db` on
+disk to match, or to get a clean clone into a working state. It is **not** a
+substitute for `refresh.py`: the database it writes holds what the catalog
+holds and nothing more.
 
 ---
 

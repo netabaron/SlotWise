@@ -8,7 +8,7 @@ This is the counterpart to ``webapp.py``, not a replacement for it.
 ``webapp.py`` is the single-student local launcher: it binds ``127.0.0.1``,
 picks a free port and opens a browser. This file is the opposite case — one
 process serving many students, behind a real WSGI server — so the two differ
-on exactly three points, and each one is deliberate:
+on exactly two points, and each one is deliberate:
 
 1. **The network is off, explicitly.** ``create_app`` defaults
    ``allow_network=None``, which resolves to *"fetch from the yedion unless
@@ -20,16 +20,20 @@ on exactly three points, and each one is deliberate:
    be turned on by configuration. A hosted instance serves the catalog it was
    built with; rebuilding it is the cron job's business (§2).
 
-2. **Paths come from the environment.** The local app hardcodes
-   ``PROJECT_ROOT / "data" / ...``; a container wants the database on a
-   mounted volume.
-
-3. **It binds ``0.0.0.0``.** ``webapp.py`` documents ``127.0.0.1`` as a hard
+2. **It binds ``0.0.0.0``.** ``webapp.py`` documents ``127.0.0.1`` as a hard
    rule, and for that file it still is. Binding publicly is only defensible
    here *because* of point 1 — no scrape endpoint, no network.
 
+There used to be a third: *"paths come from the environment"*, because this
+file read the ``SLOTWISE_*`` table and the local app hardcoded
+``PROJECT_ROOT / "data" / ...``. That made the environment a hosted-only
+feature for no reason anyone asked for, and on 2026-09-20 the table moved into
+``create_app``. Both entry points now honour it, so it is no longer a
+difference.
+
 Environment variables — every one optional, each falling back to the same
-path the local app uses. See DEPLOY.md for the full table.
+path the local app uses, and every one now honoured by ``webapp.py`` too.
+They are read in ``src/web/api.create_app``; see DEPLOY.md for the full table.
 
     SLOTWISE_DB_ROOT                 data/db
     SLOTWISE_CURRICULUM_PATH         data/curriculum.json
@@ -43,7 +47,7 @@ path the local app uses. See DEPLOY.md for the full table.
 
 ``SLOTWISE_CATALOG_DIR`` is the odd one out: it is read by
 ``src/shipped_catalog`` **at import time**, not passed through ``create_app``,
-so it is not in ``build_settings()``. Setting it in the process environment
+so it is not in the settings dict at all. Setting it in the process environment
 before startup is what works — which is what a container env var does anyway.
 The directory holds ``catalog.jsonl`` and ``catalog.meta.json``, the two files
 the nightly pipeline writes; see DEPLOY.md.
@@ -80,44 +84,21 @@ DEFAULT_HOST = "0.0.0.0"  # noqa: S104 - hosted on purpose; see the module docst
 DEFAULT_PORT = 8000
 
 
-def _env_path(name: str, default: Path) -> str:
-    """A path from the environment, or the project-local default."""
-    raw = str(os.environ.get(name, "") or "").strip()
-    return str(Path(raw).expanduser()) if raw else str(default)
-
-
-def _env_float(name: str, default: float) -> float:
-    """A float from the environment.
-
-    A malformed value raises instead of falling back. A freshness window is a
-    correctness setting: ``SLOTWISE_MAX_AGE_HOURS=twentyfour`` silently
-    becoming 24.0 is the kind of quiet default that makes a stale catalog look
-    fresh, and this file exists to remove quiet defaults, not add one.
-    """
-    raw = str(os.environ.get(name, "") or "").strip()
-    if not raw:
-        return float(default)
-    try:
-        return float(raw)
-    except ValueError as exc:
-        raise ValueError(
-            f"{name} must be a number of hours, got {raw!r}"
-        ) from exc
-
-
 def build_settings() -> dict[str, object]:
-    """The config dict handed to ``create_app``. Pure — reads env, no I/O."""
-    data = ROOT / "data"
-    return {
-        "db_root": _env_path("SLOTWISE_DB_ROOT", data / "db"),
-        "curriculum_path": _env_path("SLOTWISE_CURRICULUM_PATH", data / "curriculum.json"),
-        "curricula_dir": _env_path("SLOTWISE_CURRICULA_DIR", data / "curricula"),
-        "raw_dir": _env_path("SLOTWISE_RAW_DIR", data / "raw"),
-        "max_age_hours": _env_float("SLOTWISE_MAX_AGE_HOURS", 24.0),
-        "details_max_age_hours": _env_float("SLOTWISE_DETAILS_MAX_AGE_HOURS", 24.0 * 7),
-        # Not negotiable, and not configurable. See point 1 in the docstring.
-        "allow_network": False,
-    }
+    """The config dict handed to ``create_app``. Pure — no env reads, no I/O.
+
+    It used to carry the whole ``SLOTWISE_*`` table, read here with local
+    ``_env_path``/``_env_float`` helpers — the third difference the module
+    docstring used to list. ``webapp.py`` calls ``create_app()`` with no config
+    at all, so a local run ignored ``SLOTWISE_MAX_AGE_HOURS`` and every path
+    override. Both entry points read the same files, so they should read the
+    same variables; the table moved into ``create_app``
+    (``api.env_path`` / ``api.env_float``) and both get it.
+
+    What is left here is the one setting that is *not* environmental, because
+    it must not be overridable at all. See point 1 in the module docstring.
+    """
+    return {"allow_network": False}
 
 
 def build_app():

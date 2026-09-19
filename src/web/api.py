@@ -50,6 +50,7 @@ import dataclasses
 import importlib
 import json
 import logging
+import os
 import re
 import sys
 import threading
@@ -242,6 +243,41 @@ HEBREW_YEAR_TO_GREGORIAN: dict[str, str] = {
     'תשפ"ח': "2028",
     'תשפ"ט': "2029",
 }
+
+
+# ---------------------------------------------------------------------------
+# הגדרות מהסביבה — שכבת ברירת המחדל של ``create_app``
+#
+# ‏עד 2026-09-20 ישבו שתי הפונקציות האלה ב-``wsgi.py``, ולכן
+# ‏``SLOTWISE_MAX_AGE_HOURS`` השפיע על התמונה המתארחת אבל לא על ‏``webapp.py``:
+# ‏המפעיל המקומי קיבל את ברירות המחדל הקשיחות שהיו כאן. זה היה הבדל בין
+# מקומי למתארח שאף אחד לא ביקש — הן קוראות את אותם קבצים, ולכן הן צריכות
+# לקרוא גם את אותם משתנים. ‏``wsgi.py`` עדיין דורס את מה שהוא חייב לדרוס
+# (‏``allow_network=False``), ודריסה מפורשת ל-``create_app`` תמיד מנצחת.
+#
+# ‏``SLOTWISE_CATALOG_DIR`` **אינו** כאן ולא יכול להיות: ``shipped_catalog``
+# קורא אותו בזמן ייבוא, הרבה לפני ש-``create_app`` נקרא. ראו ‏DEPLOY.md.
+# ---------------------------------------------------------------------------
+def env_path(name: str, default: Path) -> str:
+    """נתיב מהסביבה, או ברירת המחדל שבתוך הפרויקט."""
+    raw = str(os.environ.get(name, "") or "").strip()
+    return str(Path(raw).expanduser()) if raw else str(default)
+
+
+def env_float(name: str, default: float) -> float:
+    """מספר מהסביבה. **ערך פגום זורק, ולא נופל לברירת מחדל.**
+
+    חלון טריות הוא הגדרת נכונות: ‏``SLOTWISE_MAX_AGE_HOURS=twentyfour``
+    שהופך בשקט ל-24.0 הוא בדיוק סוג ברירת המחדל השקטה שגורמת לקטלוג ישן
+    להיראות טרי.
+    """
+    raw = str(os.environ.get(name, "") or "").strip()
+    if not raw:
+        return float(default)
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a number of hours, got {raw!r}") from exc
 
 
 # ===========================================================================
@@ -1186,7 +1222,15 @@ def _store() -> store_mod.Store:
     if obj is None:
         # ‏use_shipped: רק כאן. זו שכבת התצוגה, וכאן רוצים שמשתמש/ת
         # יראו קטלוג מלא גם בשכפול נקי. ‏refresh/reparse משאירים כבוי.
-        obj = store_mod.Store(str(_config()["db_root"]), use_shipped=True)
+        #
+        # ‏prefer_newer_catalog: גם הוא רק כאן, ומאותו סוג בדיוק — מדיניות
+        # של מה שמוצג, לא של מה שנשמר. בלעדיו רשומה מקומית בת שבועיים
+        # ממשיכה לדרוס קטלוג שנבנה אתמול, ואז ``git pull`` אינו מרענן
+        # אפליקציה מקומית והכותרת מדווחת את התאריך הישן. ראו
+        # ``Store._load_sections_db``.
+        obj = store_mod.Store(
+            str(_config()["db_root"]), use_shipped=True, prefer_newer_catalog=True
+        )
         cache["store"] = obj
     return obj
 
@@ -1208,7 +1252,10 @@ def _store_for(semester: str) -> store_mod.Store:
     obj = stores.get(key)
     if obj is None:
         obj = store_mod.Store(
-            str(_config()["db_root"]), use_shipped=True, semester=key
+            str(_config()["db_root"]),
+            use_shipped=True,
+            semester=key,
+            prefer_newer_catalog=True,
         )
         stores[key] = obj
     return obj
@@ -3319,6 +3366,18 @@ def _db_snapshot() -> dict[str, Any]:
         # מאיפה הנתונים. ‏"shipped" = הכול הגיע עם התוכנה ואיש לא שלף
         # כאן דבר; אז הכותרת מדברת על **תאריך בניית הקטלוג**, שהוא
         # היחיד שידוע. ‏built_at ריק כשאין קטלוג שנשלח.
+        #
+        # ‏מאז מיזוג "החדש מנצח" (ראו ``Store._load_sections_db``) כל קוד
+        # שהקטלוג נושא מקבל ``fetched_at = built_at``, ולכן אחרי
+        # ‏``git pull`` ‏``oldest``/``text`` שלמעלה נגזרים מהקטלוג. מה
+        # שנשאר מחוץ לזה הוא קוד שהקטלוג **אינו** נושא — קורס שנשלף ידנית,
+        # או קורס שהוסר מהקטלוג — ואז ``origin`` הוא "mixed" ו-``oldest``
+        # הוא באמת חותמת מקומית ישנה. זה נכון, והכותרת יודעת מה לעשות עם
+        # זה: ``selectedFreshness()`` שואלת רק על הקורסים שנבחרו.
+        #
+        # ‏מקור האמת לטריות הוא ``catalog.meta.json``, ושתי התוויות
+        # שהממשק מציג — ‏"הקטלוג נבנה" מכאן, ו-``/api/catalog/meta`` —
+        # קוראות אותו, ולכן אינן יכולות לסתור זו את זו.
         "origin": _db_origin(metas),
         "catalog_built_at": _shipped_built_at(),
         "courses": {code: _meta_to_json(metas.get(code), max_age) for code in codes},
@@ -4617,20 +4676,27 @@ def create_app(
     Returns:
         ``Flask`` מוכן. ההרצה עצמה (וה-host 127.0.0.1) היא באחריות ``webapp.py``.
     """
+    data = PROJECT_ROOT / "data"
     settings: dict[str, Any] = {
-        "db_root": str(PROJECT_ROOT / "data" / "db"),
-        "curriculum_path": str(PROJECT_ROOT / "data" / "curriculum.json"),
+        "db_root": env_path("SLOTWISE_DB_ROOT", data / "db"),
+        "curriculum_path": env_path("SLOTWISE_CURRICULUM_PATH", data / "curriculum.json"),
         # תוכנית לימודים אחת לכל מחלקה. ‏curriculum_path נשאר תוכנית
         # ברירת המחדל (הנדסת תוכנה) כדי לא לשנות התנהגות קיימת.
-        "curricula_dir": str(PROJECT_ROOT / "data" / "curricula"),
-        "profile_path": str(PROJECT_ROOT / "data" / "profile.json"),
-        "raw_dir": str(PROJECT_ROOT / "data" / "raw"),
-        "browser_profile_dir": str(PROJECT_ROOT / "data" / ".browser_profile"),
-        "max_age_hours": float(store_mod.DEFAULT_MAX_AGE_HOURS),
+        "curricula_dir": env_path("SLOTWISE_CURRICULA_DIR", data / "curricula"),
+        # ‏לא מהסביבה: ‏DEPLOY.md אינו מתעד משתנה כזה, והתמונה המתארחת
+        # אינה נושאת פרופיל אישי בכלל.
+        "profile_path": str(data / "profile.json"),
+        "raw_dir": env_path("SLOTWISE_RAW_DIR", data / "raw"),
+        "browser_profile_dir": str(data / ".browser_profile"),
+        "max_age_hours": env_float(
+            "SLOTWISE_MAX_AGE_HOURS", store_mod.DEFAULT_MAX_AGE_HOURS
+        ),
         # פרטי קורס (נ"ז, שעות, תנאי קדם) מקבלים חלון טריות משלהם — שבעה
         # ימים, לא יממה. הם כמעט אינם משתנים, והכפלת הבקשות בשבילם היא
         # חוסר נימוס כלפי שרת המכללה. ‏SPEC_MULTIFACULTY §2.
-        "details_max_age_hours": DETAILS_MAX_AGE_HOURS,
+        "details_max_age_hours": env_float(
+            "SLOTWISE_DETAILS_MAX_AGE_HOURS", DETAILS_MAX_AGE_HOURS
+        ),
         # ‏None = אוטומטי: פנייה לידיעון מותרת, אבל לא בתוך הרצת בדיקות.
         "allow_network": None,
     }

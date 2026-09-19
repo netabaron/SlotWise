@@ -54,6 +54,14 @@ so a fresh clone has data on the first run. All eight Braude degree programs are
 listed, and seven also ship a parsed curriculum, so the course list for a given
 semester comes pre-filled rather than typed.
 
+`data/catalog/` is rebuilt nightly and committed, and the app serves it
+directly: **`git pull` is how a local install gets fresh course data.** A record
+you scraped yourself only keeps winning while it is newer than the catalog's
+build date, so the date in the header is the catalog's, not a stale timestamp
+left in `data/db`. To rebuild `data/db` itself from the catalog you just pulled:
+`python scripts/seed_dev_data.py --force`. See DEPLOY.md, "Where the freshness
+date comes from".
+
 ## What the engine enforces
 
 Hard constraints — these reject a combination outright:

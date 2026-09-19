@@ -450,6 +450,29 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _entry_beats(entry: Any, built_at: str) -> bool:
+    """האם רשומת ``sections.json`` מקומית מנצחת קטלוג שנבנה ב-``built_at``.
+
+    ‏משמשת את :meth:`Store._load_sections_db` בלבד; ההסבר המלא לכלל נמצא
+    שם. כאן רק שלושת התנאים, בסדר שבו הם נבדקים:
+
+      * רשומה שאינה מילון — לא מנצחת (ותיפסל גם ב-``_split_entry``).
+      * רשומה בלי ``meta``: זו הצורה שנכתבת ביד, ואין לה חותמת להשוות.
+        ‏היא מנצחת — מי שכתב קובץ ביד התכוון שיקראו אותו.
+      * אחרת: ``fetched_at >= built_at``. שתי החותמות הן ‏ISO-8601 ב-UTC,
+        וסדר לקסיקוגרפי עליהן הוא סדר כרונולוגי — אותה הנחה בדיוק
+        ש-``Store.freshness`` עושה על ``min``/``max``. חותמת ריקה או
+        פגומה קטנה מכל חותמת אמיתית, ולכן מפסידה.
+    """
+    if not isinstance(entry, dict):
+        return False
+    if "meta" not in entry:
+        return True
+    meta = entry.get("meta")
+    fetched = str((meta or {}).get("fetched_at") or "") if isinstance(meta, dict) else ""
+    return fetched >= built_at
+
+
 def _jsonable(value: Any) -> Any:
     """מחזיר עותק של הערך שאפשר לכתוב ל-JSON, בלי להתפוצץ על טיפוס לא צפוי.
 
@@ -777,6 +800,7 @@ class Store:
         *,
         use_shipped: bool = False,
         semester: str = "",
+        prefer_newer_catalog: bool = False,
     ) -> None:
         """
         Args:
@@ -790,9 +814,22 @@ class Store:
                 "קורסים קיימים" שמעולם לא נכתבו למסד הזה.
             semester: לאיזה סמסטר לסנן את הקטלוג שנשלח. ריק = בלי סינון.
                 הקטלוג נושא את כל הסמסטרים, ולכן הבחירה היא של הקורא.
+            prefer_newer_catalog: מי מנצח כששני המקורות נושאים את אותו קוד.
+                ‏``False`` (ברירת המחדל) — המסד המקומי, תמיד. זו המשמעות
+                המקורית של ``use_shipped``: הקטלוג *ממלא את השאר*.
+                ‏``True`` — **החדש מנצח**: רשומה מקומית שורדת רק כשהיא
+                אינה ישנה מ-``built_at`` של הקטלוג. ראו
+                :meth:`_load_sections_db` לכלל המלא ולמה הוא קיים.
+
+                ‏זו, כמו ``use_shipped`` עצמו, החלטה של שכבת התצוגה בלבד:
+                ‏``src/web/api.py`` מדליק אותה כדי ש-``git pull`` ירענן
+                אפליקציה מקומית. ‏``refresh.py`` ו-``reparse.py`` לא
+                מגיעים לכאן בכלל (``use_shipped=False``), וכל קורא אחר של
+                ‏``Store`` ממשיך לקבל את התנהגות המיזוג הישנה בדיוק.
         """
         self.use_shipped = bool(use_shipped)
         self.shipped_semester = str(semester or "")
+        self.prefer_newer_catalog = bool(prefer_newer_catalog)
         self.root = os.path.abspath(str(root))
         self.catalog_path = os.path.join(self.root, CATALOG_FILE)
         self.sections_path = os.path.join(self.root, SECTIONS_FILE)
@@ -1081,9 +1118,32 @@ class Store:
         """הקובץ הגולמי של sections.json, מעל הקטלוג שנשלח עם הקוד.
 
         **נקודת החיבור היחידה.** ``load_course``, ``load_all`` ו-``codes``
-        כולם עוברים כאן, ולכן די בשכבה אחת: הקטלוג שנשלח הוא הבסיס, ומה
-        שהמשתמש/ת שלפו בעצמם דורס אותו קוד-אחר-קוד. שכפול נקי מקבל את כל
-        הקטלוג; מי ששלף קורס בעצמו מקבל את הגרסה שלו.
+        כולם עוברים כאן, ולכן די בשכבה אחת. הקטלוג שנשלח הוא הבסיס, והמסד
+        המקומי מעליו — מה שמשתנה הוא מי מנצח כששניהם נושאים את אותו קוד.
+
+        ‏**ברירת המחדל: המסד המקומי מנצח**, קוד-אחר-קוד. שכפול נקי מקבל את
+        כל הקטלוג; מי ששלף קורס בעצמו מקבל את הגרסה שלו.
+
+        ‏**עם ``prefer_newer_catalog=True``: החדש מנצח.** מדליקה את זה רק
+        שכבת התצוגה (``src/web/api.py``), וזה מה שהיא באה לתקן ב-2026-09-20:
+        אפליקציה מקומית שמשכה ``git pull`` המשיכה להגיש ‏572 רשומות
+        מ-``data/db`` שנשלפו שבועות קודם, בזמן ש-``data/catalog/`` שבמאגר
+        נבנה באותו לילה, והכותרת דיווחה את התאריך הישן. התמונה המתארחת לא
+        סבלה מזה רק מפני שאין בה ``data/db`` בכלל — כלומר ההבדל בין
+        "מקומי" ל"מתארח" היה הבדל בנתונים ולא בקוד.
+
+        ההשוואה היא בין ``fetched_at`` של הרשומה המקומית לבין
+        ``built_at`` של הקטלוג, ו**שוויון נשאר אצל המקומי**: הקטלוג מנצח
+        רק כשהוא *חדש ממש*. שלושה מקרים שבהם המקומי מנצח בלי להשוות
+        בכלל — קוד שאין בקטלוג (קורס שנשלף ידנית), קטלוג בלי ``built_at``,
+        ורשומה שנכתבה ביד ואין לה ``meta``. רשומה שיש לה ``meta`` בלי
+        ``fetched_at`` (שליפה שמעולם לא הצליחה) מפסידה לקטלוג, וזה
+        הכיוון הנכון: נתון ידוע עדיף על כישלון.
+
+        המשמעות בתצוגה: ל-``CourseMeta.fetched_at`` של רשומה שהגיעה
+        מהקטלוג יש את תאריך **הבנייה**, ולכן ``freshness`` ו-``is_stale``
+        — ומכאן גם ``SLOTWISE_MAX_AGE_HOURS`` — נמדדים מול הקטלוג ולא מול
+        חותמת ישנה ב-``data/db``.
         """
         data = self._read_json(self.sections_path, None)
         if not isinstance(data, dict):
@@ -1093,14 +1153,24 @@ class Store:
             courses = {}
 
         merged: dict[str, Any] = {}
+        built_at = ""
         if self.use_shipped and _shipped is not None:
             try:
                 merged.update(
                     _shipped.as_sections_entries(self.shipped_semester)
                 )
+                built_at = str(_shipped.built_at() or "")
             except Exception:  # noqa: BLE001 - קטלוג פגום לא מפיל את המסד
-                pass
-        merged.update(courses)  # הנתונים של המשתמש/ת מנצחים
+                merged.clear()
+                built_at = ""
+
+        if not self.prefer_newer_catalog or not merged or not built_at:
+            # ברירת המחדל, וגם המצב שבו אין קטלוג להשוות אליו.
+            merged.update(courses)
+        else:
+            for code, entry in courses.items():
+                if code not in merged or _entry_beats(entry, built_at):
+                    merged[code] = entry
 
         return {
             "schema": data.get("schema", SECTIONS_SCHEMA),

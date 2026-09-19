@@ -163,6 +163,39 @@ def wait_and_open_browser(url: str, port: int, timeout: float = 12.0) -> None:
 # ---------------------------------------------------------------------------
 # בניית האפליקציה
 # ---------------------------------------------------------------------------
+def catalog_lines() -> list[str]:
+    """שתי שורות שאומרות **איזה קטלוג התהליך הזה מגיש**, ומתי הוא נבנה.
+
+    ‏``wsgi.py`` מדפיס את אותו הדבר ל-``docker logs`` מאותה סיבה בדיוק:
+    ‏``SLOTWISE_CATALOG_DIR`` שגוי, או תיקייה שזזה, הם תקלה שקטה לגמרי —
+    ‏``shipped_catalog`` נופל לקטלוג ריק, השרת עולה בשמחה, וכל רשימת
+    קורסים ריקה בלי שגיאה בשום מקום.
+
+    ‏מקומית יש לזה שימוש שני, ולא פחות חשוב: ‏שרת שהופעל לפני ימים ממשיך
+    להאזין על אותו פורט, והדפדפן מראה את מה ש**הוא** מגיש. כשהתאריך כאן
+    מופיע בחלון שבו השרת עלה, אפשר להשוות אותו למה שהכותרת בדפדפן אומרת
+    במקום לנחש איזה תהליך עונה.
+    """
+    try:
+        import shipped_catalog  # type: ignore
+    except Exception as exc:  # noqa: BLE001 - דיווח לא מפיל הפעלה
+        return [f"הקטלוג לא נקרא (could not read the catalog): {exc}"]
+
+    try:
+        count = len(shipped_catalog.courses())
+        stamp = shipped_catalog.built_at() or "—"
+        where = shipped_catalog.CATALOG_PATH
+    except Exception as exc:  # noqa: BLE001
+        return [f"הקטלוג לא נקרא (could not read the catalog): {exc}"]
+
+    if not count:
+        return [
+            f"אזהרה: הקטלוג ריק. ‏({where})",
+            "יש לבדוק את SLOTWISE_CATALOG_DIR ואת data/catalog/catalog.jsonl.",
+        ]
+    return [f"קטלוג: {count} קורסים, נבנה {stamp}  ({where})"]
+
+
 def load_create_app():
     """מייבאת את create_app משכבת הווב, עם הודעות ברורות אם משהו חסר.
 
@@ -316,7 +349,8 @@ def main(argv: list[str] | None = None) -> int:
         f"    {url}",
         "",
         "(SlotWise is running — open the URL above)",
-    ]
+        "",
+    ] + catalog_lines()
     if port != requested:
         lines += [
             "",
