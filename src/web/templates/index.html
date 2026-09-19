@@ -6,11 +6,17 @@
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex, nofollow">
 <title>{{ S.meta.title }}</title>
-<link rel="stylesheet" href="/static/style.css">
+<!-- ‏?v= הוא גיבוב התוכן (‏api._asset_version). בלי זה דף חדש יכול להיות
+     ‏מצומד ל-JavaScript ישן מהמטמון עד יממה, וזה בדיוק מה שרוקן את שורת
+     ‏הטריות ב-2026-09-20. ‏"if ... is defined" אינו קישוט: תבנית נטענת
+     ‏מחדש בזמן ריצה (‏TEMPLATES_AUTO_RELOAD) ואילו api.py לא, ולכן שרת
+     ‏שעלה לפני השינוי הזה מגיש את הקובץ הזה בלי ש-asset_v קיים אצלו —
+     ‏ו-StrictUndefined היה הופך את זה ל-500 על הדף כולו. -->
+<link rel="stylesheet" href="/static/style.css?v={{ asset_v('style.css') if asset_v is defined else '' }}">
 <!-- ‏החריג היחיד לכלל "אין קוד בקובץ הזה": סקריפט חוסם, לפני הציור הראשון,
      שמחיל בחירת ערכת צבעים שמורה. עם defer הוא היה רץ אחרי הציור והעמוד
      היה מהבהב בגוון הלא נכון. אין בו לוגיקה של האפליקציה — רק תכונה אחת. -->
-<script src="/static/theme.js"></script>
+<script src="/static/theme.js?v={{ asset_v('theme.js') if asset_v is defined else '' }}"></script>
 <!-- ‏אותו מקור נוסח בדיוק שממנו נבנה ה-HTML שלמעלה, מוזרם ל-app.js.
      נתונים בלבד — אין כאן לוגיקה, וזה מה ששומר על ההצהרה שבראש הקובץ. -->
 <script>window.STRINGS = {{ S | tojson }};</script>
@@ -578,6 +584,6 @@
   </div>
 </template>
 
-<script src="/static/app.js" defer></script>
+<script src="/static/app.js?v={{ asset_v('app.js') if asset_v is defined else '' }}" defer></script>
 </body>
 </html>

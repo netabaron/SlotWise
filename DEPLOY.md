@@ -712,12 +712,28 @@ by the edge until you add a Cache Rule — match `starts_with(http.request.uri.p
 and set *Eligible for cache*, respecting origin TTL. Without that rule nothing
 breaks; you simply get no CDN caching.
 
-**Static filenames are not content-hashed.** `/static/app.js` is a fixed path,
-so a deploy replaces the content behind the same URL and a returning visitor can
-run up to a day of stale JavaScript. `/` is `no-cache` so the page itself is
-always fresh, but it references the same asset paths. Purge the Cloudflare cache
-after a deploy that changes frontend assets, or accept the delay. The durable
-fix is hashed filenames, which the app does not do today.
+**Static URLs carry a content hash in `?v=`.** The filenames are still plain —
+`/static/app.js`, not `/static/app.<hash>.js` — but `index.html` references them
+as `/static/app.js?v=2de460fbe9`, where the hash is sha1 of the file
+(`api._asset_version`). A deploy that changes the file changes the URL, so a
+returning visitor cannot keep running yesterday's JavaScript, and there is no
+longer any need to purge the Cloudflare cache after a frontend deploy.
+
+This was fixed on 2026-09-20, after it bit. `/` is `no-cache` **and
+`window.STRINGS` is inlined into it**, so the copy was always fresh while
+`/static/app.js` could be a day old. The commit before had deleted the
+`app.header.builtAt` family from `strings.json`; the cached JavaScript still
+asked for them, `T()` returns `""` for a missing key outside `?debug=1`, and the
+header's freshness line rendered **blank** next to a grey dot — with no
+JavaScript error anywhere. The server was entirely healthy throughout.
+
+The lesson is narrower than "hash your assets": **deleting a `strings.json` key
+is a breaking change for any client still holding the previous `app.js`.** The
+version query removes the window in which that pairing can happen.
+
+`immutable` is now technically available on `/static/*` and is deliberately not
+set — that is a hosting decision, not a code one, and a day is still the chosen
+compromise.
 
 ### 6. Smoke test after DNS propagates
 

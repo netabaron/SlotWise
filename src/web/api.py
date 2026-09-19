@@ -47,6 +47,7 @@ from __future__ import annotations
 import contextlib
 import copy
 import dataclasses
+import hashlib
 import importlib
 import json
 import logging
@@ -171,10 +172,15 @@ CURRICULUM_MISSING_NOTE = (
 #: מתחילה לסתור את מה שהכותרת אומרת על תאריך הבנייה.
 PUBLIC_CACHE_SECONDS = 300
 
-#: נכסים סטטיים. ‏**אין חתימת גיבוב בשמות הקבצים** (‏/static/app.js ולא
-#: ‏/static/app.<hash>.js), ולכן אי אפשר לסמן ``immutable``: פריסה מחליפה את
-#: התוכן מאחורי אותה כתובת, ומבקר חוזר עלול להריץ ‏JS ישן עד תפוגת המטמון.
-#: ‏יממה היא הפשרה שנבחרה; ראו DEPLOY.md.
+#: נכסים סטטיים. ‏**שמות הקבצים עדיין בלי חתימה** (‏/static/app.js ולא
+#: ‏/static/app.<hash>.js), אבל התבנית מוסיפה ``?v=<גיבוב תוכן>`` — ראו
+#: ‏``_asset_version``. זה סוגר את החור שההערה הזאת תיארה כאן עד
+#: ‏2026-09-20: פריסה החליפה את התוכן מאחורי אותה כתובת, ומבקר חוזר הריץ
+#: ‏JS ישן עד תפוגת המטמון. ‏**זה לא נשאר תיאורטי** — באותו יום מחיקת
+#: מפתחות נוסח הצטרפה לזה והכותרת יצאה ריקה אצל מי שכבר היה לו הקובץ.
+#:
+#: ‏יממה נשארת הפשרה שנבחרה. ‏``immutable`` אפשרי עכשיו מבחינה טכנית, והוא
+#: לא נלקח בכוונה: זו החלטת אירוח, והיא שייכת ל-DEPLOY.md ולא לכאן.
 STATIC_CACHE_SECONDS = 24 * 60 * 60
 
 #: נקודות הקצה שמותר להגיש ממטמון משותף: ‏GET, קריאה בלבד, ותשובתן זהה לכל
@@ -1211,6 +1217,57 @@ def _config() -> dict[str, Any]:
     from flask import current_app
 
     return current_app.config["SLOTWISE"]
+
+
+def _asset_version(name: str) -> str:
+    """‏גיבוב קצר של תוכן קובץ סטטי, ל-``?v=`` שבתבנית.
+
+    ‏**מה זה מתקן.** ‏``/static/app.js`` הוא כתובת קבועה בלי חתימה בשם,
+    ‏והיא מוגשת עם ``max-age=86400``. ‏``index.html`` לעומת זאת הוא
+    ‏``no-cache``, ו-``window.STRINGS`` מוטבע **בתוכו**. כלומר מבקר חוזר
+    קיבל נוסח מהיום ו-JavaScript מאתמול, עד יממה שלמה.
+    ‏ב-2026-09-20 זה הפיל את שורת הטריות לגמרי: ה-JS הישן ביקש
+    ‏``app.header.builtAt``, המפתח נמחק באותו יום, ‏``T()`` מחזיר מחרוזת
+    ריקה כשאין מפתח (מחוץ ל-‎?debug=1‎) — והכותרת יצאה **ריקה**, ליד נקודה
+    אפורה. שוחזר בדפדפן אמיתי: ‏``missingStrings()`` החזיר בדיוק את שלושת
+    המפתחות שנמחקו, ובלי שום שגיאת JavaScript.
+    ‏ההערה שליד ``STATIC_CACHE_SECONDS`` תיארה את הסיכון הזה מראש; מה
+    שהוסיף לו שיניים היה מחיקת מפתחות נוסח.
+
+    ‏הגיבוב הופך את הכתובת לתלוית תוכן, ולכן פריסה חדשה **אינה יכולה**
+    להיות מצומדת ל-JS ישן: הכתובת השתנתה, והדפדפן חייב למשוך. הקובץ עצמו
+    עדיין ב-``/static/app.js`` — ‏``?v=`` בלבד — כדי שכל מה שמפנה לנתיב
+    הזה (בדיקות, ‏DEPLOY.md, ‏curl) ימשיך לעבוד.
+
+    ‏המטמון יושב ב-``app.extensions`` ולא במשתנה ברמת המודול, כמו
+    ‏``_store()``: ‏HOSTING_NOTES.md §4 אוסר להוסיף גלובלים חדשים. הוא
+    מתבטל לפי ``(mtime_ns, size)``, ולכן עריכה בזמן ששרת פיתוח רץ נקראת
+    מחדש — אותה סיבה בדיוק שבגללה ``TEMPLATES_AUTO_RELOAD`` דלוק.
+    """
+    from flask import current_app
+
+    folder = current_app.static_folder or ""
+    if not folder:
+        return "0"
+    path = Path(folder) / name
+    try:
+        info = path.stat()
+    except OSError:
+        # קובץ חסר אינו מפיל את הדף. ‏404 על נכס הוא תקלה שרואים, ותווית
+        # גרסה מומצאת רק הייתה מסתירה אותה.
+        return "0"
+
+    key = (info.st_mtime_ns, info.st_size)
+    cache = current_app.extensions.setdefault("slotwise", {}).setdefault("asset_v", {})
+    hit = cache.get(name)
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    try:
+        digest = hashlib.sha1(path.read_bytes()).hexdigest()[:10]
+    except OSError:  # pragma: no cover - נקרא בהצלחה שורה אחת קודם
+        return "0"
+    cache[name] = (key, digest)
+    return digest
 
 
 def _store() -> store_mod.Store:
@@ -4726,6 +4783,10 @@ def create_app(
     from jinja2 import StrictUndefined
 
     app.jinja_env.undefined = StrictUndefined
+
+    # ‏‎{{ asset_v('app.js') }}‎ בתבנית. ראו ‏_asset_version: בלי זה דף
+    # חדש יכול להיות מצומד ל-JavaScript ישן מהמטמון למשך יממה.
+    app.jinja_env.globals["asset_v"] = _asset_version
 
     # ‏התבנית נקראת מחדש כשהקובץ משתנה, גם בלי ‎--debug‎.
     #
