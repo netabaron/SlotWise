@@ -3,10 +3,10 @@
 Every module implements EXACTLY the signatures below. Do not invent alternates.
 Python 3.14, Windows. Hebrew content everywhere — always open files with `encoding="utf-8"`.
 
-Project root: `C:\Users\netab\.claude\projects\Schedule_Builder`
+Project root: `C:\Users\netab\.claude\projects\SlotWise`
 
 ```
-Schedule_Builder/
+SlotWise/
   data/curriculum.json      # already written — do not modify
   data/profile.json         # student intake answers — already written
   data/sections.json        # scraper output cache (created at runtime)
