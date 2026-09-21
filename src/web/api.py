@@ -206,18 +206,21 @@ CACHEABLE_GET_ENDPOINTS: frozenset[str] = frozenset({
 CURRICULUM_ABSENCE_NONE = ""
 CURRICULUM_ABSENCE_MISSING = "no_curriculum"
 CURRICULUM_ABSENCE_NOT_REPRESENTABLE = "not_representable"
+#: יש תוכנית, ואפילו יותר מאחת — אבל היא נבחרת לפי מועד הכניסה, ומועד
+#: הכניסה עוד לא נבחר. זו אינה היעדר תוכנית אלא שאלה פתוחה, ולכן היא
+#: מקבלת ערך משלה: הנוסח מבקש לבחור מועד במקום להציע את הקטלוג.
+CURRICULUM_ABSENCE_INTAKE_REQUIRED = "intake_required"
 
 #: מסלולים שהמכללה **כן** מפרסמת להם תוכנית, אבל היא אינה ניתנת לייצוג
 #: כרשימה אחת לכל סמסטר — ולכן אין כאן קובץ תוכנית, בכוונה.
 #:
-#: ‏מתמטיקה שימושית: השנתון מדפיס את התוכנית פעמיים, אחת לכל מועד כניסה
-#: (חורף/אביב), ואין ולו סמסטר אחד משותף לשתיהן. גם מספר הסמסטר עצמו
-#: מציין דבר אחר בכל מועד. בחירה שרירותית באחת מהן הייתה נכונה לחצי
-#: מהמחלקה ושגויה לחצי השני. ראו את הביקורת ב-commit 5aa6f17.
-CURRICULUM_ABSENCE_BY_PROGRAM: dict[str, str] = {
-    "מתמטיקה שימושית עם התמחות ב-AI ובאלגוריתמיקה":
-        CURRICULUM_ABSENCE_NOT_REPRESENTABLE,
-}
+#: ‏**ריק כרגע.** מתמטיקה שימושית ישבה כאן עד 2026-09-21: השנתון מדפיס לה
+#: את התוכנית פעמיים, אחת לכל מועד כניסה (חורף/אביב), בלי ולו סמסטר אחד
+#: משותף. זה לא השתנה — מה שהשתנה הוא שאין צורך לבחור אחת מהן שרירותית:
+#: ‏``intakes`` ב-``programs.json`` מציג את שתיהן ונותן לסטודנט/ית לבחור,
+#: וכל מועד הוא קובץ תוכנית מלא משלו. המנגנון נשאר למקרה הבא שבו המכללה
+#: אכן מפרסמת משהו שאי אפשר להציג כרשימה לסמסטר.
+CURRICULUM_ABSENCE_BY_PROGRAM: dict[str, str] = {}
 
 #: מה שאומרים כשהתוכנית טעונה אבל אין בה קורסים לסמסטר שנבחר.
 CURRICULUM_EMPTY_SEMESTER_NOTE = (
@@ -1351,7 +1354,28 @@ def _curricula() -> dict[str, dict]:
 
     ‏**קובץ חסר או פגום פשוט אינו נכנס לרשימה.** מסלול בלי תוכנית עובד מול
     הקטלוג, וזו התנהגות תקינה — ‏SPEC_MULTIFACULTY §4 — ולא תקלה.
+
+    ‏**קובץ שנושא ``intake`` אינו נכנס לכאן בכלל.** מסלול עם מועדי כניסה
+    אינו "תוכנית אחת" ואין לו ערך יחיד שאפשר להחזיר; הוא חי ב-
+    ``_curricula_by_intake()``. ההפרדה היא מה ששומר על הנתיב הקיים
+    (מסלול ⇐ קובץ אחד) בדיוק כפי שהיה לכל שאר המחלקות.
     """
+    return _curricula_split()[0]
+
+
+def _curricula_by_intake() -> dict[str, dict[str, dict]]:
+    """תוכניות לפי מסלול **ולפי מועד כניסה**: ``{מסלול: {intake: תוכנית}}``.
+
+    ‏מתמטיקה שימושית היא המקרה הראשון: השנתון מדפיס לה שתי תוכניות, אחת
+    למתקבלים בחורף ואחת למתקבלים באביב, בלי ולו סמסטר אחד משותף — ומספר
+    הסמסטר עצמו מציין דבר אחר בכל אחת. לכן הן שני קבצים, כל אחד עם שדה
+    ``intake``, ולא קובץ אחד עם שני ענפים.
+    """
+    return _curricula_split()[1]
+
+
+def _curricula_split() -> tuple[dict[str, dict], dict[str, dict[str, dict]]]:
+    """קורא את כל קובצי התוכנית פעם אחת ומפריד אותם לשתי המפות."""
     from flask import current_app
 
     cache = current_app.extensions.setdefault("slotwise", {})
@@ -1370,6 +1394,7 @@ def _curricula() -> dict[str, dict]:
     stamp = tuple((str(p), stamp_of(p)) for p in paths)
     if cache.get("curricula_stamp") != stamp or "curricula" not in cache:
         loaded: dict[str, dict] = {}
+        by_intake: dict[str, dict[str, dict]] = {}
         for path in paths:
             try:
                 data = curriculum_mod.load_curriculum(path)
@@ -1379,26 +1404,79 @@ def _curricula() -> dict[str, dict]:
             if not isinstance(data, dict) or not data:
                 continue
             name = _norm_program(data.get("program") or data.get("program_en"))
+            if not name:
+                continue
+            intake = str(data.get("intake") or "").strip()
+            if intake:
+                by_intake.setdefault(name, {}).setdefault(intake, data)
+                continue
             # הקובץ הראשון ברשימה מנצח, כדי שתוכנית ברירת המחדל תישאר יציבה.
-            if name and name not in loaded:
+            if name not in loaded:
                 loaded[name] = data
         cache["curricula"] = loaded
+        cache["curricula_by_intake"] = by_intake
         cache["curricula_stamp"] = stamp
-    return cache["curricula"]
+    return cache["curricula"], cache["curricula_by_intake"]
 
 
-def _curriculum(program: Any = None) -> dict:
+def _program_intakes(program: Any = None) -> list[dict]:
+    """מועדי הכניסה של המסלול, מ-``programs.json``. ריק = מסלול רגיל.
+
+    ‏הרשימה היא מקור האמת לשאלה "האם צריך לשאול על מועד כניסה", והיא
+    באה מהמרשם ולא מהקבצים: מסלול שהוכרז כבעל מועדים אבל קובץ אחד שלו
+    חסר צריך עדיין לשאול, ולא להתנהג כאילו יש לו תוכנית אחת.
+    """
+    wanted = _norm_program(program)
+    if not wanted:
+        return []
+    # ‏``_program_choices`` שואל פעם אחת לכל מסלול, ו-``_curriculum`` שואל
+    # שוב. בלי המטמון זו קריאת קובץ ופענוח ‏JSON לכל אחת מהן באותה בקשה.
+    cache = _request_cache()
+    table = cache.get("program_intakes")
+    if table is None:
+        table = {}
+        try:
+            from programs import load_programs
+
+            listed = load_programs(str(PROJECT_ROOT / "data" / "programs.json"))
+        except Exception:  # noqa: BLE001 — היעדר הקובץ אינו תקלה
+            listed = []
+        for entry in listed:
+            out = []
+            for item in entry.get("intakes") or []:
+                if not isinstance(item, dict):
+                    continue
+                ident = str(item.get("id") or "").strip()
+                if ident:
+                    out.append({"id": ident, "label": str(item.get("label") or ident)})
+            if out:
+                table[_norm_program(entry.get("name"))] = out
+        cache["program_intakes"] = table
+    return list(table.get(wanted, []))
+
+
+def _curriculum(program: Any = None, intake: Any = None) -> dict:
     """תוכנית הלימודים של המסלול המבוקש, או תוכנית ברירת המחדל בלעדיו.
 
     בלי ``program`` מוחזרת התוכנית שב-``curriculum_path`` — בדיוק כמו קודם,
     כדי שכל קריאה קיימת תמשיך להתנהג אותו דבר.
+
+    ‏``intake`` נקרא **רק** למסלול שיש לו מועדי כניסה. שם הוא חובה: בלי
+    מועד אין תוכנית אחת להחזיר, ו-``{}`` כאן הוא מה שגורם לממשק לבקש
+    לבחור מועד במקום להציג רשימה של חצי מהמחלקה.
     """
     wanted = str(program or "").strip()
     if not wanted:
         return _default_curriculum()
     if wanted.casefold() == OTHER_PROGRAM:
         return {}
-    return _curricula().get(_norm_program(wanted), {})
+    norm = _norm_program(wanted)
+    if _program_intakes(wanted):
+        chosen = str(intake or "").strip()
+        if not chosen:
+            return {}
+        return _curricula_by_intake().get(norm, {}).get(chosen, {})
+    return _curricula().get(norm, {})
 
 
 def _default_curriculum() -> dict:
@@ -1903,7 +1981,9 @@ def credits_summary(values: Iterable[Any]) -> dict[str, Any]:
 OTHER_PROGRAM = "other"
 
 
-def _program_choices(curr: dict | None = None) -> list[dict]:
+def _program_choices(
+    curr: dict | None = None, program: Any = None, intake: Any = None
+) -> list[dict]:
     """רשימת המסלולים לבחירה בשלב 1.
 
     המקור הוא ``data/programs.json`` — נמשך מהאתר הציבורי של המכללה
@@ -1914,6 +1994,11 @@ def _program_choices(curr: dict | None = None) -> list[dict]:
     ``has_curriculum`` נכון רק לתוכנית שיש לה ``curriculum.json`` — כרגע
     הנדסת תוכנה בלבד, כי ``rec.pdf`` הוא הפרק שלה. לכל השאר הכלי עובד מול
     הקטלוג המלא, שממילא מכסה את כל המחלקות.
+
+    ``intakes`` מגיע לכל מסלול שיש לו מועדי כניסה, ועם ``has_curriculum``
+    שנגזר מהמועד שנבחר — ולכן הוא ``false`` כל עוד לא נבחר מועד. הממשק
+    מחליף מסלול בלי לבקש ‏bootstrap מחדש, ולכן הרשימה חייבת לשאת גם את
+    המועדים וגם את הסיבה, בדיוק כפי שהיא נושאת את ``curriculum_absence``.
     """
     mine = curriculum_program(curr)
     try:
@@ -1928,20 +2013,39 @@ def _program_choices(curr: dict | None = None) -> list[dict]:
         name = str(entry.get("name") or "").strip()
         if not name:
             continue
+        intakes = _program_intakes(name)
+        if intakes:
+            # מסלול עם מועדי כניסה: התשובה תלויה במועד שנבחר, ולכן היא
+            # נגזרת מ-``intake`` ולא מעצם קיומו של קובץ.
+            is_chosen = _norm_program(name) == _norm_program(program)
+            picked = str(intake or "").strip() if is_chosen else ""
+            has = bool(_curriculum_available(_curriculum(name, picked), name))
+            absence = (
+                CURRICULUM_ABSENCE_NONE
+                if has
+                else (
+                    CURRICULUM_ABSENCE_INTAKE_REQUIRED
+                    if not picked
+                    else CURRICULUM_ABSENCE_MISSING
+                )
+            )
+        else:
+            # לפי המרשם, לא לפי תוכנית ברירת המחדל: לכל מחלקה שיש לה
+            # קובץ תוכנית משלה מגיע "יש תוכנית", לא רק להנדסת תוכנה.
+            has = _norm_program(name) in _curricula()
+            # למה אין תוכנית, כשאין. הממשק מחליף מסלול בלי לבקש שוב
+            # ‏/api/bootstrap, ולכן הסיבה חייבת להגיע כאן לכל מסלול.
+            absence = (
+                CURRICULUM_ABSENCE_NONE if has else _curriculum_absence(name, {})
+            )
         out.append(
             {
                 "id": name,
                 "label": name,
-                # לפי המרשם, לא לפי תוכנית ברירת המחדל: לכל מחלקה שיש לה
-                # קובץ תוכנית משלה מגיע "יש תוכנית", לא רק להנדסת תוכנה.
-                "has_curriculum": _norm_program(name) in _curricula(),
-                # למה אין תוכנית, כשאין. הממשק מחליף מסלול בלי לבקש שוב
-                # ‏/api/bootstrap, ולכן הסיבה חייבת להגיע כאן לכל מסלול.
-                "curriculum_absence": (
-                    CURRICULUM_ABSENCE_NONE
-                    if _norm_program(name) in _curricula()
-                    else _curriculum_absence(name, {})
-                ),
+                "has_curriculum": has,
+                "curriculum_absence": absence,
+                # ריק לכל מסלול רגיל, וזה מה שמסתיר את התיבה בממשק.
+                "intakes": intakes,
                 "url": entry.get("url", ""),
                 "description": entry.get("description", ""),
                 "tracks_text": entry.get("tracks_text", ""),
@@ -1949,7 +2053,8 @@ def _program_choices(curr: dict | None = None) -> list[dict]:
         )
     if mine and not any(p["id"] == mine for p in out):
         out.insert(0, {"id": mine, "label": mine, "has_curriculum": True,
-                       "curriculum_absence": CURRICULUM_ABSENCE_NONE})
+                       "curriculum_absence": CURRICULUM_ABSENCE_NONE,
+                       "intakes": []})
     out.append(
         {
             "id": OTHER_PROGRAM,
@@ -1958,6 +2063,7 @@ def _program_choices(curr: dict | None = None) -> list[dict]:
             # ‏"לא ברשימה" אינו מסלול, ולכן אין לו סיבה להיעדר תוכנית —
             # הוא **הוא** הבחירה לעבוד מול הקטלוג.
             "curriculum_absence": CURRICULUM_ABSENCE_MISSING,
+            "intakes": [],
         }
     )
     return out
@@ -1994,7 +2100,9 @@ def _program_matches_curriculum(program: Any, curr: dict | None = None) -> bool:
     return norm(wanted) == norm(mine)
 
 
-def _curriculum_absence(program: Any = None, curr: dict | None = None) -> str:
+def _curriculum_absence(
+    program: Any = None, curr: dict | None = None, intake: Any = None
+) -> str:
     """למה אין תוכנית לימודים למסלול הזה. ‏"" כשיש אחת.
 
     ‏``not_representable`` = המכללה מפרסמת תוכנית, אבל לא בצורה שאפשר
@@ -2003,6 +2111,10 @@ def _curriculum_absence(program: Any = None, curr: dict | None = None) -> str:
     """
     if _curriculum_available(curr, program):
         return CURRICULUM_ABSENCE_NONE
+    # לפני "אין תוכנית": אולי יש, ורק לא נאמר לאיזה מועד כניסה. זו שאלה
+    # פתוחה ולא היעדר, והנוסח שלה מבקש לבחור מועד במקום להציע את הקטלוג.
+    if _program_intakes(program) and not str(intake or "").strip():
+        return CURRICULUM_ABSENCE_INTAKE_REQUIRED
     norm = _norm_program(program)
     if norm:
         for name, reason in CURRICULUM_ABSENCE_BY_PROGRAM.items():
@@ -3526,6 +3638,10 @@ def bootstrap():
     profile = _profile()
     student = profile.get("student") or {}
     prefs = profile.get("preferences") or {}
+    # מועד הכניסה של הסטודנט/ית, למסלול שיש לו מועדים. הוא חלק מהזהות
+    # בדיוק כמו שנה וסמסטר, ולכן הוא נקרא מהפרופיל ולא מפרמטר.
+    my_program = str(student.get("program") or "")
+    my_intake = str(student.get("intake") or "")
     has_curriculum = _curriculum_available(curr)
 
     def semester_rows(source: dict) -> list[dict]:
@@ -3563,6 +3679,16 @@ def bootstrap():
         for data in _curricula().values()
         if data.get("program")
     }
+    # מסלול עם מועדי כניסה אינו נכנס למפה שלמעלה: אין לו לוח סמסטרים אחד.
+    # ‏הממשק מחליף מועד בלי לבקש ‏bootstrap מחדש, ולכן **שני** הלוחות
+    # נשלחים כאן ומי שנבחר נקרא בדפדפן.
+    semesters_by_program_intake = {
+        str(next(iter(plans.values())).get("program") or ""): {
+            intake_id: semester_rows(data) for intake_id, data in plans.items()
+        }
+        for plans in _curricula_by_intake().values()
+        if plans
+    }
 
     selected = [
         str(item.get("code"))
@@ -3579,6 +3705,8 @@ def bootstrap():
         "term": student.get("term", ""),
         "term_label": student.get("term_label", ""),
         "semester": str(student.get("curriculum_semester") or ""),
+        # ריק למסלול בלי מועדי כניסה, וזה גם מה שהממשק שומר אצלו.
+        "intake": my_intake,
         "academic_year": year_he,
         "academic_year_gregorian": _gregorian_for(year_he) or str(
             student.get("academic_year_gregorian") or ""
@@ -3606,6 +3734,7 @@ def bootstrap():
             "defaults": defaults,
             "semesters": semesters,
             "semesters_by_program": semesters_by_program,
+            "semesters_by_program_intake": semesters_by_program_intake,
             "terms": [
                 {"term": key, "label": label, "in_curriculum": key in {"א", "ב"}}
                 for key, label in TERM_LABELS.items()
@@ -3618,14 +3747,12 @@ def bootstrap():
             # שני השדות האלה נמצאים גם ברמה העליונה בכוונה: הממשק בודק אותם
             # לפני שהוא מצייר את שלב 2, ולא צריך לחפור בשביל זה.
             "curriculum_available": has_curriculum,
-            "curriculum_absence": _curriculum_absence(
-                (profile.get("student") or {}).get("program"), curr
-            ),
+            "curriculum_absence": _curriculum_absence(my_program, curr, my_intake),
             # מה התוכנית הטעונה מכסה, ומה אפשר לבחור. יש לנו קובץ תוכנית
             # אחד בלבד (הנדסת תוכנה); כל השאר עובדים מול הקטלוג, שהוא ממילא
             # מלא ומכסה את כל המחלקות.
             "curriculum_program": curriculum_program(curr),
-            "programs": _program_choices(curr),
+            "programs": _program_choices(curr, my_program, my_intake),
             "program": str(curr.get("program", "") or ""),
             "curriculum": {
                 "available": has_curriculum,
@@ -3692,7 +3819,10 @@ def semester_courses(sem: str):
     # התוכנית של המסלול שנבחר, לא תוכנית ברירת המחדל: בלי זה סטודנט/ית מכל
     # מחלקה אחרת היה/תה מקבל/ת כאן קורסי הנדסת תוכנה כאילו הם המסלול שלו/ה.
     program = request.args.get("program", "")
-    curr = _curriculum(program)
+    # מועד הכניסה נקרא רק למסלול שיש לו מועדים. בלעדיו אין תוכנית אחת
+    # להחזיר, והתשובה היא "צריך לבחור מועד" ולא "אין תוכנית".
+    intake = request.args.get("intake", "")
+    curr = _curriculum(program, intake)
     has_curriculum = _curriculum_available(curr, program)
     info: dict[str, Any] = {}
     entries: list[dict[str, Any]] = []
@@ -3817,8 +3947,9 @@ def semester_courses(sem: str):
             # להישען כאן, ולא "משהו נשבר".
             "curriculum_available": bool(courses),
             "curriculum_loaded": has_curriculum,
-            "curriculum_absence": _curriculum_absence(program, curr),
+            "curriculum_absence": _curriculum_absence(program, curr, intake),
             "program": str(curr.get("program", "") or ""),
+            "intake": str(curr.get("intake", "") or ""),
             "note": note,
             "fallback": {
                 "endpoint": "/api/catalog/browse",

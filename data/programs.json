@@ -58,7 +58,12 @@
       "url": "https://w3.braude.ac.il/bsc-programs/yedionbsc-math/",
       "slug": "math",
       "description": "אפשרות לתואר כפול עם הנדסה: אפשרות לשלב את התואר עם אחד מהתחומים הבאים: הנדסת תוכנה, הנדסת חשמל ואלקטרוניקה, הנדסת תעשייה וניהול ואפשרות לשילוב תעודת הוראה.",
-      "tracks_text": ""
+      "tracks_text": "",
+      "intakes_note": "השנתון מדפיס למחלקה שתי תוכניות לימודים, אחת לכל מועד כניסה, ואין ביניהן סמסטר משותף. כל מועד הוא קובץ תוכנית משלו: data/curricula/math-winter.json ו-math-spring.json.",
+      "intakes": [
+        { "id": "winter", "label": "חורף" },
+        { "id": "spring", "label": "אביב" }
+      ]
     }
   ]
 }

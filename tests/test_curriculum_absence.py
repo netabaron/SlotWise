@@ -15,16 +15,25 @@
 
 מה שנוסף
 ---------
-שדה ``curriculum_absence`` עם שני ערכים: ``no_curriculum`` ו-
-``not_representable``. הוא מגיע גם ברמה העליונה של ‏/api/bootstrap, גם לכל
-מסלול ברשימת ``programs`` שבו (הממשק מחליף מסלול בלי לבקש ‏bootstrap מחדש),
-וגם ב-‏/api/semester/<sem>/courses.
+שדה ``curriculum_absence``. הוא מגיע גם ברמה העליונה של ‏/api/bootstrap, גם
+לכל מסלול ברשימת ``programs`` שבו (הממשק מחליף מסלול בלי לבקש ‏bootstrap
+מחדש), וגם ב-‏/api/semester/<sem>/courses.
 
-המקרה היחיד כרגע
------------------
-מתמטיקה שימושית: השנתון מדפיס שתי תוכניות לפי מועד הכניסה (חורף/אביב),
-**בלי ולו סמסטר אחד משותף**, וגם מספר הסמסטר מציין דבר אחר בכל מועד. זו
-החלטה מתועדת (‏commit 5aa6f17) ולא פער — מה שהשתנה הוא שעכשיו אומרים אותה.
+מה השתנה ב-2026-09-21
+----------------------
+מתמטיקה שימושית הייתה כאן המקרה היחיד של ``not_representable``: השנתון
+מדפיס לה שתי תוכניות לפי מועד הכניסה (חורף/אביב), **בלי ולו סמסטר אחד
+משותף**, וגם מספר הסמסטר מציין דבר אחר בכל מועד.
+
+‏**העובדה הזאת לא השתנתה — הטיפול בה כן.** במקום לבחור אחת מהשתיים
+שרירותית, שתיהן חולצו (``data/curricula/math-winter.json`` ו-
+``math-spring.json``) והסטודנט/ית בוחרים מועד. לכן המסלול עבר מ-
+``not_representable`` ל-``intake_required``: לא "יש תוכנית שאי אפשר להציג"
+אלא "יש שתיים, ועוד לא נאמר איזו". אחרי שנבחר מועד אין כאן היעדר כלל.
+
+‏``not_representable`` והנוסח שלו **נשארים**. אין להם כרגע אף מסלול, וזה
+בדיוק העניין: המנגנון קיים למקרה הבא, ובלי הבדיקות כאן הוא היה נמחק
+בשקט בפעם הבאה שמישהו מנקה קוד שנראה לא בשימוש.
 """
 
 from __future__ import annotations
@@ -48,6 +57,7 @@ WITH_PLAN = ("הנדסת תוכנה", "הנדסת ביוטכנולוגיה", "ה
 
 NOT_REPRESENTABLE = "not_representable"
 NO_CURRICULUM = "no_curriculum"
+INTAKE_REQUIRED = "intake_required"
 
 
 @pytest.fixture(scope="module")
@@ -62,19 +72,23 @@ def semester(client, sem: str, program: str) -> dict:
 
 
 # ==========================================================================
-# 1. מתמטיקה שימושית — עדיין בלי תוכנית, ועכשיו עם סיבה
+# 1. מתמטיקה שימושית — בלי מועד כניסה אין עדיין תוכנית, ויש סיבה
 # ==========================================================================
-def test_applied_maths_still_has_no_curriculum(client):
-    """ההתנהגות לא השתנתה: אין רשימה, והנפילה לקטלוג נשארת."""
+def test_applied_maths_without_an_intake_still_has_no_curriculum(client):
+    """בלי מועד כניסה ההתנהגות לא השתנתה: אין רשימה, והנפילה לקטלוג נשארת.
+
+    ‏זו אינה טכניקה אלא החלטה: מספר הסמסטר מציין דבר אחר בכל מועד, ולכן
+    בחירה שרירותית באחת התוכניות הייתה נכונה לחצי מהמחלקה ושגויה לחצי השני.
+    """
     data = semester(client, "3", MATH)
     assert data["curriculum_available"] is False
     assert data["courses"] == []
 
 
-def test_applied_maths_says_the_plan_is_not_representable(client):
-    """זה הלב: ההבדל בין "אין תוכנית" ל"יש, ואי אפשר להציג אותה כרשימה"."""
+def test_applied_maths_asks_for_an_intake_instead_of_claiming_no_plan(client):
+    """זה הלב: ההבדל בין "אין תוכנית" ל"יש שתיים, ועוד לא נאמר איזו"."""
     data = semester(client, "3", MATH)
-    assert data.get("curriculum_absence") == NOT_REPRESENTABLE, (
+    assert data.get("curriculum_absence") == INTAKE_REQUIRED, (
         f"curriculum_absence היה {data.get('curriculum_absence')!r}"
     )
 
@@ -104,7 +118,7 @@ def test_the_program_list_carries_the_reason_for_every_program(client):
     """הממשק מחליף מסלול בלי לבקש ‏bootstrap מחדש, ולכן הסיבה חייבת להגיע בו."""
     data = client.get("/api/bootstrap").get_json()
     by_id = {p["id"]: p for p in data["programs"]}
-    assert by_id[MATH]["curriculum_absence"] == NOT_REPRESENTABLE
+    assert by_id[MATH]["curriculum_absence"] == INTAKE_REQUIRED
     for program in WITH_PLAN:
         assert by_id[program]["has_curriculum"] is True
         assert by_id[program]["curriculum_absence"] == "", (
@@ -127,11 +141,16 @@ def test_bootstrap_has_the_field_at_the_top_level(client):
 # ==========================================================================
 # 4. הנוסח שהממשק מציג
 # ==========================================================================
-def test_the_explanation_string_exists_and_is_hebrew():
-    """בלי המחרוזת הזאת הממשק היה נופל בחזרה לנוסח הכללי בשקט."""
+@pytest.mark.parametrize("key", ["not-representable", "intake-required"])
+def test_the_explanation_string_exists_and_is_hebrew(key):
+    """בלי המחרוזת הזאת הממשק היה נופל בחזרה לנוסח הכללי בשקט.
+
+    ‏``not-representable`` נבדק כאן למרות שאין לו כרגע אף מסלול: המנגנון
+    נשאר למקרה הבא, ונוסח שאיש אינו בודק הוא נוסח שיימחק בשקט.
+    """
     strings = json.loads((ROOT / "src" / "strings.json").read_text(encoding="utf-8"))
-    note = strings["app"]["terms"]["fallbackNote"].get("not-representable")
-    assert note, "‏app.terms.fallbackNote['not-representable'] חסר"
+    note = strings["app"]["terms"]["fallbackNote"].get(key)
+    assert note, f"‏app.terms.fallbackNote[{key!r}] חסר"
     assert any("֐" <= ch <= "׿" for ch in note), "הנוסח אינו בעברית"
 
 
