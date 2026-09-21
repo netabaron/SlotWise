@@ -74,7 +74,9 @@
       "noFriday": "בלי יום שישי",
       "programPlaceholder": "בחר/י מסלול",
       "studyYearPlaceholder": "בחר/י שנה",
-      "termPlaceholder": "בחר/י סמסטר"
+      "termPlaceholder": "בחר/י סמסטר",
+      "intake": "סמסטר התחלה",
+      "intakePlaceholder": "בחר/י מועד"
     },
     "lecturers": {
       "legendRank": "העדפה ראשונה",

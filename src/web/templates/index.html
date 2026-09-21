@@ -97,7 +97,19 @@
     ‏#catalog-browse ו-#electives נושאים גם הם class="step-body" בתוך שלב 2,
     ולכן הכלל ב-CSS חייב להיות ‎.step.is-collapsed > .step-body‎.
 
-  1 שנה וסמסטר   #select-year #select-term #semester-summary #year-note
+  1 מסלול, שנה וסמסטר
+                  #select-program #select-year #select-term
+                  #semester-summary #year-note
+                  #field-intake  עטיפת תיבת מועד הכניסה. ‏**hidden כברירת
+                                 מחדל**, ונפתחת רק למסלול שהשרת שלח לו
+                                 ``intakes`` ברשימת ``programs`` של
+                                 ‏/api/bootstrap — כרגע מתמטיקה שימושית
+                                 בלבד, שהשנתון מדפיס לה תוכנית לכל מועד
+                                 כניסה בלי ולו סמסטר אחד משותף.
+                  #select-intake תיבת המועד עצמה ("חורף" / "אביב"). אין לה
+                                 ברירת מחדל: עד שבוחרים, המסלול מתנהג
+                                 כמסלול בלי תוכנית, ו-#year-note אומר
+                                 "יש לבחור סמסטר התחלה".
   2 קורסים        #course-search #course-search-results #course-list
                   #credits-total  סכום הנ"ז הידועות ("—" כשאין אף אחת)
                   #credits-unknown  "(2 קורסים ללא נתון)" — hidden כשאין חוסר.
@@ -262,6 +274,15 @@
         <div class="field field--lg">
           <label class="label" for="select-program">{{ S.ui.fields.program }}</label>
           <select class="input" id="select-program"></select>
+        </div>
+        <!-- ‏מועד הכניסה. מוצג **רק** למסלול שהשנתון מדפיס לו תוכנית לכל
+             מועד (כרגע מתמטיקה שימושית בלבד), ומוסתר לכל השאר — ראו
+             ``renderIntakeSelect`` ב-app.js, שמסתיר את ה-‎field‎ כולו כשאין
+             ``intakes``. מספר הסמסטר מציין דבר אחר בכל מועד, ולכן בלי
+             בחירה כאן אין למסלול תוכנית כלל. -->
+        <div class="field field--md" id="field-intake" hidden>
+          <label class="label" for="select-intake">{{ S.ui.fields.intake }}</label>
+          <select class="input" id="select-intake"></select>
         </div>
         <div class="field field--sm">
           <label class="label" for="select-year">{{ S.ui.fields.studyYear }}</label>

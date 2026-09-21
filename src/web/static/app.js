@@ -610,6 +610,9 @@
       // משנה אותו, וסטודנט/ית שעברו מהנדסת תוכנה לאזרחית נשארו עם רשימת
       // התוכנה מסומנת מתחת לקורסי האזרחית.
       autoProgram: "",
+      // ‏ומועד הכניסה שלו. אותו מספר סמסטר מציין קורסים אחרים בכל מועד,
+      // ולכן מסלול+סמסטר לבדם אינם מזהים המלצה במסלול עם מועדי כניסה.
+      autoIntake: "",
       autoCodes: [], // מה שסומן אוטומטית עבור autoSemester
       manualCodes: [], // מה שנוסף ידנית (חיפוש/קטלוג/בחירה) — שורד החלפת סמסטר
       autoDropped: [], // קורסים מומלצים שבוטלו ידנית — לא לסמן שוב
@@ -632,6 +635,11 @@
       // המסלול שנבחר בשלב 1. ‏rec.pdf הוא פרק הנדסת תוכנה בלבד, ולכן רשימת
       // הקורסים של שלב 2 רלוונטית רק למי שלומד/ת אותו. לכל השאר — הקטלוג.
       program: "",
+      // מועד הכניסה, למסלול שהשנתון מדפיס לו תוכנית לכל מועד. ריק לכל
+      // מסלול אחר, ושם גם התיבה עצמה מוסתרת. ‏**זה חלק מהזהות**: מספר
+      // הסמסטר מציין דבר אחר בכל מועד, ולכן בלי בחירה כאן אין למסלול
+      // תוכנית ולא לוח סמסטרים.
+      intake: "",
       earliest: null, // דקות מחצות, או null
       latest: null,
       blocked: [], // [[יום, התחלה, סוף], ...]
@@ -766,6 +774,7 @@
     // דירוג המרצים, החלונות החסומים וחובות הנוכחות. הוספת שדות אינה דורשת זאת.
     base.autoSemester = txt(base.autoSemester);
     base.autoProgram = txt(base.autoProgram);
+    base.autoIntake = txt(base.autoIntake);
     ["autoCodes", "manualCodes", "autoDropped"].forEach(function (k) {
       if (!Array.isArray(base[k])) base[k] = [];
       base[k] = uniq(base[k].map(txt).filter(Boolean));
@@ -912,15 +921,55 @@
    * 5. נגזרות מהמצב
    * ===================================================================== */
 
+  /** הרשומה של המסלול שנבחר ברשימת ``programs`` של ‏/api/bootstrap. */
+  function programEntry() {
+    var chosen = txt(state.program);
+    var list = runtime.programs || [];
+    for (var i = 0; i < list.length; i++) {
+      if (txt(list[i].id) === chosen) return list[i];
+    }
+    return null;
+  }
+
+  /**
+   * מועדי הכניסה של המסלול שנבחר, או רשימה ריקה. ריק = מסלול רגיל,
+   * והתיבה כולה מוסתרת.
+   */
+  function programIntakes() {
+    var entry = programEntry();
+    var list = entry && entry.intakes;
+    return Array.isArray(list) ? list : [];
+  }
+
+  /**
+   * המסלול דורש מועד כניסה, ועוד לא נבחר אחד. זה **אינו** "אין תוכנית":
+   * יש שתיים, והשאלה פתוחה — ולכן הנוסח מבקש לבחור ולא מציע את הקטלוג.
+   */
+  function intakeMissing() {
+    return programIntakes().length > 0 && !txt(state.intake);
+  }
+
   /**
    * לוח הסמסטרים של המסלול שנבחר. ‏semesterOf() ממפה שנה+סמסטר למספר
    * סמסטר לפני כל משיכה מהשרת, ולכן הוא חייב את הלוח הנכון כבר כאן:
    * מתמטיקה שימושית היא תוכנית תלת-שנתית בת שישה סמסטרים, ולוח של שמונה
-   * היה מציע לה סמסטר 7 שאינו קיים.
+   * היה מציע לה סמסטר 7 שאינו קיים — ומאז שיש לה תוכנית לכל מועד כניסה,
+   * גם *איזה* לוח מבין השניים נקבע כאן.
    * בלי לוח למסלול — הלוח הראשי, כפי שהיה קודם.
    */
   function bootSemesters() {
     if (!runtime.bootstrap) return [];
+    // מסלול עם מועדי כניסה: הלוח הוא של המועד שנבחר, ובלי מועד אין לוח
+    // כלל. הוא אינו מופיע ב-``semesters_by_program``, ולכן הענף הזה קודם.
+    if (programIntakes().length) {
+      if (!txt(state.intake)) return [];
+      var byIntake = runtime.bootstrap.semesters_by_program_intake || {};
+      var forProgram = byIntake[txt(state.program)] || {};
+      var rows = forProgram[txt(state.intake)];
+      return rows && rows.length
+        ? pickList({ semesters: rows }, ["semesters"], "semester")
+        : [];
+    }
     var byProgram = runtime.bootstrap.semesters_by_program;
     if (byProgram && txt(state.program)) {
       var mine = byProgram[txt(state.program)];
@@ -936,6 +985,9 @@
 
   /** האם לשרת יש בכלל לוח סמסטרים למסלול שנבחר. */
   function programHasPlan() {
+    // עם מועדי כניסה התשובה היא של המועד שנבחר, ו-``bootSemesters`` כבר
+    // יודע לבחור אותו. בלי מועד אין לוח, וזה מצב תקין ולא שרת ישן.
+    if (programIntakes().length) return bootSemesters().length > 0;
     var byProgram = runtime.bootstrap && runtime.bootstrap.semesters_by_program;
     if (!byProgram || !txt(state.program)) return true; // שרת ישן — לא מכריעים
     var mine = byProgram[txt(state.program)];
@@ -1101,10 +1153,15 @@
    * לו תוכנית בכלל.
    */
   function curriculumAbsenceKey() {
+    // ‏הבחירה בדפדפן מקדימה את ``programs``, שנקראה פעם אחת ב-bootstrap:
+    // שם מתמטיקה שימושית תמיד ``intake_required``, כי בזמן הבקשה עוד לא
+    // נבחר מועד. אחרי שבוחרים, המצב המקומי הוא שיודע.
+    if (intakeMissing()) return "intake-required";
     var chosen = txt(state.program);
     var list = runtime.programs || [];
     for (var i = 0; i < list.length; i++) {
       if (txt(list[i].id) === chosen) {
+        if (txt(list[i].curriculum_absence) === "intake_required") return "";
         return txt(list[i].curriculum_absence).replace(/_/g, "-");
       }
     }
@@ -1136,6 +1193,8 @@
     if (!runtime.semesterFetched) return "";
     if (runtime.semesterBusy) return "";
     if (runtime.semesterCourses.length) return "";
+    // לפני "אין תוכנית": יש שתיים, ורק לא נבחר מועד כניסה.
+    if (intakeMissing()) return "intake-required";
     if (runtime.curriculumAvailable === false) return "no-curriculum";
     if (runtime.semesterCurriculumAvailable === false) return "no-curriculum";
     if (runtime.semesterError) return "no-list";
@@ -1488,8 +1547,11 @@
   function applyRecommendedDefaults(sem) {
     var target = txt(sem);
     var owned = txt(state.autoSemester);
-    // הבעלות היא על צמד מסלול+סמסטר. ראו ההערה ליד ``autoProgram``.
-    var sameOwner = owned === target && txt(state.autoProgram) === txt(state.program);
+    // הבעלות היא על השלישייה מסלול+מועד+סמסטר. ראו ההערה ליד ``autoProgram``.
+    var sameOwner =
+      owned === target &&
+      txt(state.autoProgram) === txt(state.program) &&
+      txt(state.autoIntake) === txt(state.intake);
 
     // 1. אימוץ בחירה קיימת, פעם אחת בלבד. מצב שנשמר לפני שהתכונה הזאת
     //    הייתה קיימת מגיע בלי מקור לקודים שבו; הוא לא נמחק ולא מוחלף, רק
@@ -1512,6 +1574,7 @@
             provenanceReady: true,
             autoSemester: target,
             autoProgram: txt(state.program),
+            autoIntake: txt(state.intake),
             autoCodes: adopted.slice(),
             // ‏הכול שלה. מרגע שאין סימון אוטומטי, אין "מומלץ שבוטל" —
             // יש רק מה שסומן ומה שלא.
@@ -1550,6 +1613,7 @@
       sameCodes(manual, state.codes) &&
       nextSemester === owned &&
       txt(state.autoProgram) === txt(state.program) &&
+      txt(state.autoIntake) === txt(state.intake) &&
       state.provenanceReady &&
       !claimAsManual
     ) {
@@ -1565,6 +1629,7 @@
       manualCodes: manual,
       autoSemester: nextSemester,
       autoProgram: nextSemester ? txt(state.program) : "",
+      autoIntake: nextSemester ? txt(state.intake) : "",
       autoCodes: recommended.slice(),
       autoDropped: [],
       activeSchedule: 0,
@@ -1590,6 +1655,7 @@
       provenanceReady: true,
       autoSemester: target,
       autoProgram: txt(state.program),
+      autoIntake: txt(state.intake),
       autoCodes: capped.recommended.slice(),
       autoDropped: [],
       activeSchedule: 0,
@@ -1959,7 +2025,8 @@
     runtime.semesterBusy = true;
     return getJSON(
       "/api/semester/" + encodeURIComponent(sem) + "/courses" +
-        "?program=" + encodeURIComponent(state.program || "")
+        "?program=" + encodeURIComponent(state.program || "") +
+        "&intake=" + encodeURIComponent(state.intake || "")
     )
       .then(function (data) {
         if (my !== seq.semester) return;
@@ -2539,7 +2606,10 @@
     // ומחזיר רשימה ריקה למסלול שאין לו תוכנית. בלי המסלול בחתימה החלפת
     // מסלול לא הייתה מושכת מחדש כלום, והרשימה של המסלול הקודם — כולל מה
     // שסומן ממנה — הייתה נשארת על המסך.
-    var semSig = txt(state.semester) + "|" + txt(state.program);
+    // גם מועד הכניסה: אותו מספר סמסטר מציין קורסים אחרים בכל מועד, ולכן
+    // החלפת מועד לבדה חייבת למשוך מחדש.
+    var semSig =
+      txt(state.semester) + "|" + txt(state.program) + "|" + txt(state.intake);
     if (force || semSig !== lastSig.semester) {
       lastSig.semester = semSig;
       fetchSemesterCourses();
@@ -2663,6 +2733,8 @@
     ui.tplToast = byId("tpl-toast");
 
     ui.selProgram = byId("select-program");
+    ui.selIntake = byId("select-intake");
+    ui.fieldIntake = byId("field-intake");
     ui.electives = byId("electives");
     ui.electivesTitle = byId("electives-title");
     ui.electivesRule = byId("electives-rule");
@@ -2817,6 +2889,22 @@
         // ולכן הוא חייב לרוץ אחרי שהוא כבר עודכן.
         setState(function (s) {
           s.program = txt(ui.selProgram.value);
+          // מועד כניסה שייך למסלול שנבחר בו. החלפת מסלול מאפסת אותו,
+          // אחרת "חורף" של מתמטיקה היה נשאר תלוי במסלול שאין לו מועדים
+          // בכלל — וחוזר לתוקף בשקט בחזרה אליה.
+          s.intake = "";
+          s.semester = semesterOf(s.studyYear, s.term);
+          s.activeSchedule = 0;
+        });
+      });
+    }
+    if (ui.selIntake) {
+      ui.selIntake.addEventListener("change", function () {
+        // ‏אותו נימוק שב-``selProgram``: ``semesterOf`` קורא את המצב,
+        // ולכן הוא חייב לרוץ אחרי שהמועד כבר עודכן. מספר הסמסטר מציין
+        // דבר אחר בכל מועד, ולכן הוא נגזר מחדש ולא נשמר.
+        setState(function (s) {
+          s.intake = txt(ui.selIntake.value);
           s.semester = semesterOf(s.studyYear, s.term);
           s.activeSchedule = 0;
         });
@@ -3913,8 +4001,39 @@
 
   var programOptionsSig = null;
 
+  /**
+   * תיבת מועד הכניסה. מוצגת **רק** למסלול שיש לו ``intakes``, ומוסתרת
+   * לכל השאר — כולל "תוכנית אחרת / לא ברשימה" וכולל מצב שלפני בחירת
+   * מסלול. שאלה שאין לה משמעות למסלול שנבחר אינה שאלה.
+   */
+  function renderIntakeSelect() {
+    if (!ui.selIntake || !ui.fieldIntake) return;
+    var opts = programIntakes();
+    if (!opts.length) {
+      ui.fieldIntake.hidden = true;
+      return;
+    }
+    ui.fieldIntake.hidden = false;
+    var sig = JSON.stringify(opts);
+    if (sig !== intakeOptionsSig) {
+      intakeOptionsSig = sig;
+      clear(ui.selIntake);
+      ui.selIntake.appendChild(placeholderOption(T("ui.fields.intakePlaceholder")));
+      opts.forEach(function (o) {
+        ui.selIntake.appendChild(
+          el("option", { attrs: { value: txt(o.id) }, text: txt(o.label) || txt(o.id) })
+        );
+      });
+    }
+    // אין ברירת מחדל: כל ניחוש כאן נכון לחצי מהמחלקה ושגוי לחצי השני.
+    selectOrPlaceholder(ui.selIntake, txt(state.intake));
+  }
+
+  var intakeOptionsSig = null;
+
   function renderYearStep() {
     renderProgramSelect();
+    renderIntakeSelect();
     if (!ui.selYear || !ui.selTerm) return;
     var years = yearOptions();
     var terms = termOptions();
@@ -3987,11 +4106,17 @@
         FALLBACK_NOTE[absence] || FALLBACK_NOTE["no-curriculum"]
       );
     } else {
+      // ‏השבב אומר "אין סמסטר תואם", וזה נכון גם למסלול שממתין למועד
+      // כניסה: בלי מועד אין לוח סמסטרים, ולכן אין למה להתאים. **השורה
+      // שמתחת היא ההבדל**: במקום להציע את הקטלוג היא מבקשת לבחור מועד,
+      // שזו פעולה אחת שממנה יש תוכנית מלאה.
       setText(ui.semesterSummary, T("app.year.summaryNoPlan"));
       setText(
         ui.yearNote,
-        txt(runtime.bootstrap && runtime.bootstrap.summer_note) ||
-          T("app.year.noPlanNote")
+        intakeMissing()
+          ? FALLBACK_NOTE["intake-required"]
+          : txt(runtime.bootstrap && runtime.bootstrap.summer_note) ||
+            T("app.year.noPlanNote")
       );
     }
   }
