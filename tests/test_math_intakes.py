@@ -16,13 +16,26 @@ not_representable`` ונפל לעיון בקטלוג, כי רשימה שטוחה
 שנבחר מועד, המסלול מתנהג **בדיוק** כמו כל מסלול עם תוכנית אחת: יש לו לוח
 סמסטרים, יש לו רשימת קורסים מומלצת, והקורסים אינם מסומנים כ-``track``.
 
+ואז התברר שהשאלה עצמה הייתה הלא נכונה (2026-09-22)
+---------------------------------------------------
+בהתחלה נשאלו כאן אותן שתי שאלות כמו לכל מסלול — שנה וסמסטר — ומספר הסמסטר
+נגזר מהן. ‏זה לא עובד: מי שמתקבל/ת באביב מתחיל/ה בסמסטר ב', ולכן המשבצת
+"שנה א' · סמסטר א'" פשוט אינה קיימת, ומספר השנה שהוצמד לכל סמסטר היה ניחוש
+שסומן ``year_term_inferred`` וממילא הוצג כעובדה.
+
+עכשיו השאלה היא **מספר הסמסטר בתוכנית**, ישירות, והסמסטר הקלנדרי נגזר ממנו
+ומהמועד. הקבצים אינם נושאים ``year`` כלל.
+
 מה הקובץ הזה שומר עליו
 -----------------------
 1. שני הקבצים נטענים, ושניהם מסתדרים מול הסה"כ שהמסמך מדפיס.
 2. אותו מספר סמסטר מציין קורסים אחרים בכל מועד — זו הסיבה שכל זה קיים.
-3. התיבה מופיעה **רק** למסלול הזה. שאלה שאין לה משמעות אינה שאלה.
-4. בלי מועד: "יש לבחור סמסטר התחלה", ולא "אין תוכנית".
-5. עם מועד: רשימה מומלצת, בלי תווית מסלול התמחות.
+3. התיבות מופיעות **רק** למסלול הזה, ושנה+סמסטר מוסתרות שם.
+4. בלי מועד: "יש לבחור סמסטר התחלה". עם מועד ובלי סמסטר: "יש לבחור סמסטר
+   לימודים". שניהם אינם "אין תוכנית".
+5. עם מועד וסמסטר: רשימה מומלצת, בלי תווית מסלול התמחות.
+6. הסמסטר הקלנדרי שנגזר הוא זה שנשלח לשרת — טעות בו בונה מערכת מקבוצות
+   של הסמסטר הלא נכון, וזו לא תקלה תצוגתית.
 """
 
 from __future__ import annotations
@@ -49,6 +62,9 @@ CURRICULA_DIR = ROOT / "data" / "curricula"
 FILES = {"winter": "math-winter.json", "spring": "math-spring.json"}
 INTAKE_REQUIRED = "intake_required"
 CHOOSE_INTAKE_NOTE = "יש לבחור סמסטר התחלה"
+CHOOSE_SEMESTER_NOTE = "יש לבחור סמסטר לימודים"
+#: איך ‏TERM_LABELS שבשרת מאיית כל קוד סמסטר.
+TERM_TEXT = {"א": "סמסטר א׳ (חורף)", "ב": "סמסטר ב׳ (אביב)"}
 
 
 @pytest.fixture(scope="module")
@@ -153,13 +169,55 @@ def test_no_semester_number_means_the_same_thing_in_both_intakes():
 
 
 def test_the_first_semester_of_each_intake_is_in_its_own_term():
-    """מתקבל/ת בחורף מתחיל/ה בסמסטר א׳, ומתקבל/ת באביב בסמסטר ב׳.
-
-    ‏זה מה שהופך את מיפוי שנה+סמסטר ⇐ מספר סמסטר לשונה בין המועדים, והוא
-    הסיבה ש-``semesters_by_program_intake`` נושא לוח נפרד לכל מועד.
-    """
+    """מתקבל/ת בחורף מתחיל/ה בסמסטר א׳, ומתקבל/ת באביב בסמסטר ב׳."""
     assert plan("winter")["semesters"]["1"]["term"] == "א"
     assert plan("spring")["semesters"]["1"]["term"] == "ב"
+
+
+#: הכלל: מועד חורף — אי-זוגי א', זוגי ב'. מועד אביב — הפוך.
+EXPECTED_TERMS = {
+    "winter": {"1": "א", "2": "ב", "3": "א", "4": "ב", "5": "א", "6": "ב"},
+    "spring": {"1": "ב", "2": "א", "3": "ב", "4": "א", "5": "ב", "6": "א"},
+}
+
+
+@pytest.mark.parametrize("intake", sorted(FILES))
+def test_the_calendar_term_follows_the_intake_and_the_number(intake):
+    """‏**זה הסמסטר שנשלח לשרת**, ולא קישוט.
+
+    ‏/api/courses ו-/api/solve מקבלים אותו כ-``semester`` ובוחרים לפיו את
+    קבוצות הידיעון. סמסטר הפוך כאן אינו תווית שגויה אלא מערכת שבנויה
+    מקבוצות של חצי שנה אחרת.
+    """
+    got = {k: v["term"] for k, v in plan(intake)["semesters"].items()}
+    assert got == EXPECTED_TERMS[intake]
+
+
+@pytest.mark.parametrize("intake", sorted(FILES))
+def test_no_year_is_stored_for_an_intake_plan(intake):
+    """אין שנת לימודים, ואין דגל "נגזר" — כי אין מה לגזור.
+
+    ‏למתקבל/ת באביב אין סמסטר א' בשנה א', ולכן ללוח של שנה×סמסטר יש
+    משבצת ריקה ומספר השנה הוא ניחוש. הוא נמחק במקום להיות מסומן.
+    """
+    for key, sem in plan(intake)["semesters"].items():
+        assert "year" not in sem, f"סמסטר {key}: נשמרה שנה"
+        assert "year_term_inferred" not in sem, f"סמסטר {key}: נשאר דגל הגזירה"
+
+
+@pytest.mark.parametrize("intake", sorted(FILES))
+def test_the_server_labels_a_semester_by_its_number_and_term(intake, client):
+    """‏"סמסטר 4 · סמסטר א׳ (חורף)" — התווית שמחליפה את "שנה ג׳"."""
+    data = client.get("/api/bootstrap").get_json()
+    rows = data["semesters_by_program_intake"][MATH][intake]
+    for row in rows:
+        assert row.get("year") in (None, ""), "אין שנה לתוכנית לפי מועד"
+        assert row["label"].startswith("סמסטר %s ·" % row["semester"]), (
+            f"התווית חייבת לפתוח במספר הסמסטר: {row['label']!r}"
+        )
+        assert TERM_TEXT[row["term"]] in row["label"], (
+            f"והסמסטר הקלנדרי חייב להופיע בה: {row['label']!r}"
+        )
 
 
 # ==========================================================================
@@ -314,16 +372,23 @@ def page(browser, server):
         ctx.close()
 
 
-def intake_visible(page) -> bool:
+def shown(page, field_id: str) -> bool:
     return page.evaluate(
-        "() => { const f = document.getElementById('field-intake');"
-        " return !!f && !f.hidden; }"
+        "(id) => { const f = document.getElementById(id);"
+        " return !!f && !f.hidden; }",
+        field_id,
     )
 
 
 def year_note(page) -> str:
     return page.evaluate(
         "() => (document.getElementById('year-note') || {}).textContent || ''"
+    )
+
+
+def summary(page) -> str:
+    return page.evaluate(
+        "() => (document.getElementById('semester-summary') || {}).textContent || ''"
     )
 
 
@@ -334,63 +399,150 @@ def listed_codes(page) -> list:
     )
 
 
-def test_the_intake_box_is_hidden_until_a_program_with_intakes_is_chosen(page):
-    assert not intake_visible(page), "לפני בחירת מסלול אין למה לשאול"
-    page.select_option("#select-program", PLAIN_PROGRAM)
-    page.wait_for_timeout(800)
-    assert not intake_visible(page), f"{PLAIN_PROGRAM} אינו אמור לקבל את התיבה"
-
-
-def test_the_intake_box_appears_for_applied_maths(page):
-    page.select_option("#select-program", MATH)
-    page.wait_for_timeout(800)
-    assert intake_visible(page), "מתמטיקה שימושית חייבת לקבל את התיבה"
-    values = page.eval_on_selector_all(
-        "#select-intake option", "els => els.map(e => e.value).filter(Boolean)"
+def saved(page) -> dict:
+    return page.evaluate(
+        "() => JSON.parse(localStorage.getItem('braude_schedule_builder_v1') || '{}')"
     )
-    assert sorted(values) == ["spring", "winter"]
 
 
-def test_switching_back_to_a_plain_program_hides_the_box_again(page):
+def pick(page, intake: str, semester: str) -> None:
+    """הזהות המלאה של מסלול עם מועדי כניסה: מסלול, מועד, מספר סמסטר."""
     page.select_option("#select-program", MATH)
-    page.wait_for_timeout(600)
-    assert intake_visible(page)
+    page.wait_for_timeout(700)
+    page.select_option("#select-intake", intake)
+    page.wait_for_timeout(900)
+    page.select_option("#select-plan-semester", semester)
+    page.wait_for_timeout(2000)
+
+
+# --- איזו צורה של שלב 1 מוצגת ------------------------------------------
+def test_a_plain_program_keeps_the_year_and_term_boxes(page):
     page.select_option("#select-program", PLAIN_PROGRAM)
-    page.wait_for_timeout(800)
-    assert not intake_visible(page)
+    page.wait_for_timeout(900)
+    assert shown(page, "field-year"), "מסלול רגיל חייב לשמור את תיבת השנה"
+    assert shown(page, "field-term"), "ואת תיבת הסמסטר"
+    assert not shown(page, "field-intake")
+    assert not shown(page, "field-plan-semester")
 
 
+def test_applied_maths_swaps_year_and_term_for_one_semester_box(page):
+    page.select_option("#select-program", MATH)
+    page.wait_for_timeout(900)
+    assert shown(page, "field-intake"), "המועד נשאל"
+    assert not shown(page, "field-year"), "ושנה אינה נשאלת — אין לה משמעות כאן"
+    assert not shown(page, "field-term"), "וגם לא הסמסטר הקלנדרי, שנגזר"
+    # תיבת הסמסטר ממתינה למועד: בלי מועד אין תוכנית ואין רשימה למלא בה.
+    assert not shown(page, "field-plan-semester")
+    page.select_option("#select-intake", "spring")
+    page.wait_for_timeout(1200)
+    assert shown(page, "field-plan-semester"), "אחרי המועד נפתחת תיבת הסמסטר"
+
+
+def test_switching_back_to_a_plain_program_restores_the_grid(page):
+    page.select_option("#select-program", MATH)
+    page.wait_for_timeout(900)
+    assert not shown(page, "field-year")
+    page.select_option("#select-program", PLAIN_PROGRAM)
+    page.wait_for_timeout(900)
+    assert shown(page, "field-year")
+    assert shown(page, "field-term")
+    assert not shown(page, "field-intake")
+    assert not shown(page, "field-plan-semester")
+
+
+def test_the_semester_box_lists_one_option_per_plan_semester(page):
+    page.select_option("#select-program", MATH)
+    page.select_option("#select-intake", "winter")
+    page.wait_for_timeout(1500)
+    values = page.eval_on_selector_all(
+        "#select-plan-semester option", "els => els.map(e => e.value).filter(Boolean)"
+    )
+    assert values == ["1", "2", "3", "4", "5", "6"], values
+    labels = page.eval_on_selector_all(
+        "#select-plan-semester option",
+        "els => els.map(e => e.textContent.trim()).filter(t => t && !t.includes('בחר'))",
+    )
+    # התווית נושאת את הסמסטר הקלנדרי, כדי שלא יתגלה רק אחר כך.
+    assert labels[0].startswith("סמסטר 1"), labels[0]
+    assert "סמסטר א׳" in labels[0], labels[0]
+    assert "סמסטר ב׳" in labels[1], labels[1]
+
+
+# --- מה נאמר לפני שהזהות שלמה --------------------------------------------
 def test_without_an_intake_the_page_asks_for_one(page):
     page.select_option("#select-program", MATH)
-    page.select_option("#select-year", "2")
-    page.select_option("#select-term", "א")
-    page.wait_for_timeout(1500)
-    assert CHOOSE_INTAKE_NOTE in year_note(page), (
-        f"‏#year-note היה {year_note(page)!r}"
-    )
+    page.wait_for_timeout(1200)
+    assert CHOOSE_INTAKE_NOTE in year_note(page), f"‏#year-note היה {year_note(page)!r}"
 
 
-def test_choosing_an_intake_produces_a_recommended_list(page):
+def test_with_an_intake_but_no_semester_the_page_asks_for_the_semester(page):
     page.select_option("#select-program", MATH)
-    page.select_option("#select-year", "2")
-    page.select_option("#select-term", "א")
-    page.select_option("#select-intake", "winter")
-    page.wait_for_timeout(2000)
-    assert CHOOSE_INTAKE_NOTE not in year_note(page), "אחרי בחירה אין מה לבקש"
+    page.select_option("#select-intake", "spring")
+    page.wait_for_timeout(1500)
+    note = year_note(page)
+    assert CHOOSE_SEMESTER_NOTE in note, f"‏#year-note היה {note!r}"
+    assert CHOOSE_INTAKE_NOTE not in note, "המועד כבר נבחר"
+
+
+# --- ואחרי שהיא שלמה ------------------------------------------------------
+def test_choosing_a_semester_produces_a_recommended_list(page):
+    pick(page, "winter", "3")
+    assert CHOOSE_SEMESTER_NOTE not in year_note(page)
     codes = listed_codes(page)
-    assert codes, "חורף, שנה ב׳ סמסטר א׳ = סמסטר 3, ויש בו קורסים"
+    assert codes, "לסמסטר 3 של מועד חורף יש קורסים"
     assert "61739" in codes, f"קורס מסמסטר 3 של מועד חורף חסר: {codes}"
 
 
-def test_the_two_intakes_show_different_lists_in_the_browser(page):
-    page.select_option("#select-program", MATH)
-    page.select_option("#select-year", "2")
-    page.select_option("#select-term", "א")
-    page.select_option("#select-intake", "winter")
-    page.wait_for_timeout(2000)
+def test_the_summary_chip_names_the_semester_and_its_calendar_term(page):
+    pick(page, "spring", "2")
+    chip = summary(page)
+    assert "סמסטר 2" in chip, chip
+    # מועד אביב: סמסטר זוגי הוא סמסטר א׳.
+    assert "סמסטר א׳" in chip, chip
+    assert "שנה" not in chip, f"אין שנה לתוכנית הזאת, ואסור להמציא אחת: {chip!r}"
+
+
+def test_the_two_intakes_show_different_lists_for_the_same_number(page):
+    pick(page, "winter", "3")
     winter = set(listed_codes(page))
     page.select_option("#select-intake", "spring")
+    page.wait_for_timeout(1200)
+    # החלפת מועד מורידה את הבחירה — אותו מספר הוא תוכנית אחרת — אבל
+    # התיבה נשארת פתוחה, כי המועד החדש כן נבחר.
+    assert shown(page, "field-plan-semester")
+    page.select_option("#select-plan-semester", "3")
     page.wait_for_timeout(2000)
     spring = set(listed_codes(page))
     assert winter and spring
-    assert winter != spring, "החלפת מועד חייבת להחליף את הרשימה"
+    assert winter != spring, "אותו מספר סמסטר, שתי רשימות"
+
+
+def test_switching_intake_clears_the_chosen_semester(page):
+    pick(page, "winter", "4")
+    assert saved(page).get("semester") == "4"
+    page.select_option("#select-intake", "spring")
+    page.wait_for_timeout(1500)
+    state = saved(page)
+    assert state.get("semester") == "", "מספר סמסטר של מועד אחר אינו נגרר"
+    assert state.get("term") == "", "וגם לא הסמסטר הקלנדרי שנגזר ממנו"
+    assert CHOOSE_SEMESTER_NOTE in year_note(page)
+
+
+# --- הסמסטר הקלנדרי שנשמר ונשלח -------------------------------------------
+@pytest.mark.parametrize(
+    "intake,semester,term",
+    [("winter", "3", "א"), ("winter", "4", "ב"), ("spring", "2", "א"), ("spring", "5", "ב")],
+)
+def test_the_derived_term_is_what_gets_stored(page, intake, semester, term):
+    """‏``state.term`` הוא מה שנשלח לשרת כ-``semester`` בכל בקשה.
+
+    ‏הוא אינו נשאל כאן אלא נגזר, ולכן הבדיקה היא על מה שנשמר בפועל — לא
+    על מה שמצויר.
+    """
+    pick(page, intake, semester)
+    state = saved(page)
+    assert state.get("semester") == semester
+    assert state.get("term") == term, (
+        f"{intake} סמסטר {semester}: נשמר {state.get('term')!r} במקום {term!r}"
+    )
+    assert state.get("studyYear") in (None, ""), "אין שנה, ואין להמציא אחת"

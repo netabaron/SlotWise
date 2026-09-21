@@ -3409,12 +3409,19 @@ def _now_iso() -> str:
 # 8. עזרי תצוגה
 # ===========================================================================
 def _semester_label(semester: str, info: dict) -> str:
-    """'שנה ג׳ · סמסטר א׳ (חורף)' — התווית שהממשק מציג בשלב 1."""
+    """'שנה ג׳ · סמסטר א׳ (חורף)' — התווית שהממשק מציג בשלב 1.
+
+    ‏**בלי שנה התווית נפתחת במספר הסמסטר**: 'סמסטר 4 · סמסטר א׳ (חורף)'.
+    תוכנית שנבחרת לפי מועד כניסה אינה שומרת שנת לימודים — למתקבל/ת באביב
+    אין סמסטר א' בשנה א', כך שללוח שנה×סמסטר יש משבצת ריקה ומספר השנה הוא
+    ניחוש. מה שידוע הוא מספר הסמסטר, והוא מה שהתווית אומרת.
+    """
     year = info.get("year")
     term = str(info.get("term") or "")
     year_text = YEAR_LABELS.get(int(year), f"שנה {year}") if isinstance(year, int) else ""
     term_text = TERM_LABELS.get(term, f"סמסטר {term}" if term else "")
-    parts = [p for p in (year_text, term_text) if p]
+    lead = year_text or f"סמסטר {semester}"
+    parts = [p for p in (lead, term_text) if p]
     return " · ".join(parts) or f"סמסטר {semester}"
 
 
@@ -3704,9 +3711,14 @@ def bootstrap():
         "year_label": student.get("year_label", ""),
         "term": student.get("term", ""),
         "term_label": student.get("term_label", ""),
-        "semester": str(student.get("curriculum_semester") or ""),
-        # ריק למסלול בלי מועדי כניסה, וזה גם מה שהממשק שומר אצלו.
+        "semester": str(
+            student.get("semester_number") or student.get("curriculum_semester") or ""
+        ),
+        # שני אלה הם הזהות של מי שלומד/ת בתוכנית שנבחרת לפי מועד כניסה:
+        # מועד + מספר סמסטר, בלי שנה ובלי סמסטר קלנדרי. הסמסטר הקלנדרי
+        # נגזר מהם ואינו נשמר, כדי שלא יוכל לסתור אותם.
         "intake": my_intake,
+        "semester_number": str(student.get("semester_number") or ""),
         "academic_year": year_he,
         "academic_year_gregorian": _gregorian_for(year_he) or str(
             student.get("academic_year_gregorian") or ""

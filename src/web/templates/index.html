@@ -110,6 +110,21 @@
                                  ברירת מחדל: עד שבוחרים, המסלול מתנהג
                                  כמסלול בלי תוכנית, ו-#year-note אומר
                                  "יש לבחור סמסטר התחלה".
+                  ‏**שתי צורות לשלב הזה, ולא אחת.** מסלול עם מועדי כניסה
+                  שואל מסלול + מועד + מספר סמסטר; כל שאר המסלולים שואלים
+                  מסלול + שנה + סמסטר, בדיוק כמו קודם. ‏app.js מחליף ביניהן
+                  על ידי הסתרת העטיפה שאינה רלוונטית, ולכן **שלוש העטיפות
+                  האלה חייבות להישאר עטיפות** ולא תיבות חשופות:
+                  #field-plan-semester  ‏hidden כברירת מחדל. נפתחת רק כשיש
+                                 ``intakes`` **וגם** נבחר מועד — הרשימה היא
+                                 1..N מהתוכנית של אותו מועד.
+                  #select-plan-semester  מספר הסמסטר בתוכנית. הערך הוא
+                                 המספר עצמו ("4"), והתווית היא מה שהשרת
+                                 שלח: "סמסטר 4 · סמסטר א׳ (חורף)".
+                  #field-year #field-term  העטיפות של שנה וסמסטר. ‏hidden
+                                 למסלול עם מועדי כניסה, גלויות לכל השאר.
+                                 ‏**אין להסתיר את ה-select עצמו** — בדיקות
+                                 קיימות קוראות את ערכו.
   2 קורסים        #course-search #course-search-results #course-list
                   #credits-total  סכום הנ"ז הידועות ("—" כשאין אף אחת)
                   #credits-unknown  "(2 קורסים ללא נתון)" — hidden כשאין חוסר.
@@ -284,11 +299,18 @@
           <label class="label" for="select-intake">{{ S.ui.fields.intake }}</label>
           <select class="input" id="select-intake"></select>
         </div>
-        <div class="field field--sm">
+        <!-- ‏מספר הסמסטר בתוכנית, במקום שנה+סמסטר. מוצג רק למסלול עם
+             מועדי כניסה, ורק **אחרי** שנבחר מועד: הרשימה היא 1..N של אותו
+             מועד, והסמסטר הקלנדרי נגזר ממנו ואינו נשאל. -->
+        <div class="field field--md" id="field-plan-semester" hidden>
+          <label class="label" for="select-plan-semester">{{ S.ui.fields.planSemester }}</label>
+          <select class="input" id="select-plan-semester"></select>
+        </div>
+        <div class="field field--sm" id="field-year">
           <label class="label" for="select-year">{{ S.ui.fields.studyYear }}</label>
           <select class="input" id="select-year"></select>
         </div>
-        <div class="field field--md">
+        <div class="field field--md" id="field-term">
           <label class="label" for="select-term">{{ S.ui.fields.term }}</label>
           <select class="input" id="select-term"></select>
         </div>

@@ -27,6 +27,11 @@
    נגזרים ממספר הסמסטר, וכל סמסטר נושא ``year_term_inferred: true``.
 4. **לא הומצאה שנת מחזור.** רק שני פרקים מציינים אותה. בשאר ``cohort_year``
    הוא ``null`` — ה-``תשפ"X`` שמופיע בהם מדבר על דברים אחרים לגמרי.
+5. **לא הומצאה שנת לימודים לתוכנית שנבחרת לפי מועד כניסה.** ‏מתמטיקה
+   שימושית קיבלה קובץ לכל מועד (‏2026-09-21), ומאז 2026-09-22 הקבצים האלה
+   אינם נושאים ``year`` בכלל: מי שמתקבל/ת באביב מתחיל/ה בסמסטר ב', ולכן
+   ללוח של שנה×סמסטר יש משבצת ריקה ומספר השנה הוא ניחוש. נשמרים מספר
+   הסמסטר והסמסטר הקלנדרי, והממשק שואל על מספר הסמסטר ישירות.
 """
 
 from __future__ import annotations
@@ -86,7 +91,24 @@ def test_every_curriculum_file_is_valid_and_names_its_program():
         data = json.loads(path.read_text(encoding="utf-8"))
         assert data.get("program"), f"{path.name}: חסר שם מסלול"
         assert data.get("semesters"), f"{path.name}: אין סמסטרים"
+        # ‏תוכנית שנבחרת לפי מועד כניסה אינה שומרת שנה כלל, ולכן אין לה
+        # מה לסמן כנגזר. ‏**עודכן 2026-09-22:** מי שמתקבל/ת באביב מתחיל/ה
+        # בסמסטר ב', כך שללוח של שנה×סמסטר יש משבצת ריקה ומספר השנה היה
+        # ניחוש. מה שנשמר הוא מספר הסמסטר והסמסטר הקלנדרי בלבד, והממשק
+        # שואל על מספר הסמסטר ישירות. ראו tests/test_math_intakes.py.
+        by_intake = bool(data.get("intake"))
         for key, sem in data["semesters"].items():
+            if by_intake:
+                assert "year" not in sem, (
+                    f"{path.name} סמסטר {key}: אין לשמור שנה לתוכנית לפי מועד כניסה"
+                )
+                assert "year_term_inferred" not in sem, (
+                    f"{path.name} סמסטר {key}: אין שנה, ולכן אין מה לסמן כנגזר"
+                )
+                assert sem.get("term"), (
+                    f"{path.name} סמסטר {key}: הסמסטר הקלנדרי חייב להישמר"
+                )
+                continue
             assert sem.get("year_term_inferred") is True, (
                 f"{path.name} סמסטר {key}: שנה וסמסטר נגזרים ואינם כתובים בשנתון, "
                 "ולכן חייב לשאת את הדגל"

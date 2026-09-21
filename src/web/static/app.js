@@ -950,6 +950,54 @@
   }
 
   /**
+   * ‏המסלול נשאל על מספר סמסטר במקום על שנה+סמסטר.
+   *
+   * ‏לתוכנית שנבחרת לפי מועד כניסה אין לוח של שנה×סמסטר: מי שמתקבל/ת
+   * באביב מתחיל/ה בסמסטר ב', כך שהמשבצת "שנה א' · סמסטר א'" ריקה, ומספר
+   * השנה עצמו היה ניחוש. מה שידוע הוא מספר הסמסטר בתוכנית — ולכן הוא
+   * הדבר היחיד שנשאל, והסמסטר הקלנדרי נגזר ממנו.
+   */
+  function usesPlanSemester() {
+    return programIntakes().length > 0;
+  }
+
+  /**
+   * ‏הסמסטר הקלנדרי (א/ב) שמספר הסמסטר נופל בו, **מתוך התוכנית עצמה**.
+   *
+   * ‏הכלל הוא "מועד חורף: אי-זוגי=א, זוגי=ב; מועד אביב: הפוך", והוא כבר
+   * מיושם בקובץ התוכנית של כל מועד. קריאה ממנו ולא חישוב מחדש כאן היא מה
+   * ששומר על מקור אמת אחד: קובץ שיתוקן פעם אחת מתקן גם את הממשק, ואין
+   * עותק שני של הכלל שיכול להיפרד ממנו בשקט.
+   *
+   * ‏זה **הסמסטר שנשלח לשרת** בכל /api/courses ו-/api/solve, ולכן טעות
+   * כאן אינה תצוגתית: היא בונה מערכת מקבוצות של הסמסטר הלא נכון.
+   */
+  function planTermFor(semester) {
+    var rec = semesterInfo(semester);
+    return rec ? txt(rec.term) : "";
+  }
+
+  /** התווית של המועד שנבחר ("חורף"), או ה-id שלו אם אין תווית. */
+  function intakeLabel() {
+    var list = programIntakes();
+    for (var i = 0; i < list.length; i++) {
+      if (txt(list[i].id) === txt(state.intake)) {
+        return txt(list[i].label) || txt(list[i].id);
+      }
+    }
+    return txt(state.intake);
+  }
+
+  /** ‏"סמסטר 4 · סמסטר א׳ (חורף)" — מה שהשרת גזר לסמסטר שנבחר. */
+  function planSemesterLabel() {
+    var rec = semesterInfo(state.semester);
+    return (
+      (rec && txt(rec.label)) ||
+      Tf("app.year.summaryPlanNoCount", { n: txt(state.semester) })
+    );
+  }
+
+  /**
    * לוח הסמסטרים של המסלול שנבחר. ‏semesterOf() ממפה שנה+סמסטר למספר
    * סמסטר לפני כל משיכה מהשרת, ולכן הוא חייב את הלוח הנכון כבר כאן:
    * מתמטיקה שימושית היא תוכנית תלת-שנתית בת שישה סמסטרים, ולוח של שמונה
@@ -1054,11 +1102,14 @@
    * אותו דפוס שכבר קיים ל"אין עדיין קורסים".
    */
   function identityChosen() {
-    return (
-      (!programRequired() || !!txt(state.program)) &&
-      num(state.studyYear, null) !== null &&
-      !!txt(state.term)
-    );
+    if (!(!programRequired() || !!txt(state.program))) return false;
+    // מסלול עם מועדי כניסה נשאל שלוש שאלות אחרות: מסלול, מועד, ומספר
+    // סמסטר. ‏``studyYear`` נשאר ריק שם לנצח, ודרישה שלו הייתה נועלת את
+    // כל המסך על שאלה שלא נשאלה.
+    if (usesPlanSemester()) {
+      return !!txt(state.intake) && !!txt(state.semester) && !!txt(state.term);
+    }
+    return num(state.studyYear, null) !== null && !!txt(state.term);
   }
 
   /**
@@ -2735,6 +2786,10 @@
     ui.selProgram = byId("select-program");
     ui.selIntake = byId("select-intake");
     ui.fieldIntake = byId("field-intake");
+    ui.selPlanSemester = byId("select-plan-semester");
+    ui.fieldPlanSemester = byId("field-plan-semester");
+    ui.fieldYear = byId("field-year");
+    ui.fieldTerm = byId("field-term");
     ui.electives = byId("electives");
     ui.electivesTitle = byId("electives-title");
     ui.electivesRule = byId("electives-rule");
@@ -2893,19 +2948,41 @@
           // אחרת "חורף" של מתמטיקה היה נשאר תלוי במסלול שאין לו מועדים
           // בכלל — וחוזר לתוקף בשקט בחזרה אליה.
           s.intake = "";
-          s.semester = semesterOf(s.studyYear, s.term);
+          // וכך גם מספר הסמסטר שנבחר לפי מועד: המספר שייך לתוכנית שבחרו
+          // בה, והסמסטר הקלנדרי שנגזר ממנו אינו תקף למסלול אחר. מסלול
+          // רגיל גוזר את שניהם מחדש משנה+סמסטר, כפי שתמיד עשה.
+          if (usesPlanSemester()) {
+            s.semester = "";
+            s.term = "";
+          } else {
+            s.semester = semesterOf(s.studyYear, s.term);
+          }
           s.activeSchedule = 0;
         });
       });
     }
     if (ui.selIntake) {
       ui.selIntake.addEventListener("change", function () {
-        // ‏אותו נימוק שב-``selProgram``: ``semesterOf`` קורא את המצב,
-        // ולכן הוא חייב לרוץ אחרי שהמועד כבר עודכן. מספר הסמסטר מציין
-        // דבר אחר בכל מועד, ולכן הוא נגזר מחדש ולא נשמר.
+        // מועד אחר הוא תוכנית אחרת לגמרי: אותו מספר סמסטר מציין בה
+        // קורסים אחרים ולעיתים גם סמסטר קלנדרי אחר. הבחירה יורדת ונבחרת
+        // מחדש מהרשימה של המועד החדש, ולא נגררת אליו.
         setState(function (s) {
           s.intake = txt(ui.selIntake.value);
-          s.semester = semesterOf(s.studyYear, s.term);
+          s.semester = "";
+          s.term = "";
+          s.activeSchedule = 0;
+        });
+      });
+    }
+    if (ui.selPlanSemester) {
+      ui.selPlanSemester.addEventListener("change", function () {
+        var picked = txt(ui.selPlanSemester.value);
+        setState(function (s) {
+          s.semester = picked;
+          // ‏**הסמסטר הקלנדרי נגזר כאן ונשמר**, כי הוא מה שנשלח לשרת
+          // כ-``semester`` בכל בקשת קורסים ופתרון. הוא נקרא מהתוכנית של
+          // המועד שנבחר — ראו ``planTermFor``.
+          s.term = planTermFor(picked);
           s.activeSchedule = 0;
         });
       });
@@ -4031,9 +4108,60 @@
 
   var intakeOptionsSig = null;
 
+  /**
+   * תיבת מספר הסמסטר, ומי משתי צורות השלב מוצגת.
+   *
+   * ‏מסלול עם מועדי כניסה מחליף את "שנת לימודים"+"סמסטר" בתיבה אחת,
+   * ורק **אחרי** שנבחר מועד: לפני כן אין תוכנית, ולכן אין גם רשימת
+   * סמסטרים למלא בה. שאר המסלולים אינם רואים את התיבה הזאת כלל ושתי
+   * התיבות שלהם נשארות כפי שהיו.
+   *
+   * ‏מוסתרת ה**עטיפה**, לא ה-select: בדיקות קיימות קוראות את ערכן של
+   * ‏#select-year ו-#select-term, וגם ``onYearTermChange`` קורא אותן.
+   */
+  function renderPlanSemesterSelect() {
+    var uses = usesPlanSemester();
+    if (ui.fieldYear) ui.fieldYear.hidden = uses;
+    if (ui.fieldTerm) ui.fieldTerm.hidden = uses;
+    if (!ui.selPlanSemester || !ui.fieldPlanSemester) return;
+    // בלי מועד אין תוכנית ואין רשימה — התיבה מחכה לשורה שמעליה.
+    var rows = uses && txt(state.intake) ? bootSemesters() : [];
+    if (!rows.length) {
+      ui.fieldPlanSemester.hidden = true;
+      return;
+    }
+    ui.fieldPlanSemester.hidden = false;
+    var sig = JSON.stringify(
+      rows.map(function (r) {
+        return [txt(r.semester), txt(r.label)];
+      })
+    );
+    if (sig !== planSemesterOptionsSig) {
+      planSemesterOptionsSig = sig;
+      clear(ui.selPlanSemester);
+      ui.selPlanSemester.appendChild(
+        placeholderOption(T("ui.fields.planSemesterPlaceholder"))
+      );
+      rows.forEach(function (r) {
+        // התווית היא מה שהשרת שלח — "סמסטר 4 · סמסטר א׳ (חורף)" — כדי
+        // שהסמסטר הקלנדרי ייראה כאן, במקום שיתגלה רק אחר כך.
+        ui.selPlanSemester.appendChild(
+          el("option", {
+            attrs: { value: txt(r.semester) },
+            text: txt(r.label) || Tf("app.year.summaryPlanNoCount", { n: txt(r.semester) }),
+          })
+        );
+      });
+    }
+    selectOrPlaceholder(ui.selPlanSemester, txt(state.semester));
+  }
+
+  var planSemesterOptionsSig = null;
+
   function renderYearStep() {
     renderProgramSelect();
     renderIntakeSelect();
+    renderPlanSemesterSelect();
     if (!ui.selYear || !ui.selTerm) return;
     var years = yearOptions();
     var terms = termOptions();
@@ -4067,16 +4195,46 @@
     if (!identityChosen()) {
       setText(ui.semesterSummary, "");
       if (ui.semesterSummary) ui.semesterSummary.hidden = true;
-      setText(ui.yearNote, "");
+      // ‏חריג אחד: מסלול עם מועדי כניסה שטרם הושלם. שם החוסר אינו "עוד
+      // לא בחרו" סתמי אלא שאלה אחת קונקרטית — איזה מועד, או איזה סמסטר —
+      // ולשורה הזאת יש מה לומר עליה. לכל שאר המסלולים היא נשארת ריקה,
+      // כי שורת המצב של הסעיף כבר אומרת מה חסר.
+      setText(
+        ui.yearNote,
+        !usesPlanSemester()
+          ? ""
+          : intakeMissing()
+            ? FALLBACK_NOTE["intake-required"]
+            : T("app.year.intakeNoSemester")
+      );
       return;
     }
     if (ui.semesterSummary) ui.semesterSummary.hidden = false;
 
     var info = semesterInfo(state.semester);
-    var yearLabel =
-      YEAR_LABELS[state.studyYear] ||
-      Tf("app.year.yearFallback", { year: state.studyYear });
-    if (curriculumSemesterKnown()) {
+    // ‏"סמסטר 4 · סמסטר א׳ (חורף)" — התווית שהשרת גוזר מהתוכנית. היא
+    // מחליפה את "שנה ג׳" למסלול שאין לו שנה, ולכן היא גם מה שמוצג
+    // בשבב וגם מה שמופיע באפשרויות התיבה.
+    var planLabel = (info && txt(info.label)) || "";
+    var yearLabel = usesPlanSemester()
+      ? planLabel
+      : YEAR_LABELS[state.studyYear] ||
+        Tf("app.year.yearFallback", { year: state.studyYear });
+    if (usesPlanSemester() && curriculumSemesterKnown()) {
+      // מספר הסמסטר הוא מה שנבחר בתיבה, ולכן אין טעם לחזור עליו כאן
+      // בנוסח "סמסטר 4 בתוכנית הלימודים". מה שהשבב מוסיף הוא הסמסטר
+      // הקלנדרי — שנגזר ולא נבחר — וכמה קורסים יש בו.
+      setText(
+        ui.semesterSummary,
+        info && num(info.course_count, 0)
+          ? Tf("app.year.summaryIntakePlan", {
+              label: planLabel,
+              count: info.course_count,
+            })
+          : planLabel
+      );
+      setText(ui.yearNote, "");
+    } else if (curriculumSemesterKnown()) {
       // ‏השנה והסמסטר כבר מופיעים בשורת המצב של הסעיף — שהיא גם שורת
       // הסיכום כשהוא מקופל. השבב הזה אמר בדיוק את אותו הדבר שורה מתחת,
       // ולכן הוא נושא רק את מה שאין שם: לאיזה סמסטר בתוכנית זה מתורגם,
@@ -4096,7 +4254,11 @@
       // בתוכנית שאינה קיימת.
       setText(
         ui.semesterSummary,
-        yearLabel + " · " + Tf("app.year.summaryTerm", { term: txt(state.term) })
+        // ‏תווית התוכנית כבר נושאת את הסמסטר הקלנדרי, ולכן הוספתו כאן
+        // שוב הייתה אומרת אותו פעמיים באותה שורה.
+        usesPlanSemester()
+          ? yearLabel
+          : yearLabel + " · " + Tf("app.year.summaryTerm", { term: txt(state.term) })
       );
       // ‏"אין תוכנית" ו"יש תוכנית שאי אפשר להציג" הם שני מצבים שונים,
       // ועד כאן הם אמרו לסטודנט/ית בדיוק את אותו משפט.
@@ -4106,17 +4268,13 @@
         FALLBACK_NOTE[absence] || FALLBACK_NOTE["no-curriculum"]
       );
     } else {
-      // ‏השבב אומר "אין סמסטר תואם", וזה נכון גם למסלול שממתין למועד
-      // כניסה: בלי מועד אין לוח סמסטרים, ולכן אין למה להתאים. **השורה
-      // שמתחת היא ההבדל**: במקום להציע את הקטלוג היא מבקשת לבחור מועד,
-      // שזו פעולה אחת שממנה יש תוכנית מלאה.
+      // ‏מסלול עם מועדי כניסה אינו מגיע לכאן: בלי מועד ובלי מספר סמסטר
+      // אין לו זהות בכלל, והוא יצא למעלה עם השורה שמבקשת אותם.
       setText(ui.semesterSummary, T("app.year.summaryNoPlan"));
       setText(
         ui.yearNote,
-        intakeMissing()
-          ? FALLBACK_NOTE["intake-required"]
-          : txt(runtime.bootstrap && runtime.bootstrap.summer_note) ||
-            T("app.year.noPlanNote")
+        txt(runtime.bootstrap && runtime.bootstrap.summer_note) ||
+          T("app.year.noPlanNote")
       );
     }
   }
@@ -7577,12 +7735,21 @@
         complete: identityChosen(),
         // שנה וסמסטר בלבד. התרגום לסמסטר בתוכנית הלימודים יושב בשבב
         // שמתחת, ואמירתו כאן שוב הייתה אותה שורה פעמיים במרחק שורה.
-        text: !identityChosen()
-          ? T("app.steps.year.empty")
-          : Tf("app.steps.year.selected", {
-              year: YEAR_LABELS[state.studyYear] || "",
-              term: txt(state.term),
-            }),
+        // ‏מסלול עם מועדי כניסה אומר כאן מועד + תווית הסמסטר, כי שנה
+        // אין לו: "חורף · סמסטר 4 · סמסטר א׳ (חורף)".
+        text: usesPlanSemester()
+          ? !identityChosen()
+            ? T("app.steps.year.emptyIntake")
+            : Tf("app.steps.year.selectedIntake", {
+                intake: intakeLabel(),
+                label: planSemesterLabel(),
+              })
+          : !identityChosen()
+            ? T("app.steps.year.empty")
+            : Tf("app.steps.year.selected", {
+                year: YEAR_LABELS[state.studyYear] || "",
+                term: txt(state.term),
+              }),
       },
       {
         key: "courses",

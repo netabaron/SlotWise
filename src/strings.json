@@ -76,7 +76,9 @@
       "studyYearPlaceholder": "בחר/י שנה",
       "termPlaceholder": "בחר/י סמסטר",
       "intake": "סמסטר התחלה",
-      "intakePlaceholder": "בחר/י מועד"
+      "intakePlaceholder": "בחר/י מועד",
+      "planSemester": "סמסטר לימודים",
+      "planSemesterPlaceholder": "בחר/י סמסטר"
     },
     "lecturers": {
       "legendRank": "העדפה ראשונה",
@@ -407,6 +409,8 @@
     "steps": {
       "year": {
         "empty": "יש לבחור מסלול, שנה וסמסטר",
+      "emptyIntake": "יש לבחור מסלול, מועד כניסה וסמסטר",
+      "selectedIntake": "{intake} · {label}",
         "selected": "{year} · סמסטר {term}",
         "selectedWithCurriculum": "{year} · סמסטר {term} · סמסטר {semester} בתוכנית"
       },
@@ -563,6 +567,8 @@
       "summaryNoPlan": "אין סמסטר תואם בתוכנית הלימודים",
       "noPlanNote": "לצירוף הזה אין רשימת קורסים בתוכנית. אפשר להוסיף קורסים דרך החיפוש בידיעון.",
       "summaryPlan": "סמסטר {n} בתוכנית הלימודים · {count} קורסים מומלצים",
+      "summaryIntakePlan": "{label} · {count} קורסים מומלצים",
+      "intakeNoSemester": "יש לבחור סמסטר לימודים",
       "summaryPlanNoCount": "סמסטר {n} בתוכנית הלימודים"
     },
     "courses": {
