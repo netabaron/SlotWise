@@ -592,6 +592,42 @@ needed it was never built — those want opposite outcomes.
 see the commit that added `selectedFreshness()`. That change is what left most of
 this block unreferenced, so the two belong together in whoever's head does the pass.
 
+### Six Applied Maths courses are in the curriculum but not in the yedion — nothing here can fix it
+
+**Where:** `data/curricula/math-winter.json`, `math-spring.json`. Measured
+2026-09-22 against `data/catalog/catalog.jsonl` (571 courses, built 2026-09-21).
+
+| code | name | where it is |
+|---|---|---|
+| `201155` | חשיבה מתמטית | curriculum only |
+| `51900` | תורת ההסתברות מש | curriculum only |
+| `201174` | אלגברה לינארית 2 | curriculum only |
+| `201176` | מבוא לאנליזה | curriculum only |
+| `201029` | אנליזה קומפלקסית | curriculum only |
+| `201178` | מבוא לאופטימיזציה | curriculum only |
+
+**Not a scraper bug, and not a `build_catalog.py` bug.** `build_catalog.py`
+fetches exactly the codes in `data/db/catalog.json` — the yedion's own index of
+what is taught this year, pulled fresh every night by the
+`refresh.py --catalog-only` step in `.github/workflows/build-catalog.yml`. That
+index holds 571 codes and the catalog holds the same 571: coverage is 100%, and
+**none of the six is in the index**, under their codes or under their names. The
+yedion does not publish them for תשפ"ז, so no change on this side can make them
+appear. They will arrive on their own the first night the college lists them.
+
+**What the student sees, and why that is now correct:** step 2 tags them
+`לא נפתח בסמסטר`, and they are not auto-recommended. That is the honest answer.
+
+**Separately, and not the same thing:** `201009` (אנליזה נומרית מש) and `201015`
+(אלגברה מודרנית) **are** in the catalog. The curriculum places them in a
+semester-א slot, but the yedion gives each of them one הרצאה and one תרגול in
+semester **ב**, both with `אין מועד קבוע` — no meeting rows at all, and
+`מרצה הקורס: טרם נקבע`. The semester letter is not guessed: it comes from the
+`data-arguments` of the "פרטים נוספים" button (`semester_from_details_args`,
+`parser.py:187`), where `-N2` means ב. So for semester א they correctly build as
+`no_groups`. How that is *presented* was the bug, and it was fixed on
+2026-09-22 — see `tests/test_hosted_missing_groups.py`.
+
 ---
 
 ## Closed

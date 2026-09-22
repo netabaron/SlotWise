@@ -4332,20 +4332,33 @@ def courses():
         built, problems, metas = _build_courses(codes, semester=semester, year=year)
 
     fetched_ok = set(fetch_report["fetched"])
-    fetch_reasons: dict[str, str] = {}
-    for item in list(fetch_report["failed"]) + list(fetch_report["skipped"]):
-        fetch_reasons.setdefault(str(item.get("code")), str(item.get("reason") or ""))
+    # שתי מפות ולא אחת. ``failed`` הוא כישלון של הקוד הזה ("הידיעון לא מציג
+    # קבוצות"), ולכן הוא **מסביר** את הבעיה ועדיף על הנוסח הכללי של
+    # ``_build_courses``. ``skipped`` אינו הסבר בכלל: כשאין רשת
+    # (``allow_network=False`` — המצב המאורח) ``skip_all`` תולה את אותו
+    # משפט אחד על כל קוד שהתבקש, וכשהוא נכתב לתוך ``reason`` הוא **מחק** את
+    # הסיבה האמיתית. כך קורס שפשוט לא נפתח בסמסטר הזה הוצג כאילו הבעיה היא
+    # שלא פנינו לידיעון — ועם כפתור "ניסיון חוזר" שאין מאחוריו רשת.
+    failed_reasons: dict[str, str] = {}
+    for item in fetch_report["failed"]:
+        failed_reasons.setdefault(str(item.get("code")), str(item.get("reason") or ""))
+    skipped_reasons: dict[str, str] = {}
+    for item in fetch_report["skipped"]:
+        skipped_reasons.setdefault(str(item.get("code")), str(item.get("reason") or ""))
 
     sources: dict[str, str] = {}
     for problem in problems:
         code = str(problem.get("code"))
         problem["source"] = "fetched" if code in fetched_ok else "unavailable"
         sources[code] = problem["source"]
-        reason = fetch_reasons.get(code)
-        if reason:
-            # הסיבה הקונקרטית ("הידיעון לא מציג קבוצות") עדיפה על הכללית.
-            problem["fetch_reason"] = reason
-            problem["reason"] = reason
+        # ``fetch_reason`` נשאר לשקיפות בשני המקרים; ``reason`` מוחלף רק
+        # כשבאמת ניסינו והקורס נכשל.
+        failure = failed_reasons.get(code)
+        context = failure or skipped_reasons.get(code)
+        if context:
+            problem["fetch_reason"] = context
+        if failure:
+            problem["reason"] = failure
 
     payload: list[dict[str, Any]] = []
     credit_values: list[Any] = []

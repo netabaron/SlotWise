@@ -668,6 +668,11 @@
     catalogResults: [],
     catalogError: null,
     catalogBusy: false,
+    // ‏features.fetch_on_demand מ-/api/bootstrap: האם לשרת הזה מותר בכלל
+    // לפנות לידיעון. ‏false הוא המצב המאורח — שם כל הנתונים באים מהקטלוג
+    // שנבנה בלילה, ולכן "ניסיון חוזר מהידיעון" הוא כפתור שאין מאחוריו
+    // רשת. ברירת המחדל ``true`` שומרת על ההתנהגות המקומית עד שהשרת עונה.
+    canFetch: true,
     // ‏SPEC §4 — מצב קטלוג. תוכנית הלימודים היא העשרה, לא תנאי: כשאין ממנה
     // קורסים, שלב 2 עובר לעיון בקטלוג המלא במקום להישאר מסך ריק בלי הסבר.
     curriculumAvailable: null, // מ-/api/bootstrap. null = השרת לא אמר
@@ -1218,6 +1223,17 @@
     }
     var boot = runtime.bootstrap || {};
     return txt(boot.curriculum_absence).replace(/_/g, "-");
+  }
+
+  /**
+   * ‏האם השרת הזה שולף מהידיעון. ‏``features.fetch_on_demand`` הוא התשובה;
+   * היעדרו פירושו "לא נאמר", ואז נשארים על ברירת המחדל המקומית.
+   */
+  function readFetchOnDemand(data) {
+    var features = data && data.features;
+    if (!features || typeof features !== "object") return runtime.canFetch;
+    if (typeof features.fetch_on_demand === "boolean") return features.fetch_on_demand;
+    return runtime.canFetch;
   }
 
   function readCurriculumAvailable(data) {
@@ -1897,12 +1913,48 @@
         code: code,
         name: txt(rec.name),
         reason: txt(rec.reason || rec.error),
+        // ‏"no_groups" / "missing_data" / "semester_mismatch" מהשרת. הוא
+        // מה שמאפשר לומר בלי רשת *מה* חסר, במקום להציע משיכה חוזרת.
+        kind: txt(rec.kind),
         needs_scrape: rec.needs_scrape === true,
       });
     };
     runtime.notOffered.forEach(add);
     if (runtime.solve) pickList(runtime.solve, ["not_offered"], "code").forEach(add);
     return out;
+  }
+
+  /**
+   * למה אין לקורס הזה קבוצות, בלשון שמתאימה לשרת שמציג אותה.
+   *
+   * ‏עם רשת נשארת הסיבה של השרת, שמדברת על הידיעון ועל משיכה חוזרת. בלי
+   * רשת — המצב המאורח, שבו הכול בא מהקטלוג הלילי — אומרים את העובדה
+   * עצמה: או שלא נפתחו קבוצות בסמסטר הזה, או שהקורס אינו בקטלוג.
+   */
+  function missingReason(rec, fallback) {
+    if (!runtime.canFetch) {
+      if (rec.kind === "no_groups") return T("app.lecturers.missing.reasonNoGroups");
+      if (rec.kind === "missing_data") return T("app.lecturers.missing.reasonNotInCatalog");
+    }
+    if (rec.reason) return rec.reason;
+    return fallback === undefined ? "" : fallback;
+  }
+
+  /**
+   * ‏האם לכל קוד שנבחר כבר יש תשובה מהשרת — נתוני קבוצות, או הסבר מדוע
+   * אין. ‏false כל עוד משהו בדרך, וזה בדיוק מה שמצדיק "ממתין".
+   */
+  function allSelectedAnswered() {
+    if (!state.codes.length) return false;
+    if (runtime.coursesBusy || !runtime.ready) return false;
+    var explained = Object.create(null);
+    notOfferedList().forEach(function (rec) {
+      explained[rec.code] = true;
+    });
+    return state.codes.every(function (code) {
+      var c = txt(code);
+      return !!courseDataByCode(c) || explained[c] === true;
+    });
   }
 
   function schedules() {
@@ -1947,6 +1999,7 @@
         runtime.bootstrapError = null;
         runtime.maxCodes = num(data && data.limits ? data.limits.max_codes : null, 0);
         runtime.curriculumAvailable = readCurriculumAvailable(data);
+        runtime.canFetch = readFetchOnDemand(data);
         // רשימת המסלולים. ברירת המחדל היא המסלול שיש לו קובץ תוכנית, כדי
         // שסטודנט/ית תוכנה לא תצטרך לבחור כלום; כל השאר בוחרים "אחר"
         // ומקבלים את הקטלוג המלא במקום רשימה של מחלקה זרה.
@@ -2203,6 +2256,7 @@
             code: txt(rec.code),
             name: txt(rec.name),
             reason: txt(rec.reason || rec.error),
+            kind: txt(rec.kind),
             needs_scrape: rec.needs_scrape === true,
           };
         });
@@ -2228,6 +2282,7 @@
           sources[rec.code] = {
             source: txt(rec.source) || "unavailable",
             reason: txt(rec.reason),
+            kind: txt(rec.kind),
           };
         });
 
@@ -2250,6 +2305,10 @@
         runtime.attendanceInfo =
           attInfo && typeof attInfo === "object" ? attInfo : Object.create(null);
         runtime.fetchSkipped.forEach(function (rec) {
+          // בלי רשת ``skip_all`` מדווח על כל קוד שהתבקש, וכתיבה לכאן הייתה
+          // מוחקת את הסיבה האמיתית ("לא נפתחו קבוצות") ומחליפה אותה
+          // ב"לא פנינו לידיעון" — על קורסים תקינים בדיוק כמו על חסרים.
+          if (!runtime.canFetch) return;
           sources[rec.code] = { source: "skipped", reason: rec.reason };
         });
         runtime.sources = sources;
@@ -3536,7 +3595,9 @@
       });
     }
 
-    if (runtime.fetchSkipped.length) {
+    // ‏המצב המאורח מדווח כל קוד שהתבקש כ"נדחה" — לא כי משהו נדחה, אלא כי
+    // ‏אין שליפה בכלל. באנר שמציע "לנסות שוב" שם הוא הבטחה ריקה.
+    if (runtime.canFetch && runtime.fetchSkipped.length) {
       var skippedCodes = runtime.fetchSkipped.map(function (rec) {
         return rec.code;
       });
@@ -4535,7 +4596,15 @@
     var have = !!courseDataByCode(c);
     var src = runtime.sources[c] || null;
     var name = src ? txt(src.source) : "";
-    var reason = src ? txt(src.reason) : "";
+    var reason = src
+      ? missingReason({ kind: txt(src.kind), reason: txt(src.reason) })
+      : "";
+
+    // ‏שרת בלי רשת (המצב המאורח) מדווח **כל** קוד שהתבקש כ"נדחה לרגע",
+    // כי ``skip_all`` תולה את אותו משפט על כל הרשימה. זו אינה דחייה
+    // זמנית אלא המצב הקבוע, ולכן התווית "נדחה לרגע" והכפתור שאחריה
+    // הופיעו על קורסים תקינים לגמרי. בלי רשת הסימון הזה חסר משמעות.
+    if (!runtime.canFetch && name === "skipped") name = have ? "" : "unavailable";
 
     if (!have && (runtime.fetching[c] || (selected && (runtime.coursesBusy || !runtime.ready)))) {
       return {
@@ -4547,14 +4616,17 @@
       };
     }
     if (name === "unavailable") {
+      // בלי רשת אין "אפשר לנסות שוב": נאמרת הסיבה, וזה הכול.
       return {
         state: "unavailable",
         tag: T("app.courses.status.unavailableTag"),
         tagClass: "tag--warn",
-        text: Tf("app.courses.status.unavailableText", {
-          reason: reason || T("app.courses.status.unavailableReason"),
-        }),
-        retry: true,
+        text: runtime.canFetch
+          ? Tf("app.courses.status.unavailableText", {
+              reason: reason || T("app.courses.status.unavailableReason"),
+            })
+          : reason || T("app.courses.status.offlineText"),
+        retry: runtime.canFetch,
       };
     }
     if (name === "skipped") {
@@ -4565,7 +4637,7 @@
         text: Tf("app.courses.status.skippedText", {
           reason: reason || T("app.courses.status.skippedReason"),
         }),
-        retry: true,
+        retry: runtime.canFetch,
       };
     }
     if (have) {
@@ -4591,10 +4663,15 @@
     }
     return {
       state: "pending",
-      tag: T("app.courses.status.pendingTag"),
+      tag: runtime.canFetch
+        ? T("app.courses.status.pendingTag")
+        : T("app.courses.status.offlineTag"),
       tagClass: "tag--warn",
-      text: T("app.courses.status.pendingText"),
-      retry: true,
+      // "אפשר לבקש משיכה נוספת מהידיעון" נכון רק כשיש ממי לבקש.
+      text: runtime.canFetch
+        ? T("app.courses.status.pendingText")
+        : T("app.courses.status.offlineText"),
+      retry: runtime.canFetch,
     };
   }
 
@@ -5315,6 +5392,8 @@
             el("div", { class: "lect-course-head" }, [
               el("span", { class: "lect-course-title", text: T("app.lecturers.missing.title") }),
             ]),
+            // השלב אינו חסום בגללם, ולכן הוא אומר את זה.
+            el("p", { class: "note", text: T("app.lecturers.missing.note") }),
           ]);
           missing.forEach(function (rec) {
             var line = el("div", { class: "field-row" }, [
@@ -5323,11 +5402,16 @@
                 text: Tf("app.lecturers.missing.line", {
                   code: rec.code,
                   name: rec.name || nameOf(rec.code),
-                  reason: rec.reason || T("app.lecturers.missing.reasonDefault"),
+                  reason: missingReason(rec, T("app.lecturers.missing.reasonDefault")),
                 }),
               }),
-              retryButton(rec.code, T("app.lecturers.retry")),
             ]);
+            // ‏כפתור רק כשיש מה ללחוץ עליו: שליפה מותרת בשרת הזה, **וגם**
+            // השרת אמר שלקוד הזה חסרים נתונים שמשיכה עשויה להביא. בלי
+            // שניהם זה כפתור שמבטיח משהו שלא יקרה.
+            if (runtime.canFetch && rec.needs_scrape) {
+              line.appendChild(retryButton(rec.code, T("app.lecturers.retry")));
+            }
             warnBox.appendChild(line);
           });
           box.appendChild(warnBox);
@@ -7723,6 +7807,12 @@
   function renderStepStates() {
     var hasCodes = state.codes.length > 0;
     var hasData = runtime.courses.length > 0;
+    // ‏שלב 4 היה נעול על ``hasData`` לבדו, ולכן מי שבחר/ה **רק** קורסים
+    // שאין להם קבוצות נתקע/ה על "ממתין לנתוני הקבוצות" לנצח — וזו המתנה
+    // למשהו שלא יגיע. כשלכל קוד שנבחר כבר יש תשובה (נתונים, או הסבר למה
+    // אין), אין למה להמתין: השלב נפתח ומציג את ההסבר.
+    var answered = allSelectedAnswered();
+    var lecturersLocked = !hasData && !answered;
     var list = schedules();
     var s = runtime.solve;
 
@@ -7784,12 +7874,14 @@
       },
       {
         key: "lecturers",
-        locked: !hasData,
+        locked: lecturersLocked,
         complete: hasData && (rankedCount() > 0 || pinCount() > 0 || list.length > 0),
         // שני החלקים נאמרים תמיד, גם כשהם אפס: כשהשלב מקופל זו כל האמירה
         // שנשארת עליו, ו"ללא נעיצות" הוא מידע — היעדרו אינו.
         text: !hasData
-          ? T("app.steps.lecturers.waitingForData")
+          ? lecturersLocked
+            ? T("app.steps.lecturers.waitingForData")
+            : T("app.steps.lecturers.noGroupData")
           : Tf("app.steps.lecturers.summary", {
               ranked:
                 rankedCount() === 0
