@@ -20,6 +20,23 @@ src/shnaton.py — פענוח פרקי השנתון של המחלקות (‏PDF)
 פירושו "בוחרים מסלול ומתמחים בו". להציג מסלול בשם אשכול היה מסלף את חוקי
 התואר, ולכן הם נשמרים בשדות נפרדים.
 
+שם הקורס נבנה מעמודה, לא ממחרוזת
+---------------------------------
+שורת קורס נשברת לעיתים קרובות לשתיים ואף לשלוש שורות ויזואליות: חלק מהשם
+מעל שורת המספרים, חלק מתחתיה. **כל** אחת מהשורות האלה נושאת גם את עמודת
+"קורסי קדם" של אותו גובה, ושם יושבים מספרי קורס אחרים ושמותיהם.
+
+לכן כל מה שנוגע בשם קורס עובד על ``Line.words`` — מילים עם ``x`` — ולא על
+``Line.text``, שבו שתי העמודות נראות זהות. ``_anchor_at`` גוזר משורת
+המספרים את גבולות עמודת השם, ו-``_bind_names`` אוסף רק מה שנופל בתוכם.
+
+עד 2026-09-23 הפענוח עבד על הטקסט השטוח, ושורת המשך נשמרה כ"שם אפשרי"
+שלמה — כולל עמודת הקדם. כך ``51145`` קיבל את השם "ניהול והערכת סיכונים
+‏11001 אלגברה" במקום "ניהול והערכת סיכונים בפרויקטים הנדסיים": חצי שם,
+ועליו מספר קורס של קורס אחר ומחצית שמו. ‏22 שורות ב-``data/curricula.json``
+היו כאלה. ‏``tests/test_shnaton_row_binding.py`` נועל את זה על הגאומטריה
+האמיתית של אותה שורה.
+
 מגבלת המקור
 -----------
 רק שני פרקים מציינים שנת מחזור במפורש (``עבור סטודנטים שהחלו לימודיהם
@@ -29,15 +46,22 @@ src/shnaton.py — פענוח פרקי השנתון של המחלקות (‏PDF)
 Technical notes:
     * Coordinate-aware RTL row reconstruction. ``page.get_text()`` alone
       scrambles these tables - words interleave and columns reverse.
+    * A course name is cut by x-bounds, never by a regex over flattened
+      text: the name column and the prerequisite column look identical
+      once the line is a single string.
+    * Latin text inside a Hebrew name still reads reversed ("to Solutions
+      Designing"), because the join is right-to-left for the whole line.
+      Pre-existing, and untouched here.
     * PyMuPDF only. No network, no browser.
 """
 
 from __future__ import annotations
 
+import bisect
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 try:  # pragma: no cover - נבדק בזמן ייבוא בלבד
     import pymupdf
@@ -67,12 +91,6 @@ _CLUSTER_RE = re.compile(r"^אשכול\s*:?\s*(.{2,60})$")
 
 #: כותרת מסלול: "מסלול תכן וייצור".
 _TRACK_RE = re.compile(r"^מסלול\s+(.{2,60})$")
-
-#: שורת קורס מתחילה בקוד בן 5-6 ספרות.
-_CODE_RE = re.compile(r"^(\d{5,6})\b")
-
-#: נ"ז: מספר עשרוני בודד, למשל 2.5 או 3.0.
-_CREDITS_RE = re.compile(r"\b(\d{1,2}\.\d)\b")
 
 #: שם המחלקה בראש הפרק.
 _DEPT_RE = re.compile(r"המחלקה\s+ל(.{3,40})")
@@ -107,15 +125,34 @@ def _tidy(text: str) -> str:
     return re.sub(r"\s{2,}", " ", (text or "").strip())
 
 
-def extract_rows(pdf_path: str | Path) -> list[tuple[int, str]]:
-    """‏[(מספר עמוד, טקסט השורה)] — שחזור שורות מודע-קואורדינטות, מימין לשמאל.
+#: מילה אחת בשורה: ``(x0, x1, טקסט)``. ‏x גדל שמאלה, כלומר בעברית העמודה
+#: הימנית ביותר (מספר הקורס) היא זו עם ה-x **הגדול** ביותר.
+Word = tuple[float, float, str]
 
-    זו אותה טכניקה שבה נגזר ``data/curriculum.json``: מקבצים מילים לפי ``y``,
-    וממיינים כל שורה לפי ``x`` **יורד**. ``get_text()`` רגיל מערבב שורות
-    בטבלאות עבריות ומחזיר עמודות הפוכות.
+
+class Line(NamedTuple):
+    """שורה ויזואלית אחת, עם הגאומטריה שלה שמורה.
+
+    ‏``text`` הוא בדיוק מה ש-``extract_rows`` החזיר תמיד — כל העמודות
+    משורשרות לשורה אחת. הוא נוח לזיהוי כותרות, והוא **הרסני** לשמות:
+    שם קורס ועמודת "קורסי קדם" נראים בו זהים. ``words`` הוא מה שמאפשר
+    להבדיל, ולכן כל מה שנוגע בשם קורס עובד עליו ולא על ``text``.
+    """
+
+    page: int
+    y: float
+    words: tuple[Word, ...]
+    text: str
+
+
+def _document_lines(pdf_path: str | Path) -> list[Line]:
+    """כל השורות של המסמך, עם הקואורדינטות שלהן.
+
+    מקבצים מילים לפי ``y`` וממיינים כל שורה לפי ``x`` **יורד** — עברית.
+    ‏``get_text()`` רגיל מערבב שורות בטבלאות עבריות ומחזיר עמודות הפוכות.
     """
     doc = pymupdf.open(str(pdf_path))
-    out: list[tuple[int, str]] = []
+    out: list[Line] = []
     try:
         for index, page in enumerate(doc):
             buckets: list[dict[str, Any]] = []
@@ -128,12 +165,22 @@ def extract_rows(pdf_path: str | Path) -> list[tuple[int, str]]:
                     buckets.append({"y": word[1], "w": [word]})
             for bucket in sorted(buckets, key=lambda b: b["y"]):
                 ordered = sorted(bucket["w"], key=lambda w: -w[0])
-                line = "  ".join(w[4] for w in ordered).strip()
-                if line:
-                    out.append((index + 1, line))
+                words = tuple((float(w[0]), float(w[2]), w[4]) for w in ordered)
+                text = "  ".join(w[2] for w in words).strip()
+                if text:
+                    out.append(Line(index + 1, float(bucket["y"]), words, text))
     finally:
         doc.close()
     return out
+
+
+def extract_rows(pdf_path: str | Path) -> list[tuple[int, str]]:
+    """‏[(מספר עמוד, טקסט השורה)] — שחזור שורות מודע-קואורדינטות, מימין לשמאל.
+
+    נשאר כפי שהיה עבור מי שקורא טקסט בלבד (זיהוי שם המחלקה, שנת המחזור,
+    והבדיקות). מי שצריך **עמודה** מסוימת חייב את ``_document_lines``.
+    """
+    return [(line.page, line.text) for line in _document_lines(pdf_path)]
 
 
 def _program_name(rows: list[tuple[int, str]]) -> str:
@@ -164,23 +211,83 @@ def _cohort_year(rows: list[tuple[int, str]]) -> str | None:
     return None
 
 
-def _is_course_row(line: str) -> tuple[str, str] | None:
-    """‏(קוד, שם) אם השורה היא שורת קורס אמיתית, אחרת ``None``.
+#: תא בעמודה מספרית: שעות (‏ה/ת/מ/פ), נ"ז, או מקף שמציין עמודה ריקה.
+#: ‏**עד ארבע ספרות בכוונה** — מספר קורס הוא בן 5–6, ולכן עמודת "קורסי קדם"
+#: לעולם אינה נספרת כאן, וגבול עמודת השם אינו נמשך שמאלה עד אליה.
+_COLUMN_CELL_RE = re.compile(r"^(?:\d{1,4}(?:\.\d+)?|[-–—])$")
 
-    דורשים גם קוד בתחילת השורה **וגם** ערך נ"ז, כדי לא לתפוס שורות של
-    קורסי קדם (שגם הן מתחילות בקוד, אבל אין בהן נ"ז).
+#: נ"ז כפי שהיא מודפסת בתא משלה: ‏"2.5", "4.0".
+_CREDITS_CELL_RE = re.compile(r"^\d{1,2}\.\d$")
+
+
+class _Anchor(NamedTuple):
+    """שורת הפתיחה של קורס, ועמודת השם שנגזרת ממנה.
+
+    ‏``name_from``/``name_to`` הם גבולות עמודת השם ב-x: מימין מספר הקורס,
+    ומשמאל התא המספרי הימני ביותר. **זה כל התיקון.** קודם לכן השם נחתך
+    מתוך שורת טקסט שטוחה, ושורת המשך שנשמרה כ"שם אפשרי" הכילה את עמודת
+    "קורסי קדם" של אותה שורה — ולכן שם כמו "ניהול והערכת סיכונים" יצא
+    ‏"ניהול והערכת סיכונים 11001 אלגברה". טווח ב-x אינו יכול לבלוע עמודה
+    שכנה, כי עמודה שכנה היא בדיוק מה שנמצא מחוץ לטווח.
     """
-    code_match = _CODE_RE.match(_tidy(line))
-    if not code_match:
+
+    index: int
+    code: str
+    name_from: float
+    name_to: float
+
+
+def _numeric_block_edge(words: tuple[Word, ...]) -> float | None:
+    """הקצה הימני של גוש העמודות המספריות, או ``None`` אם אין כזה.
+
+    ‏**הגוש הוא הרצף האחרון שיש בו תא נ"ז**, ולא פשוט התא המספרי הימני
+    ביותר. שני מקרים אמיתיים מחייבים את זה, והם מושכים לכיוונים הפוכים:
+
+    * ‏"מבוא ל-ERP ומערכות ארגוניות" — המקף שבתוך השם הוא תא מספרי לכל
+      דבר לפי הצורה. אילו הוא היה קובע את הגבול, השם היה נחתך ל"מבוא".
+    * ‏"טכנולוגיות מתקדמות בעידן תעשייה 4.0" — ‏4.0 שבתוך השם **נראה**
+      בדיוק כמו תא נ"ז. אילו הוא היה קובע, היה נופל סוף השם.
+
+    שני הרצפים האלה יושבים מימין לגוש האמיתי, ולכן "האחרון שיש בו נ"ז"
+    מדלג על שניהם.
+    """
+    runs: list[list[Word]] = []
+    open_run = False
+    for word in words:
+        if _COLUMN_CELL_RE.match(word[2]):
+            if not open_run:
+                runs.append([])
+                open_run = True
+            runs[-1].append(word)
+        else:
+            open_run = False
+    blocks = [r for r in runs if any(_CREDITS_CELL_RE.match(w[2]) for w in r)]
+    if not blocks:
         return None
-    tidy = _tidy(line)
-    rest = tidy[code_match.end() :]
-    if not _CREDITS_RE.search(rest):
+    return blocks[-1][0][1]
+
+
+def _anchor_at(line: Line) -> _Anchor | None:
+    """‏``_Anchor`` אם השורה פותחת קורס, אחרת ``None``.
+
+    שלושה תנאים, וכולם נחוצים: המילה הימנית ביותר היא מספר קורס; יש
+    משמאלה גוש עמודות מספריות; ויש בו נ"ז. התנאי השלישי הוא מה שמפריד
+    שורת קורס משורת "קורסי קדם", שגם היא פותחת במספר קורס.
+    """
+    if not line.words:
         return None
-    # השם הוא מה שלפני עמודת השעות הראשונה.
-    name = re.split(r"\s+(?:\d+(?:\.\d)?|-)\s", rest, maxsplit=1)[0]
-    name = _tidy(re.sub(r"[\s\-–]+$", "", name))
-    return code_match.group(1), name
+    x0, _x1, token = line.words[0]
+    if not re.fullmatch(r"\d{5,6}", token):
+        return None
+    edge = _numeric_block_edge(tuple(w for w in line.words[1:] if w[1] < x0))
+    if edge is None:
+        return None
+    return _Anchor(-1, token, edge, x0)
+
+
+def _name_words(line: Line, anchor: _Anchor) -> list[str]:
+    """המילים של השורה שנופלות בתוך עמודת השם של הקורס."""
+    return [w[2] for w in line.words if anchor.name_from < w[0] < anchor.name_to]
 
 
 def canonical_program(name: str) -> str:
@@ -208,6 +315,141 @@ def canonical_program(name: str) -> str:
     return name
 
 
+#: אוצר המילים של שורת הכותרת בטבלה. שורה שכל מילותיה מכאן היא כותרת
+#: עמודות ולא קורס — והיא יושבת בדיוק בעמודת השם, ולכן בלי הזיהוי הזה
+#: ‏"שם הקורס" נדבק לשם של הקורס הראשון שמתחתיה.
+_HEADER_WORDS = frozenset(
+    """מס מספר ' " שם הקורס קורס ה ת מ פ נ ז נ"ז קורסי קדם קדמים
+       וקורסים צמודים הרצאה תרגול מעבדה פרויקט""".split()
+)
+
+#: המרחק האנכי המרבי בין שורת המשך לשורה שכבר שייכת לקורס. נמדד על חמשת
+#: הפרקים: בתוך שורת קורס המרווח הוא ‏4.5–12.9 נקודות, ובין שורת קורס
+#: לפסקת הערה שמתחת לטבלה הוא גדול בהרבה. ‏15 עובר את הראשון ולא את השני.
+_MAX_CONTINUATION_GAP = 15.0
+
+#: כמה שורות שם קורס יכול להימשך **כלפי מטה**. ‏2 מותיר מרווח לשם ארוך
+#: בלי לפתוח את הדלת לפסקה שלמה.
+_MAX_CONTINUATION_LINES = 2
+
+#: וכמה **כלפי מעלה** — אחת בדיוק. נמדד על חמשת הפרקים: שם שמודפס מעל
+#: שורת המספרים תופס שורה אחת, תמיד. ‏2 כאן בלע סימן הערת שוליים
+#: (‏"1" בכתב עילי) ששייך לשורה שמעליה ויושב במקרה בתוך עמודת השם —
+#: ‏251100 ב-sw.pdf יצא "1 פרויקט בינתחומי במערכות בריאות ושיקום".
+_MAX_PREFIX_LINES = 1
+
+
+def _is_table_header(line: Line) -> bool:
+    """שורת כותרת של טבלה — ‏"מס' | שם הקורס | ה ת מ פ | נ"ז | קורסי קדם"."""
+    words = [w[2] for w in line.words]
+    return bool(words) and all(w in _HEADER_WORDS for w in words)
+
+
+def _is_header_line(text: str) -> bool:
+    """כותרת — אשכול, מסלול, סמסטר, או פתיחת פרק. לא שייכת לשום קורס."""
+    tidy = _tidy(text)
+    return bool(
+        _CLUSTER_RE.match(tidy)
+        or _TRACK_RE.match(tidy)
+        or _SECTION_END_RE.match(tidy)
+        or re.match(r"^סמסטר\s*\d", tidy)
+    )
+
+
+def _may_continue(line: Line) -> bool:
+    """האם השורה יכולה בכלל להיות המשך של שם קורס.
+
+    ‏שורת כותרת של טבלה אינה יכולה — ראו ``_is_table_header``. הפסילה
+    השנייה, "שורה שיש בה נ"ז שייכת לקורס משלה", **אינה** כאן אלא
+    ב-``_claims``: היא תלויה בעמודות של העוגן, כי ‏4.0 שבתוך השם
+    ‏"תעשייה 4.0" נראה בדיוק כמו תא נ"ז ואינו אחד.
+    """
+    return not (_is_header_line(line.text) or _is_table_header(line))
+
+
+def _claims(line: Line, anchor: _Anchor) -> list[str] | None:
+    """המילים שהשורה תורמת לשם הקורס, או ``None`` אם אינה שייכת לו.
+
+    ‏תא נ"ז **בתוך אזור העמודות המספריות** אומר שהשורה היא שורת קורס
+    בפני עצמה, גם כשמספר הקורס שלה מודפס בשורה אחרת — ‏system.pdf עושה
+    בדיוק את זה. תא נ"ז בתוך עמודת השם הוא חלק מהשם, ולא סימן לכלום.
+    """
+    if any(_CREDITS_CELL_RE.match(w[2]) and w[0] < anchor.name_from for w in line.words):
+        return None
+    got = _name_words(line, anchor)
+    return got or None
+
+
+def _bind_names(lines: list[Line]) -> tuple[dict[int, _Anchor], dict[int, str]]:
+    """מחבר לכל שורת קורס את שמה המלא, לפי עמודות.
+
+    שורת קורס בשנתון נשברת לעיתים קרובות לשתיים ואף לשלוש שורות ויזואליות.
+    ‏**כל** אחת מהן נושאת גם את עמודת "קורסי קדם" של אותו גובה, ושם יושבים
+    מספרי קורס אחרים — ולכן שורת המשך נתרמת רק דרך עמודת השם של העוגן.
+
+    ‏**הכיוון נקבע לפי העוגן, לא לפי המרחק.** שורה שיושבת בין שני קורסים
+    קרובה לפעמים דווקא לזה שאינו שלה: ב-industry.pdf השורה "ההון" — הסיפא
+    של "ניתוח דו"חות כספיים ושוק ההון" — רחוקה ‏14.6 נקודות מהקורס שלה
+    ו-11.9 מהבא אחריו. לכן:
+
+    * עוגן ש**אין** בשורתו אף מילה בעמודת השם לוקח קודם את השורה שמעליו:
+      שם הקורס הודפס מעל שורת המספרים, וזו האפשרות היחידה שיש לו.
+    * אחר כך כל עוגן אוסף כלפי מטה, עד לעוגן הבא או עד לשורה שכבר נתפסה.
+    """
+    anchors: dict[int, _Anchor] = {}
+    for index, line in enumerate(lines):
+        found = _anchor_at(line)
+        if found is not None:
+            anchors[index] = found._replace(index=index)
+
+    pieces: dict[int, list[tuple[float, list[str]]]] = {}
+    for index in anchors:
+        own = _name_words(lines[index], anchors[index])
+        pieces[index] = [(lines[index].y, own)] if own else []
+    taken: set[int] = set()
+
+    def reachable(anchor_index: int, j: int) -> bool:
+        if j < 0 or j >= len(lines) or j in anchors or j in taken:
+            return False
+        if lines[j].page != lines[anchor_index].page:
+            return False
+        if abs(lines[anchor_index].y - lines[j].y) > _MAX_CONTINUATION_GAP:
+            return False
+        return _may_continue(lines[j])
+
+    # ── שלב 1: עוגן בלי שם משלו תופס את השורה שמעליו ──
+    for index in sorted(anchors):
+        if pieces[index]:
+            continue
+        for step in range(1, _MAX_PREFIX_LINES + 1):
+            j = index - step
+            if not reachable(index, j):
+                break
+            got = _claims(lines[j], anchors[index])
+            if got is None:
+                break
+            pieces[index].insert(0, (lines[j].y, got))
+            taken.add(j)
+
+    # ── שלב 2: כל עוגן אוסף כלפי מטה ──
+    for index in sorted(anchors):
+        for step in range(1, _MAX_CONTINUATION_LINES + 1):
+            j = index + step
+            if not reachable(index, j):
+                break
+            got = _claims(lines[j], anchors[index])
+            if got is None:
+                break
+            pieces[index].append((lines[j].y, got))
+            taken.add(j)
+
+    names = {
+        index: _tidy(" ".join(w for _y, ws in sorted(parts) for w in ws))
+        for index, parts in pieces.items()
+    }
+    return anchors, names
+
+
 def parse_chapter(pdf_path: str | Path) -> dict:
     """מפענח פרק שנתון אחד.
 
@@ -216,18 +458,20 @@ def parse_chapter(pdf_path: str | Path) -> dict:
         ``clusters``/``tracks`` הם ``{שם הקבוצה: [{code, name}]}``.
     """
     path = Path(pdf_path)
-    rows = extract_rows(path)
+    lines = _document_lines(path)
+    rows = [(line.page, line.text) for line in lines]
     warnings: list[str] = []
+
+    anchors, names = _bind_names(lines)
 
     clusters: dict[str, list[dict]] = {}
     tracks: dict[str, list[dict]] = {}
     current: list[dict] | None = None
     seen_elective_zone = False
-    carry = ""  # שורת טקסט אחרונה שעשויה להיות שם של הקורס הבא
 
-    for _page, line in rows:
-        tidy = _tidy(line)
-        squashed = _squash(line)
+    for index, line in enumerate(lines):
+        tidy = _tidy(line.text)
+        squashed = _squash(line.text)
 
         if any(marker in squashed for marker in _ELECTIVE_MARKERS):
             seen_elective_zone = True
@@ -248,29 +492,14 @@ def parse_chapter(pdf_path: str | Path) -> dict:
         # כותרת סמסטר, או תחילת פרק חדש, מסיימות קבוצת בחירה פתוחה.
         if re.match(r"^סמסטר\s*\d", tidy) or _SECTION_END_RE.match(tidy):
             current = None
-            carry = ""
             continue
 
-        if current is None or not seen_elective_zone:
-            if not _CODE_RE.match(tidy) and 4 < len(squashed) < 60:
-                carry = tidy  # שם שעלול להיות שייך לשורת הקורס הבאה
+        if current is None or not seen_elective_zone or index not in anchors:
             continue
-        found = _is_course_row(tidy)
-        if found:
-            code, name = found
-            if not name and carry:
-                # שם הקורס נשבר לשורה הקודמת, והשורה הזאת מתחילה ישר בשעות:
-                #   "מבוא להנדסת מערכות ותעשיה 4.0"
-                #   "62004  2 1 - 2.5  61756 שיטות הנדסיות..."
-                # בלי זה הקורס נשמר בלי שם בכלל.
-                name = carry
-            if not any(c["code"] == code for c in current):
-                current.append({"code": code, "name": name})
-            carry = ""
-        elif not _CODE_RE.match(tidy) and 4 < len(squashed) < 60:
-            carry = tidy
-        else:
-            carry = ""
+
+        code = anchors[index].code
+        if not any(c["code"] == code for c in current):
+            current.append({"code": code, "name": names.get(index, "")})
 
     clusters = {k: v for k, v in clusters.items() if v}
     tracks = {k: v for k, v in tracks.items() if v}
