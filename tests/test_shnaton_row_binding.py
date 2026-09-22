@@ -104,8 +104,12 @@ def test_the_prereq_column_is_outside_the_name_column(rows):
     # עמודת השם נמצאת בין התא המספרי הימני ביותר למספר הקורס.
     assert anchor.name_from == pytest.approx(334.7)
     assert anchor.name_to == pytest.approx(482.9)
-    assert shnaton._name_words(rows[0], anchor) == ["ניהול", "והערכת", "סיכונים"]
-    assert shnaton._name_words(rows[2], anchor) == ["בפרויקטים", "הנדסיים"]
+    assert [w[2] for w in shnaton._name_words(rows[0], anchor)] == [
+        "ניהול", "והערכת", "סיכונים"
+    ]
+    assert [w[2] for w in shnaton._name_words(rows[2], anchor)] == [
+        "בפרויקטים", "הנדסיים"
+    ]
 
 
 def test_a_prereq_line_is_not_mistaken_for_a_course(rows):
@@ -164,7 +168,8 @@ def test_a_credits_cell_inside_the_name_is_part_of_the_name():
     tail = line(232.1, ((395.4, 422.2, "להנדסת"), (373.2, 393.4, "תוכנה")))
     anchors, names = shnaton._bind_names([head, anchor, tail])
     assert list(anchors) == [1]
-    assert names[1] == "מבוא ל הנדסת מערכות ותעשיה 4.0 להנדסת תוכנה"
+    # ‏"ל" ו"הנדסת" מודפסים במרווח של ‏-0.1 נקודה, כלומר מילה אחת.
+    assert names[1] == "מבוא להנדסת מערכות ותעשיה 4.0 להנדסת תוכנה"
     assert "61756" not in names[1], "עמודת הקדם נשארת בחוץ"
 
 
@@ -221,7 +226,8 @@ def test_a_dash_inside_the_name_does_not_end_it():
         (261.8, 273.0, "3.0"),
     ))
     _anchors, names = shnaton._bind_names([row])
-    assert names[0] == "מבוא ל - ERP ומערכות ארגוניות"
+    # המקף נדבק לשכניו, כי ה-PDF מדפיס אותם בלי מרווח — ראו _GLUE_GAP.
+    assert names[0] == "מבוא ל-ERP ומערכות ארגוניות"
 
 
 # ==========================================================================
@@ -237,3 +243,79 @@ def test_the_real_chapter_reads_the_same_name():
         for course in group
     }
     assert found.get("51145") == EXPECTED
+
+
+# ==========================================================================
+# חיבור מילים — מה שה-PDF פיצל, ומה שהוא באמת הפריד
+# ==========================================================================
+def test_a_word_split_into_two_runs_is_joined_back():
+    """‏"בנושאים" מודפס כ-"ב" + "נושאים" במרווח של ‏0.10 נקודה.
+
+    מרווח אמיתי בין מילים ב-sw.pdf הוא ‏1.8–2.5, כלומר סדר גודל שלם
+    מעליו. בלי החיבור הזה השם יצא "סמינר ב נושאים נבחרים בבינה מלאכותית".
+    """
+    row = line(285.9, (
+        (403.0, 425.0, "61779"),
+        (370.4, 390.0, "סמינר"),
+        (364.0, 368.4, "ב"),
+        (340.2, 363.9, "נושאים"),
+        (313.8, 338.1, "נבחרים"),
+        (292.4, 311.7, "בבינה"),
+        (257.0, 262.0, "3"),
+        (240.0, 243.0, "-"),
+        (222.0, 225.0, "-"),
+        (200.0, 211.0, "3.0"),
+    ))
+    tail = line(291.3, ((357.0, 390.0, "מלאכותית"),))
+    _anchors, names = shnaton._bind_names([row, tail])
+    assert names[0] == "סמינר בנושאים נבחרים בבינה מלאכותית"
+
+
+def test_a_real_space_between_words_is_kept():
+    """החיבור אינו מוחק רווחים אמיתיים — אחרת כל שם היה נדבק לגוש אחד."""
+    _anchors, names = shnaton._bind_names(
+        [line(179.6, ROW_51145), line(187.7, ANCHOR_51145), line(192.2, TAIL_51145)]
+    )
+    assert names[1] == EXPECTED
+    assert " " in names[1]
+
+
+def test_words_from_two_different_lines_are_never_glued():
+    """‏x חוזר לתחילת העמודה בכל שורה, ולכן "מרווח" בין שורות חסר משמעות.
+
+    חישוב שלו נתן מספר שלילי, והוא חיבר את סוף שורת השם לתחילת השורה
+    שאחריה: ‏"יישומים מעשיים באלמנטיםסופיים".
+    """
+    _anchors, names = shnaton._bind_names(
+        [line(179.6, ROW_51145), line(187.7, ANCHOR_51145), line(192.2, TAIL_51145)]
+    )
+    assert "סיכוניםבפרויקטים" not in names[1]
+    assert "סיכונים בפרויקטים" in names[1]
+
+
+def test_a_colon_clings_to_the_word_before_it():
+    """‏civil.pdf מדפיס ":" כ-run נפרד במרווח **רגיל** (‏2.4 נקודות).
+
+    חיבור לפי מרווח אינו תופס אותו, ולכן הפיסוק מטופל בנפרד — אחרת
+    ‏421222 יצא "ניהול ובקרת ביצוע : פרוייקטי בנייה".
+    """
+    head = line(275.3, (
+        (439.2, 459.4, "ניהול"),
+        (408.8, 434.2, "ובקרת"),
+        (384.6, 406.3, "ביצוע"),
+        (379.3, 382.2, ":"),
+        (197.8, 231.3, "421221"),
+        (169.8, 195.3, "שיטות"),
+    ))
+    anchor = line(288.2, (
+        (471.0, 493.0, "421222"),
+        (341.0, 346.0, "2"),
+        (317.0, 321.0, "1"),
+        (293.0, 296.0, "-"),
+        (269.0, 272.0, "-"),
+        (239.0, 250.0, "2.5"),
+    ))
+    tail = line(297.9, ((429.0, 455.0, "פרוייקטי"), (406.0, 427.0, "בנייה")))
+    _anchors, names = shnaton._bind_names([head, anchor, tail])
+    assert names[1] == "ניהול ובקרת ביצוע: פרוייקטי בנייה"
+    assert "421221" not in names[1]

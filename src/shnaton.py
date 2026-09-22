@@ -285,9 +285,35 @@ def _anchor_at(line: Line) -> _Anchor | None:
     return _Anchor(-1, token, edge, x0)
 
 
-def _name_words(line: Line, anchor: _Anchor) -> list[str]:
+def _name_words(line: Line, anchor: _Anchor) -> list[Word]:
     """המילים של השורה שנופלות בתוך עמודת השם של הקורס."""
-    return [w[2] for w in line.words if anchor.name_from < w[0] < anchor.name_to]
+    return [w for w in line.words if anchor.name_from < w[0] < anchor.name_to]
+
+
+#: מתחת למרווח הזה שתי "מילים" הן מילה אחת ש-PyMuPDF פיצל לשני runs.
+#: נמדד ב-sw.pdf: מרווח אמיתי בין מילים הוא ‏1.8–2.5 נקודות, והפיצול
+#: הפנימי של "בנושאים" ל-"ב" ו-"נושאים" הוא ‏0.10.
+_GLUE_GAP = 1.0
+
+#: פיסוק שנדבק למילה שלפניו. בפרק אזרחית ‏":" מודפס כ-run נפרד במרווח
+#: רגיל, ולכן חיבור לפי מרווח אינו תופס אותו.
+_CLINGING = frozenset(":,;.")
+
+
+def _join_words(words: list[Word]) -> str:
+    """מחבר מילים לשם, עם רווח רק היכן שה-PDF באמת שם אחד."""
+    out: list[str] = []
+    for index, word in enumerate(words):
+        if not out:
+            out.append(word[2])
+            continue
+        previous = words[index - 1]
+        glued = previous[0] - word[1] < _GLUE_GAP or word[2] in _CLINGING
+        if glued:
+            out[-1] += word[2]
+        else:
+            out.append(word[2])
+    return _tidy(" ".join(out))
 
 
 def canonical_program(name: str) -> str:
@@ -443,8 +469,11 @@ def _bind_names(lines: list[Line]) -> tuple[dict[int, _Anchor], dict[int, str]]:
             pieces[index].append((lines[j].y, got))
             taken.add(j)
 
+    # ‏**החיבור נעשה בתוך שורה בלבד.** המרווח בין המילה האחרונה של שורה
+    # אחת לראשונה של הבאה אינו מרווח כלל — ‏x חוזר לתחילת העמודה — ולכן
+    # חישוב שלו נתן "מרווח" שלילי וחיבר "באלמנטים" ל"סופיים".
     names = {
-        index: _tidy(" ".join(w for _y, ws in sorted(parts) for w in ws))
+        index: _tidy(" ".join(_join_words(ws) for _y, ws in sorted(parts) if ws))
         for index, parts in pieces.items()
     }
     return anchors, names
