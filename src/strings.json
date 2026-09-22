@@ -398,7 +398,8 @@
       "titleTracks": "מסלולי התמחות",
       "titleClusters": "אשכולות קורסי בחירה",
       "source": "מקור: פרק השנתון של {program} · {year}",
-      "groupTitle": "{name} ({count})"
+      "groupTitle": "{name} ({count})",
+      "noCode": "השנתון מדפיס את הקורס בלי מספר קורס, ולכן אי אפשר לסמן אותו כאן."
     },
     "sticky": {
       "facts": {

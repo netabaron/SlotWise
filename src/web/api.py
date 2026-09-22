@@ -4467,21 +4467,34 @@ def courses():
 @bp.get("/program/electives")
 @_endpoint
 def program_electives():
-    """קבוצות קורסי הבחירה של תוכנית לימודים, מפרק השנתון שלה.
+    """קבוצות קורסי הבחירה של תוכנית לימודים.
 
     שלושה מבנים אפשריים, והם **אינם** שקולים:
       ``clusters`` — אשכולות: קורס אחד **מכל** אשכול (תוכנה, תעשייה, מערכות מידע)
       ``tracks``   — מסלולי התמחות: בוחרים מסלול **אחד** (אזרחית, מכונות)
-      ``flat``     — אין קיבוץ בפרק (חשמל, מתמטיקה) -> אין מה להציג
+      ``flat``     — אין קיבוץ בפרק (חשמל) -> אין מה להציג
 
-    ``year`` הוא שנת המחזור **רק** כשהפרק מצהיר עליה. ``None`` = המסמך לא
+    **שני מקורות, בסדר הכרעה קבוע.** הראשון הוא פרק השנתון שחולץ ל-
+    ``data/curricula.json`` (‏``src/shnaton.py``), והוא **גובר** — כך קבוצות
+    הבחירה של הנדסת תוכנה, תעשייה וניהול, מערכות מידע, אזרחית ומכונות
+    נשארות בדיוק כפי שהיו. השני הוא ``elective_clusters`` שבקובץ התוכנית
+    של המסלול עצמו, והוא נכנס לפעולה **רק** כשהפרק שטוח, כלומר כשהחילוץ
+    האוטומטי לא מצא בו קיבוץ. זה המצב של מתמטיקה שימושית: השנתון שלה
+    מקבץ את הבחירה תחת "תחום X" ולא תחת "אשכול X", ‏``shnaton.py`` מזהה
+    רק את השני, ולכן ארבעת התחומים הוקלדו לתוך קובץ התוכנית.
+
+    ``intake`` נדרש למסלול שיש לו מועדי כניסה: בלעדיו אין קובץ תוכנית
+    אחד להחזיר, ולכן גם אין ממנו אשכולות.
+
+    ``year`` הוא שנת המחזור **רק** כשהמקור מצהיר עליה. ``None`` = המסמך לא
     ציין שנה, והממשק חייב לכתוב "שנה לא צוינה" ולא להמציא.
-    ``available: false`` = אין פרק לתוכנית הזאת, או שאין בו קיבוץ — ואז
+    ``available: false`` = אין מקור לתוכנית הזאת, או שאין בו קיבוץ — ואז
     הממשק **מסתיר** את החלק הזה לגמרי במקום להראות רשימה ריקה או מנוחשת.
     """
     program = str(request.args.get("program", "")).strip()
     if not program:
         raise ApiError(400, "חסר שם תוכנית.", "program is required")
+    intake = str(request.args.get("intake", "")).strip()
 
     try:
         from shnaton import load_curricula
@@ -4500,23 +4513,53 @@ def program_electives():
                 chapter = entry
                 break
 
-    if not chapter:
-        return {
-            "ok": True,
-            "program": program,
-            "available": False,
-            "reason": "אין פרק שנתון לתוכנית הזאת.",
-        }
-
+    chapter = chapter or {}
     clusters = chapter.get("clusters") or {}
     tracks = chapter.get("tracks") or {}
+
     if not clusters and not tracks:
+        # הפרק שטוח (או שאין פרק). הנפילה היא לקובץ התוכנית של המסלול.
+        curr = _curriculum(program, intake)
+        own = curr.get("elective_clusters") if isinstance(curr, dict) else None
+        if own:
+            year = curr.get("cohort_year")
+            return {
+                "ok": True,
+                "program": curr.get("program", program),
+                "available": True,
+                "structure": "clusters",
+                "origin": "curriculum",
+                "intake": intake,
+                "year": year,
+                "year_text": year or "שנה לא צוינה במסמך",
+                "source": curr.get("source", ""),
+                "clusters": own,
+                "tracks": {},
+                "cluster_rule": "יש לקחת קורס אחד לפחות מכל אשכול.",
+                "track_rule": "",
+                "warnings": curr.get("warnings", []),
+            }
+        if not chapter:
+            return {
+                "ok": True,
+                "program": program,
+                "available": False,
+                "reason": (
+                    "יש לבחור מועד כניסה כדי לראות את קורסי הבחירה."
+                    if _program_intakes(program) and not intake
+                    else "אין פרק שנתון לתוכנית הזאת."
+                ),
+            }
         return {
             "ok": True,
             "program": chapter.get("program", program),
             "available": False,
             "structure": chapter.get("structure", "flat"),
-            "reason": "פרק השנתון של התוכנית אינו מקבץ את קורסי הבחירה.",
+            "reason": (
+                "יש לבחור מועד כניסה כדי לראות את קורסי הבחירה."
+                if _program_intakes(program) and not intake
+                else "פרק השנתון של התוכנית אינו מקבץ את קורסי הבחירה."
+            ),
         }
 
     year = chapter.get("year")
@@ -4525,6 +4568,8 @@ def program_electives():
         "program": chapter.get("program", program),
         "available": True,
         "structure": chapter.get("structure"),
+        "origin": "chapter",
+        "intake": intake,
         "year": year,
         "year_text": year or "שנה לא צוינה במסמך",
         "source": chapter.get("source", ""),

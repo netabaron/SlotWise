@@ -2724,9 +2724,11 @@
       lastSig.semester = semSig;
       fetchSemesterCourses();
     }
-    // קבוצות הבחירה תלויות במסלול בלבד, ולכן נמשכות רק כשהוא משתנה.
-    if (force || txt(state.program) !== lastSig.program) {
-      lastSig.program = txt(state.program);
+    // קבוצות הבחירה תלויות במסלול — ובמסלול עם מועדי כניסה גם במועד, כי
+    // קובץ התוכנית (והאשכולות שבו) הוא קובץ לכל מועד.
+    var electivesSig = txt(state.program) + "|" + txt(state.intake);
+    if (force || electivesSig !== lastSig.program) {
+      lastSig.program = electivesSig;
       runtime.electives = null;
       runtime.electivesFor = "";
       fetchElectives();
@@ -4967,16 +4969,20 @@
   // ======================================================================
   function fetchElectives() {
     var program = txt(state.program);
+    var key = program + "|" + txt(state.intake);
     if (!program || program === "other") {
       runtime.electives = { available: false };
-      runtime.electivesFor = program;
+      runtime.electivesFor = key;
       return Promise.resolve();
     }
-    if (runtime.electivesFor === program && runtime.electives) return Promise.resolve();
-    runtime.electivesFor = program;
+    if (runtime.electivesFor === key && runtime.electives) return Promise.resolve();
+    runtime.electivesFor = key;
     runtime.electivesBusy = true;
     var my = ++seq.electives;
-    return getJSON("/api/program/electives?program=" + encodeURIComponent(program))
+    return getJSON(
+      "/api/program/electives?program=" + encodeURIComponent(program) +
+        "&intake=" + encodeURIComponent(txt(state.intake))
+    )
       .then(function (data) {
         if (my !== seq.electives) return; // תשובה ישנה — מתעלמים
         runtime.electivesBusy = false;
@@ -5034,6 +5040,19 @@
         var list = el("div", { class: "course-list" });
         courses.forEach(function (course) {
           var code = txt(course.code);
+          // שורה בלי מספר קורס אינה ניתנת לבחירה: אין מה לשלוח לשרת ואין
+          // מה לשבץ. בשנתון המתמטיקה שמונה קורסי בחירה מודפסים כך ("חדש",
+          // "מחליף"), והם **כן** קורסים — ולכן הם נאמרים כשורת מידע ולא
+          // נמחקים מהרשימה. תיבת סימון שמוסיפה קוד ריק הייתה שוברת את
+          // ``state.codes`` בשקט.
+          if (!code) {
+            var info = el("div", { class: "course-row course-row--note" }, [
+              el("span", { class: "course-name", text: txt(course.name) }),
+              el("span", { class: "note", text: txt(course.note) || T("app.electives.noCode") }),
+            ]);
+            list.appendChild(info);
+            return;
+          }
           var chosen = selected[code] === true;
           var row = el("label", { class: "course-row" + (chosen ? " is-selected" : "") });
           var box2 = el("input", { attrs: { type: "checkbox" } });

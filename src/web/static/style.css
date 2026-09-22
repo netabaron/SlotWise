@@ -1252,6 +1252,16 @@ html.is-modal-open body { overflow: hidden; }
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
 }
 
+/* שורת אשכול בלי מספר קורס — קורס אמיתי שהשנתון מדפיס כ"חדש" ועוד לא
+   הקצה לו מספר. אין לה תיבת סימון, ולכן גם אין לה את היישור של שורה
+   שיש בה אחת. בלי כלל צבע כאן בכוונה: ``.note`` שבתוכה כבר מעומעמת,
+   וכל צבע נכתב פעם אחת ב-:root. */
+.course-row--note {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .course-item {
   display: flex;
   gap: 10px;
