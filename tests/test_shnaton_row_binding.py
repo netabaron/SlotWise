@@ -319,3 +319,83 @@ def test_a_colon_clings_to_the_word_before_it():
     _anchors, names = shnaton._bind_names([head, anchor, tail])
     assert names[1] == "ניהול ובקרת ביצוע: פרוייקטי בנייה"
     assert "421221" not in names[1]
+
+
+# ==========================================================================
+# כיוון — קטע לטיני בתוך שם עברי
+# ==========================================================================
+#: מילה גולמית כפי ש-PyMuPDF מחזיר אותה: ‏(x0, y0, x1, y1, טקסט, block,
+#: line, word_no). ‏``_reading_order`` קורא רק את 0, 2, 4, 5, 6 ו-7.
+def word(x0, x1, text, block, line_no, word_no):
+    return (x0, 0.0, x1, 0.0, text, block, line_no, word_no)
+
+
+#: ‏22993 ב-industry.pdf עמוד 9, כלשונו: שם עברי שבתוכו קטע לטיני.
+ROW_22993 = [
+    word(478.1, 502.5, "22993", 37, 0, 0),
+    word(432.3, 463.2, "תעשייה", 37, 2, 0),
+    word(417.4, 429.9, "4.0", 37, 2, 1),
+    word(357.9, 397.4, "(Industry", 37, 3, 0),
+    word(399.8, 415.0, "4.0)", 37, 3, 1),
+    word(330.1, 335.0, "2", 37, 5, 0),
+    word(308.2, 313.1, "3", 37, 7, 0),
+    word(286.2, 289.9, "-", 37, 9, 0),
+    word(259.5, 272.1, "3.5", 37, 11, 0),
+]
+
+#: ‏22837 ב-mecho.pdf עמוד 10: שם לטיני שלם, על שתי שורות ויזואליות.
+LATIN_HEAD_22837 = [
+    word(377.7, 418.2, "Designing", 34, 2, 0),
+    word(420.5, 457.8, "Solutions", 34, 2, 1),
+    word(460.0, 467.6, "to", 34, 2, 2),
+]
+LATIN_TAIL_22837 = [
+    word(395.2, 428.2, "Surgical", 35, 0, 0),
+    word(430.3, 467.6, "Problems", 35, 0, 1),
+]
+
+
+def test_a_latin_run_keeps_its_own_direction():
+    """‏"Designing Solutions to" — ולא ההיפוך שלו."""
+    got = [w[4] for w in shnaton._reading_order(LATIN_HEAD_22837)]
+    assert got == ["Designing", "Solutions", "to"]
+    got = [w[4] for w in shnaton._reading_order(LATIN_TAIL_22837)]
+    assert got == ["Surgical", "Problems"]
+
+
+def test_hebrew_and_latin_in_one_line_each_read_their_own_way():
+    """‏22993: העברית מימין לשמאל, הלטינית משמאל לימין, באותה שורה."""
+    got = [w[4] for w in shnaton._reading_order(ROW_22993)]
+    assert got == ["22993", "תעשייה", "4.0", "(Industry", "4.0)",
+                   "2", "3", "-", "3.5"]
+
+
+def test_the_latin_name_comes_out_in_reading_order():
+    """מקצה לקצה על השורה: השם, לא רצף המילים ההפוך."""
+    row = shnaton.Line(
+        page=9, y=621.8,
+        words=tuple((w[0], w[2], w[4]) for w in shnaton._reading_order(ROW_22993)),
+        text="",
+    )
+    _anchors, names = shnaton._bind_names([row])
+    assert names[0] == "תעשייה 4.0 (Industry 4.0)"
+
+
+def test_a_hebrew_run_is_never_reordered_by_drawing_order():
+    """‏``word_no`` הוא סדר **ציור**, ולכן אינו ראיה לכיוון.
+
+    ‏industry.pdf מצייר את הנקודתיים של "אשכול: מדע וטכנולוגיה" **לפני**
+    המילה שלפניהן, ושתיהן קטע אחד שה-x שלו עולה במקרה. בלי הדרישה לאות
+    לטינית הכותרת נקראה ‏": אשכול", ‏``_CLUSTER_RE`` הפסיק להתאים לה,
+    ושלושה קורסים דלפו לאשכול השכן.
+    """
+    header = [word(471.7, 476.3, ":", 34, 0, 0), word(476.3, 505.6, "אשכול", 34, 0, 1)]
+    assert [w[4] for w in shnaton._reading_order(header)] == ["אשכול", ":"]
+
+
+def test_two_latin_words_are_not_glued_together():
+    """המרווח נמדד בלי הנחת כיוון — אחרת ‏x עולה נתן "מרווח" שלילי."""
+    joined = shnaton._join_words(
+        [(w[0], w[2], w[4]) for w in shnaton._reading_order(LATIN_HEAD_22837)]
+    )
+    assert joined == "Designing Solutions to"

@@ -145,11 +145,54 @@ class Line(NamedTuple):
     text: str
 
 
+def _reading_order(words: list[Any]) -> list[Any]:
+    """מילים של שורה ויזואלית אחת, בסדר הקריאה שלהן.
+
+    ‏**מיון לפי x יורד נכון לעברית ושקרי לכל דבר אחר.** קטע לטיני בתוך שם
+    עברי נכתב משמאל לימין, ולכן מיון ימין-לשמאל מהפך אותו: ‏22837 יצא
+    ‏"to Solutions Designing Problems Surgical" במקום "Designing Solutions
+    to Surgical Problems", ו-22993 יצא "תעשייה 4.0 4.0) (Industry" במקום
+    ‏"תעשייה 4.0 (Industry 4.0)".
+
+    ‏PyMuPDF מקבץ מילים ל-``(block, line)``, וזה בדיוק הגבול של קטע בעל
+    כיוון אחד. **אבל ``word_no`` הוא סדר הציור ולא סדר הקריאה**, ולכן אי
+    אפשר לסמוך עליו לבדו: ב-industry.pdf הכותרת "אשכול: תכן ותפעול" היא
+    קטע אחד שבו הנקודתיים מצוירות **לפני** המילה שלפניה, ומיון לפי
+    ‏``word_no`` הפך אותה ל-": אשכול תכן ותפעול" — שאינה מתאימה יותר
+    ל-``_CLUSTER_RE``, ושישה-עשר קורסים דלפו לאשכול השכן.
+
+    המבחן הוא הגאומטריה עצמה, ועוד תנאי: קטע שה-x שלו **עולה** לאורך
+    ‏``word_no`` **ושיש בו אות לטינית** הוא קטע שנכתב משמאל לימין, ושם סדר
+    הציור הוא סדר הקריאה. בכל מקרה אחר חוזרים למיון ימין-לשמאל, כלומר
+    להתנהגות שהייתה כאן מאז ומתמיד.
+
+    האות הלטינית אינה קישוט. הכותרת "אשכול: מדע וטכנולוגיה" היא קטע של
+    שתי מילים — נקודתיים ואז "אשכול" — שה-x שלו עולה במקרה, ובלי התנאי
+    הזה הוא נקרא ‏": אשכול" ושלושה קורסים דלפו לאשכול השכן.
+    """
+    runs: dict[tuple[int, int], list[Any]] = {}
+    for word in words:
+        runs.setdefault((word[5], word[6]), []).append(word)
+
+    ordered_runs: list[list[Any]] = []
+    for run in runs.values():
+        drawn = sorted(run, key=lambda w: w[7])
+        ascending = all(a[0] < b[0] for a, b in zip(drawn, drawn[1:]))
+        latin = any(_LATIN_RE.search(w[4]) for w in drawn)
+        ordered_runs.append(
+            drawn if (ascending and latin) else sorted(run, key=lambda w: -w[0])
+        )
+
+    ordered_runs.sort(key=lambda run: -max(w[2] for w in run))
+    return [word for run in ordered_runs for word in run]
+
+
 def _document_lines(pdf_path: str | Path) -> list[Line]:
     """כל השורות של המסמך, עם הקואורדינטות שלהן.
 
-    מקבצים מילים לפי ``y`` וממיינים כל שורה לפי ``x`` **יורד** — עברית.
-    ‏``get_text()`` רגיל מערבב שורות בטבלאות עבריות ומחזיר עמודות הפוכות.
+    מקבצים מילים לפי ``y``, ובתוך כל שורה מסדרים לפי סדר הקריאה — ראו
+    ‏``_reading_order``. ‏``get_text()`` רגיל מערבב שורות בטבלאות עבריות
+    ומחזיר עמודות הפוכות, ולכן השחזור נעשה כאן ולא על ידו.
     """
     doc = pymupdf.open(str(pdf_path))
     out: list[Line] = []
@@ -164,7 +207,7 @@ def _document_lines(pdf_path: str | Path) -> list[Line]:
                 else:
                     buckets.append({"y": word[1], "w": [word]})
             for bucket in sorted(buckets, key=lambda b: b["y"]):
-                ordered = sorted(bucket["w"], key=lambda w: -w[0])
+                ordered = _reading_order(bucket["w"])
                 words = tuple((float(w[0]), float(w[2]), w[4]) for w in ordered)
                 text = "  ".join(w[2] for w in words).strip()
                 if text:
@@ -295,6 +338,9 @@ def _name_words(line: Line, anchor: _Anchor) -> list[Word]:
 #: הפנימי של "בנושאים" ל-"ב" ו-"נושאים" הוא ‏0.10.
 _GLUE_GAP = 1.0
 
+#: אות לטינית — הסימן שקטע נכתב משמאל לימין.
+_LATIN_RE = re.compile(r"[A-Za-z]")
+
 #: פיסוק שנדבק למילה שלפניו. בפרק אזרחית ‏":" מודפס כ-run נפרד במרווח
 #: רגיל, ולכן חיבור לפי מרווח אינו תופס אותו.
 _CLINGING = frozenset(":,;.")
@@ -308,7 +354,11 @@ def _join_words(words: list[Word]) -> str:
             out.append(word[2])
             continue
         previous = words[index - 1]
-        glued = previous[0] - word[1] < _GLUE_GAP or word[2] in _CLINGING
+        # מרחק בין שתי תיבות, בלי להניח כיוון: בקטע עברי ‏x יורד ובקטע
+        # לטיני הוא עולה, והחיסור הישן החזיר מספר שלילי בלטינית — כלומר
+        # "מרווח אפס" — והדביק את ‏"Designing" ל-"Solutions".
+        gap = max(previous[0], word[0]) - min(previous[1], word[1])
+        glued = gap < _GLUE_GAP or word[2] in _CLINGING
         if glued:
             out[-1] += word[2]
         else:
