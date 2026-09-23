@@ -81,7 +81,7 @@ jobs:
         # deliberately deleted some, and say so in the commit.
         run: |
           set -euo pipefail
-          MIN_TESTS=869
+          MIN_TESTS=892
           collected=$(python -m pytest --collect-only -q | tail -1 | grep -oE '^[0-9]+')
           echo "collected: $collected (floor $MIN_TESTS)"
           if [ "$collected" -lt "$MIN_TESTS" ]; then

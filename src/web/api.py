@@ -1505,6 +1505,24 @@ def _default_curriculum() -> dict:
     return cache["curriculum"]
 
 
+def _curriculum_notes(program: Any = None, intake: Any = None) -> list[str]:
+    """‏``notes`` של קובץ התוכנית — מה שמותר להציג לסטודנט/ית.
+
+    ‏**שדה נפרד מ-``warnings`` בכוונה.** ‏``warnings`` הוא יומן החילוץ:
+    ‏"prereq ריק בכל שורות הסמסטרים", "‏cohort_year הוא null", "שמונה
+    קורסים נשמרים עם code: null". זה תיעוד למי שקורא את הקובץ, והוא
+    חסר משמעות — ולעיתים מטעה — על המסך. ‏``notes`` הוא מה שהשנתון עצמו
+    אומר לסטודנט/ית, ורק הוא נשלח לממשק.
+
+    מחזיר רשימה ריקה לכל תוכנית שאין לה ``notes``, וזה המצב של כל
+    התוכניות חוץ ממתמטיקה שימושית — ולכן שום מסלול אחר אינו משתנה.
+    """
+    curr = _curriculum(program, intake)
+    if not isinstance(curr, dict):
+        return []
+    return [str(note).strip() for note in (curr.get("notes") or []) if str(note).strip()]
+
+
 def _profile() -> dict:
     """‏data/profile.json — התשובות האמיתיות של הסטודנט/ית. חסר = ``{}``."""
     from flask import current_app
@@ -4537,6 +4555,7 @@ def program_electives():
                 "tracks": {},
                 "cluster_rule": "יש לקחת קורס אחד לפחות מכל אשכול.",
                 "track_rule": "",
+                "notes": _curriculum_notes(program, intake),
                 "warnings": curr.get("warnings", []),
             }
         if not chapter:
@@ -4577,6 +4596,9 @@ def program_electives():
         "tracks": tracks,
         "cluster_rule": "יש לקחת קורס אחד לפחות מכל אשכול." if clusters else "",
         "track_rule": "יש לבחור מסלול התמחות אחד ולהתמחות בו." if tracks else "",
+        # מקובץ התוכנית של המסלול, גם כשהאשכולות עצמם באו מפרק השנתון:
+        # ההערה שייכת למסלול, לא למקור שממנו נגזרה הרשימה.
+        "notes": _curriculum_notes(program, intake),
         "warnings": chapter.get("warnings", []),
     }
 

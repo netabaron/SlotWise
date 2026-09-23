@@ -2855,6 +2855,7 @@
     ui.electivesTitle = byId("electives-title");
     ui.electivesRule = byId("electives-rule");
     ui.electivesSource = byId("electives-source");
+    ui.electivesNotes = byId("electives-notes");
     ui.electivesGroups = byId("electives-groups");
     ui.selYear = byId("select-year");
     ui.selTerm = byId("select-term");
@@ -5022,6 +5023,16 @@
         year: txt(data.year_text),
       })
     );
+
+    // הערת השנתון על רשימת הבחירה. ‏``notes`` בלבד — ``warnings`` הוא יומן
+    // החילוץ ("prereq ריק", "code: null") ואין לו מה לעשות על המסך.
+    if (ui.electivesNotes) {
+      var notes = pickList(data, ["notes"], null)
+        .map(txt)
+        .filter(Boolean);
+      setText(ui.electivesNotes, notes.join(" "));
+      setHidden(ui.electivesNotes, notes.length === 0);
+    }
 
     rebuild(ui.electivesGroups, function (box) {
       var selected = selectedSet();
