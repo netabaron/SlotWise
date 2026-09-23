@@ -3359,6 +3359,61 @@
     });
   }
 
+  /** המצב שהתחתית צוירה לפיו, כדי לא לבנות אותה מחדש בכל ‏render(). */
+  var footerMode = null;
+
+  /**
+   * שורת התחתית, לפי ``mode`` של ‏/api/bootstrap.
+   *
+   * ‏``"hosted"``: שורה באנגלית עם שני קישורים (‏LinkedIn וטופס דיווח), שניהם
+   * בלשונית חדשה. כל ערך אחר: המשפט המקומי. לפני ה-bootstrap, או כשהוא
+   * נכשל, השורה נשארת ריקה — המשפט המקומי ("127.0.0.1 בלבד") שקרי בשרת
+   * ציבורי, והמשפט המאורח מיותר במחשב של הסטודנט/ית.
+   */
+  function renderFooter() {
+    var line = document.getElementById("app-footer-line");
+    var boot = runtime.bootstrap;
+    if (!line || !boot) return;
+    var mode = boot.mode === "hosted" ? "hosted" : "local";
+    if (mode === footerMode) return;
+    footerMode = mode;
+    clear(line);
+    if (mode === "local") {
+      line.removeAttribute("dir");
+      line.removeAttribute("lang");
+      setText(line, T("app.footer.local"));
+      return;
+    }
+    // הנוסח המאורח הוא אנגלית בתוך דף ‏RTL. ‏dir/lang על השורה עצמה שומרים
+    // על סדר הקטעים ועל ההגייה בקורא מסך.
+    line.setAttribute("dir", "ltr");
+    line.setAttribute("lang", "en");
+    var link = function (text, href) {
+      return el("a", {
+        text: text,
+        attrs: { href: href, target: "_blank", rel: "noopener" },
+      });
+    };
+    var sep = function () {
+      return document.createTextNode(" · ");
+    };
+    // ‏"Built by {author}": המשפט נשמר שלם ב-JSON, והשם מוחלף כאן בקישור.
+    var builtBy = String(T("app.footer.hosted.builtBy")).split("{author}");
+    line.appendChild(document.createTextNode(T("app.footer.hosted.brand")));
+    line.appendChild(sep());
+    line.appendChild(document.createTextNode(builtBy[0] || ""));
+    line.appendChild(
+      link(T("app.footer.hosted.author"), T("app.footer.hosted.authorUrl"))
+    );
+    line.appendChild(document.createTextNode(builtBy.slice(1).join("")));
+    line.appendChild(sep());
+    line.appendChild(document.createTextNode(T("app.footer.hosted.privacy")));
+    line.appendChild(sep());
+    line.appendChild(
+      link(T("app.footer.hosted.report"), T("app.footer.hosted.reportUrl"))
+    );
+  }
+
   /**
    * מה שנועד למפתח/ת ולא לסטודנט/ית: זמן החישוב, גודל הקטלוג, מספר
    * הקבוצות, שנת הלימודים ויומן המשיכה.
@@ -3929,6 +3984,7 @@
     renderStickyBar();
     renderCompare();
     renderTechDetails();
+    renderFooter();
     markMissingStrings();
     // אחרי שלב 5 — הוא זה שמחשב את המערכת הפעילה, והשכבה מציגה אותה.
     renderGridOverlay();

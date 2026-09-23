@@ -14,8 +14,7 @@
   ],
   "meta": {
     "title": "SlotWise",
-    "brand": "SlotWise",
-    "footer": "SlotWise · שרת מקומי על 127.0.0.1 בלבד · הנתונים נשמרים במחשב הזה ואינם נשלחים לשום מקום."
+    "brand": "SlotWise"
   },
   "ui": {
     "header": {
@@ -145,6 +144,18 @@
     }
   },
   "app": {
+    "footer": {
+      "local": "SlotWise · שרת מקומי על 127.0.0.1 בלבד · הנתונים נשמרים במחשב הזה ואינם נשלחים לשום מקום.",
+      "hosted": {
+        "brand": "SlotWise",
+        "builtBy": "Built by {author}",
+        "author": "Neta Baron",
+        "authorUrl": "https://www.linkedin.com/in/neta-baron",
+        "privacy": "Your data stays in your browser",
+        "report": "Report an issue",
+        "reportUrl": "https://forms.gle/vbfne2rP9eSFuw179"
+      }
+    },
     "days": {
       "daysCount": "{days} ימים",
       "targetImpossible": "{days} ימים אינם אפשריים עם הקורסים האלה — המינימום הוא {min}",

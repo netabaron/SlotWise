@@ -3795,6 +3795,9 @@ def bootstrap():
                 "semester_count": len(curr.get("semesters") or {}),
                 "note": "" if has_curriculum else CURRICULUM_MISSING_NOTE,
             },
+            # ‏"local" או ‏"hosted" — איזה משפט תחתית הממשק מציג. ‏wsgi.py קובע
+            # אותו בקוד ולא מהסביבה; כל ערך אחר נקרא כ-local.
+            "mode": "hosted" if _config().get("mode") == "hosted" else "local",
             "db": _db_snapshot(),
             "catalog": catalog_summary,
             "day_names": {str(k): v for k, v in models.DAY_NAMES_HE.items()},
@@ -4979,6 +4982,10 @@ def create_app(
         ),
         # ‏None = אוטומטי: פנייה לידיעון מותרת, אבל לא בתוך הרצת בדיקות.
         "allow_network": None,
+        # ‏"local" (‏webapp.py) או ‏"hosted" (‏wsgi.py). נחשף ב-‏/api/bootstrap
+        # ומכריע את נוסח התחתית בלבד. לא נגזר מ-``allow_network``: גם עותק
+        # מקומי יכול לכבות את הרשת, והבדיקות עושות זאת כל הזמן.
+        "mode": "local",
     }
     overrides = dict(config or {})
     course_fetcher = overrides.pop("course_fetcher", None)

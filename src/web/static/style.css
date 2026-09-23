@@ -1737,12 +1737,24 @@ html.is-modal-open body { overflow: hidden; }
    12. תחתית
    ========================================================================== */
 .app-footer {
-  padding: 16px clamp(12px, 3vw, 28px) 28px;
+  padding: 12px clamp(12px, 3vw, 28px) 20px;
   border-block-start: 1px solid var(--line);
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   text-align: center;
 }
+
+.app-footer-line { margin: 0; line-height: 1.5; }
+.app-footer-line:empty { display: none; }
+
+.app-footer a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.app-footer a:hover,
+.app-footer a:focus-visible { color: var(--ink); }
 
 /* ==========================================================================
    13. מסכים צרים — הרשת נשארת קריאה ונגללת בתוך המיכל שלה

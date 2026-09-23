@@ -8,7 +8,7 @@ This is the counterpart to ``webapp.py``, not a replacement for it.
 ``webapp.py`` is the single-student local launcher: it binds ``127.0.0.1``,
 picks a free port and opens a browser. This file is the opposite case — one
 process serving many students, behind a real WSGI server — so the two differ
-on exactly two points, and each one is deliberate:
+on exactly three points, and each one is deliberate:
 
 1. **The network is off, explicitly.** ``create_app`` defaults
    ``allow_network=None``, which resolves to *"fetch from the yedion unless
@@ -24,7 +24,14 @@ on exactly two points, and each one is deliberate:
    rule, and for that file it still is. Binding publicly is only defensible
    here *because* of point 1 — no scrape endpoint, no network.
 
-There used to be a third: *"paths come from the environment"*, because this
+3. **It says it is hosted.** ``mode="hosted"`` goes into the settings, and
+   ``/api/bootstrap`` hands it to the page, which then shows the public footer
+   (author, privacy line, issue form) instead of the local one — the local
+   footer says "127.0.0.1 only", which would be false here. It is set in
+   ``build_app`` rather than ``build_settings``: the latter is pinned to the
+   network switch alone.
+
+There used to be a fourth: *"paths come from the environment"*, because this
 file read the ``SLOTWISE_*`` table and the local app hardcoded
 ``PROJECT_ROOT / "data" / ...``. That made the environment a hosted-only
 feature for no reason anyone asked for, and on 2026-09-20 the table moved into
@@ -108,7 +115,7 @@ def build_app():
     except ImportError:
         from web.api import create_app  # type: ignore[import-not-found]
 
-    app = create_app(build_settings())
+    app = create_app({**build_settings(), "mode": "hosted"})
 
     # ---- one proxy hop, and exactly one -----------------------------------
     # Hosted, the chain is: client -> Cloudflare -> Railway's edge -> gunicorn.
