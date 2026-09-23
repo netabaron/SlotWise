@@ -179,12 +179,42 @@ def _reading_order(words: list[Any]) -> list[Any]:
         drawn = sorted(run, key=lambda w: w[7])
         ascending = all(a[0] < b[0] for a, b in zip(drawn, drawn[1:]))
         latin = any(_LATIN_RE.search(w[4]) for w in drawn)
-        ordered_runs.append(
-            drawn if (ascending and latin) else sorted(run, key=lambda w: -w[0])
-        )
+        if ascending and latin:
+            ordered_runs.append(drawn)
+        else:
+            ordered_runs.append(_unmirror(sorted(run, key=lambda w: -w[0])))
 
     ordered_runs.sort(key=lambda run: -max(w[2] for w in run))
     return [word for run in ordered_runs for word in run]
+
+
+def _unmirror(run: list[Any]) -> list[Any]:
+    """מחזיר סוגריים שאוחסנו כגלִיף מצויר לצורתם הלוגית.
+
+    ‏**לא פתרון דו-כיווניות.** המבחן הוא מקומי ובדיד: אם הסוגר הראשון
+    שנפגש בסדר הקריאה הוא סוגר **סוגר**, הזוג אינו מקונן ולכן מה שאוחסן
+    הוא הבבואה. אז — ורק אז — מחליפים כל סוגר בודד בקטע הזה.
+
+    שני הפרקים מוכיחים למה זה חייב להיות מבחן ולא כלל גורף:
+
+    * ‏system.pdf, שורת ‏61966: בסדר הקריאה ‏")" מופיע לפני "(", כלומר
+      מצויר. בלי התיקון: "סמינר מערכות לומדות )באנגלית(".
+    * ‏industry.pdf, הכותרת "אשכול: מדע וטכנולוגיה (עבור שתי ההתמחויות)":
+      בסדר הקריאה ‏"(" לפני ")", כלומר לוגי כבר עכשיו. היפוך גורף היה
+      שובר אותה, ואיתה את שם האשכול שנגזר ממנה.
+
+    מוחלפים רק תווים שהם סוגר **בודד**. ‏"(Industry" הוא חלק ממילה, והוא
+    ממילא בקטע לטיני שאינו עובר כאן.
+    """
+    brackets = [word[4] for word in run if word[4] in _MIRROR]
+    if not brackets or brackets[0] not in _CLOSERS:
+        return run
+    return [
+        (word[:4] + (_MIRROR[word[4]],) + tuple(word[5:]))
+        if word[4] in _MIRROR
+        else word
+        for word in run
+    ]
 
 
 def _document_lines(pdf_path: str | Path) -> list[Line]:
@@ -340,6 +370,12 @@ _GLUE_GAP = 1.0
 
 #: אות לטינית — הסימן שקטע נכתב משמאל לימין.
 _LATIN_RE = re.compile(r"[A-Za-z]")
+
+#: סוגריים והבבואה שלהם. ‏Unicode מגדיר לתווים האלה "mirroring": בהקשר
+#: ימין-לשמאל הם **מצוירים** הפוך מכפי שהם מאוחסנים, ויש מחוללי PDF
+#: שמאחסנים את הגלִיף המצויר במקום את התו הלוגי.
+_MIRROR = {"(": ")", ")": "(", "[": "]", "]": "[", "{": "}", "}": "{"}
+_CLOSERS = frozenset(")]}")
 
 #: פיסוק שנדבק למילה שלפניו. בפרק אזרחית ‏":" מודפס כ-run נפרד במרווח
 #: רגיל, ולכן חיבור לפי מרווח אינו תופס אותו.
