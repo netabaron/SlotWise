@@ -143,9 +143,20 @@ RTL throughout; English strings (footer) are marked `dir="ltr"`. If the full blo
 - Opening and closing a step animates height (`grid-template-rows: 0fr → 1fr`, 350ms, `cubic-bezier(.2,.8,.2,1)`).
 - **A step is completed only when the user confirms it.** The active step ends with a "המשך" button at its bottom; a step counts as completed only after the user presses it. Valid default values alone never complete a step. The lecturers step is optional, so its "המשך" works with no rankings or pins. Live rebuild is unchanged: the schedule keeps updating on every change, regardless of step state. Implemented in Phase 8, not before.
 
-### Program, year and semester / Courses
+### Program, year and semester
 
 Keep the current controls and behaviour; apply tokens, type and the general step behaviour only.
+
+### Courses
+
+- **Helper line:** "סמנו את הקורסים שתלמדו בסמסטר."
+- **Search and credits:** the search field's placeholder is "הוספת קורס מהידיעון, גם מסמסטר קודם". A live credit counter ("N נ״ז") sits next to it and replaces the "סך נקודות זכות" tile.
+- **Recommended courses:** the paragraph about recommended courses becomes a heading "מומלצים לסמסטר X", with "לפי תכנית הלימודים" as secondary text and a "סמנו הכל" link. The list of unchecked ("בוטלו") courses is removed; the cards already show their state.
+- **Course card:** checkbox, name (600) with the code in muted text, credits at the end; one line with the lesson structure and prerequisites; and an optional muted "מחליף את …" line. The "בתוכנית-סמסטר X" tag on each card is removed. A selected card gets its course color as the inline-start stripe and tint: the same color the course will have in the timetable.
+- **Linked courses:** each linked card keeps today's "קורס צמוד" badge in its current color, plus one short line "נבחר יחד עם …". Selecting one still selects all of them. The long per-card sentence and the paragraph below the cards are removed.
+- **Elective clusters:** a heading "אשכולות בחירה" with the rule as secondary text. Each cluster is a box with its name, a progress pill "k מתוך n" (filled `--ink` with a check when the rule is met) and its courses as chips. The source line stays, small, at the end.
+
+This section will be extended with specializations and with the elective and general-course notes once the research in `docs/PROGRAM_REVIEW.md` is done.
 
 ### Study days
 
@@ -218,6 +229,7 @@ Each phase is its own commit, keeps all existing tests green, adds tests where b
 2. **Stepper.** General step behaviour: completed/active/upcoming states, remove the progress pills and the per-step summary line while open, animated open/close.
 3. **Study days** step as specified.
 4. **Lecturers** step as specified.
+   - **Courses step** as specified under Steps → Courses. *Waiting for the `docs/PROGRAM_REVIEW.md` research; not started.* Listed after Phase 4 without a number of its own, so that the phase numbers referenced elsewhere (e.g. "Phase 8") stay valid.
 5. **Results page:** settings pills, stats pills and the new timetable styling with course colors and legend.
 6. **Alternatives:** previews, sorting, previous/next, animated transitions between alternatives, lesson details.
 7. **Wide layout:** side-by-side steps and sticky timetable at ≥1200px, hiding the build button, floating bar and settings pills there.
