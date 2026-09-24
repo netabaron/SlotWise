@@ -5,7 +5,7 @@ This document is the source of truth for the SlotWise redesign. Implement it in 
 ## Principles
 
 1. **All content stays; presentation changes.** Nothing a student can learn today disappears. Every piece of information appears once, in the place where it is used.
-2. **Color belongs to the courses.** The interface itself is monochrome (ink on neutral surfaces). The only saturated color on screen is each course's own color, used identically in the steps and in the timetable.
+2. **Color belongs to the courses.** The interface itself is monochrome (ink on neutral surfaces). The only saturated color on screen is each course's own color, used identically in the steps and in the timetable. The one exception is the logo (see Logo and favicon).
 3. **Motion explains, it does not decorate.** Motion is used only in response to the user's action: a step or course opening and closing, a rank being assigned, timetable blocks moving between alternatives. No scroll-triggered entrances, no glow, no gradients, no ambient animation.
 4. **The active step is the only loud thing.** Completed steps collapse to one summary line, upcoming steps are muted.
 
@@ -21,7 +21,7 @@ Light (default):
 | `--sf` | `#ffffff` | surfaces (panels, course cards) |
 | `--ln` | `#ebebe6` | grid lines, row dividers |
 | `--bd` | `#e3e3dd` | borders |
-| `--ink` | `#111114` | primary text, active step border, primary button, selected state |
+| `--ink` | `#0d1d3d` | primary text, active step border, primary button, selected state (the logo navy) |
 | `--sec` | `#6e6e73` | secondary text |
 | `--mut` | `#a3a3a8` | muted text, upcoming steps, hour labels |
 
@@ -48,7 +48,7 @@ The existing light/dark/system toggle stays and drives these tokens.
 ### Type
 
 - Family: **Heebo** (Google Fonts), weights 400, 500, 600, 700, 800. Fallback: `system-ui, sans-serif`.
-- Scale: step title 20px/800; results heading 18px/800; logo 17px/800; body 13–14px/400–500; secondary 12–13px; tiny labels 11px.
+- Scale: step title 20px/800; results heading 18px/800; wordmark 26px (23px on narrow screens) in DM Serif Display, see Logo and favicon; body 13–14px/400–500; secondary 12–13px; tiny labels 11px.
 - Sentence case everywhere. No all-caps labels.
 
 ### Shape and spacing
@@ -56,6 +56,35 @@ The existing light/dark/system toggle stays and drives these tokens.
 - Radius: panels 12px, course cards 10px, buttons 8–10px, timetable blocks 7px, pills 999px.
 - No shadows except the segmented-control indicator (if used). Separation comes from borders and surface color.
 - Base spacing unit 4px; panel padding 12–16px; gap between steps 8px.
+
+## Logo and favicon
+
+The SlotWise logo is a mark (a calendar with gold binder rings, a clock, a teal check and a small sparkle) followed by the wordmark "SlotWise". It is the only place outside the courses where the interface uses saturated color.
+
+Files live in `src/web/static/brand/`:
+
+| File | Use |
+|---|---|
+| `mark-light.svg` | Header mark, light mode |
+| `mark-dark.svg` | Header mark, dark mode |
+| `favicon.svg` | Simplified mark (calendar, gold rings, teal check) for browser tabs; switches itself to its dark variant with `prefers-color-scheme: dark` |
+| `favicon.ico` | Fallback favicon, 16/32/48px, light variant |
+| `apple-touch-icon.png` | 180px home-screen icon on a solid cream background |
+
+**Favicon set.** Every page's `<head>` links all three: `favicon.ico` (`sizes="any"`), `favicon.svg` (`type="image/svg+xml"`) and `apple-touch-icon.png` (`rel="apple-touch-icon"`). The tab icon follows the OS setting, not the site's theme toggle; a favicon cannot see the page's theme.
+
+**Header logo.** The mark (34px, 30px on narrow screens) followed by the wordmark "SlotWise" in **DM Serif Display**, 26px (23px on narrow screens), weight 400, about 1.3x the previous logo text. "Slot" and "Wise" are two colors:
+
+| | "Slot" | "Wise" | Mark |
+|---|---|---|---|
+| Light | `#0d1d3d` | `#0e5a5e` | `mark-light.svg` |
+| Dark | `#ecebe6` | `#3fb8ad` | `mark-dark.svg` |
+
+Both mark variants are inlined in the header and CSS shows the one for the active theme, so the mark and the wordmark follow the site's theme toggle (light/dark/system), not only the OS setting. The inlined markup must stay identical to the two files. The wordmark colors are the tokens `--brand-slot` (light: `var(--ink)`) and `--brand-wise`, with dark values in `--dark-brand-*`.
+
+Both fonts are self-hosted in `src/web/static/fonts/` with their OFL licences. The app makes no external requests, so nothing is loaded from Google Fonts.
+
+**Brand colors.** Navy `#0d1d3d` (also the light-mode `--ink`), teal `#0e5a5e` (dark mode `#3fb8ad`), gold `#c9a45c` (dark mode `#d4b06a`), cream `#fbf8f1`.
 
 ## Layout
 
@@ -178,7 +207,6 @@ No scroll-triggered entrance animations. Only these, each because it saves the u
 ## Out of scope for now
 
 - Server-side solve deadline (the server keeps computing after the browser cancels). A backend task for the load-test work, not part of this redesign.
-- Favicon. Decided after this redesign lands, from the header icon.
 
 ## Implementation phases
 

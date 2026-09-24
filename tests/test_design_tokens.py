@@ -24,7 +24,7 @@ CODE = re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)
 
 LIGHT = {
     "bg": "#f4f4f1", "sf": "#ffffff", "ln": "#ebebe6", "bd": "#e3e3dd",
-    "ink": "#111114", "sec": "#6e6e73", "mut": "#a3a3a8",
+    "ink": "#0d1d3d", "sec": "#6e6e73", "mut": "#a3a3a8",
 }
 DARK = {
     "bg": "#0e0f11", "sf": "#17181b", "ln": "#222327", "bd": "#2a2b30",
@@ -73,11 +73,11 @@ def test_font_files_are_shipped_with_their_licence():
 
 def test_font_face_is_local_and_body_uses_heebo():
     faces = re.findall(r"@font-face\s*\{([^}]*)\}", CSS)
-    assert len(faces) == len(FONT_FILES)
     for face in faces:
-        assert '"Heebo"' in face
         src = re.search(r'url\("([^"]+)"\)', face).group(1)
         assert src.startswith("fonts/"), f"גופן חיצוני: {src}"
+    heebo = [f for f in faces if '"Heebo"' in f]
+    assert len(heebo) == len(FONT_FILES)
     body = re.search(r"\nbody\s*\{([^}]*)\}", CSS).group(1)
     assert re.search(r'font-family:\s*"Heebo",\s*system-ui,\s*sans-serif;', body)
 

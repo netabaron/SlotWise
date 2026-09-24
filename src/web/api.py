@@ -5172,6 +5172,9 @@ def create_app(
             return (
                 "<!doctype html><html dir=\"rtl\" lang=\"he\"><meta charset=\"utf-8\">"
                 f"<title>{ui.get('title', '')}</title>"
+                "<link rel=\"icon\" href=\"/static/brand/favicon.ico\" sizes=\"any\">"
+                "<link rel=\"icon\" href=\"/static/brand/favicon.svg\" type=\"image/svg+xml\">"
+                "<link rel=\"apple-touch-icon\" href=\"/static/brand/apple-touch-icon.png\">"
                 "<body style=\"font-family:system-ui;padding:2rem\">"
                 f"<h1>{ui.get('heading', '')}</h1>"
                 f"<p>{body}</p>"

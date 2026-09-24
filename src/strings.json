@@ -14,7 +14,8 @@
   ],
   "meta": {
     "title": "SlotWise",
-    "brand": "SlotWise"
+    "brand": "SlotWise",
+    "brandParts": ["Slot", "Wise"]
   },
   "ui": {
     "header": {

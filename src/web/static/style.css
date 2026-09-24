@@ -20,10 +20,10 @@
    ========================================================================== */
 
 /* ==========================================================================
-   0. גופן — Heebo, מוגש מקומית
+   0. גופנים — Heebo ו-DM Serif Display, מוגשים מקומית
    ‏גופן משתנה אחד לכל המשקלים (400–800), בשני חלקים: עברית ולטינית. אלה
    אותם קבצים ואותם ‎unicode-range‎ ש-Google Fonts מגיש, רק מהשרת שלנו.
-   רישיון: static/fonts/OFL.txt.
+   רישיון: static/fonts/OFL.txt (Heebo), OFL-DMSerifDisplay.txt.
    ========================================================================== */
 @font-face {
   font-family: "Heebo";
@@ -43,6 +43,18 @@
                  U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
                  U+2212, U+2215, U+FEFF, U+FFFD;
 }
+/* ‏DM Serif Display — לסימן המילולי "SlotWise" בכותרת בלבד. משקל יחיד (400),
+   ולטינית בלבד: אין בו אות עברית אחת שנצטרך. */
+@font-face {
+  font-family: "DM Serif Display";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/dm-serif-display-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+                 U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+                 U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 /* ==========================================================================
    1. טוקנים — הפלטה הבהירה המלאה
@@ -57,9 +69,14 @@
   --sf: #ffffff;    /* משטחים: פאנלים, כרטיסי קורס */
   --ln: #ebebe6;    /* קווי רשת ומפרידי שורות */
   --bd: #e3e3dd;    /* מסגרות */
-  --ink: #111114;   /* טקסט ראשי, כפתור ראשי, מצב נבחר */
+  --ink: #0d1d3d;   /* טקסט ראשי, כפתור ראשי, מצב נבחר — הנייבי של הלוגו */
   --sec: #6e6e73;   /* טקסט משני */
   --mut: #a3a3a8;   /* טקסט מושתק, שעות, שלבים עתידיים */
+
+  /* ---- הסימן המילולי "SlotWise" (docs/DESIGN.md, "Logo and favicon") ----
+     ‏"Slot" בבהיר הוא נייבי הלוגו, שהוא גם ‎--ink‎ — הפניה ולא עותק. */
+  --brand-slot: var(--ink);
+  --brand-wise: #0e5a5e;
 
   /* ---- השמות הקודמים, ממופים לטוקנים ----
      ‏הגיליון עדיין כתוב בשמות האלה. הם אינם מחזיקים צבע משלהם — רק
@@ -136,6 +153,9 @@
   --dark-ink: #f2f2f0;
   --dark-sec: #9a9aa1;
   --dark-mut: #5d5e64;
+
+  --dark-brand-slot: #ecebe6;
+  --dark-brand-wise: #3fb8ad;
 
   /* ---- השמות הקודמים — הפניות בלבד. המיפוי הישיר; ראו בבהיר למה
      שלושת משטחי המשנה שם שונים ---- */
@@ -221,6 +241,8 @@
     --bd: var(--dark-bd);
     --sec: var(--dark-sec);
     --mut: var(--dark-mut);
+    --brand-slot: var(--dark-brand-slot);
+    --brand-wise: var(--dark-brand-wise);
     --panel: var(--dark-panel);
     --panel-2: var(--dark-panel-2);
     --chip: var(--dark-chip);
@@ -269,6 +291,8 @@
     --bd: var(--dark-bd);
     --sec: var(--dark-sec);
     --mut: var(--dark-mut);
+    --brand-slot: var(--dark-brand-slot);
+    --brand-wise: var(--dark-brand-wise);
     --panel: var(--dark-panel);
     --panel-2: var(--dark-panel-2);
     --chip: var(--dark-chip);
@@ -419,13 +443,31 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 
 .brand-icon {
-  inline-size: 22px;
-  block-size: 22px;
+  inline-size: 34px;
+  block-size: 34px;
   flex: none;
-  color: var(--accent);
 }
 
-.brand-title { font-size: 20px; letter-spacing: -.01em; }
+/* ‏שתי גרסאות הסימן מוטבעות; מוצגת זו של הערכה הפעילה. אותם שני תנאים
+   כמו גושי הכהה בפרק 2 — מערכת ההפעלה כשאין בחירה, או בחירה מפורשת. */
+.brand-icon-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) .brand-icon-light { display: none; }
+  html:not([data-theme="light"]) .brand-icon-dark { display: inline; }
+}
+html[data-theme="dark"] .brand-icon-light { display: none; }
+html[data-theme="dark"] .brand-icon-dark { display: inline; }
+
+/* ‏1.3 מגודל הכיתוב הקודם (‏20px, ו-18px במסך צר). ‏font-weight: 400 כי זה
+   המשקל היחיד של הגופן — ‏700 של ‎h1‎ היה מייצר הדגשה מלאכותית. */
+.brand-title {
+  font-family: "DM Serif Display", Georgia, serif;
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1.1;
+}
+.brand-slot { color: var(--brand-slot); }
+.brand-wise { color: var(--brand-wise); }
 
 .header-side {
   display: flex;
@@ -1821,7 +1863,8 @@ html.is-modal-open body { overflow: hidden; }
   :root { --slot-h: 20px; --time-col: 3.6rem; --day-min: 7.5rem; }
   .app-header { padding-block: 12px; }
   .header-side { inline-size: 100%; justify-content: space-between; }
-  .brand-title { font-size: 18px; }
+  .brand-title { font-size: 23px; }
+  .brand-icon { inline-size: 30px; block-size: 30px; }
   .courses-toolbar { align-items: stretch; }
   .credits { align-self: flex-start; }
 }
