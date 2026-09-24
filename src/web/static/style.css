@@ -2729,7 +2729,6 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 }
 .days-relax-count { font-weight: 600; white-space: nowrap; }
 .days-relax-count.is-quiet { font-weight: 400; color: var(--muted); }
-.days-relax-checked { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
 
 @media print { .days-relax { display: none !important; } }
 

@@ -2890,7 +2890,6 @@
     ui.daysRelaxTitle = byId("days-relax-title");
     ui.daysRelaxIntro = byId("days-relax-intro");
     ui.daysRelaxList = byId("days-relax-list");
-    ui.daysRelaxChecked = byId("days-relax-checked");
     ui.daysRelaxNote = byId("days-relax-note");
     ui.inputEarliest = byId("input-earliest");
     ui.inputLatest = byId("input-latest");
@@ -5279,11 +5278,21 @@
     setHidden(ui.daysRelax, !show);
     if (!show) return;
 
-    setText(ui.daysRelaxTitle, Tf("app.days.relaxTitle", { days: target }));
-    setText(
-      ui.daysRelaxIntro,
-      items.length ? T("app.days.relaxIntro") : Tf("app.days.relaxNone", { days: target })
-    );
+    // ‏אין ויתור בודד שמגיע ליעד: שורה אחת, וזהו. לא כותרת, לא רשימת מה
+    // שנבדק ולא הסתייגות על קורסי חובה — כשאין מה להציע אומרים את זה
+    // (docs/DESIGN.md, עיקרון 5).
+    var none = !items.length;
+    setHidden(ui.daysRelaxTitle, none);
+    setHidden(ui.daysRelaxList, none);
+    setHidden(ui.daysRelaxNote, none);
+    setHidden(ui.daysRelaxIntro, !none);
+    setText(ui.daysRelaxTitle, none ? "" : Tf("app.days.relaxTitle", { days: target }));
+    setText(ui.daysRelaxIntro, none ? Tf("app.days.relaxUnreachable", { days: target }) : "");
+    if (none) {
+      rebuild(ui.daysRelaxList, function () {});
+      setText(ui.daysRelaxNote, "");
+      return;
+    }
 
     rebuild(ui.daysRelaxList, function (box) {
       items.forEach(function (item) {
@@ -5321,19 +5330,9 @@
 
     // הסתייגות, לא הערת שוליים: המערכת מציעה לוותר על קורסים בלי לדעת
     // אילו מהם חובה לתואר. עד שיהיה סימון כזה (ראי DEFERRED.md), עדיף
-    // לומר את זה מאשר להשמיט ולתת לרשימה להישמע סמכותית מכפי שהיא.
+    // לומר את זה — פעם אחת, במשפט אחד — מאשר לתת לרשימה להישמע סמכותית
+    // מכפי שהיא. מה שנבדק ולא הספיק כבר אינו מוצג.
     setText(ui.daysRelaxNote, T("app.days.relaxNoRequiredInfo"));
-
-    setText(
-      ui.daysRelaxChecked,
-      checked.length
-        ? Tf("app.days.relaxChecked", {
-            list: checked
-              .map(function (c) { return (c.names || []).join(", "); })
-              .join("; "),
-          })
-        : ""
-    );
   }
 
 

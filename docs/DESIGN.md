@@ -8,6 +8,7 @@ This document is the source of truth for the SlotWise redesign. Implement it in 
 2. **Color belongs to the courses and the logo.** The interface uses a single ink color (the logo navy in light mode) on neutral surfaces. Saturated color is reserved for the course colors, each used identically in the steps and in the timetable, and for the logo (see Logo and favicon).
 3. **Motion explains, it does not decorate.** Motion is used only in response to the user's action: a step or course opening and closing, a rank being assigned, timetable blocks moving between alternatives. No scroll-triggered entrances, no glow, no gradients, no ambient animation.
 4. **The active step is the only loud thing.** Completed steps collapse to one summary line, upcoming steps are muted.
+5. **Nothing to offer is one line.** When a feature has nothing to offer, it says so in one line instead of explaining what it checked. For example, when no single-course drop reaches the study-days target, the "מה יאפשר N ימים" panel is only "אי אפשר להגיע ל-N ימים, גם בוויתור על קורס אחד."
 
 ## Tokens
 
