@@ -140,6 +140,7 @@ RTL throughout; English strings (footer) are marked `dir="ltr"`. If the full blo
 - **Upcoming:** one muted line with an outlined number dot.
 - The row of progress pills at the top of the page is removed; the stepper itself shows progress.
 - Opening and closing a step animates height (`grid-template-rows: 0fr → 1fr`, 350ms, `cubic-bezier(.2,.8,.2,1)`).
+- **A step is completed only when the user confirms it.** The active step ends with a "המשך" button at its bottom; a step counts as completed only after the user presses it. Valid default values alone never complete a step. The lecturers step is optional, so its "המשך" works with no rankings or pins. Live rebuild is unchanged: the schedule keeps updating on every change, regardless of step state. Implemented in Phase 8, not before.
 
 ### Program, year and semester / Courses
 
