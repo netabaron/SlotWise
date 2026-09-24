@@ -228,10 +228,25 @@ def test_opening_and_closing_animate_the_height(browser, server):
             pg.click("#step-year-toggle")
             pg.wait_for_timeout(700)
         full = pg.evaluate(FOLD)
-        pg.click("#step-year-toggle")
-        pg.wait_for_timeout(120)
-        mid = pg.evaluate(FOLD)
-        pg.wait_for_timeout(600)
+        # ‏עד 2026-09-24 כאן היה ‎wait_for_timeout(120)‎ ואז מדידה — מרוץ מול
+        # השעון, שתחת עומס דגם אחרי סוף האנימציה וקרא 0. ‏setState מצייר
+        # סינכרונית, ולכן המעבר קיים ברגע שהלחיצה חוזרת: עוצרים אותו,
+        # מזיזים ל-120ms בדיוק, מודדים, וממשיכים. (תוקן באישור.)
+        mid = pg.evaluate(
+            """() => {
+              const fold = document.querySelector('#step-year .step-fold');
+              document.getElementById('step-year-toggle').click();
+              getComputedStyle(fold).gridTemplateRows;  // מוודא שהמעבר נוצר
+              const t = fold.getAnimations().find(
+                a => a.transitionProperty === 'grid-template-rows');
+              if (!t) return {h: null};
+              t.pause();
+              t.currentTime = 120;
+              const h = fold.getBoundingClientRect().height;
+              t.play();
+              return {h};
+            }""")
+        pg.wait_for_timeout(700)
         end = pg.evaluate(FOLD)
     finally:
         ctx.close()

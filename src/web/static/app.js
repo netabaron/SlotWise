@@ -2871,7 +2871,7 @@
     ui.recommendedRow = byId("recommended-row");
     ui.recommendedNote = byId("recommended-note");
     ui.btnRestoreRecommended = byId("btn-restore-recommended");
-    ui.daysHint = byId("days-hint");
+    ui.advancedValues = byId("advanced-values");
 
     // ‏SPEC §4 — מצב קטלוג. אותה תיבת חיפוש, יעד אחר: כשאין תוכנית לימודים
     // היא מזינה את רשימת הקטלוג שמתחתיה במקום את הרשימה הנפתחת.
@@ -2885,8 +2885,6 @@
     ui.dayButtons = ui.daysRow
       ? Array.prototype.slice.call(ui.daysRow.querySelectorAll("[data-days]"))
       : [];
-    ui.daysTarget = byId("days-target-label");
-    ui.minDays = byId("min-days-label");
     ui.daysWarning = byId("days-warning");
     ui.daysRelax = byId("days-relax");
     ui.daysRelaxTitle = byId("days-relax-title");
@@ -5350,7 +5348,13 @@
         num(state.targetDays, null) !== null && n === state.targetDays ? "true" : "false"
       );
       // יעד שנמוך מהמינימום האפשרי מסומן — אבל נשאר לחיץ, כי הוא רק העדפה.
+      // ‏docs/DESIGN.md אמר "cannot be selected"; הוחלט (2026-09-24) להשאיר
+      // אותו לחיץ, כי בחירתו היא הדרך היחידה אל "מה יאפשר N ימים".
       setClass(btn, "is-impossible", minDays !== null && n < minDays);
+      // ‏המינימום נאמר על הכפתור עצמו, פעם אחת. אריח "מינימום אפשרי" והערת
+      // ‏"המינימום האפשרי הוא N" שחזרו עליו הוסרו בשלב 3 של העיצוב.
+      var tag = btn.querySelector(".day-min-tag");
+      if (tag) tag.hidden = !(minDays !== null && n === minDays);
       btn.setAttribute(
         "title",
         minDays !== null && n < minDays
@@ -5360,33 +5364,8 @@
     });
 
     renderDaysRelax(s);
-    // ‏לפני בחירה אין יעד להציג, ובמקומו נאמר מה המינימום — זה מה שהופך
-    // את הבחירה לאפשרית במקום לניחוש.
-    setText(
-      ui.daysTarget,
-      num(state.targetDays, null) === null
-        ? T("app.days.noTarget")
-        : Tf("app.days.daysCount", { days: state.targetDays })
-    );
-    if (ui.daysHint) {
-      var wantsHint = num(state.targetDays, null) === null && minDays !== null;
-      setText(ui.daysHint, wantsHint ? Tf("app.days.minHint", { days: minDays }) : "");
-      ui.daysHint.hidden = !wantsHint;
-    }
-    setText(
-      ui.minDays,
-      minDays === null ? "—" : Tf("app.days.daysCount", { days: minDays })
-    );
-    // ‏אריח "מערכות אפשריות" הוסר 2026-09-10. ‏feasible_count סופר כל
-    // בחירה חוקית שהמונה מייצר, וכשחובת נוכחות מבוטלת ולו על רכיב אחד
-    // הוא סופר גם צירופים שיש בהם חפיפה מכוונת — 152 בלי ויתור, ‏1368
-    // עם שני ויתורים, ‏3600 כשמוותרים על הכול. מספר עירום בתווית
-    // "מערכות אפשריות" נקרא כ"יש לי N אפשרויות", וזה לא מה שהוא סופר.
-    setClass(
-      ui.minDays && ui.minDays.parentNode,
-      "fact--warn",
-      s.target_reachable === false
-    );
+    setClass(ui.daysRow, "has-min", minDays !== null);
+    renderAdvancedValues();
 
     if (ui.daysWarning) {
       if (s.target_reachable === false && minDays !== null) {
@@ -5441,6 +5420,27 @@
         });
       });
     }
+  }
+
+  /**
+   * ‏השורה שבכותרת "הגדרות נוספות": מה שונה מברירת המחדל, כדי שהגדרה פעילה
+   * לא תסתתר מאחורי קיפול סגור. ריקה כשהכול בברירת מחדל. ‏CSS מציג אותה
+   * רק כשהקיפול סגור — כשהוא פתוח הפקדים עצמם אומרים את זה.
+   */
+  function renderAdvancedValues() {
+    if (!ui.advancedValues) return;
+    var parts = [];
+    if (state.forbidFriday === true) parts.push(T("app.days.extras.noFriday"));
+    if (state.earliest !== null) {
+      parts.push(Tf("app.days.extras.earliest", { time: fmtTime(state.earliest) }));
+    }
+    if (state.latest !== null) {
+      parts.push(Tf("app.days.extras.latest", { time: fmtTime(state.latest) }));
+    }
+    var blocked = state.blocked.length;
+    if (blocked === 1) parts.push(T("app.days.extras.blockedOne"));
+    else if (blocked > 1) parts.push(Tf("app.days.extras.blockedMany", { n: blocked }));
+    setText(ui.advancedValues, parts.join(" · "));
   }
 
   /* --- שלב 4: מרצים -------------------------------------------------- */

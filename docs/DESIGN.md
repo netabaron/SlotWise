@@ -150,7 +150,7 @@ Keep the current controls and behaviour; apply tokens, type and the general step
 
 - Buttons for each possible number of days. The selected one is filled `--ink`.
 - The minimum possible value gets a small "מינימום" label under it.
-- Values below the minimum are dashed and muted and cannot be selected.
+- Values below the minimum are dashed and muted, **but stay selectable** (decided 2026-09-24): selecting one is the only way to see the warning and the "מה יאפשר N ימים" panel that lists which courses to drop to reach it. When selected, it is filled `--ink` like any selection.
 - The explanatory sentence shown today becomes the one-line helper; nothing else repeats it.
 
 ### Lecturers

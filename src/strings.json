@@ -50,7 +50,7 @@
       "coursesTitle": "קורסים",
       "coursesHint": "לסמן מה לומדים. קורסים צמודים נבחרים יחד. אפשר להוסיף כל קורס אחר, כולל חזרה על קורס.",
       "daysTitle": "ימי לימוד",
-      "daysHint": "כמה ימים להגיע לקמפוס. זה יעד — המינימום האפשרי מוצג לצידו.",
+      "daysHint": "כמה ימים להגיע לקמפוס. זה יעד, והמינימום האפשרי מסומן מתחת למספר.",
       "lecturersTitle": "מרצים",
       "lecturersHint": "לחיצה על שורה מדרגת מרצה. 📌 מקבעת קבוצה. שורה מעומעמת — אין איתה פתרון.",
       "scheduleTitle": "המערכת",
@@ -67,9 +67,7 @@
       "creditsLabel": "סך נקודות זכות",
       "restoreRecommended": "סמן את כל המומלצים",
       "daysTargetLabel": "יעד ימי לימוד",
-      "factTarget": "יעד",
-      "factMinDays": "מינימום אפשרי",
-      "advancedSummary": "העדפות נוספות",
+      "advancedSummary": "הגדרות נוספות",
       "earliest": "לא להתחיל לפני",
       "latest": "לא לסיים אחרי",
       "noFriday": "בלי יום שישי",
@@ -174,8 +172,14 @@
       "relaxUnmeasured": "לא נבדק עד הסוף",
       "relaxSchedules": "{n} מערכות",
       "relaxNoRequiredInfo": "המערכת אינה יודעת אילו קורסים חובה לתואר שלך — היא בדקה ימי לימוד בלבד.",
-      "noTarget": "—",
-      "minHint": "המינימום האפשרי הוא {days}",
+      "minTag": "מינימום",
+      "extras": {
+        "noFriday": "בלי יום שישי",
+        "earliest": "לא לפני {time}",
+        "latest": "לא אחרי {time}",
+        "blockedOne": "חלון חסום אחד",
+        "blockedMany": "{n} חלונות חסומים"
+      },
       "pickTarget": "יש לבחור יעד ימי לימוד"
     },
     "header": {

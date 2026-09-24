@@ -1371,6 +1371,16 @@ html.is-modal-open body { overflow: hidden; }
 
 .advanced-body { padding-block: 6px 12px; display: flex; flex-direction: column; gap: 10px; }
 
+/* ‏"הגדרות נוספות" סגור: שורה אחת עם מה שאינו ברירת מחדל. פתוח: הפקדים
+   עצמם אומרים את זה, והשורה נעלמת. */
+.advanced-values {
+  font-weight: 500;
+  color: var(--ink);
+  margin-inline-start: .6em;
+}
+.advanced-values:empty,
+details[open] > .advanced-summary > .advanced-values { display: none; }
+
 .blocked { display: flex; flex-wrap: wrap; gap: 6px; }
 .blocked:empty { display: none; }
 
@@ -1516,7 +1526,12 @@ html.is-modal-open body { overflow: hidden; }
    ========================================================================== */
 .days-row { display: flex; flex-wrap: wrap; gap: 8px; }
 
+/* ‏מקום לתווית "מינימום" שמתחת לכפתור. רק כשיש מינימום, כדי שלא יישאר
+   רווח ריק לפני הפתירה הראשונה. */
+.days-row.has-min { padding-block-end: 18px; }
+
 .day-btn {
+  position: relative;
   font: inherit;
   font-size: 16px;
   font-weight: 700;
@@ -1539,10 +1554,34 @@ html.is-modal-open body { overflow: hidden; }
   color: var(--accent-ink);
 }
 
+/* ‏מתחת למינימום: מקווקו ומושתק (docs/DESIGN.md, Study days) — ועדיין לחיץ.
+   ההחלטה (2026-09-24): בחירתו היא הדרך היחידה אל האזהרה ואל "מה יאפשר
+   N ימים". ‏‎--sec‎ ולא ‎--mut‎ לספרה, כי זה פקד פעיל וצריך AA. כשהוא
+   נבחר, מצב הבחירה גובר: מילוי דיו, והקונפליקט נאמר באזהרה ובסימן השלב. */
 .day-btn.is-impossible {
   border-style: dashed;
-  border-color: var(--warn-line);
-  color: var(--warn-ink);
+  border-color: var(--mut);
+  color: var(--sec);
+}
+
+.day-btn.is-impossible[aria-checked="true"] {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* ‏"מינימום" — מתחת לכפתור, מחוץ לעיגול. חלק מהכפתור, ולכן גם חלק מהשם
+   הנגיש שלו: "4 מינימום". */
+.day-min-tag {
+  position: absolute;
+  inset-block-start: calc(100% + 3px);
+  inset-inline-start: 50%;
+  transform: translateX(50%);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--sec);
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* ==========================================================================

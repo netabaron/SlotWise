@@ -151,10 +151,13 @@
                   #catalog-browse-state כמה מוצג מתוך כמה (aria-live)
                   באותו מצב תיבת #course-search מזינה את #catalog-results
                   במקום את הרשימה הנפתחת.
-  3 ימי לימוד     #days-buttons (כפתורים עם data-days="2".."6")
-                  #days-target-label #min-days-label #feasible-count-label
-                  #days-warning (hidden) #input-earliest #input-latest
-                  #chk-forbid-friday #blocked-list
+  3 ימי לימוד     #days-buttons (כפתורים עם data-days="2".."6"). בכל כפתור
+                  ‏.day-min-tag ("מינימום", hidden) — נפתח על המינימום האפשרי;
+                  ‏.is-impossible על ערך מתחת לו (מקווקו, ועדיין לחיץ).
+                  #days-warning (hidden) #days-relax
+                  #advanced-prefs ("הגדרות נוספות", סגור כברירת מחדל):
+                  #input-earliest #input-latest #chk-forbid-friday #blocked-list
+                  #advanced-values  שורה אחת: מה שונה מברירת המחדל, נראית כשסגור
   4 מרצים         #lecturer-courses  #btn-clear-ranking
                   #attendance-note
                   (מתגי "חובת נוכחות" לכל קורס ולכל סוג רכיב נבנים ב-app.js
@@ -442,23 +445,15 @@
       <div class="field">
         <span class="label" id="days-buttons-label">{{ S.ui.fields.daysTargetLabel }}</span>
         <div class="days-row" id="days-buttons" role="radiogroup" aria-labelledby="days-buttons-label">
-          <button type="button" class="day-btn" data-days="2" role="radio" aria-checked="false">2</button>
-          <button type="button" class="day-btn" data-days="3" role="radio" aria-checked="false">3</button>
-          <button type="button" class="day-btn" data-days="4" role="radio" aria-checked="false">4</button>
-          <button type="button" class="day-btn" data-days="5" role="radio" aria-checked="false">5</button>
-          <button type="button" class="day-btn" data-days="6" role="radio" aria-checked="false">6</button>
+          <button type="button" class="day-btn" data-days="2" role="radio" aria-checked="false">2<span class="day-min-tag" hidden>{{ S.app.days.minTag }}</span></button>
+          <button type="button" class="day-btn" data-days="3" role="radio" aria-checked="false">3<span class="day-min-tag" hidden>{{ S.app.days.minTag }}</span></button>
+          <button type="button" class="day-btn" data-days="4" role="radio" aria-checked="false">4<span class="day-min-tag" hidden>{{ S.app.days.minTag }}</span></button>
+          <button type="button" class="day-btn" data-days="5" role="radio" aria-checked="false">5<span class="day-min-tag" hidden>{{ S.app.days.minTag }}</span></button>
+          <button type="button" class="day-btn" data-days="6" role="radio" aria-checked="false">6<span class="day-min-tag" hidden>{{ S.app.days.minTag }}</span></button>
         </div>
       </div>
 
-      <div class="facts" id="days-facts">
-        <span class="fact"><span class="fact-label">{{ S.ui.fields.factTarget }}</span><strong class="fact-value" id="days-target-label">—</strong></span>
-        <span class="fact"><span class="fact-label">{{ S.ui.fields.factMinDays }}</span><strong class="fact-value" id="min-days-label">—</strong></span>
-      </div>
-
       <p class="inline-warn" id="days-warning" role="status" aria-live="polite" hidden></p>
-      <!-- ‏לפני שנבחר יעד: מה המינימום. ‏aria-live כי הוא מופיע אחרי
-           הפתירה ומשתנה כשהקורסים משתנים — שינוי על המסך שצריך להישמע. -->
-      <p class="note" id="days-hint" role="status" aria-live="polite" hidden></p>
 
 
         <!-- ‏מה יפתח את היעד, ולא רק למה הוא חסום. כל מספר כאן הוא
@@ -471,8 +466,13 @@
           <p class="days-relax-note" id="days-relax-note"></p>
         </div>
 
+      <!-- ‏כל ההגדרות שאינן יעד הימים. סגור כברירת מחדל; כשהוא סגור,
+           ‏#advanced-values אומר בשורה אחת מה שונה מברירת המחדל (שישי,
+           שעות, חלונות חסומים), כדי שהגדרה פעילה לא תסתתר מאחורי קיפול.
+           ‏"לאפשר חפיפות" אינה כאן: אין לה פקד — ‏allowSoftConflicts תמיד
+           ‏true, וחובת הנוכחות בשלב 4 היא הפקד היחיד (‏app.js, defaultState). -->
       <details class="advanced" id="advanced-prefs">
-        <summary class="advanced-summary">{{ S.ui.fields.advancedSummary }}</summary>
+        <summary class="advanced-summary">{{ S.ui.fields.advancedSummary }}<span class="advanced-values" id="advanced-values"></span></summary>
         <div class="advanced-body">
           <div class="field-row">
             <div class="field">
