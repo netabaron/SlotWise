@@ -176,7 +176,7 @@ This section will be extended with specializations and with the elective and gen
 - **Group rows:** rank circle, lecturer, type, day and time, room, pin button. Group number moves to the lesson-details view on the results page (or a tooltip here); it is not a column.
 - Clicking a row assigns the next rank; clicking a ranked row removes it and renumbers. Rank assignment has a short pop (250ms scale to 1.2 and back).
 - A pinned row gets the course tint as background and a filled pin in the course color.
-- A group that leaves no possible schedule is shown at 40% opacity, is not clickable, and carries a one-line reason under the lecturer's name ("לא משאיר מערכת אפשרית"). This replaces the pink legend color.
+- A group that leaves no possible schedule is dimmed, is not clickable, and carries a one-line reason under the lecturer's name ("לא משאיר מערכת אפשרית"). This replaces the pink legend color. It is dimmed **with color, not opacity** (decided 2026-09-24): text in `--mut`, the rank circle and pin faded. Opacity on text is banned by `tests/test_no_opacity_on_text.py`, which exists because faded text failed contrast.
 - "עודכן לפני X שעות" is shown once, in the header, not per course.
 
 ## Results page

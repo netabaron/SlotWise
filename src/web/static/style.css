@@ -1512,15 +1512,6 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .tag--warn     { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
 .tag--dead     { border-color: var(--err-line);  background: var(--err-bg);  color: var(--err-ink); }
 
-/* ‏הודעת מצב של הידיעון בשורת קבוצה. תג בתוך תא צר, ולכן שורה משלו
-   ‏מתחת למספר הקבוצה ולא לצידו — אחרת הוא דוחף את הטבלה לרוחב. */
-.group-status {
-  display: block;
-  inline-size: fit-content;
-  margin-block-start: 4px;
-  white-space: normal;
-}
-
 /* ==========================================================================
    9. שלב 3 — כפתורי ימי הלימוד
    ========================================================================== */
@@ -1585,159 +1576,267 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 }
 
 /* ==========================================================================
-   10. שלב 4 — טבלאות המרצים
+   10. שלב 4 — מרצים (docs/DESIGN.md, "Lecturers")
+   בלי מקרא: הפקדים מסבירים את עצמם. עיגול מקווקו ריק = "לחצו לדירוג",
+   עיגול מלא ממוספר = הדירוג, נעץ = נעיצה. כל קורס הוא אקורדיון בצבע שלו
+   — אותו צבע שיהיה לו במערכת — ורק אחד פתוח בכל פעם.
    ========================================================================== */
-.lect-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px var(--gap);
+
+/* ---- "איפוס": קישור טקסט קטן בכותרת השלב ---- */
+.step-reset {
+  flex: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.step-reset:disabled { color: var(--mut); text-decoration: none; cursor: default; }
+.step.is-collapsed .step-reset,
+.step.is-locked .step-reset { display: none; }
+
+/* ---- "N שיעורים ללא חובת נוכחות": גלולה שנפתחת, ושורה אחת ---- */
+.attendance-off { display: flex; flex-direction: column; gap: 6px; }
+.att-off > summary { list-style: none; }
+.att-off > summary::-webkit-details-marker { display: none; }
+.att-off-pill {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
+  inline-size: fit-content;
+  padding: 4px 12px;
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  background: var(--sf);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
-
-.legend-inline { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
-.legend-item { display: inline-flex; align-items: center; gap: 6px; }
-
-.legend-swatch {
-  inline-size: 14px;
-  block-size: 14px;
-  border-radius: 4px;
-  border: 1px solid var(--line-strong);
-  background: var(--chip);
+.att-off-pill::after { content: "\25BE"; font-size: 11px; color: var(--sec); }
+.att-off[open] > .att-off-pill::after { content: "\25B4"; }
+.attendance-off-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding-inline-start: 14px;
+  font-size: 13px;
 }
+.att-off-line { margin: 0; }
 
-.legend-swatch--pin { background: var(--pin-bg); border-color: var(--pin-line); }
-.legend-swatch--dead { background: var(--err-bg); border-color: var(--dead-line); opacity: .55; }
-
-.lect-courses { display: flex; flex-direction: column; gap: var(--gap); }
+/* ---- הקורס: אקורדיון עם פס צבע ---- */
+.lect-courses { display: flex; flex-direction: column; gap: 8px; }
 
 .lect-course {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
+  border: 1px solid var(--bd);
+  border-inline-start: 4px solid var(--ev-bd, var(--bd));
+  border-radius: 10px;
+  background: var(--sf);
   overflow: hidden;
 }
+
+.lect-course-h { margin: 0; font-size: inherit; font-weight: inherit; }
 
 .lect-course-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
+  gap: 4px 10px;
   align-items: baseline;
+  inline-size: 100%;
   padding: 10px 14px;
-  background: var(--chip);
-  border-block-end: 1px solid var(--line);
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.lect-course-head:hover { background: var(--panel-2); }
+.lect-course-title { font-size: 14px; font-weight: 600; }
+.lect-course-meta { font-size: 13px; color: var(--mut); }
+/* ‏הסיכום החי — "לא דורג" / "עדיפות: A ← B" / "נעוץ: A" — בסוף השורה. */
+.lect-course-end {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-inline-start: auto;
+}
+.lect-course-choice {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--sec);
+}
+.lect-course-caret { flex: none; font-size: 12px; color: var(--sec); }
+.lect-course-caret::before { content: "\25BE"; }
+.lect-course.is-open .lect-course-caret::before { content: "\25B4"; }
+
+.lect-course-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 14px 14px;
+  border-block-start: 1px solid var(--ln);
 }
 
-.lect-course-title { font-size: 14px; font-weight: 700; }
-.lect-course-meta { font-size: 13px; color: var(--muted); }
+/* ---- חובת נוכחות: מתג לכל סוג רכיב, ו-ⓘ אחד ---- */
+.lect-attendance { display: flex; flex-direction: column; gap: 6px; padding-block-start: 8px; }
+.att-row { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
 
+.att-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+/* ‏הקלט עצמו נשאר קלט אמיתי (לחיץ, ממוקד, ‎data-fk‎) — שקוף, מעל המסילה. */
+.att-switch input {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 34px;
+  block-size: 20px;
+  margin: 0;
+  appearance: none;
+  cursor: pointer;
+}
+.att-switch-track {
+  position: relative;
+  flex: none;
+  inline-size: 34px;
+  block-size: 20px;
+  border-radius: 999px;
+  /* ‏‎--mut‎ ולא ‎--bd‎ לכבוי: ‏‎--bd‎ על ‎--sf‎ כמעט נעלם במצב כהה. */
+  background: var(--mut);
+  transition: background-color .15s ease;
+}
+.att-switch-track::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: 2px;
+  inline-size: 16px;
+  block-size: 16px;
+  border-radius: 50%;
+  background: var(--sf);
+  transition: inset-inline-start .15s ease;
+}
+.att-switch input:checked + .att-switch-track { background: var(--ink); }
+.att-switch input:checked + .att-switch-track::after { inset-inline-start: 16px; }
+.att-switch input:focus-visible + .att-switch-track { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.info-btn {
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: 50%;
+  border: 0;
+  background: none;
+  color: var(--sec);
+  cursor: pointer;
+}
+.info-btn:hover,
+.info-btn[aria-expanded="true"] { color: var(--ink); }
+
+.att-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-size: 13px;
+  color: var(--sec);
+}
+.att-info[hidden] { display: none; }
+.lect-course-note { margin: 0; }
+
+/* ---- טבלת הקבוצות ---- */
 .lect-table-wrap { overflow-x: auto; }
-
 .lect-table {
   inline-size: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
-
 .lect-table th,
 .lect-table td {
-  padding: 7px 10px;
+  padding: 8px 10px;
   text-align: start;
-  border-block-end: 1px solid var(--line);
+  vertical-align: top;
+  border-block-end: 1px solid var(--ln);
   white-space: nowrap;
 }
-
 .lect-table th {
-  background: var(--panel-2);
+  background: var(--sf);
   font-weight: 600;
-  color: var(--muted);
-  font-size: 13px;
+  color: var(--sec);
+  font-size: 12px;
   position: sticky;
   inset-block-start: 0;
   z-index: 1;
 }
-
-.lect-table td:first-child,
-.lect-table th:first-child { border-inline-start: 3px solid transparent; }
-
-/* פסי זברה */
-.lect-table tbody tr:nth-child(odd) > td { background: var(--panel-2); }
-.lect-table tbody tr:nth-child(even) > td { background: var(--panel); }
-
 .lect-table tbody tr { cursor: pointer; transition: background-color .12s ease; }
-.lect-table tbody tr:hover > td { background: var(--accent-soft); }
+.lect-table tbody tr:hover > td { background: var(--panel-2); }
 
-/* שורה מדורגת */
-.lect-table tbody tr.is-ranked > td { background: var(--accent-soft); }
+.lect-table .th-rank,
+.lect-table .cell-rank { inline-size: 1px; padding-inline-end: 4px; }
 
-.rank-badge {
+/* ‏עיגול הדירוג. ריק ומקווקו = "לחצו לדירוג"; מלא בדיו = הדירוג. */
+.rank-circle {
   display: inline-grid;
   place-items: center;
-  inline-size: 1.5rem;
-  block-size: 1.5rem;
+  inline-size: 22px;
+  block-size: 22px;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 13px;
+  border: 1px dashed var(--mut);
+  font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  color: var(--sf);
+}
+.rank-circle.is-ranked { border: 1px solid var(--ink); background: var(--ink); }
+/* ‏קפיצה קצרה כשדירוג ניתן: 250ms, ל-1.2 וחזרה. תנועה מופחתת — פרק 14. */
+.rank-circle.is-pop { animation: rank-pop 250ms ease-out; }
+@keyframes rank-pop {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(1.2); }
 }
 
-/* שורה נעוצה — מצב נבדל ומודגש */
-.lect-table tbody tr.is-pinned > td {
-  background: var(--pin-bg);
-  color: var(--pin-line);
-  font-weight: 600;
-}
+.cell-lect { white-space: normal; min-inline-size: 9rem; }
+.row-sub { font-size: 12px; margin-block-start: 2px; }
+/* ‏הודעת הידיעון על הקבוצה ("הקורס מלא") — מתחת לשם המרצה. */
+.group-status { color: var(--warn-ink); font-weight: 500; }
 
-.lect-table tbody tr.is-pinned > td:first-child { border-inline-start-color: var(--pin-line); }
+/* ---- נעיצה ---- */
+/* ‏שורה נעוצה: רקע בגוון הקורס, ונעץ מלא בצבע הקורס. */
+.lect-table tbody tr.is-pinned > td,
+.lect-table tbody tr.is-pinned:hover > td { background: var(--ev-bg); }
 
-/* שורה שמובילה למבוי סתום — מושבתת באופן גלוי */
+/* ‏שורה שלא משאירה מערכת אפשרית: מעומעמת בצבע ולא ב-opacity (החלטה
+   ‏2026-09-24 — ‏tests/test_no_opacity_on_text.py). הכול ב-‎--mut‎, העיגול
+   והנעץ דהויים, ושורה "לא משאיר מערכת אפשרית" מתחת לשם. לא לחיצה. */
 .lect-table tbody tr.is-dead,
-.lect-table tbody tr[aria-disabled="true"] {
-  cursor: not-allowed;
-}
-
+.lect-table tbody tr[aria-disabled="true"] { cursor: not-allowed; }
 .lect-table tbody tr.is-dead > td,
-.lect-table tbody tr[aria-disabled="true"] > td {
-  color: var(--muted);
-  text-decoration: line-through;
-  text-decoration-color: var(--dead-line);
-  text-decoration-thickness: 1.5px;
-}
-
-/* הסיבה עצמה יושבת ב-title של השורה ושל כפתור הנעיצה, ולא בעמודה משלה. */
-.lect-table tbody tr.is-dead { cursor: help; }
-
+.lect-table tbody tr[aria-disabled="true"] > td { color: var(--mut); }
 .lect-table tbody tr.is-dead:hover > td,
-.lect-table tbody tr[aria-disabled="true"]:hover > td { background: var(--err-bg); }
+.lect-table tbody tr[aria-disabled="true"]:hover > td { background: none; }
+.lect-table tbody tr.is-dead .rank-circle { border-color: var(--bd); }
+.lect-table tbody tr.is-dead .group-status { color: var(--mut); }
 
-.lect-table tbody tr.is-dead > td:first-child,
-.lect-table tbody tr[aria-disabled="true"] > td:first-child {
-  border-inline-start-color: var(--dead-line);
-}
-
-.lect-table tbody tr.is-dead > td:first-child::before,
-.lect-table tbody tr[aria-disabled="true"] > td:first-child::before {
-  content: "\1F512";          /* מנעול — מסמן בחירה חסומה */
-  text-decoration: none;
-  display: inline-block;
-  margin-inline-end: .4em;
-  font-size: 13px;
-}
-
-/* ---- קוד הקבוצה: הקידומת חוזרת בכל שורה, הסיומת היא ההבדל ---- */
-.gid { direction: ltr; unicode-bidi: isolate; }
-.gid-prefix { color: var(--muted); font-weight: 400; }
-.gid-suffix { font-weight: 700; }
-
-/* קישור בין קבוצות — סמל אחד במקום משפט שחזר בכל שורה */
+/* קישור בין קבוצות — סמל אחד עם תיאור */
 .link-badge {
   margin-inline-start: .4em;
-  font-size: 13px;
+  font-size: 12px;
   cursor: help;
-  /* הסמל אינו טקסט שצריך למתוח עליו קו כשהשורה חסומה */
-  text-decoration: none;
   display: inline-block;
 }
 
@@ -1745,40 +1844,34 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .when-line { display: flex; gap: .45em; align-items: baseline; }
 .when-day { font-weight: 600; }
 
-/* ---- נעיצה: סמל, לא תווית ---- */
-/* ‏.lect-table td הוא (0,1,1) ו-.cell-pin לבדו (0,1,0), ולכן ה-center
-   ‏כאן הפסיד ל-text-align: start של הטבלה ומעולם לא נכנס לתוקף. העמודה
-   ‏רחבה כמו התוכן שלה, ולכן איש לא ראה זאת — עד שיוחלף האמוג'י בכפתור
-   ‏SVG רחב יותר בשלב 7, ואז ההצהרה הייתה מתבררת כשקרית. */
 .lect-table .th-pin,
 .lect-table .cell-pin { text-align: center; inline-size: 1px; white-space: nowrap; }
 
+/* ‏הנעץ: מתאר ב-‎--sec‎; מלא בצבע הקורס כשנעוץ. בלי opacity ובלי
+   ‏filter — המצב נאמר בצורה (מתאר/מילוי) ובצבע, לא בשקיפות. */
 .pin-btn {
-  font: inherit;
-  font-size: 14px;
-  line-height: 1;
-  padding: 4px 7px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background: transparent;
+  display: inline-grid;
+  place-items: center;
+  inline-size: 28px;
+  block-size: 28px;
+  padding: 0;
+  border-radius: 50%;
+  border: 0;
+  background: none;
+  color: var(--sec);
   cursor: pointer;
-  /* כבוי = מתאר דהוי; דלוק = מלא וצבעוני. ההבדל אינו נשען על צבע בלבד,
-     כי גם המסגרת והרקע משתנים. */
-  filter: grayscale(1);
-  opacity: .45;
-  transition: opacity .12s ease, filter .12s ease;
 }
-
-.pin-btn:hover:not(:disabled) { opacity: .9; filter: grayscale(.3); }
-
-.pin-btn[aria-pressed="true"] {
-  filter: none;
-  opacity: 1;
-  background: var(--pin-bg);
-  border-color: var(--pin-line);
+.pin-btn svg { inline-size: 18px; block-size: 18px; }
+.pin-btn svg path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
 }
-
-.pin-btn:disabled { cursor: not-allowed; opacity: .2; }
+.pin-btn:hover:not(:disabled) { color: var(--ink); }
+.pin-btn[aria-pressed="true"] { color: var(--ev-bd, var(--ink)); }
+.pin-btn[aria-pressed="true"] svg path { fill: currentColor; }
+.pin-btn:disabled { cursor: not-allowed; color: var(--bd); }
 
 /* ==========================================================================
    11. שלב 5 — לשוניות, מקרא, והרשת השבועית
@@ -2170,24 +2263,6 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 }
 
 .tech-facts:empty { display: none; }
-
-/* השיעורים שוויתרו בהם על נוכחות — רשימה, לא זנב פסיקים בסוף פסקה. */
-.attendance-off {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--panel-2);
-  padding: 8px 12px;
-}
-
-.attendance-off-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  margin-block-end: 4px;
-}
-
-.attendance-off-list { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
-.attendance-off-list li { padding-inline-start: 0; }
 
 /* שורות יומן בתוך באנר תקלה — מקוצרות, ניתנות לגלילה, וקריאות. */
 .banner-more-log {

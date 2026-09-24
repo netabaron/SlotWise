@@ -158,13 +158,20 @@
                   #advanced-prefs ("הגדרות נוספות", סגור כברירת מחדל):
                   #input-earliest #input-latest #chk-forbid-friday #blocked-list
                   #advanced-values  שורה אחת: מה שונה מברירת המחדל, נראית כשסגור
-  4 מרצים         #lecturer-courses  #btn-clear-ranking
-                  #attendance-note
-                  (מתגי "חובת נוכחות" לכל קורס ולכל סוג רכיב נבנים ב-app.js
-                  בתוך .lect-course, מעל טבלת הקבוצות)
-                  מחלקות לשורת טבלה: "is-ranked" (עם span.rank-badge) ·
-                  "is-pinned" · "is-dead" (מבוי סתום: aria-disabled="true"
-                  ותכונת title עם הסיבה). כפתור הנעיצה: class "pin-btn".
+  4 מרצים         #lecturer-courses  #btn-clear-ranking ("איפוס", בכותרת השלב)
+                  #attendance-off  גלולה "N שיעורים ללא חובת נוכחות" (<details>)
+                                   ושורת הסבר אחת; hidden כשאין כאלה
+                  כל קורס: section.lect-course.c<N> — אקורדיון, אחד פתוח בכל
+                  פעם. ‏.lect-course-head הוא הכפתור (aria-expanded), ובסופו
+                  ‏.lect-course-choice: "לא דורג" / "עדיפות: A ← B" / "נעוץ: A".
+                  בגוף: מתגי "חובת נוכחות" לכל סוג רכיב (input[data-fk=
+                  "att-<קוד>-<סוג>"]) עם ⓘ אחד שפותח את ההסבר, הערות הידיעון
+                  פעם אחת לקורס, וטבלת הקבוצות.
+                  שורת טבלה: מספר הקבוצה ב-title בלבד (לא עמודה).
+                  מחלקות: "is-ranked" (‏.rank-circle מלא) · "is-pinned" ·
+                  "is-dead" (aria-disabled="true", ‏title עם הסיבה המלאה,
+                  ושורה "לא משאיר מערכת אפשרית" מתחת לשם המרצה).
+                  כפתור הנעיצה: class "pin-btn".
   5 המערכת        #soft-conflicts (hidden) > #soft-conflicts-sub #soft-conflicts-list
                   #schedule-tabs #schedule-summary #schedule-legend
                   #grid-scroll > #schedule-grid
@@ -506,26 +513,19 @@
           <span class="step-change" aria-hidden="true">{{ S.ui.steps.change }}</span>
           <span class="step-caret" aria-hidden="true"></span>
         </button>
+        <!-- ‏"איפוס" — קישור טקסט קטן בכותרת השלב, לא כפתור גדול. גלוי רק
+             כשהשלב פתוח; השם הנגיש אומר מה מתאפס. -->
+        <button type="button" class="step-reset" id="btn-clear-ranking"
+                aria-label="{{ S.ui.lecturers.resetLabel }}">{{ S.ui.lecturers.btnClearRanking }}</button>
       </h2>
       <p class="step-hint">{{ S.ui.steps.lecturersHint }}</p>
       <p class="step-state" id="step-lecturers-state" aria-live="polite"></p>
     </div>
     <div class="step-fold">
     <div class="step-body" id="step-lecturers-body">
-      <div class="lect-toolbar">
-        <p class="legend-inline">
-          <span class="legend-item"><span class="rank-badge">1</span> {{ S.ui.lecturers.legendRank }}</span>
-          <span class="legend-item"><span class="legend-swatch legend-swatch--pin"></span> {{ S.ui.lecturers.legendPinned }}</span>
-          <span class="legend-item"><span class="legend-swatch legend-swatch--dead"></span> {{ S.ui.lecturers.legendDead }}</span>
-        </p>
-        <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-ranking">{{ S.ui.lecturers.btnClearRanking }}</button>
-      </div>
-      <p class="note" id="attendance-note">{{ S.ui.lecturers.attendanceNote }}</p>
-      <details class="advanced" id="attendance-what">
-        <summary class="advanced-summary">{{ S.ui.lecturers.attendanceWhat }}</summary>
-        <p class="note advanced-body">{{ S.ui.lecturers.attendanceWhatBody }}</p>
-      </details>
-      <div class="attendance-off" id="attendance-off"></div>
+      <!-- ‏אין מקרא: העיגול המקווקו הריק = "לחצו לדירוג", עיגול מלא ממוספר =
+           הדירוג, והנעץ = נעיצה. ההסבר על חובת נוכחות יושב מאחורי ⓘ בכל קורס. -->
+      <div class="attendance-off" id="attendance-off" hidden></div>
       <div class="lect-courses" id="lecturer-courses"></div>
       <p class="note" id="lecturers-note"></p>
     </div>

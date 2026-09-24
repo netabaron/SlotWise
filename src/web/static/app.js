@@ -658,6 +658,12 @@
 
   /** מה שלא נשמר בין רענונים: תשובות שרת, סטטוס, שגיאות. */
   var runtime = {
+    // שלב 4: הקורס הפתוח באקורדיון (null = ברירת מחדל, "" = הכול סגור),
+    // אילו ⓘ פתוחים, האם גלולת "ללא חובת נוכחות" פתוחה, והדירוג האחרון.
+    openCourse: null,
+    attInfoOpen: {},
+    attOffOpen: false,
+    popRank: null,
     restored: false,
     ready: false,
     bootstrap: null,
@@ -2899,11 +2905,6 @@
     ui.lectCourses = byId("lecturer-courses");
     ui.lectNote = byId("lecturers-note");
     ui.btnClearRanking = byId("btn-clear-ranking");
-    ui.attendanceNote = byId("attendance-note");
-    // הטקסט הקבוע נשמר פעם אחת, כדי שאפשר יהיה להוסיף לו משפט מצב בלי לאבד אותו.
-    ui.attendanceNoteBase = ui.attendanceNote
-      ? txt(ui.attendanceNote.textContent).replace(/\s+/g, " ").trim()
-      : "";
 
     ui.tabs = byId("schedule-tabs");
     ui.btnPrint = byId("btn-print");
@@ -5461,7 +5462,11 @@
     var ranked = deepCopy(state.ranked);
     var list = Array.isArray(ranked[code]) ? ranked[code].slice() : [];
     var i = list.indexOf(name);
-    if (i === -1) list.push(name);
+    if (i === -1) {
+      list.push(name);
+      // הדירוג שזה עתה ניתן — ‏groupRow מקפיץ את העיגול שלו, פעם אחת.
+      runtime.popRank = { code: txt(code), lecturer: name, at: Date.now() };
+    }
     else list.splice(i, 1);
     if (list.length) ranked[code] = list;
     else delete ranked[code];
@@ -5527,6 +5532,7 @@
           box.appendChild(warnBox);
         }
 
+        var openCode = openCourseCode();
         state.codes.forEach(function (code) {
           var course = courseDataByCode(code);
           if (!course) {
@@ -5546,7 +5552,7 @@
             box.appendChild(wrap);
             return;
           }
-          box.appendChild(coursePanel(course));
+          box.appendChild(coursePanel(course, txt(code) === openCode));
         });
       });
     }
@@ -5567,13 +5573,10 @@
   }
 
   /**
-   * המשפט שמתחת למתג הכללי. הוא לא מחליף את ההסבר הקבוע שב-index.html אלא
-   * מוסיף לו את המצב הנוכחי — כדי שלא ייווצר מצב שבו מתג דלוק ושום דבר לא קורה.
-   */
-  /**
-   * השיעורים שוויתרו בהם על חובת נוכחות — כרשימה, לא כמשפט.
-   * קודם היה זה זנב פסיקים של "קוד סוג" בסוף פסקה; שם קורס וסוג שיעור
-   * בשורה נפרדת הם מה שאפשר באמת לסרוק בעין.
+   * ‏"N שיעורים ללא חובת נוכחות" — גלולה אחת שנפתחת לרשימה, ושורה אחת
+   * שאומרת מה זה אומר (docs/DESIGN.md, Lecturers). כשאין כאלה — כלום.
+   * ‏<details> כדי שהפתיחה תעבוד מהמקלדת בלי קוד; מצב הפתיחה נשמר ב-runtime
+   * כי כל ציור בונה את הגלולה מחדש.
    */
   function renderAttendanceNote() {
     if (!ui.attendanceOff) return;
@@ -5593,72 +5596,154 @@
     setHidden(ui.attendanceOff, rows.length === 0);
     rebuild(ui.attendanceOff, function (box) {
       if (!rows.length) return;
-      box.appendChild(
-        el("p", {
-          class: "attendance-off-title",
-          text: T("app.lecturers.attendance.offTitle"),
-        })
-      );
       var list = el("ul", { class: "attendance-off-list" });
       rows.forEach(function (line) {
         list.appendChild(el("li", { text: line }));
       });
-      box.appendChild(list);
+      var details = el("details", { class: "att-off" }, [
+        el("summary", {
+          class: "att-off-pill",
+          data: { fk: "att-off" },
+          text:
+            rows.length === 1
+              ? T("app.lecturers.attendance.offPillOne")
+              : Tf("app.lecturers.attendance.offPill", { n: rows.length }),
+        }),
+        list,
+      ]);
+      details.open = runtime.attOffOpen === true;
+      details.addEventListener("toggle", function () {
+        runtime.attOffOpen = details.open;
+      });
+      box.appendChild(details);
+      box.appendChild(
+        el("p", { class: "note att-off-line", text: T("app.lecturers.attendance.offLine") })
+      );
     });
   }
 
-  function coursePanel(course) {
-    var code = course.code;
-    var idx = colorOf(code);
+  /**
+   * הקורס הפתוח באקורדיון. אחד בכל פעם; ‏"" = הכול סגור בבחירה מפורשת,
+   * ‏null = עוד לא נבחר, ואז הראשון שיש לו נתונים פתוח.
+   */
+  function openCourseCode() {
+    var codes = state.codes.map(txt).filter(function (code) {
+      return !!courseDataByCode(code);
+    });
+    if (runtime.openCourse === "") return "";
+    if (runtime.openCourse && codes.indexOf(runtime.openCourse) !== -1) {
+      return runtime.openCourse;
+    }
+    return codes.length ? codes[0] : "";
+  }
 
-    var metaBits = [
-      Tf("app.lecturers.meta.credits", { credits: fmtCredits(creditsOf(code)) }),
-      Tf("app.lecturers.meta.groups", { count: course.groups.length }),
-    ];
-    var fresh = course.freshness || {};
-    if (txt(fresh.age_text)) {
-      // ‏"עודכן לפני 48 דקות" ולא "לפני 48 דקות": זה זמן המשיכה האחרונה
-      // *של הקורס הזה*, ובלי הפועל אי אפשר לדעת של מה המספר.
-      metaBits.push(Tf("app.lecturers.courseAge", { age: txt(fresh.age_text) }));
+  /** הסיכום החי שבסוף כותרת הקורס: נעוץ, או סדר העדיפות, או "לא דורג". */
+  function courseChoiceText(course) {
+    var code = course.code;
+    var pinned = [];
+    kindsOf(course).forEach(function (kind) {
+      var gid = pinnedGroup(code, kind);
+      if (!gid) return;
+      var group = course.groups.filter(function (g) {
+        return txt(g.kind) === txt(kind) && txt(g.group_id) === txt(gid);
+      })[0];
+      var name = group && txt(group.lecturer)
+        ? txt(group.lecturer)
+        : T("app.lecturers.row.unknownLecturer");
+      if (pinned.indexOf(name) === -1) pinned.push(name);
+    });
+    if (pinned.length) {
+      return Tf("app.lecturers.choice.pinned", { list: pinned.join(" · ") });
     }
     var ranked = state.ranked[code] || [];
     if (ranked.length) {
-      metaBits.push(
-        Tf("app.lecturers.meta.priority", {
-          list: ranked
-            .map(function (name, i) {
-              return i + 1 + ". " + name;
-            })
-            .join(" · "),
-        })
-      );
+      return Tf("app.lecturers.choice.ranked", { list: ranked.join(" ← ") });
     }
+    return T("app.lecturers.choice.none");
+  }
 
-    var head = el("div", { class: "lect-course-head" }, [
-      el("span", { class: "legend-chip c" + idx, text: code }),
-      el("span", { class: "lect-course-title", text: txt(course.name) }),
-      el("span", { class: "lect-course-meta", text: metaBits.join(" · ") }),
-    ]);
+  /**
+   * ההערות שהידיעון כותב על הקבוצות — בעיקר משפט חובת הנוכחות — פעם אחת
+   * לקורס. עד שלב 4 של העיצוב הן חזרו מתחת למספר הקבוצה בכל שורה.
+   */
+  function courseNotes(course) {
+    // ‏הידיעון מצרף כמה הערות לקבוצה אחת ב-" | ", ולכן "משפט הנוכחות" ו-
+    // ‏"משפט הנוכחות | אין מועד קבוע" הן שתי הערות שונות שחוזרות על אותו
+    // משפט. מפרקים לחלקים ומציגים כל חלק פעם אחת.
+    var seen = [];
+    (course.groups || []).forEach(function (g) {
+      txt(g.note).split("|").forEach(function (part) {
+        var note = part.trim();
+        if (note && seen.indexOf(note) === -1) seen.push(note);
+      });
+    });
+    return seen;
+  }
 
-    var panel = el("section", { class: "lect-course" }, [head]);
+  function coursePanel(course, open) {
+    var code = course.code;
+    var idx = colorOf(code);
+    var bodyId = "lect-body-" + txt(code);
 
-    var warnings = pickList(course, ["warnings"], null)
+    // ‏פס צבע הקורס, שם, קוד ונ"ז, ובסוף מה נבחר. מספר הקבוצות, סדר
+    // העדיפות המלא וגיל הנתונים ישבו כאן עד שלב 4: הראשון נראה בפתיחה,
+    // השני בסיכום ובעיגולים, והשלישי נאמר פעם אחת — בכותרת העמוד.
+    var head = el(
+      "button",
+      {
+        class: "lect-course-head",
+        attrs: {
+          type: "button",
+          "aria-expanded": open ? "true" : "false",
+          "aria-controls": bodyId,
+        },
+        // ‏"lect-course-" ולא "course-": שלב 2 כבר משתמש ב-"course-<קוד>", ומפתח
+        // משותף היה מחזיר את המיקוד לכרטיס הלא נכון אחרי ציור.
+        data: { fk: "lect-course-" + code },
+        on: {
+          click: function () {
+            runtime.openCourse = open ? "" : txt(code);
+            render();
+          },
+        },
+      },
+      [
+        el("span", { class: "lect-course-title", text: txt(course.name) || nameOf(code) }),
+        el("span", {
+          class: "lect-course-meta",
+          text:
+            txt(code) +
+            " · " +
+            Tf("app.lecturers.meta.credits", { credits: fmtCredits(creditsOf(code)) }),
+        }),
+        // הסיכום והחץ יחד, כדי שבמסך צר לא יישבר החץ לשורה משלו.
+        el("span", { class: "lect-course-end" }, [
+          el("span", { class: "lect-course-choice", text: courseChoiceText(course) }),
+          el("span", { class: "lect-course-caret", attrs: { "aria-hidden": "true" } }),
+        ]),
+      ]
+    );
+
+    var body = el("div", { class: "lect-course-body", attrs: { id: bodyId } });
+    body.hidden = !open;
+
+    pickList(course, ["warnings"], null)
       .map(function (w) {
         return txt(typeof w === "object" ? w.text || w.message : w);
       })
-      .filter(Boolean);
-    warnings.forEach(function (w) {
-      panel.appendChild(el("p", { class: "note", text: w }));
-    });
+      .filter(Boolean)
+      .forEach(function (w) {
+        body.appendChild(el("p", { class: "note", text: w }));
+      });
 
-    panel.appendChild(attendanceBox(course));
+    body.appendChild(attendanceBox(course));
 
     var table = el("table", { class: "lect-table" }, [
       el("thead", {}, [
         el("tr", {}, [
-          el("th", { text: T("app.lecturers.table.group") }),
-          el("th", { text: T("app.lecturers.table.kind") }),
+          el("th", { class: "th-rank", text: T("app.lecturers.table.rank") }),
           el("th", { text: T("app.lecturers.table.lecturer") }),
+          el("th", { text: T("app.lecturers.table.kind") }),
           // יום ושעה בתא אחד: הם נקראים תמיד יחד, ושתי עמודות נפרדות
           // רק הרחיבו את הטבלה.
           el("th", { text: T("app.lecturers.table.when") }),
@@ -5676,23 +5761,31 @@
       tbody.appendChild(groupRow(course, group));
     });
     table.appendChild(tbody);
-    panel.appendChild(el("div", { class: "lect-table-wrap" }, [table]));
-    return panel;
+    body.appendChild(el("div", { class: "lect-table-wrap" }, [table]));
+
+    return el("section", { class: "lect-course c" + idx + (open ? " is-open" : "") }, [
+      el("h3", { class: "lect-course-h" }, [head]),
+      body,
+    ]);
   }
 
   /**
-   * מתג "חובת נוכחות" לכל סוג רכיב בקורס. ברירת המחדל דלוקה תמיד; כיבוי
-   * מאפשר למנוע — יחד עם המתג הכללי — לשבץ את הרכיב במקביל לרכיב אחר.
+   * מתג "חובת נוכחות" לכל סוג רכיב בקורס, ו-ⓘ אחד שפותח את ההסבר במקום.
+   * ברירת המחדל דלוקה תמיד; כיבוי מרשה למנוע לשבץ את הרכיב במקביל לרכיב
+   * אחר. ההסבר — מה המתג עושה, ולמה ברירת המחדל כאן היא מה שהיא — עבר
+   * מאחורי ה-ⓘ; המשפט של הידיעון עצמו נשאר גלוי, פעם אחת.
    */
   function attendanceBox(course) {
     var code = course.code;
+    var infoId = "att-info-" + txt(code);
+    var infoOpen = runtime.attInfoOpen[txt(code)] === true;
     var box = el("div", { class: "lect-attendance" });
-    var row = el("div", { class: "field-row" });
+    var row = el("div", { class: "att-row" });
     var hints = [];
 
     kindsOf(course).forEach(function (kind) {
       var input = el("input", {
-        attrs: { type: "checkbox" },
+        attrs: { type: "checkbox", role: "switch" },
         data: { fk: "att-" + code + "-" + kind },
         on: {
           change: function (ev) {
@@ -5702,47 +5795,57 @@
       });
       input.checked = attendanceRequired(code, kind);
       row.appendChild(
-        el(
-          "label",
-          {
-            class: "field field-check",
-            attrs: {
-              title: T("app.lecturers.attendance.toggleTitle"),
-            },
-          },
-          [input, el("span", { text: Tf("app.lecturers.attendance.label", { kind: kind }) })]
-        )
+        el("label", { class: "att-switch" }, [
+          input,
+          el("span", { class: "att-switch-track", attrs: { "aria-hidden": "true" } }),
+          el("span", { text: Tf("app.lecturers.attendance.label", { kind: kind }) }),
+        ])
       );
-
       var note = attendanceNoteFor(course, kind);
-      if (note) {
-        hints.push(Tf("app.lecturers.attendance.hint", { kind: kind, note: note }));
-      }
+      if (note) hints.push(Tf("app.lecturers.attendance.hint", { kind: kind, note: note }));
     });
 
+    row.appendChild(
+      el("button", {
+        class: "info-btn",
+        attrs: {
+          type: "button",
+          "aria-expanded": infoOpen ? "true" : "false",
+          "aria-controls": infoId,
+          "aria-label": T("app.lecturers.attendance.infoLabel"),
+          title: T("app.lecturers.attendance.infoLabel"),
+        },
+        data: { fk: "att-info-" + code },
+        text: "ⓘ",
+        on: {
+          click: function () {
+            runtime.attInfoOpen[txt(code)] = !infoOpen;
+            render();
+          },
+        },
+      })
+    );
     box.appendChild(row);
-    hints.forEach(function (hint) {
-      box.appendChild(el("p", { class: "note", text: hint }));
+
+    courseNotes(course).forEach(function (note) {
+      box.appendChild(el("p", { class: "note lect-course-note", text: note }));
     });
 
-    var off = optionalKindsOf(code).filter(function (kind) {
-      return kindsOf(course).indexOf(kind) !== -1;
+    var info = el("div", { class: "att-info", attrs: { id: infoId } });
+    hints.forEach(function (hint) {
+      info.appendChild(el("p", { text: hint }));
     });
-    if (off.length) {
-      box.appendChild(
-        el("p", {
-          class: "note",
-          text: Tf(
-            state.allowSoftConflicts
-              ? "app.lecturers.attendance.offSoft"
-              : "app.lecturers.attendance.offStrict",
-            { list: off.join(", ") }
-          ),
-        })
-      );
-    }
+    info.appendChild(el("p", { text: T("ui.lecturers.attendanceWhatBody") }));
+    info.hidden = !infoOpen;
+    box.appendChild(info);
     return box;
   }
+
+  /** נעץ: מתאר כשהקבוצה פתוחה, מלא בצבע הקורס כשהיא נעוצה (‏CSS). */
+  var PIN_SVG =
+    '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+    '<path d="M9 3h6l-1.2 6.2L17 12.5V14h-4.2v6L12 21l-.8-1v-6H7v-1.5l3.2-3.3z"/>' +
+    "</svg>";
 
   function groupRow(course, group) {
     var code = course.code;
@@ -5758,20 +5861,26 @@
     if (isPinned) cls += " is-pinned";
     if (dead) cls += " is-dead";
 
+    // ‏מספר הקבוצה אינו עמודה מאז שלב 4 של העיצוב — הוא הראשון ב-title של
+    // השורה, ובשם הנגיש של כפתור הנעיצה.
+    var title = [
+      Tf("app.lecturers.row.groupTitle", { gid: gid }),
+      dead
+        ? txt(via.reason)
+        : isPinned
+        ? T("app.lecturers.row.pinnedTitle")
+        : txt(group.lecturer)
+        ? Tf(rank ? "app.lecturers.row.rankRemove" : "app.lecturers.row.rankAdd", {
+            lecturer: group.lecturer,
+          })
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
     var tr = el("tr", {
       class: cls.replace(/^ /, ""),
-      attrs: {
-        title: dead
-          ? via.reason
-          : isPinned
-          ? T("app.lecturers.row.pinnedTitle")
-          : txt(group.lecturer)
-          ? Tf(rank ? "app.lecturers.row.rankRemove" : "app.lecturers.row.rankAdd", {
-              lecturer: group.lecturer,
-            })
-          : "",
-        "aria-disabled": dead ? "true" : null,
-      },
+      attrs: { title: title, "aria-disabled": dead ? "true" : null },
       data: { fk: "row-" + code + "-" + kind + "-" + gid },
       on: {
         click: function () {
@@ -5781,36 +5890,37 @@
       },
     });
 
-    // קבוצה — הקוד המלא נשאר על המסך (הוא מה שמצליבים מול הידיעון),
-    // אבל תשעה מכל עשרה תווים בו זהים בין השורות. הסיפרה שמבדילה מודגשת,
-    // והקידומת החוזרת מעומעמת, כדי שהעין תמצא את ההבדל במקום לספור ספרות.
-    var parts = groupIdParts(gid);
-    var idCell = el("td", { class: "cell-group" }, [
-      el("span", { class: "gid", attrs: { title: Tf("app.lecturers.row.groupTitle", { gid: gid }) } }, [
-        parts.prefix ? el("span", { class: "gid-prefix", text: parts.prefix }) : null,
-        el("span", { class: "gid-suffix", text: parts.suffix }),
-      ]),
+    // ‏עיגול הדירוג: ריק ומקווקו = "לחצו לדירוג", מלא וממוספר = הדירוג.
+    // ‏הקפיצה רצה רק על הדירוג שזה עתה ניתן. ציור חוזר באמצע (הפתרון חוזר
+    // מהשרת) בונה את העיגול מחדש, ולכן ההשהיה השלילית ממשיכה את האנימציה
+    // מאיפה שהייתה במקום להתחיל אותה שוב.
+    var circle = el("span", {
+      class: "rank-circle" + (rank ? " is-ranked" : ""),
+      attrs: { "aria-hidden": "true" },
+      text: rank ? String(rank) : "",
+    });
+    var pop = runtime.popRank;
+    if (rank && pop && pop.code === txt(code) && pop.lecturer === txt(group.lecturer)) {
+      var age = Date.now() - pop.at;
+      if (age < 250) {
+        circle.classList.add("is-pop");
+        circle.style.animationDelay = -age + "ms";
+      }
+    }
+    tr.appendChild(el("td", { class: "cell-rank" }, [circle]));
+
+    // מרצה, ומתחתיו מה שנאמר על השורה הזאת: הודעת הידיעון ("הקורס מלא")
+    // ולמה אי אפשר לבחור בה.
+    var lectCell = el("td", { class: "cell-lect" }, [
+      el("span", { text: txt(group.lecturer) || T("app.lecturers.row.unknownLecturer") }),
     ]);
-    if (group.note) {
-      idCell.appendChild(el("div", { class: "course-meta", text: group.note }));
-    }
-    // ‏הודעת המצב של הידיעון — "הקורס מלא", "מיועד לחוזרים". עד 2026-09-10
-    // הטקסט הזה היה מודבק לתוך שם המרצה ונקרא כחלק ממנו; כאן הוא תג נפרד
-    // בתא הקבוצה, כי הוא אומר משהו על **הקבוצה** ולא על מי שמלמד אותה.
-    if (group.status_note) {
-      idCell.appendChild(
-        el("span", { class: "tag tag--warn group-status", text: group.status_note })
-      );
-    }
     if (group.linked_to && group.linked_to.length) {
-      // ‏"משויכת ל-271030210/1 ועוד 2" חזר בכל שורה כמעט ותפס עמודה שלמה.
-      // סמל אחד עם תיאור אומר את אותו הדבר בלי לדחוף את הטבלה.
       var linked = group.linked_to;
       var linkedLabel = Tf(
         linked.length === 1 ? "app.lecturers.row.linkedOne" : "app.lecturers.row.linkedMany",
         { list: linked.join(", ") }
       );
-      idCell.appendChild(
+      lectCell.appendChild(
         el("span", {
           class: "link-badge",
           attrs: { title: linkedLabel, role: "img", "aria-label": linkedLabel },
@@ -5818,19 +5928,15 @@
         })
       );
     }
-    tr.appendChild(idCell);
+    if (group.status_note) {
+      lectCell.appendChild(el("div", { class: "row-sub group-status", text: group.status_note }));
+    }
+    if (dead) {
+      lectCell.appendChild(el("div", { class: "row-sub row-dead", text: T("app.lecturers.row.deadLine") }));
+    }
+    tr.appendChild(lectCell);
 
     tr.appendChild(el("td", { text: kind }));
-
-    // מרצה + תג הדירוג
-    var lectCell = el("td");
-    if (rank) {
-      lectCell.appendChild(el("span", { class: "rank-badge", text: String(rank) }));
-    }
-    lectCell.appendChild(
-      el("span", { text: txt(group.lecturer) || T("app.lecturers.row.unknownLecturer") })
-    );
-    tr.appendChild(lectCell);
 
     // יום ושעה בתא אחד, וחדר לצידו — שורה לכל מפגש
     var whenCell = el("td");
@@ -5858,10 +5964,8 @@
     tr.appendChild(whenCell);
     tr.appendChild(roomCell);
 
-    // נעיצה — כפתור נפרד; הלחיצה עליו לא מדרגת מרצה.
-    // הסמל מחליף ארבעים תוויות "נעיצה" זהות שמילאו עמודה שלמה. הוא נשאר
-    // נגיש למקלדת ככפתור רגיל, ו-aria-label נושא את המשמעות המלאה — כולל
-    // מספר הקבוצה, כי "נעיצה" לבדה אינה אומרת של מה.
+    // נעיצה — כפתור נפרד; הלחיצה עליו לא מדרגת מרצה. ‏aria-label נושא את
+    // המשמעות המלאה, כולל מספר הקבוצה.
     var pinLabel = dead
       ? Tf("app.lecturers.row.pinDead", { gid: gid, reason: txt(via.reason) })
       : Tf(isPinned ? "app.lecturers.row.pinRelease" : "app.lecturers.row.pinAdd", { gid: gid });
@@ -5874,7 +5978,6 @@
         title: pinLabel,
       },
       data: { fk: "pin-" + code + "-" + kind + "-" + gid },
-      text: "📌",
       on: {
         click: function (ev) {
           ev.stopPropagation();
@@ -5883,26 +5986,11 @@
         },
       },
     });
+    pinBtn.innerHTML = PIN_SVG;
     pinBtn.disabled = dead;
-    // הסיבה למבוי הסתום יושבת בתיאור של השורה ושל הכפתור בלבד. כעמודה
-    // משלה היא חזרה על עצמה בכל שורה חסומה והכפילה את רוחב הטבלה.
     tr.appendChild(el("td", { class: "cell-pin" }, [pinBtn]));
 
     return tr;
-  }
-
-  /**
-   * ‏"271030210/1" -> {prefix: "271030210/", suffix: "1"}.
-   * בלי סימן חוצץ הכל נחשב סיומת: עדיף להדגיש יותר מדי מאשר לנחש איפה
-   * מתחיל החלק המבדיל.
-   */
-  function groupIdParts(gid) {
-    var s = txt(gid);
-    var i = s.lastIndexOf("/");
-    if (i > 0 && i < s.length - 1) {
-      return { prefix: s.slice(0, i + 1), suffix: s.slice(i + 1) };
-    }
-    return { prefix: "", suffix: s };
   }
 
   /**

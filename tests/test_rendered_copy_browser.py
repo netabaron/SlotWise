@@ -769,6 +769,13 @@ def _overlap_on(page):
             except Exception:  # גוף שאינו JSON — לא הבקשה שאנחנו מחפשים
                 pass
 
+    # ‏מאז שלב 4 של העיצוב כל קורס בשלב המרצים הוא אקורדיון, ורק אחד פתוח.
+    # המתג של 61759 נמצא בגוף סגור עד שפותחים את הקורס.
+    head = page.locator('[data-fk="lect-course-61759"]')
+    if head.get_attribute("aria-expanded") != "true":
+        head.click()
+        page.wait_for_timeout(300)
+
     page.on("request", _grab)
     try:
         page.uncheck('input[data-fk="att-61759-הרצאה"]', force=True)
