@@ -3,9 +3,11 @@
    SlotWise — the single stylesheet.
 
    כללי היסוד:
-   1. אין שום בקשה חיצונית. אין @import, אין CDN, אין גופן שנטען מהרשת —
-      רק גופני מערכת. האפליקציה עובדת גם בלי חיבור לאינטרנט.
-      No external requests at all: no @import, no CDN, no webfonts.
+   1. אין שום בקשה חיצונית. אין @import, אין CDN, אין גופן שנטען מהרשת.
+      ‏Heebo מוגש מ-‎static/fonts‎ שלנו (ראו פרק 0), לא מ-Google Fonts.
+      האפליקציה עובדת גם בלי חיבור לאינטרנט.
+      No external requests at all: no @import, no CDN, no remote webfonts.
+      Heebo is self-hosted under static/fonts.
    2. כל צבע מוגדר קודם כטוקן על ‎:root‎ (מצב בהיר מלא), ורק אחר כך נדרס
       בגוש הכהה. אין צבע שקיים רק במצב אחד.
       Every colour is defined on bare :root first; the dark blocks ONLY override tokens.
@@ -18,26 +20,69 @@
    ========================================================================== */
 
 /* ==========================================================================
+   0. גופן — Heebo, מוגש מקומית
+   ‏גופן משתנה אחד לכל המשקלים (400–800), בשני חלקים: עברית ולטינית. אלה
+   אותם קבצים ואותם ‎unicode-range‎ ש-Google Fonts מגיש, רק מהשרת שלנו.
+   רישיון: static/fonts/OFL.txt.
+   ========================================================================== */
+@font-face {
+  font-family: "Heebo";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("fonts/heebo-hebrew.woff2") format("woff2");
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+@font-face {
+  font-family: "Heebo";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("fonts/heebo-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+                 U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+                 U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ==========================================================================
    1. טוקנים — הפלטה הבהירה המלאה
    ========================================================================== */
 :root {
   color-scheme: light dark;
 
-  /* ---- משטחים וטקסט ---- */
-  --bg: #f3eee4;
-  --panel: #fffdf9;
-  --panel-2: #f7f1e5;
-  --chip: #ece4d3;
-  --ink: #2b241d;
-  --muted: #5f5245;
-  --line: #e2d8c6;
-  --line-strong: #8f7b62;
+  /* ---- טוקני העיצוב (docs/DESIGN.md) ----
+     הממשק עצמו מונוכרומטי: דיו על משטחים נייטרליים. הצבע היחיד על המסך
+     שייך לקורסים. */
+  --bg: #f4f4f1;    /* רקע העמוד */
+  --sf: #ffffff;    /* משטחים: פאנלים, כרטיסי קורס */
+  --ln: #ebebe6;    /* קווי רשת ומפרידי שורות */
+  --bd: #e3e3dd;    /* מסגרות */
+  --ink: #111114;   /* טקסט ראשי, כפתור ראשי, מצב נבחר */
+  --sec: #6e6e73;   /* טקסט משני */
+  --mut: #a3a3a8;   /* טקסט מושתק, שעות, שלבים עתידיים */
 
-  /* ---- צבע ראשי ---- */
-  --accent: #a33b1c;
-  --accent-ink: #fffdf9;
-  --accent-soft: #f8e3d7;
-  --focus: #a33b1c;
+  /* ---- השמות הקודמים, ממופים לטוקנים ----
+     ‏הגיליון עדיין כתוב בשמות האלה. הם אינם מחזיקים צבע משלהם — רק
+     הפניה — כך שכל צבע כתוב פעם אחת. ‏--accent הוא עכשיו הדיו: הכפתור
+     הראשי והמצב הנבחר הם ‎--ink‎, והזוג מתהפך (‎--accent-ink‎ = ‎--sf‎). */
+  --panel: var(--sf);
+  --muted: var(--sec);
+  --line: var(--bd);
+  --line-strong: var(--mut);
+
+  --accent: var(--ink);
+  --accent-ink: var(--sf);
+  --focus: var(--ink);
+
+  /* ‏משטחי המשנה, ולמה הם אינם ‎--ln‎/‎--bd‎ בבהיר: ‎--muted‎ יושב עליהם
+     (תג "בתכנית" על ‎--chip‎, שורת מרצה מדורגת על ‎--accent-soft‎), ו-‎--sec‎
+     נותן שם רק 4.24:1 ו-3.94:1 — מתחת ל-AA. על ‎--bg‎ הוא 4.60:1.
+     ‏‎--panel-2‎ עולה לחצי הדרך אל ‎--sf‎ (‏4.85:1) כדי ששורה מדורגת עדיין
+     תיבדל משורה אי־זוגית בטבלת המרצים. בכהה אין הבעיה (‏‎--sec‎ ≥ 5:1
+     על כל המשטחים), ולכן שם המיפוי הוא הישיר. */
+  --panel-2: color-mix(in srgb, var(--bg) 50%, var(--sf));
+  --chip: var(--bg);
+  --accent-soft: var(--bg);
 
   /* ---- מצבים ---- */
   --info-bg: #e9eef6;  --info-line: #4d74ad;  --info-ink: #1f4576;
@@ -83,30 +128,29 @@
      The dark palette is defined once, here. The two dark blocks in §2
      only map to it, so no hex appears twice.
      ====================================================================== */
-  --dark-bg: #1a1a1a;
-  --dark-panel: #252525;
-  --dark-panel-2: #2d2d2d;
-  --dark-chip: #353535;
-  --dark-ink: #f2e8da;
-  --dark-muted: #bcac95;
-  --dark-line: #3b3b3b;
-  --dark-line-strong: #7e7e7e;
+  /* ---- טוקני העיצוב, כהה (docs/DESIGN.md) ---- */
+  --dark-bg: #0e0f11;
+  --dark-sf: #17181b;
+  --dark-ln: #222327;
+  --dark-bd: #2a2b30;
+  --dark-ink: #f2f2f0;
+  --dark-sec: #9a9aa1;
+  --dark-mut: #5d5e64;
 
-  --dark-accent: #f0a077;
-  --dark-accent-ink: #1a1410;
-  /* ‏נייטרלי, ולא גוון רך של האקסנט. כל תשעת השימושים ב-‎--accent-soft‎ הם
-     ‎background‎ — אף אחד מהם אינו טקסט ואינו מסגרת — כלומר זהו טוקן של
-     משטח בלבד, ומשטח חום מול צ'רקול נייטרלי נקרא כשריד ולא כבחירה.
-     האקסנט עצמו נשאר: הכרטיס הנבחר מסומן במסגרת ‎--accent‎, והמילוי רק
-     מרים אותו מהמשטח שמתחתיו.
+  /* ---- השמות הקודמים — הפניות בלבד. המיפוי הישיר; ראו בבהיר למה
+     שלושת משטחי המשנה שם שונים ---- */
+  --dark-panel: var(--dark-sf);
+  --dark-panel-2: var(--dark-bg);
+  --dark-chip: var(--dark-ln);
+  --dark-muted: var(--dark-sec);
+  --dark-line: var(--dark-bd);
+  --dark-line-strong: var(--dark-mut);
 
-     ‏#3e3e3e ולא האפור בעל אותה בהירות כמו ‎#3b2517‎, שהוא ‎#2a2a2a‎: שם
-     הכרומה הייתה זו שנשאה את ההבדל, וניטרול בלבד היה משאיר את הכרטיס
-     הנבחר ב-‎dE 1.4‎ מ-‎--panel-2‎ שעליו יושבים הלא-נבחרים — כלומר בלי
-     סימן מילוי כלל. עלייה במדרג שומרת על ההבדל: ‎dE 7.7‎ מ-‎--panel-2‎
-     ו-‎dE 4.0‎ מ-‎--chip‎, ששורת מרצה מדורגת יושבת לצדו. */
-  --dark-accent-soft: #3e3e3e;
-  --dark-focus: #f0a077;
+  /* ‏הזוג מתהפך: מה שיושב על רקע ‎--ink‎ כתוב ב-‎--sf‎. */
+  --dark-accent: var(--dark-ink);
+  --dark-accent-ink: var(--dark-sf);
+  --dark-accent-soft: var(--dark-bd);
+  --dark-focus: var(--dark-ink);
 
   --dark-info-bg: #1b2431;  --dark-info-line: #4a6f9e;  --dark-info-ink: #bcd3ef;
   --dark-ok-bg:   #1a2c17;  --dark-ok-line:   #4f8a45;  --dark-ok-ink:   #b6e0a2;
@@ -172,6 +216,11 @@
 @media screen and (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: var(--dark-bg);
+    --sf: var(--dark-sf);
+    --ln: var(--dark-ln);
+    --bd: var(--dark-bd);
+    --sec: var(--dark-sec);
+    --mut: var(--dark-mut);
     --panel: var(--dark-panel);
     --panel-2: var(--dark-panel-2);
     --chip: var(--dark-chip);
@@ -215,6 +264,11 @@
 @media screen {
   :root[data-theme="dark"] {
     --bg: var(--dark-bg);
+    --sf: var(--dark-sf);
+    --ln: var(--dark-ln);
+    --bd: var(--dark-bd);
+    --sec: var(--dark-sec);
+    --mut: var(--dark-mut);
     --panel: var(--dark-panel);
     --panel-2: var(--dark-panel-2);
     --chip: var(--dark-chip);
@@ -273,10 +327,14 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: "Segoe UI", "Arial Hebrew", Arial, sans-serif;
+  font-family: "Heebo", system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.5;
 }
+
+/* ‏פקדי טופס אינם יורשים גופן כברירת מחדל; בלי זה פקד בלי ‎font: inherit‎
+   משלו היה נשאר בגופן המערכת. */
+button, input, select, textarea { font-family: inherit; }
 
 h1, h2, h3 { margin: 0; font-weight: 700; line-height: 1.25; }
 p { margin: 0; }
@@ -1808,6 +1866,11 @@ html.is-modal-open body { overflow: hidden; }
      הבהירים — ואין צורך לדרוס כאן את עשרת צבעי הקורס. */
   :root {
     --bg: var(--print-bg);
+    --sf: var(--print-panel);
+    --ln: var(--print-line);
+    --bd: var(--print-line);
+    --sec: var(--print-muted);
+    --mut: var(--print-line-strong);
     --panel: var(--print-panel);
     --panel-2: var(--print-panel-2);
     --chip: var(--print-chip);
