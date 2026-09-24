@@ -98,7 +98,14 @@
     #step-<key>-body      גוף השלב, היעד של aria-controls.
     הקיפול הוא class על ה-section ("is-collapsed") ולא el.hidden על הגוף:
     ‏#catalog-browse ו-#electives נושאים גם הם class="step-body" בתוך שלב 2,
-    ולכן הכלל ב-CSS חייב להיות ‎.step.is-collapsed > .step-body‎.
+    ולכן הכלל ב-CSS חייב להיות ‎.step.is-collapsed > .step-fold‎.
+    ‏.step-fold          עוטף את #step-<key>-body בשלבים 1..4. הקיפול מנפיש את
+                        ‏grid-template-rows שלו (0fr ↔ 1fr), ולכן הגוף צריך
+                        עטיפה משלו. ‏app.js מוסיף לו is-folding בזמן הפתיחה.
+    ‏.step-change        "שינוי" בסוף שורת שלב מקופל. חלק מהכפתור, לא פקד נפרד.
+    מראה (docs/DESIGN.md, Stepper): מקופל = שורה אחת עם ✓, השם והסיכום;
+    נעול = שורה מושתקת אחת עם הסיבה; פרוס = פאנל מלא, ‏is-active במסגרת דיו.
+    ‏#step-<key>-state מוסתר חזותית בשלבים 1..4 (נשאר ל-aria-live).
 
   1 מסלול, שנה וסמסטר
                   #select-program #select-year #select-term
@@ -285,25 +292,22 @@
 
 <main class="steps" id="steps">
 
-  <!-- ‏שורת מצב, לא שורת התקדמות ממוספרת. הסעיפים נפתחים בכל סדר,
-       ומספור היה מבטיח רצף שאינו קיים. כל שבב אומר באיזה מצב הסעיף
-       ומקפיץ אליו. -->
-  <nav class="progress" id="steps-progress" aria-label="{{ S.app.progress.label }}"></nav>
-
   <!-- ===================== 1. שנה וסמסטר ===================== -->
-  <section class="step" id="step-year" data-step="1" aria-labelledby="step-year-title">
+  <section class="step step--stepper" id="step-year" data-step="1" aria-labelledby="step-year-title">
     <div class="step-head">
       <h2 class="step-title">
         <button type="button" class="step-toggle" id="step-year-toggle"
                 aria-expanded="true" aria-controls="step-year-body">
           <span class="step-name" id="step-year-title">{{ S.ui.steps.yearTitle }}</span>
           <span class="step-summary" id="step-year-summary"></span>
+          <span class="step-change" aria-hidden="true">{{ S.ui.steps.change }}</span>
           <span class="step-caret" aria-hidden="true"></span>
         </button>
       </h2>
       <p class="step-hint">{{ S.ui.steps.yearHint }}</p>
       <p class="step-state" id="step-year-state" aria-live="polite"></p>
     </div>
+    <div class="step-fold">
     <div class="step-body" id="step-year-body">
       <div class="field-row">
         <div class="field field--lg">
@@ -338,22 +342,25 @@
       <p class="resolved" id="semester-summary" role="status" aria-live="polite"></p>
       <p class="note" id="year-note"></p>
     </div>
+    </div>
   </section>
 
   <!-- ===================== 2. קורסים ===================== -->
-  <section class="step" id="step-courses" data-step="2" aria-labelledby="step-courses-title">
+  <section class="step step--stepper" id="step-courses" data-step="2" aria-labelledby="step-courses-title">
     <div class="step-head">
       <h2 class="step-title">
         <button type="button" class="step-toggle" id="step-courses-toggle"
                 aria-expanded="true" aria-controls="step-courses-body">
           <span class="step-name" id="step-courses-title">{{ S.ui.steps.coursesTitle }}</span>
           <span class="step-summary" id="step-courses-summary"></span>
+          <span class="step-change" aria-hidden="true">{{ S.ui.steps.change }}</span>
           <span class="step-caret" aria-hidden="true"></span>
         </button>
       </h2>
       <p class="step-hint">{{ S.ui.steps.coursesHint }}</p>
       <p class="step-state" id="step-courses-state" aria-live="polite"></p>
     </div>
+    <div class="step-fold">
     <div class="step-body" id="step-courses-body">
       <div class="courses-toolbar">
         <div class="field field-grow">
@@ -412,22 +419,25 @@
         <div class="electives-groups" id="electives-groups"></div>
       </div>
     </div>
+    </div>
   </section>
 
   <!-- ===================== 3. ימי לימוד ===================== -->
-  <section class="step" id="step-days" data-step="3" aria-labelledby="step-days-title">
+  <section class="step step--stepper" id="step-days" data-step="3" aria-labelledby="step-days-title">
     <div class="step-head">
       <h2 class="step-title">
         <button type="button" class="step-toggle" id="step-days-toggle"
                 aria-expanded="true" aria-controls="step-days-body">
           <span class="step-name" id="step-days-title">{{ S.ui.steps.daysTitle }}</span>
           <span class="step-summary" id="step-days-summary"></span>
+          <span class="step-change" aria-hidden="true">{{ S.ui.steps.change }}</span>
           <span class="step-caret" aria-hidden="true"></span>
         </button>
       </h2>
       <p class="step-hint">{{ S.ui.steps.daysHint }}</p>
       <p class="step-state" id="step-days-state" aria-live="polite"></p>
     </div>
+    <div class="step-fold">
     <div class="step-body" id="step-days-body">
       <div class="field">
         <span class="label" id="days-buttons-label">{{ S.ui.fields.daysTargetLabel }}</span>
@@ -482,22 +492,25 @@
         </div>
       </details>
     </div>
+    </div>
   </section>
 
   <!-- ===================== 4. מרצים ===================== -->
-  <section class="step" id="step-lecturers" data-step="4" aria-labelledby="step-lecturers-title">
+  <section class="step step--stepper" id="step-lecturers" data-step="4" aria-labelledby="step-lecturers-title">
     <div class="step-head">
       <h2 class="step-title">
         <button type="button" class="step-toggle" id="step-lecturers-toggle"
                 aria-expanded="true" aria-controls="step-lecturers-body">
           <span class="step-name" id="step-lecturers-title">{{ S.ui.steps.lecturersTitle }}</span>
           <span class="step-summary" id="step-lecturers-summary"></span>
+          <span class="step-change" aria-hidden="true">{{ S.ui.steps.change }}</span>
           <span class="step-caret" aria-hidden="true"></span>
         </button>
       </h2>
       <p class="step-hint">{{ S.ui.steps.lecturersHint }}</p>
       <p class="step-state" id="step-lecturers-state" aria-live="polite"></p>
     </div>
+    <div class="step-fold">
     <div class="step-body" id="step-lecturers-body">
       <div class="lect-toolbar">
         <p class="legend-inline">
@@ -515,6 +528,7 @@
       <div class="attendance-off" id="attendance-off"></div>
       <div class="lect-courses" id="lecturer-courses"></div>
       <p class="note" id="lecturers-note"></p>
+    </div>
     </div>
   </section>
 

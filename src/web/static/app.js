@@ -2935,7 +2935,7 @@
       : [];
 
     ui.btnBuild = byId("btn-build");
-    ui.progress = byId("steps-progress");
+    ui.stepsRoot = byId("steps");
     ui.printHead = byId("print-head");
     ui.detail = byId("meeting-detail");
     ui.detailBody = byId("meeting-detail-body");
@@ -3137,6 +3137,7 @@
     }
 
     COLLAPSIBLE_STEPS.forEach(function (key) {
+      watchFold(ui.steps[key]);
       var btn = ui.stepToggles[key];
       if (!btn) return;
       btn.addEventListener("click", function () {
@@ -3206,12 +3207,37 @@
         evt,
         function () {
           runtime.userActed = true;
+          // ‏תנועה רק בתגובה לפעולה (docs/DESIGN.md, עיקרון 3): קיפול
+          // שקורה מעצמו בטעינה — שחזור מצב, ‏autoCollapseIfIdle — קופץ.
+          if (ui.stepsRoot) ui.stepsRoot.classList.add("can-fold");
         },
         { capture: true, passive: true }
       );
     });
   }
 
+
+  /**
+   * ‏בזמן שגוף שלב נפתח, הוא חייב להיחתך בגבול השורה שגדלה — אחרת התוכן
+   * נשפך על השלב הבא במשך האנימציה. אבל חיתוך קבוע היה חותך גם את מה
+   * שיוצא מהגוף בכוונה כשהוא פתוח: רשימת תוצאות החיפוש וטבעות המיקוד.
+   * ‏לכן ‎is-folding‎ חי רק מתחילת המעבר ועד סופו.
+   */
+  function watchFold(section) {
+    var fold = section && section.querySelector(".step-fold");
+    if (!fold) return;
+    var mine = function (ev) {
+      return ev.target === fold && ev.propertyName === "grid-template-rows";
+    };
+    fold.addEventListener("transitionrun", function (ev) {
+      if (mine(ev)) fold.classList.add("is-folding");
+    });
+    ["transitionend", "transitioncancel"].forEach(function (evt) {
+      fold.addEventListener(evt, function (ev) {
+        if (mine(ev)) fold.classList.remove("is-folding");
+      });
+    });
+  }
 
   /** האם השלב מקופל כרגע. מפתח חסר = פרוס. */
   function stepCollapsed(key) {
@@ -3980,7 +4006,6 @@
     renderLecturersStep();
     renderScheduleStep();
     renderStepStates();
-    renderProgress();
     renderStickyBar();
     renderCompare();
     renderTechDetails();
@@ -7794,69 +7819,6 @@
       return !waived && !ranked && !pinned;
     }
     return true;
-  }
-
-  /**
-   * שורת המצב שמעל הסעיפים.
-   *
-   * לא ממוספרת בכוונה: הסעיפים נפתחים בכל סדר, ומספור היה מבטיח רצף
-   * שאינו קיים.
-   *
-   * ‏"לא נבחר" אינו אומר "בסדר גמור" מאז שההמלצה הפסיקה להיות מסומנת
-   * מראש: זהות וקורסים **חייבים** בחירה, ובלעדיהם אין מה לבנות, בעוד
-   * שימים ומרצים אפשר להשאיר כמו שהם. ההבחנה בין השניים עוד אינה
-   * מיוצגת כאן — כל השלבים חולקים מצב אחד — והיא עבודה של שלב 5.
-   */
-  function renderProgress() {
-    if (!ui.progress) return;
-    var keys = COLLAPSIBLE_STEPS;
-    var states = keys.map(sectionState);
-    rebuild(ui.progress, function (box) {
-      keys.forEach(function (key, i) {
-        var name = T("app.steps." + key + "Title", "");
-        if (!name) name = T("ui.steps." + key + "Title", key);
-        var st = states[i];
-        var label =
-          st === "conflict"
-            ? Tf("app.progress.conflict", { name: name })
-            : st === "chosen"
-            ? Tf("app.progress.chosen", { name: name })
-            : Tf("app.progress.untouched", { name: name });
-        box.appendChild(
-          el("button", {
-            class: "progress-chip is-" + st,
-            attrs: {
-              type: "button",
-              title: label,
-              "aria-label": Tf("app.progress.jump", { name: name }),
-            },
-            data: { fk: "progress-" + key },
-            text: name,
-            on: {
-              click: function () {
-                var node = ui.steps[key];
-                if (!node) return;
-                if (stepCollapsed(key)) {
-                  state.collapsed[key] = false;
-                  runtime.autoCollapsed[key] = true;
-                  setState({ collapsed: state.collapsed }, { solve: false });
-                }
-                if (node.scrollIntoView) node.scrollIntoView({ block: "start" });
-              },
-            },
-          })
-        );
-      });
-      box.appendChild(
-        el("span", {
-          class: "progress-hint",
-          text:
-            states.indexOf("conflict") !== -1
-              ? T("app.progress.hintConflict")
-              : T("app.progress.hintDefault"),
-        })
-      );
-    });
   }
 
   /**

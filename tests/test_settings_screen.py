@@ -275,21 +275,26 @@ def test_the_mark_survives_a_reload(browser, server):
 # 3. שאר מה ששלב 5 הבטיח
 # --------------------------------------------------------------------------
 def test_the_progress_line_reports_each_section(browser, server):
+    """‏עד 2026-09-24 זו הייתה שורת שבבים מעל הסעיפים. ‏docs/DESIGN.md, שלב 2,
+    הסיר אותה: הסטפר עצמו מראה את ההתקדמות. הטענה נשארה — כל סעיף אומר
+    את שמו ואת מצבו — והיא נקראת עכשיו מהסעיפים. (נכתב מחדש באישור.)
+    """
     ctx, pg = _fresh(browser, server)
     try:
-        chips = pg.evaluate(
-            """() => [...document.querySelectorAll('.progress-chip')].map(c => ({
-                 text: (c.textContent || '').trim(),
-                 stateful: c.classList.contains('is-default') ||
-                           c.classList.contains('is-conflict') ||
-                           c.classList.contains('is-chosen')}))"""
+        steps = pg.evaluate(
+            """() => [...document.querySelectorAll('.step--stepper')].map(s => ({
+                 text: (s.querySelector('.step-name').textContent || '').trim(),
+                 summary: (s.querySelector('.step-summary').textContent || '').trim(),
+                 stateful: ['is-default', 'is-conflict', 'is-complete', 'is-locked']
+                             .some(c => s.classList.contains(c))}))"""
         )
     finally:
         ctx.close()
-    assert len(chips) == 4, chips
-    for c in chips:
-        assert c["text"], "שבב התקדמות בלי טקסט"
-        assert c["stateful"], f"שבב בלי מצב: {c['text']!r}"
+    assert len(steps) == 4, steps
+    for s in steps:
+        assert s["text"], "סעיף בלי שם"
+        assert s["summary"], f"סעיף בלי שורת סיכום: {s['text']!r}"
+        assert s["stateful"], f"סעיף בלי מצב: {s['text']!r}"
 
 
 @pytest.mark.parametrize("key", STEP_KEYS)

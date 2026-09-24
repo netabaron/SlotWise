@@ -1043,43 +1043,46 @@ html.is-modal-open,
 html.is-modal-open body { overflow: hidden; }
 
 /* ==========================================================================
-   7. השלבים — מראה אשף ממוספר
+   7. השלבים — סטפר (docs/DESIGN.md, "Steps" ו-Phase 2)
+   שלושה מראות לשלבים 1..4 (‎.step--stepper‎), מאותם מצבים שהיו:
+   ‏‎is-collapsed‎ = שורת "הושלם" אחת · ‏‎is-locked‎ = שורת "הבא" מושתקת ·
+   פרוס = פאנל מלא, ו-‎is-active‎ שבהם במסגרת דיו. מה פתוח ומה סגור לא
+   השתנה — רק המסגרת. שלב 5 הוא התוצאה, ומראהו שייך לשלב 5 של העיצוב.
    ========================================================================== */
 .steps {
   counter-reset: step;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 8px;
   padding: 18px clamp(12px, 3vw, 28px) 40px;
   max-inline-size: 1180px;
   margin-inline: auto;
+  --fold-time: 350ms;
+  --fold-ease: cubic-bezier(.2, .8, .2, 1);
 }
 
 .step {
   counter-increment: step;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  padding: 16px clamp(12px, 2.4vw, 22px) 20px;
-  transition: border-color .15s ease, box-shadow .15s ease;
+  border-radius: 12px;
+  padding: 16px clamp(12px, 2.4vw, 20px);
+  transition: border-color .15s ease;
 }
 
-.step.is-active {
-  border-color: var(--accent);
-  box-shadow: var(--shadow), 0 0 0 1px var(--accent);
-}
+/* ‏השלב הפעיל הוא הדבר הרועש היחיד: מסגרת דיו של פיקסל אחד, בלי צל. */
+.step.is-active { border-color: var(--ink); }
 
-.step.is-locked { opacity: .6; }
 .step.is-locked .step-body { pointer-events: none; }
 
 .step-head { margin-block-end: 14px; }
 
 .step-title {
-  font-size: 17px;
+  font-size: 20px;
+  font-weight: 800;
   display: flex;
   align-items: center;
-  gap: .55em;
+  gap: 10px;
 }
 
 .step-title::before {
@@ -1087,34 +1090,29 @@ html.is-modal-open body { overflow: hidden; }
   flex: none;
   display: inline-grid;
   place-items: center;
-  inline-size: 1.9em;
-  block-size: 1.9em;
+  inline-size: 24px;
+  block-size: 24px;
   border-radius: 50%;
   border: 1px solid var(--line-strong);
   background: var(--chip);
   color: var(--muted);
-  font-size: .8em;
+  font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .step.is-active .step-title::before {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--sf);
 }
 
-/* ‏"החלטתי כאן" נצבע באקסנט, ולא בירוק ההצלחה.
-   ‏שלושת המקומות שאומרים את המשפט הזה — הסימן על הסעיף, השבב בשורת
-   ההתקדמות ומתג האישור — חייבים להיראות אותו דבר; אחרת אותה משמעות
-   מצוירת בשני צבעים במרחק סנטימטרים זה מזה. הירוק נשאר שמור למצב
-   (‏banner--ok, toast--ok, fact--ok) ולנעיצה, ומרגע שאינו מסמן גם
-   "הוכרע" הוא מפסיק לומר שני דברים. */
+/* ‏"הושלם": ‏✓ על רקע דיו, והזוג מתהפך — כמו הכפתור הראשי. */
 .step.is-complete .step-title::before {
   content: "\2713";
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--sf);
 }
 
 .step-hint {
@@ -1133,24 +1131,37 @@ html.is-modal-open body { overflow: hidden; }
 
 .step-state:empty { display: none; }
 
+/* ‏בשלבים 1..4 שורת המצב אינה מוצגת: כשהשלב פתוח הפקדים עצמם מראים את
+   הערך, וכשהוא סגור אותו טקסט בדיוק יושב ב-‎.step-summary‎. היא נשארת
+   ב-DOM כי היא ‎aria-live‎ — קורא מסך עדיין שומע כל שינוי. */
+.step--stepper .step-state {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .step-body { display: flex; flex-direction: column; gap: var(--gap); }
 
-/* ---- קיפול שלב לשורת סיכום אחת ----
+/* ---- הכותרת היא הכפתור ----
    הכפתור יושב בתוך ה-h2 ותופס את כל רוחב הכותרת, כדי שאפשר יהיה ללחוץ
    על כל השורה ולא רק על המילה. עיגול המספר/ה-✓ נשאר על ‎.step-title::before‎
-   ולכן כל כללי המצב הקיימים ממשיכים לעבוד בלי שינוי. */
+   ולכן כל כללי המצב ממשיכים לעבוד בלי שינוי. */
 .step-toggle {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: .5em;
+  gap: 10px;
   min-inline-size: 0;
   font: inherit;
   color: inherit;
   text-align: start;
   background: none;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   /* המרווח השלילי מחזיר את הכפתור לקו הכותרת המקורי אחרי הריפוד. */
   padding: 3px 6px;
   margin: -3px -6px;
@@ -1161,58 +1172,127 @@ html.is-modal-open body { overflow: hidden; }
 
 .step-name { flex: none; }
 
-/* שורת הסיכום קיימת תמיד ב-DOM (שם נגיש לכפתור), ונראית רק כשמקופל. */
+/* שורת הסיכום קיימת תמיד ב-DOM (שם נגיש לכפתור), ונראית רק כשמקופל או נעול. */
 .step-summary { display: none; }
+.step-change { display: none; }
 
 .step-caret {
   flex: none;
   margin-inline-start: auto;
   color: var(--muted);
-  font-size: .8em;
+  font-size: 13px;
   line-height: 1;
 }
 
 .step-caret::before {
   content: "\25BE";
   display: block;
-  transition: transform .15s ease;
 }
 
-.step.is-collapsed .step-caret::before { transform: rotate(90deg); }
+/* ---- שורה אחת: הושלם (מקופל) והבא (נעול) ---- */
+.step--stepper.is-collapsed,
+.step--stepper.is-locked { padding-block: 10px; }
 
-.step.is-collapsed { padding-block-end: 16px; }
-.step.is-collapsed .step-head { margin-block-end: 0; }
-.step.is-collapsed .step-hint,
-.step.is-collapsed .step-state { display: none; }
+.step--stepper.is-collapsed .step-head,
+.step--stepper.is-locked .step-head { margin-block-end: 0; }
 
-/* ‏‎> ‎ הכרחי: ל-#catalog-browse ול-#electives יש גם הם class="step-body",
-   והם יושבים **בתוך** גוף שלב 2. בלי הצירוף הישיר קיפול שלב 2 היה מסתיר
-   אותם גם כשהשלב פרוס. */
-.step.is-collapsed > .step-body { display: none; }
+.step--stepper.is-collapsed .step-title,
+.step--stepper.is-locked .step-title { font-size: 15px; font-weight: 600; }
 
-.step.is-collapsed .step-summary::before {
-  content: "\00B7";
-  margin-inline-end: .4em;
-  color: var(--muted);
-  font-weight: 400;
-}
+.step--stepper.is-collapsed .step-hint,
+.step--stepper.is-locked .step-hint { display: none; }
 
-.step.is-collapsed .step-summary {
+.step--stepper.is-collapsed .step-summary,
+.step--stepper.is-locked .step-summary {
   display: block;
   flex: 1;
   min-inline-size: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--accent);
   /* סיכום ארוך נחתך ולא שובר את השורה — שורה אחת פירושה שורה אחת. */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* הושלם: השם משני, הסיכום הוא העיקר, ו"שינוי" בסוף. */
+.step--stepper.is-collapsed .step-name { color: var(--sec); }
+.step--stepper.is-collapsed .step-summary { font-size: 14px; font-weight: 500; color: var(--ink); }
+.step--stepper.is-collapsed .step-caret { display: none; }
+.step--stepper.is-collapsed:not(.is-locked) .step-change {
+  display: inline;
+  flex: none;
+  margin-inline-start: auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ‏הבא: שורה מושתקת. הסיבה — "ממתין לבחירת קורסים" — נשארת כתובה, כי
+   היא היחידה שאומרת מה חסר כדי להתקדם (שורת השבבים שאמרה את זה הוסרה).
+   ‏‎--sec‎ ולא ‎--mut‎ לסיבה, כדי שתעמוד ב-AA. */
+.step--stepper.is-locked .step-name { color: var(--mut); }
+.step--stepper.is-locked .step-summary { font-size: 13px; font-weight: 400; color: var(--sec); }
+.step--stepper.is-locked .step-title::before {
+  content: counter(step);
+  background: transparent;
+  border-color: var(--mut);
+  color: var(--mut);
+}
+
 /* שלב נעול לא ניתן לקיפול: אין בו עדיין מה לסכם. */
 .step.is-locked .step-toggle { cursor: default; }
+.step.is-locked .step-toggle:hover { background: none; }
 .step.is-locked .step-caret { visibility: hidden; }
+
+/* ---- פתיחה וסגירה ----
+   ‏‎grid-template-rows: 0fr ↔ 1fr‎ מנפיש גובה בלי למדוד אותו ב-JS.
+   ‏‎visibility‎ יורד רק בסוף הסגירה (השהיה של משך המעבר), ועולה מיד
+   בפתיחה: גוף סגור יוצא מסדר ה-Tab ואינו לחיץ, כמו ‎display: none‎ שהיה
+   כאן. ‏‎is-folding‎ (‏app.js) חותך את התוכן רק בזמן הפתיחה — חיתוך קבוע
+   היה חותך גם את תוצאות החיפוש ואת טבעות המיקוד כשהשלב פתוח.
+   ‏‎> ‎ הכרחי: ל-#catalog-browse ול-#electives יש גם הם class="step-body",
+   והם יושבים **בתוך** גוף שלב 2. */
+/* ‏‎minmax(0, 1fr)‎ לעמודה, לא רק לשורה: עמודת grid ברירת מחדל גדלה לפי
+   התוכן, וטבלת המרצים (רחבה במכוון, נגללת בתוך המיכל שלה) דחפה את
+   העמוד כולו ל-821px במסך של 390px. */
+.step-fold {
+  display: grid;
+  grid-template-rows: 1fr;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.step-fold > .step-body { min-block-size: 0; min-inline-size: 0; }
+
+.step.is-collapsed > .step-fold,
+.step.is-locked > .step-fold { grid-template-rows: 0fr; }
+
+.step.is-collapsed > .step-fold > .step-body,
+.step.is-locked > .step-fold > .step-body {
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.step-fold.is-folding > .step-body { overflow: hidden; }
+
+/* ‏רק אחרי פעולה של המשתמש/ת (‏‎.can-fold‎, ‏app.js). קיפול שקורה מעצמו
+   בטעינה — שחזור מצב שמור — קופץ ישר למקומו. */
+.steps.can-fold .step--stepper {
+  transition: border-color .15s ease, padding var(--fold-time) var(--fold-ease);
+}
+.steps.can-fold .step--stepper .step-head { transition: margin-block-end var(--fold-time) var(--fold-ease); }
+.steps.can-fold .step--stepper .step-title { transition: font-size var(--fold-time) var(--fold-ease); }
+.steps.can-fold .step-fold { transition: grid-template-rows var(--fold-time) var(--fold-ease); }
+.steps.can-fold .step-fold > .step-body { transition: visibility 0s linear 0s; }
+.steps.can-fold .step.is-collapsed > .step-fold > .step-body,
+.steps.can-fold .step.is-locked > .step-fold > .step-body {
+  transition: visibility 0s linear var(--fold-time);
+}
+
+/* ‏הכלל הכללי בפרק 14 מקצר משכים אבל לא השהיות — וההסתרה כאן היא השהיה. */
+@media (prefers-reduced-motion: reduce) {
+  .steps { --fold-time: 0s; }
+}
 
 .note {
   font-size: 13px;
@@ -2444,7 +2524,7 @@ html.is-modal-open body { overflow: hidden; }
 }
 
 /* ==========================================================================
-   21. שלב 5 — מצב הסעיפים, שורת המצב, ורוחב שדות
+   21. שלב 5 — מצב הסעיפים ורוחב שדות
    ========================================================================== */
 
 /* ---- הסימון על הסעיף: שלושה מצבים, לא אחד ---- */
@@ -2465,49 +2545,6 @@ html.is-modal-open body { overflow: hidden; }
 }
 
 .step.is-conflict { border-color: var(--warn-line); }
-
-/* ---- שורת המצב שמעל הסעיפים ---- */
-.progress {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  align-items: center;
-  padding: 0 clamp(12px, 3vw, 28px);
-  max-inline-size: 1180px;
-  margin: 0 auto 4px;
-}
-
-.progress-chip {
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 4px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--line-strong);
-  background: var(--panel);
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.progress-chip::before { margin-inline-end: .4em; }
-.progress-chip.is-default::before { content: "○"; }
-.progress-chip.is-chosen::before  { content: "✓"; }
-.progress-chip.is-conflict::before { content: "!"; font-weight: 800; }
-
-.progress-chip.is-chosen {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.progress-chip.is-conflict {
-  border-color: var(--warn-line);
-  background: var(--warn-bg);
-  color: var(--warn-ink);
-}
-
-.progress-chip:hover { border-color: var(--accent); }
-.progress-hint { font-size: 13px; color: var(--muted); }
 
 /* ---- שדות לפי תוכן, לא ברוחב מלא ---- */
 .field--sm { flex: 0 1 8rem; }

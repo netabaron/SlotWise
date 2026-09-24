@@ -963,12 +963,17 @@ def test_section_marks_are_stateful(fresh):
     """‏○ בברירת מחדל, ‏✓ אחרי בחירה, ‏! כשיש קונפליקט.
 
     ‏✓ ירוק שמופיע על כל סעיף מהרגע הראשון אינו נושא מידע.
+    ‏עד שלב 2 של העיצוב מחדש (2026-09-24) הבדיקה קראה את זה משבבי שורת
+    ההתקדמות. השורה הוסרה — הסטפר עצמו מראה את ההתקדמות — ולכן היא קוראת
+    את אותו מצב מהסעיפים.
     """
     marks = lambda: fresh.evaluate(
-        """() => [].slice.call(document.querySelectorAll('.progress-chip'))
-             .map(e => e.className.replace('progress-chip ', ''))"""
+        """() => [].slice.call(document.querySelectorAll('.step--stepper'))
+             .map(s => ['is-locked', 'is-conflict', 'is-complete', 'is-default']
+                         .find(c => s.classList.contains(c)) || '')"""
     )
-    assert set(marks()) == {"is-default"}, "בטעינה נקייה הכול אמור להיות ברירת מחדל"
+    assert marks() == ["is-default", "is-locked", "is-locked", "is-locked"], (
+        "בטעינה נקייה: שלב 1 בברירת מחדל, והשאר נעולים")
 
     fresh.select_option("#select-program", CURRICULUM_PROGRAM)
     fresh.select_option("#select-year", "3")
@@ -978,7 +983,7 @@ def test_section_marks_are_stateful(fresh):
     # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
     fresh.click("#btn-restore-recommended")
     fresh.wait_for_timeout(3000)
-    assert marks()[0] == "is-chosen", "אחרי בחירת שנה וסמסטר הסעיף אמור להיות 'נבחר'"
+    assert marks()[0] == "is-complete", "אחרי בחירת שנה וסמסטר הסעיף אמור להיות 'נבחר'"
 
     fresh.click('.day-btn[data-days="2"]')
     fresh.wait_for_timeout(2500)
@@ -988,20 +993,15 @@ def test_section_marks_are_stateful(fresh):
     )
 
 
-def test_progress_row_is_not_numbered(fresh):
-    """שורת מצב, לא רצף ממוספר.
-
-    הסעיפים נפתחים בכל סדר; מספור היה מבטיח רצף שאינו קיים.
+def test_the_progress_pills_are_gone(fresh):
+    """‏docs/DESIGN.md, Steps: "The row of progress pills at the top of the
+    page is removed; the stepper itself shows progress."
     """
-    chips = fresh.evaluate(
-        """() => [].slice.call(document.querySelectorAll('.progress-chip'))
-             .map(e => e.textContent.trim())"""
+    got = fresh.evaluate(
+        """() => ({nav: !!document.getElementById('steps-progress'),
+                  chips: document.querySelectorAll('.progress-chip').length})"""
     )
-    assert len(chips) == 4
-    import re as _re
-
-    for c in chips:
-        assert not _re.match(r"^\s*[1-9]\s*[.·]", c), f"שבב ממוספר: {c!r}"
+    assert got == {"nav": False, "chips": 0}, got
 
 
 def test_semester_line_is_not_duplicated(fresh):
