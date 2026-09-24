@@ -5,7 +5,7 @@ This document is the source of truth for the SlotWise redesign. Implement it in 
 ## Principles
 
 1. **All content stays; presentation changes.** Nothing a student can learn today disappears. Every piece of information appears once, in the place where it is used.
-2. **Color belongs to the courses.** The interface itself is monochrome (ink on neutral surfaces). The only saturated color on screen is each course's own color, used identically in the steps and in the timetable. The one exception is the logo (see Logo and favicon).
+2. **Color belongs to the courses and the logo.** The interface uses a single ink color (the logo navy in light mode) on neutral surfaces. Saturated color is reserved for the course colors, each used identically in the steps and in the timetable, and for the logo (see Logo and favicon).
 3. **Motion explains, it does not decorate.** Motion is used only in response to the user's action: a step or course opening and closing, a rank being assigned, timetable blocks moving between alternatives. No scroll-triggered entrances, no glow, no gradients, no ambient animation.
 4. **The active step is the only loud thing.** Completed steps collapse to one summary line, upcoming steps are muted.
 
@@ -80,7 +80,7 @@ Files live in `src/web/static/brand/`:
 | Light | `#0d1d3d` | `#0e5a5e` | `mark-light.svg` |
 | Dark | `#ecebe6` | `#3fb8ad` | `mark-dark.svg` |
 
-Both mark variants are inlined in the header and CSS shows the one for the active theme, so the mark and the wordmark follow the site's theme toggle (light/dark/system), not only the OS setting. The inlined markup must stay identical to the two files. The wordmark colors are the tokens `--brand-slot` (light: `var(--ink)`) and `--brand-wise`, with dark values in `--dark-brand-*`.
+The ring around the clock (`.brand-halo`) is filled with the header's background token (`--panel`) in both modes, so it separates the clock from the calendar without showing as a halo against the header; the fixed fill in the SVG files is only for using them standalone. Both mark variants are inlined in the header and CSS shows the one for the active theme, so the mark and the wordmark follow the site's theme toggle (light/dark/system), not only the OS setting. The inlined markup must stay identical to the two files. The wordmark colors are the tokens `--brand-slot` (light: `var(--ink)`) and `--brand-wise`, with dark values in `--dark-brand-*`.
 
 Both fonts are self-hosted in `src/web/static/fonts/` with their OFL licences. The app makes no external requests, so nothing is loaded from Google Fonts.
 

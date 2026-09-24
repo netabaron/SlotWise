@@ -173,3 +173,7 @@ instead.
 `tests/test_rendered_copy_browser.py` and `tests/test_lunch_window.py`
 were written by Claude during the 2026-09 UI work and may be edited
 freely.
+
+`tests/test_design_tokens.py` may be edited by Claude **only** to reflect
+value changes made in `docs/DESIGN.md` (it pins the design's token
+values). Any other change to it follows the rule above.

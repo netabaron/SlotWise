@@ -415,6 +415,7 @@ ul { margin: 0; padding: 0; list-style: none; }
   to   { transform: translateX(320%); }
 }
 
+/* ‏‎--panel‎ כאן הוא גם מילוי ‎.brand-halo‎ בסימן — משנים בשניהם. */
 .app-header {
   display: flex;
   flex-wrap: wrap;
@@ -451,6 +452,12 @@ ul { margin: 0; padding: 0; list-style: none; }
 /* ‏שתי גרסאות הסימן מוטבעות; מוצגת זו של הערכה הפעילה. אותם שני תנאים
    כמו גושי הכהה בפרק 2 — מערכת ההפעלה כשאין בחירה, או בחירה מפורשת. */
 .brand-icon-dark { display: none; }
+
+/* ‏הטבעת סביב השעון מפרידה אותו מהלוח שמאחוריו. בקובץ היא בצבע קבוע
+   (שמנת / כמעט־שחור), ועל רקע הכותרת זה נראה כהילה. כאן היא ממולאת
+   ברקע הכותרת עצמו, בשתי הערכות; כלל CSS גובר על מאפיין ‎fill‎ של SVG,
+   והצבע הקבוע נשאר רק לקובץ כשהוא מוצג לבד. */
+.brand-icon .brand-halo { fill: var(--panel); }
 @media (prefers-color-scheme: dark) {
   html:not([data-theme="light"]) .brand-icon-light { display: none; }
   html:not([data-theme="light"]) .brand-icon-dark { display: inline; }
