@@ -54,7 +54,10 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: ubuntu-latest moves to Ubuntu 26 on
+    # 2026-10-19. Move the pin deliberately, in its own commit, after a run
+    # on the new image has been seen green.
+    runs-on: ubuntu-24.04
     # ~86 min of fetching plus parse and validation. 180 leaves room for a
     # slow day without letting a wedged run burn hours.
     timeout-minutes: 180

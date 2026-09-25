@@ -25,7 +25,10 @@ concurrency:
 jobs:
   test:
     name: test
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: ubuntu-latest moves to Ubuntu 26 on
+    # 2026-10-19. Move the pin deliberately, in its own commit, after a run
+    # on the new image has been seen green.
+    runs-on: ubuntu-24.04
     # Serially the suite is ~21 min, almost all of it fixed Playwright waits.
     # Run in parallel below it is ~6. 30 still leaves room for a slow runner
     # without letting a wedged browser hang the job.
@@ -104,7 +107,7 @@ jobs:
 
   docker:
     name: docker
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned; see the test job
     timeout-minutes: 20
 
     steps:
