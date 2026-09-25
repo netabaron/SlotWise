@@ -12,6 +12,7 @@ This is the shared contract for every other module. Do not rename fields or meth
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 # --------------------------------------------------------------------------
@@ -54,6 +55,21 @@ KIND_ORDER: tuple[str, ...] = (
 def fmt_time(minutes: int) -> str:
     """510 -> '08:30'."""
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+#: אות עברית (או גרש/גרשיים שסוגרים קיצור) שמספר צמוד אליה: 'חדו"א2'.
+_GLUED_NUMBER_RE = re.compile(r"([א-ת][\"'׳״]?)(\d)")
+
+
+def normalize_course_name(name: str) -> str:
+    """שם קורס לתצוגה: רווח לפני מספר שנדבק לשם — 'חדו"א2' -> 'חדו"א 2'.
+
+    פרקי השנתון מודפסים עם המספר צמוד ('סטטיקת מבנים1', 'מבני בטון2'), ומשם
+    זה עבר כמו שהוא לקובצי התוכנית. הידיעון עצמו כותב עם רווח. נוגע רק
+    בעברית: 'C++', ‏'4.0' ו-'Web3' נשארים כפי שהם. ‏'1מ' (סיומת גרסה אחרי
+    מספר) אינו מספר בסוף שם, ולכן אינו משתנה.
+    """
+    return _GLUED_NUMBER_RE.sub(r"\1 \2", str(name or ""))
 
 
 # --------------------------------------------------------------------------

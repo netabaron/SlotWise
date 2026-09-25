@@ -37,6 +37,11 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
+try:  # pragma: no cover - אותו shim כמו ב-parser.py
+    from models import normalize_course_name
+except ImportError:  # pragma: no cover
+    from src.models import normalize_course_name  # type: ignore[no-redef]
+
 # --------------------------------------------------------------------------
 # קבועים
 # --------------------------------------------------------------------------
@@ -222,7 +227,26 @@ def load_curriculum(path: str | Path = DEFAULT_CURRICULUM_PATH) -> dict:
             f"מבנה לא צפוי בקובץ תוכנית הלימודים: {resolved} "
             f"(expected a JSON object at the top level)"
         )
+    normalize_names(data)
     return data
+
+
+def normalize_names(node: Any) -> Any:
+    """מנרמל במקום כל שדה ``name`` בעץ — שלב אחד לכל קובצי התוכנית.
+
+    פרקי השנתון מדפיסים 'חדו"א2' ו'מבני בטון1', ובלי השלב הזה כל קובץ
+    שחולץ מ-PDF היה צריך לזכור לתקן את זה בעצמו. ‏``models.normalize_course_name``.
+    """
+    if isinstance(node, dict):
+        name = node.get("name")
+        if isinstance(name, str):
+            node["name"] = normalize_course_name(name)
+        for value in node.values():
+            normalize_names(value)
+    elif isinstance(node, list):
+        for value in node:
+            normalize_names(value)
+    return node
 
 
 # --------------------------------------------------------------------------

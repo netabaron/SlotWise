@@ -2244,6 +2244,9 @@
       codes: state.codes.slice(),
       semester: state.term,
       year: state.academicYear,
+      // רק לשם המוצג: קורס מתוכנית הלימודים נקרא כפי שהתוכנית מדפיסה אותו.
+      program: txt(state.program),
+      intake: txt(state.intake),
       fetch_missing: true,
     })
       .then(function (data) {
@@ -2592,6 +2595,8 @@
       codes: state.codes.slice(),
       semester: state.term,
       year: state.academicYear,
+      program: txt(state.program),
+      intake: txt(state.intake),
       // ‏6 כשאין יעד: ‏days_penalty הוא ‎max(0, ימים - target)‎, ולכן 6 הוא
       // קנס אפס לכל מספר ימים — כלומר "בלי העדפה", ולא ניחוש. ‏4 היה
       // מעניש כל מערכת בת 5 ימים בשם בחירה שאיש לא עשה.
@@ -2743,6 +2748,9 @@
       state.codes.slice().sort(),
       state.term,
       state.academicYear,
+      // השמות המוצגים תלויים במסלול, ולכן החלפת מסלול מושכת אותם מחדש.
+      txt(state.program),
+      txt(state.intake),
     ]);
     if (force || coursesSig !== lastSig.courses) {
       lastSig.courses = coursesSig;

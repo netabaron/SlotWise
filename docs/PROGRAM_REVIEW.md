@@ -17,14 +17,19 @@ Notes from a manual walkthrough of every study program (מסלול) on the site.
 
 ## 1. Program naming
 
-- [ ] **Applied Mathematics is mislabeled.** The Applied Mathematics program shows as "with a specialization in Algorithmics & AI", but it is the regular Applied Mathematics program. Find where this label comes from and correct it. If the catalog genuinely contains two separate programs (regular and with the specialization), both must appear, each with its correct name.
+- [x] **Applied Mathematics is mislabeled.** The Applied Mathematics program shows as "with a specialization in Algorithmics & AI", but it is the regular Applied Mathematics program. Find where this label comes from and correct it. If the catalog genuinely contains two separate programs (regular and with the specialization), both must appear, each with its correct name.
+  - *Done 2026-09-25:* the label came from the college website's program list (scraper, `programs.json`); the curriculum prints one program, "תוכנית הלימודים במתמטיקה שימושית", where AI is an elective domain. Both math curriculum files now carry `program_label`, and the API shows it; the id stays so saved selections still match. Only math differed.
 
 ## 2. Course naming
 
-- [ ] **Space between a course name and its number.** Some courses appear with the number glued to the name, e.g. `חדוא2` in Civil Engineering. Every course whose name ends with a number should have a space before it: `חדוא 2`. Apply this globally (all programs), ideally as a normalization step in the data pipeline.
-- [ ] **Truncated / abbreviated names in Biotechnology.** Year 4, Semester A shows `כתיבה מדעית ושימוש במאגרי מידע בביוט.` — the word should be written in full: `בביוטכנולוגיה`. Audit all programs for similar truncations (names ending in an abbreviation or a period) and restore the full names.
-- [ ] **GMP course name.** A Biotechnology course is displayed as `דרישות רגולטוריות ו-GMP בביוטכ`. It should be displayed simply as `GMP`. Check the curriculum for the correct display name and use it.
-- [ ] **Physics 3 in Biotechnology.** Year 3, Semester B shows `פיזיקה 3ב` instead of `פיזיקה 3`. Check the curriculum and the catalog: if it's the same course, display it as `פיזיקה 3`; if they're genuinely different courses, make sure the one the curriculum requires for this program is the one shown.
+- [x] **Space between a course name and its number.** Some courses appear with the number glued to the name, e.g. `חדוא2` in Civil Engineering. Every course whose name ends with a number should have a space before it: `חדוא 2`. Apply this globally (all programs), ideally as a normalization step in the data pipeline.
+  - *Done 2026-09-25:* the civil PDF extraction glued 12 numbers; `models.normalize_course_name` now runs when any curriculum file loads and when the yedion is parsed, and `civil.json` is fixed at rest. No other program had the problem.
+- [x] **Truncated / abbreviated names in Biotechnology.** Year 4, Semester A shows `כתיבה מדעית ושימוש במאגרי מידע בביוט.` — the word should be written in full: `בביוטכנולוגיה`. Audit all programs for similar truncations (names ending in an abbreviation or a period) and restore the full names.
+  - *Done 2026-09-25:* `biotech.json` had copied the yedion's names (cut at 40 characters) instead of the PDF's; 15 names now follow `biotech.pdf`. The student's own curriculum name now also wins in the lecturers step and timetable, and a cut-off yedion name is restored wherever any curriculum prints it in full (41711, 62015). 20 yedion names have no full version in any source; they are listed in `docs/PROGRAM_FINDINGS.md`.
+- [x] **GMP course name.** A Biotechnology course is displayed as `דרישות רגולטוריות ו-GMP בביוטכ`. It should be displayed simply as `GMP`. Check the curriculum for the correct display name and use it.
+  - *Done 2026-09-25:* `biotech.pdf` prints it as `GMP`, and it is now shown as `GMP` everywhere for biotech students.
+- [x] **Physics 3 in Biotechnology.** Year 3, Semester B shows `פיזיקה 3ב` instead of `פיזיקה 3`. Check the curriculum and the catalog: if it's the same course, display it as `פיזיקה 3`; if they're genuinely different courses, make sure the one the curriculum requires for this program is the one shown.
+  - *Done 2026-09-25:* it is the same course (11027 in both the curriculum and the catalog); the PDF prints `פיזיקה 3`, so that is what biotech students now see.
 
 ## 3. Elective and general-course reminders
 

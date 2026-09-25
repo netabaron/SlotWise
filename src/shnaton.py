@@ -724,4 +724,10 @@ def load_curricula(path: str | Path = DEFAULT_CURRICULA_PATH) -> dict:
     except (OSError, ValueError):
         return {}
     programs = data.get("programs") if isinstance(data, dict) else None
-    return programs if isinstance(programs, dict) else {}
+    if not isinstance(programs, dict):
+        return {}
+    try:  # אותו שלב נרמול שמים לכל קובצי התוכנית (``curriculum.load_curriculum``).
+        from curriculum import normalize_names
+    except ImportError:  # pragma: no cover
+        from src.curriculum import normalize_names  # type: ignore[no-redef]
+    return normalize_names(programs)

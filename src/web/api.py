@@ -1500,6 +1500,60 @@ def _program_label(program: Any) -> str:
     return str(program or "").strip()
 
 
+def _restored_name(code: Any, name: Any) -> str:
+    """שם הידיעון, או השם המלא שלו כשהידיעון קטע אותו.
+
+    הידיעון חותך שמות ב-40 תווים ומקצר בנקודה או בגרש ("...בביו.",
+    "...במערכות מודר"). כשתוכנית לימודים כלשהי מדפיסה לאותו קוד שם שמתחיל
+    בדיוק במה שנשאר מהשם הקטוע וממשיך אחריו, זה השם המלא — בלי לנחש: שם
+    שאינו המשך מילולי של הקטוע אינו נחשב.
+    """
+    text = str(name or "").strip()
+    key = str(code or "").strip()
+    if not text or not key:
+        return text
+    stem = text.rstrip(".'׳ ")
+    best = text
+    for candidate in _names_in_curricula().get(key, ()):
+        if len(candidate) > len(best) and candidate.startswith(stem) and candidate != stem:
+            best = candidate
+    return best
+
+
+def _names_in_curricula() -> dict[str, set[str]]:
+    """כל השמות שתוכניות הלימודים מדפיסות, לפי קוד — כולל אשכולות הבחירה."""
+    cache = _request_cache()
+    table = cache.get("names_in_curricula")
+    if table is not None:
+        return table
+    table = {}
+    sources: list[Any] = [_default_curriculum(), *_curricula().values()]
+    for by_intake in _curricula_by_intake().values():
+        sources.extend(by_intake.values())
+    try:
+        from shnaton import load_curricula
+
+        sources.append(load_curricula(str(PROJECT_ROOT / "data" / "curricula.json")))
+    except Exception:  # noqa: BLE001 — היעדר הקובץ אינו תקלה
+        pass
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            code, label = node.get("code"), node.get("name")
+            if code and isinstance(label, str) and label.strip():
+                table.setdefault(str(code).strip(), set()).add(label.strip())
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    for source in sources:
+        walk(source)
+    cache["names_in_curricula"] = table
+    return table
+
+
 def _default_curriculum() -> dict:
     """תוכנית הלימודים, בקאש עם בדיקת mtime (עריכה של הקובץ נקלטת מיד).
 
@@ -2245,6 +2299,8 @@ def _build_courses(
     *,
     semester: str = "",
     year: str = "",
+    program: str = "",
+    intake: str = "",
 ) -> tuple[list[models.Course], list[dict[str, Any]], dict[str, store_mod.CourseMeta]]:
     """טוען קורסים מהמסד ומכין אותם למנוע.
 
@@ -2264,6 +2320,11 @@ def _build_courses(
     # ולכן אינן מתנגשות עם דבר, נכנסות למרחב החיפוש ומנפחות אותו.
     store = _store_for(semester)
     curr = _curriculum()
+    # ‏השם שמוצג הוא השם שתוכנית הלימודים של הסטודנט/ית מדפיסה. הידיעון קוטע
+    # שמות ב-40 תווים ומקצר אותם ("...בביו.", "...ו-GMP בביוטכ"), ובלי זה
+    # שלב הקורסים (מהתוכנית) ושלב המרצים והמערכת (מהידיעון) קראו לאותו קורס
+    # בשני שמות. רק השם — נ"ז וצמודים נשארים כפי שהיו.
+    own = _curriculum(program, intake) if str(program or "").strip() else {}
 
     courses: list[models.Course] = []
     problems: list[dict[str, Any]] = []
@@ -2294,6 +2355,8 @@ def _build_courses(
 
         # ── deepcopy לפני שנוגעים במשהו. ה-Store מחזיר אובייקטים חיים. ──
         course = copy.deepcopy(loaded)
+        own_name = str((curriculum_mod.find_course(own, code) or {}).get("name") or "")
+        course.name = own_name.strip() or _restored_name(code, course.name or curr_name)
 
         if not course.groups:
             problems.append(
@@ -4042,7 +4105,7 @@ def _catalog_entry_json(
     cluster = info.get("cluster", facts["cluster"])
     return {
         "code": code,
-        "name": name or facts["name"],
+        "name": _restored_name(code, name) or facts["name"],
         "in_curriculum": in_curriculum,
         "curriculum_semester": semester,
         "cluster": cluster,
@@ -4356,8 +4419,13 @@ def courses():
         year_gregorian = str(body["year_gregorian"]).strip()
     fetch_missing = _as_bool(body.get("fetch_missing"), True)
     max_age = float(_config()["max_age_hours"])
+    # המסלול קובע רק את השם המוצג (``_build_courses``); בלעדיו — שם הידיעון.
+    program = str(body.get("program") or "").strip()
+    intake = str(body.get("intake") or "").strip()
 
-    built, problems, metas = _build_courses(codes, semester=semester, year=year)
+    built, problems, metas = _build_courses(
+        codes, semester=semester, year=year, program=program, intake=intake
+    )
 
     fetch_report = _ondemand_fetch(
         codes,
@@ -4371,7 +4439,9 @@ def courses():
     )
     if fetch_report["fetched"]:
         # נטענים מחדש מהמסד כדי שכל הקורסים ייבנו בדיוק באותו מסלול אחד.
-        built, problems, metas = _build_courses(codes, semester=semester, year=year)
+        built, problems, metas = _build_courses(
+        codes, semester=semester, year=year, program=program, intake=intake
+    )
 
     fetched_ok = set(fetch_report["fetched"])
     # שתי מפות ולא אחת. ``failed`` הוא כישלון של הקוד הזה ("הידיעון לא מציג
@@ -4690,7 +4760,13 @@ def solve():
         allow_soft_conflicts = False
 
     # ── 1. הקורסים: deepcopy, tied_with, נ"ז ──
-    built, problems, _metas = _build_courses(codes, semester=semester, year=year)
+    built, problems, _metas = _build_courses(
+        codes,
+        semester=semester,
+        year=year,
+        program=str(body.get("program") or "").strip(),
+        intake=str(body.get("intake") or "").strip(),
+    )
     # רק נ"ז ידועות נסכמות, וכמה לא ידועות נאמר במפורש (SPEC_MULTIFACULTY §3).
     # נספרים **כל** הקודים שנבחרו, גם אלה שאין להם נתונים שמורים: אחרת בחירה
     # שכולה קורסים בלי מערכת שמורה חוזרת כ-"0" עם ``complete: true``, כלומר

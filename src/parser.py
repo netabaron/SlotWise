@@ -53,6 +53,7 @@ try:  # pragma: no cover - trivial import shim
         Group,
         Meeting,
         fmt_time,
+        normalize_course_name,
     )
 except ImportError:  # pragma: no cover
     from src.models import (  # type: ignore[no-redef]
@@ -68,6 +69,7 @@ except ImportError:  # pragma: no cover
         Group,
         Meeting,
         fmt_time,
+        normalize_course_name,
     )
 
 
@@ -2344,7 +2346,9 @@ def parse_course_page(
                 f"{', '.join(unknown)} (linked group ids not found on page)."
             )
 
-    course = Course(code=code, name=name, credits=credits, groups=groups, tied_with=[])
+    course = Course(
+        code=code, name=normalize_course_name(name), credits=credits, groups=groups, tied_with=[]
+    )
     return ParseResult(course, warnings)
 
 
@@ -3283,7 +3287,7 @@ def parse_course_details(html: str, code: str) -> CourseDetails:
 
     return CourseDetails(
         code=wanted,
-        name=name,
+        name=normalize_course_name(name),
         credits=credits,
         hours=hours,
         weekly_hours=weekly_hours,
