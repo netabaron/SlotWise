@@ -98,6 +98,10 @@ data/catalog/*
 !data/curriculum.json
 !data/curricula.json
 !data/curricula/
+
+# ‏טבלת תיקוני השמות המאושרים (2026-09-26). נערכת ביד בלבד, אינה פלט של
+# הצינור. בלעדיה שכפול נקי מציג שוב שמות קטועים מהידיעון.
+!data/name_corrections.json
 !data/curricula/*.json
 !data/programs.json
 
