@@ -231,16 +231,56 @@ def load_curriculum(path: str | Path = DEFAULT_CURRICULUM_PATH) -> dict:
     return data
 
 
+#: טבלת תיקוני השמות המאושרים — קוד קורס -> שם.
+NAME_CORRECTIONS_PATH: Path = PROJECT_ROOT / "data" / "name_corrections.json"
+
+_corrections_cache: dict[str, Any] = {}
+
+
+def load_name_corrections(path: str | Path | None = None) -> dict[str, str]:
+    """‏``{קוד: שם}`` מ-``data/name_corrections.json``. חסר או פגום -> ``{}``.
+
+    שם שאושר כאן גובר על כל מקור: הידיעון קוטע שמות ב-40 תווים, ופרקי
+    השנתון מדפיסים לפעמים שם מקוצר או שגוי. נקרא מחדש כשהקובץ משתנה.
+    """
+    target = Path(path) if path is not None else NAME_CORRECTIONS_PATH
+    try:
+        stamp = (str(target), target.stat().st_mtime_ns)
+    except OSError:
+        return {}
+    if _corrections_cache.get("stamp") != stamp:
+        try:
+            raw = json.loads(target.read_text(encoding="utf-8"))
+            rows = raw.get("corrections") if isinstance(raw, dict) else None
+            table = {
+                str(code).strip(): str(row.get("name") or "").strip()
+                for code, row in (rows or {}).items()
+                if isinstance(row, dict) and str(row.get("name") or "").strip()
+            }
+        except (OSError, ValueError, AttributeError):
+            table = {}
+        _corrections_cache.update(stamp=stamp, table=table)
+    return _corrections_cache["table"]
+
+
+def corrected_name(code: Any, name: Any) -> str:
+    """השם המאושר לקוד, אם יש; אחרת השם שהתקבל, מנורמל."""
+    fixed = load_name_corrections().get(_norm_code(code))
+    return fixed or normalize_course_name(str(name or ""))
+
+
 def normalize_names(node: Any) -> Any:
     """מנרמל במקום כל שדה ``name`` בעץ — שלב אחד לכל קובצי התוכנית.
 
     פרקי השנתון מדפיסים 'חדו"א2' ו'מבני בטון1', ובלי השלב הזה כל קובץ
     שחולץ מ-PDF היה צריך לזכור לתקן את זה בעצמו. ‏``models.normalize_course_name``.
+    שורה עם קוד שמופיע בטבלת התיקונים (``data/name_corrections.json``)
+    מקבלת את השם המאושר.
     """
     if isinstance(node, dict):
         name = node.get("name")
         if isinstance(name, str):
-            node["name"] = normalize_course_name(name)
+            node["name"] = corrected_name(node.get("code"), name)
         for value in node.values():
             normalize_names(value)
     elif isinstance(node, list):

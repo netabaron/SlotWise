@@ -177,9 +177,9 @@ def test_gmp_is_shown_as_the_curriculum_prints_it():
     assert bio_names()["41730"] == "GMP"
 
 
-def test_physics_3_is_the_same_course_and_shown_as_physics_3():
-    """אותו קוד (11027) בתוכנית ובידיעון — אותו קורס. השנתון: "פיזיקה 3"."""
-    assert bio_names()["11027"] == "פיזיקה 3"
+def test_physics_3_is_the_same_course_and_shown_as_the_yedion_names_it():
+    """אותו קוד (11027) בתוכנית ובידיעון — אותו קורס. לפי החלטה (2026-09-26): כמו בידיעון."""
+    assert bio_names()["11027"] == "פיזיקה 3ב"
 
 
 @pytest.mark.parametrize("path", CURRICULUM_FILES, ids=lambda p: p.name)
@@ -211,7 +211,7 @@ def test_the_lecturers_step_uses_the_programs_own_name(client):
     assert names == {
         "41730": "GMP",
         "41711": "כתיבה מדעית ושימוש במאגרי מידע בביוטכנולוגיה",
-        "11027": "פיזיקה 3",
+        "11027": "פיזיקה 3ב",
     }
 
 

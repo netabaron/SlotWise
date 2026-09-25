@@ -444,40 +444,38 @@ A student in a listed program could pick it only to avoid the auto-selected reco
 |---|---|---|---|
 | 1. Math label | Website program list names it "…עם התמחות ב-AI ובאלגוריתמיקה"; the curriculum prints one "מתמטיקה שימושית" | scraper / data | **Done:** `program_label` in both math files, served as `label`; id unchanged |
 | 2. `חדו"א2` | Civil PDF extraction glued the numbers | data (PDF extraction) | **Done:** `normalize_course_name` when curricula load and when the yedion is parsed; `civil.json` fixed at rest |
-| 2. Cut-off biotech names, GMP, Physics 3 | `biotech.json` copied yedion names (cut at 40 characters) instead of the PDF's | data | **Done:** PDF names; the curriculum name wins in `/api/courses` and `/api/solve`; cut-off names restored from any curriculum that prints them in full |
+| 2. Cut-off biotech names, GMP, Physics 3 | `biotech.json` copied yedion names (cut at 40 characters) instead of the PDF's | data | **Done:** PDF names; the curriculum name wins in `/api/courses` and `/api/solve`; cut-off names restored from any curriculum that prints them in full; confirmed full names in `data/name_corrections.json` (2026-09-26) |
 | 3. Elective / general notes | Placeholder rows are recorded inconsistently, and dropped for math and industrial | data / parser | Record a per-semester `plus` or placeholder for every program (the table above has the semesters), then design the note |
 | 4. Specializations | Tracks exist for civil, mechanical and industrial. Electrical has none. Elective lists are mis-parsed; rules aren't stored | parser and data | Fix `shnaton.py` headings; per-specialization clusters; a hand-entered rules block with citations; picker per `DESIGN.md` |
 | 5. "Other" option | Works as designed | UI copy | Keep; clearer label |
 
-### Yedion names still cut off, with no full name in any source
+### Name decisions, 2026-09-26
 
-These 20 are shown as the yedion prints them (it cuts names at 40 characters). No curriculum in the repo has a longer name for them, so the full names have to be supplied by hand. **Nothing here is guessed.**
+All confirmed by the project owner. Nothing below was guessed.
 
-"Program" is the curriculum that lists the course. "—" means no curriculum in the repo lists it. "Why listed" says what flagged it. Those marked *may be complete* only reach the length limit or end in a normal "א'"/"ב'", and may need no change.
+**The corrections table.** `data/name_corrections.json` maps a course code to its confirmed name.
+- It did not exist before 2026-09-26.
+- It wins over every other source, both the yedion name and the curriculum name.
+- It is applied at two points:
+  - when any curriculum file loads (`curriculum.normalize_names`);
+  - for every yedion name the server serves (`api._restored_name`): catalog search and browse, the courses step, the lecturers step and the timetable.
+- The extracted files (`civil.json`, `biotech.json`, `electronic.json`) keep what their PDFs print, so the record of the source stays intact.
+- Add a row only when a name is confirmed.
 
-| Code | Program | Current name (yedion) | Length | Why listed |
-|---|---|---|---|---|
-| 11375 | — | פרשיות סוערות במשפט ישראלי: השלכות תרבות | 40 | at the limit |
-| 11578 | — | חינוך וטכנולוגיה בעידן המהפכה התעשייתית | 39 | at the limit; *may be complete* |
-| 11871 | — | שילוב טכנולוגיות מתקדמות בהוראה ובהדרכה | 39 | at the limit; *may be complete* |
-| 31032 | — | בחינת סווג-יסודות הפיזיקה-חשמל ואלקטרו' | 39 | ends in an abbreviation |
-| 31033 | — | יסודות הפיזיקה - הנדסת חשמל ואלקטרוניקה | 39 | at the limit; *may be complete* |
-| 41526 | הנדסת ביוטכנולוגיה | קינטיקה ותכנון ריאקטורים כימיים וביולוגי | 40 | at the limit. Biotech students see the PDF's shorter "קינטיקה ותכנון ריאקטורים" |
-| 43101 | — | תקינה ופיתוח מוצרים ביוטכנולוגיים ורפוא | 39 | cut mid-word |
-| 51023 | הנדסת תעשייה וניהול | פרוייקט גמר בהתמחות מדעי הנתונים שלב א' | 39 | ends in "א'"; *may be complete* |
-| 51024 | הנדסת תעשייה וניהול | פרוייקט גמר בהתמחות מדעי הנתונים שלב ב' | 39 | ends in "ב'"; *may be complete* |
-| 51230 | — | פרויקט גמר בהתמחות תכן ותפעול שלב א' | 36 | ends in "א'"; *may be complete* |
-| 51231 | — | פרויקט גמר בהתמחות תכן ותפעול שלב ב' | 36 | ends in "ב'"; *may be complete* |
-| 51742 | הנדסת חשמל ואלקטרוניקה | הסתברות ויסודות הסטטיסטיקה להנדסת אלקטרו | 40 | cut mid-word. Electrical students see the curriculum's "הסתברות ויסודות הסטטיסטיקה" |
-| 51963 | — | פיתוח מערכות ארגוניות בעזרת Vibe Coding | 39 | at the limit; *may be complete* |
-| 81280 | — | מבוא להוראת המקצועות העיוניים ההתנסותיים | 40 | at the limit |
-| 81403 | — | התנסות מעשית בהוראת מתמטיקה והנדסה משולב | 40 | at the limit |
-| 81404 | — | התנ' מעשית בהוראת מתמטיקה והנדסה משולב 2 | 40 | abbreviation "התנ'" |
-| 81561 | — | נושאים מתמטיים נבחרים למורים למתמט' | 35 | ends in an abbreviation |
-| 81578 | — | חינוך וטכנולוגיה בעידן המהפכה התעשייתית | 39 | at the limit; *may be complete* |
-| 81671 | — | שילוב טכנולוגיות מתקדמות בהוראה ובהדרכה | 39 | at the limit; *may be complete* |
-| 85405 | — | פרויקט אינדוודואלי בהוראת הנדסה ומתמטיקה | 40 | at the limit |
+**Confirmed names, applied through the table:**
 
-### Civil 421223: a printed misspelling, pending confirmation
+| Code | Program | Was | Now |
+|---|---|---|---|
+| 421223 | הנדסה אזרחית | civil.pdf: מבוא לאלגרומיתקה ותכנות (misspelling) | מבוא לאלגוריתמיקה ותכנות |
+| 31032 | — | בחינת סווג-יסודות הפיזיקה-חשמל ואלקטרו' | בחינת סווג-יסודות הפיזיקה-חשמל ואלקטרוניקה |
+| 41526 | הנדסת ביוטכנולוגיה | yedion: …כימיים וביולוגי; biotech.pdf: קינטיקה ותכנון ריאקטורים | קינטיקה ותכנון ריאקטורים כימיים וביולוגיים |
+| 43101 | — | תקינה ופיתוח מוצרים ביוטכנולוגיים ורפוא | תקינה ופיתוח מוצרים ביוטכנולוגיים ורפואיים |
+| 81561 | — | נושאים מתמטיים נבחרים למורים למתמט' | נושאים מתמטיים נבחרים למורים למתמטיקה |
+| 51742 | הנדסת חשמל ואלקטרוניקה | yedion: …להנדסת אלקטרו; electronic.json: הסתברות ויסודות הסטטיסטיקה | הסתברות ויסודות הסטטיסטיקה להנדסת אלקטרוניקה |
+| 11375 | — | פרשיות סוערות במשפט ישראלי: השלכות תרבות | פרשיות סוערות במשפט ישראלי |
+| 81403 | — | התנסות מעשית בהוראת מתמטיקה והנדסה משולב | התנסות מעשית בהוראת מתמטיקה והנדסה משלב 1 |
+| 81404 | — | התנ' מעשית בהוראת מתמטיקה והנדסה משולב 2 | התנסות מעשית בהוראת מתמטיקה והנדסה משלב 2 |
 
-`civil.pdf` prints "מבוא לאלגרומיתקה ותכנות". The same chapter elsewhere, and the yedion, write "מבוא לאלגוריתמיקה ותכנות". The file keeps the printed spelling until the correction is confirmed.
+**Left as the yedion writes them, by decision:** 11578, 11871, 31033, 51023, 51024, 51230, 51231, 51963, 81280, 81578, 81671, 85405.
+
+**Biotech physics follows the yedion for all three.** It is not in the table, because it is the yedion's own name: `biotech.json` holds פיזיקה 1ב, פיזיקה 2ב and פיזיקה 3ב (11023, 11026, 11027). The PDF prints "פיזיקה 1 ב'", "פיזיקה 2 ב'" and "פיזיקה 3".

@@ -1391,7 +1391,10 @@ def _curricula_split() -> tuple[dict[str, dict], dict[str, dict[str, dict]]]:
         except OSError:
             return 0
 
-    stamp = tuple((str(p), stamp_of(p)) for p in paths)
+    # טבלת תיקוני השמות מוחלת בטעינה, ולכן גם שינוי בה מחייב טעינה מחדש.
+    stamp = tuple(
+        (str(p), stamp_of(p)) for p in [*paths, curriculum_mod.NAME_CORRECTIONS_PATH]
+    )
     if cache.get("curricula_stamp") != stamp or "curricula" not in cache:
         loaded: dict[str, dict] = {}
         by_intake: dict[str, dict[str, dict]] = {}
@@ -1510,6 +1513,10 @@ def _restored_name(code: Any, name: Any) -> str:
     """
     text = str(name or "").strip()
     key = str(code or "").strip()
+    # שם מאושר בטבלת התיקונים (``data/name_corrections.json``) גובר על הכול.
+    fixed = curriculum_mod.load_name_corrections().get(key)
+    if fixed:
+        return fixed
     if not text or not key:
         return text
     stem = text.rstrip(".'׳ ")
@@ -1569,6 +1576,11 @@ def _default_curriculum() -> dict:
         stamp = path.stat().st_mtime_ns
     except OSError:
         stamp = 0
+    # שינוי בטבלת תיקוני השמות משנה את השמות שנטענו — ולכן גם את המטמון.
+    try:
+        stamp = (stamp, curriculum_mod.NAME_CORRECTIONS_PATH.stat().st_mtime_ns)
+    except OSError:
+        stamp = (stamp, 0)
     if cache.get("curriculum_stamp") != stamp or "curriculum" not in cache:
         try:
             loaded = curriculum_mod.load_curriculum(path)
