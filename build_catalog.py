@@ -115,6 +115,9 @@ class RawCensus:
     throttled: list[str] = field(default_factory=list)
     runt: list[str] = field(default_factory=list)
     truncated: list[str] = field(default_factory=list)
+    #: דף שלם שמצהיר על שנת לימודים אחרת. לא "תקין": לא מפוענח, ובנייה
+    #: שממשיכה מאמצע שולפת אותו שוב. נספר רק כש-``scan_raw`` קיבל שנה.
+    wrong_year: list[str] = field(default_factory=list)
 
     @property
     def bad(self) -> list[str]:
@@ -124,13 +127,41 @@ class RawCensus:
         return (
             f"תקינים {len(self.intact)} | חסומים {len(self.throttled)} | "
             f"זעירים {len(self.runt)} | קטועים {len(self.truncated)}"
+            + (f" | שנה אחרת {len(self.wrong_year)}" if self.wrong_year else "")
         )
 
 
-def scan_raw(raw_dir: Path) -> RawCensus:
-    """מסווג כל דמפ. **לפני** הפענוח — דף חסום אינו קלט לפרסר."""
+def page_is_year(html: str, expected_year: str) -> bool:
+    """האם הדף הוא של ``expected_year`` (תווית עברית, למשל ``'תשפ"ז'``)?
+
+    ‏קורא את כותרת הקורס (``שנה"ל תשפ"X``) באותה פונקציה שבודקת את הדף
+    בזמן השליפה (``yedion_http._course_year_label``), ומשווה תווית לתווית.
+    ‏דף בלי כותרת כזאת נבדק בכלל הישן — האם התווית מופיעה בו איפשהו — כך
+    שהבדיקה לעולם אינה מקלה יותר ממה שהייתה.
+    """
+    try:
+        from yedion_http import _course_year_label, _normalize_hebrew_year  # type: ignore
+    except Exception:  # noqa: BLE001 - בלי המודול נשאר הכלל הישן
+        return expected_year in html
+    found = _course_year_label(html)
+    if not found:
+        return expected_year in html
+    return _normalize_hebrew_year(found) == _normalize_hebrew_year(expected_year)
+
+
+def scan_raw(raw_dir: Path, expected_year: str = "") -> RawCensus:
+    """מסווג כל דמפ. **לפני** הפענוח — דף חסום אינו קלט לפרסר.
+
+    ‏רק ``raw_dir`` עצמו, לא תת-תיקיות: ‏``blocked/`` ו-``wrong_year/`` הם
+    דפים שהשליפה כבר פסלה, ונשמרו שם כראיה בלבד. דף שם לעולם אינו "תקין",
+    ולכן בנייה שממשיכה מאמצע שולפת את הקורס שלו מחדש.
+
+    עם ``expected_year``, דף שמצהיר על שנה אחרת נספר ב-``wrong_year`` ולא
+    ב-``intact`` — כך גם דמפ כזה שנשאר ב-``raw_dir`` מלפני התיקון של
+    2026-09-26 נשלף מחדש ולא מפוענח.
+    """
     census = RawCensus()
-    for path in sorted(raw_dir.glob("*.html")):
+    for path in sorted(p for p in raw_dir.glob("*.html") if p.is_file()):
         if not path.name[0].isdigit():
             continue  # ‏session_/catalog_ — לא דפי קורס
         code = path.name.rsplit("_", 1)[0]
@@ -143,6 +174,8 @@ def scan_raw(raw_dir: Path) -> RawCensus:
         elif "</html>" not in body[-20:].lower():
             # דף שנקטע באמצע הכתיבה. נדיר, אבל שקט — ולכן נבדק.
             census.truncated.append(code)
+        elif expected_year and not page_is_year(text, expected_year):
+            census.wrong_year.append(code)
         else:
             census.intact.append(code)
     return census
@@ -279,20 +312,27 @@ def validate(
     )
 
     # ---- 3. שנת הלימודים על הדף ----------------------------------------
+    # ‏כל דמפ של כל קורס שפוענח, ולא מדגם. עד 2026-09-26 נבדקו רק 60 הקודים
+    # הראשונים בסדר ממוין — כלומר תמיד הקורסים שנשלפו ראשונים. בריצה
+    # 36080575127 הסשן חזר לתשפ"ו אחרי 145 דפים, ‏374 דפי תשפ"ו פוענחו, והמדגם
+    # עבר: כל 60 הדפים שבו נשלפו לפני הנסיגה. "הבדיקה יקרה" לא החזיק — זה
+    # רגקס על כ-570 קבצים, שבריריות לצד שעה וחצי של שליפה.
     if expected_year and raw_dir is not None:
-        wrong = []
-        for code in list(census.intact)[:60]:  # מדגם — הבדיקה יקרה
-            hits = sorted(raw_dir.glob(f"{code}_*.html"))
-            if not hits:
-                continue
-            if expected_year not in hits[-1].read_text(encoding="utf-8", errors="replace"):
-                wrong.append(code)
+        wrong = set(census.wrong_year)
+        checked = 0
+        for code in sorted(records):
+            for path in sorted(raw_dir.glob(f"{code}_*.html")):
+                checked += 1
+                html = path.read_text(encoding="utf-8", errors="replace")
+                if not page_is_year(html, expected_year):
+                    wrong.add(code)
+        wrong_list = sorted(wrong)
         check(
             "3. שנת הלימודים על הדפים",
-            not wrong,
-            f"נבדק מדגם של {min(60, len(census.intact))} דפים; "
-            + (f"{len(wrong)} עם שנה שגויה: {', '.join(wrong[:5])}" if wrong
-               else f"כולם {expected_year}"),
+            not wrong_list,
+            f"נבדקו כל {checked} הדפים של {len(records)} הקורסים שפוענחו; "
+            + (f"{len(wrong_list)} עם שנה שגויה: {', '.join(wrong_list[:5])}"
+               if wrong_list else f"כולם {expected_year}"),
         )
     else:
         check("3. שנת הלימודים על הדפים", True, "לא נבדק (לא נמסרה שנה צפויה)")
@@ -579,7 +619,7 @@ def main(argv: list[str] | None = None) -> int:
     reverted_exc = _session_reverted_error()
 
     if not args.check:
-        census = scan_raw(RAW_DIR)
+        census = scan_raw(RAW_DIR, expected_year)
         need = sorted(set(catalog) - set(census.intact))
         if need:
             print(f"חסרים או פסולים: {len(need)} קורסים. "
@@ -602,7 +642,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("כל הקטלוג כבר על הדיסק ותקין — לא נדרשת שליפה.")
 
-    census = scan_raw(RAW_DIR)
+    census = scan_raw(RAW_DIR, expected_year)
     print(f"\nגלם: {census.summary()}")
     records = build_records(RAW_DIR, census)
     print(f"פוענחו: {len(records)} קורסים")
