@@ -78,6 +78,7 @@ import datetime as _dt
 import gzip
 import html as _html
 import importlib
+import os
 import re
 import sys
 import time
@@ -104,6 +105,9 @@ __all__ = [
     "YedionHTTPError",
     "YearSwitchError",
     "YearMismatchError",
+    "SessionRevertedError",
+    "MAX_RESYNCS_PER_COURSE",
+    "MAX_SESSION_REOPENS",
     "GatedEndpointError",
     "ThrottledError",
     "YedionHTTP",
@@ -224,6 +228,17 @@ DEFAULT_DELAY_S = 3.0
 #: פסק זמן לבקשה בודדת.
 DEFAULT_TIMEOUT_S = 45.0
 
+#: כמה פעמים קורס אחד רשאי לפתוח את הסשן מחדש ולנסות שוב, אחרי שהדף שלו
+#: חזר בשנה הלא נכונה. ‏2026-09-25 (ריצה לילית 36080575127): אחרי 145 דפים
+#: תקינים הסשן חזר בשקט לתשפ"ו, ו-374 הקורסים שנותרו נכשלו אחד-אחד עד סוף
+#: הריצה, כי שום דבר בלולאה לא פתח את הסשן מחדש. ראו ``fetch_course_resyncing``.
+MAX_RESYNCS_PER_COURSE = 2
+
+#: תקרה לכל הריצה. שמונה ריצות לפני כן החזיקו סשן אחד כ-97 דקות בלי אף
+#: נסיגה, כך שסשן שחוזר שוב ושוב אינו תקלה חולפת — וממשיכים לשלוף מולו
+#: שעה נוספת רק כדי שהשער ייפול בסוף. כל פתיחה עולה שלוש בקשות.
+MAX_SESSION_REOPENS = 5
+
 #: User-Agent רגיל. שרתי WebForms ותיקים לפעמים מתנהגים אחרת מול מחרוזת
 #: חריגה, ואנחנו רוצים בדיוק את מה שהדפדפן היה מקבל.
 USER_AGENT = (
@@ -334,6 +349,20 @@ class YearSwitchError(YearMismatchError):
     לתפוס "כל בעיית שנה" יתפוס את ``YearMismatchError`` ויקבל גם את זה.
 
     זה כמעט תמיד אומר דבר אחד: בקשת החימום לא בוצעה, או שנכשלה בשקט.
+    """
+
+
+class SessionRevertedError(YearMismatchError):
+    """
+    הסשן חוזר לשנה אחרת גם אחרי שנפתח מחדש — צריך לעצור את הריצה.
+
+    ``YearMismatchError`` על דף בודד היא תקלה של הסשן, לא של הקורס, ולכן
+    ``fetch_course_resyncing`` פותח את הסשן מחדש ומנסה שוב. החריגה הזאת
+    נזרקת כשגם זה לא עזר (``MAX_RESYNCS_PER_COURSE``) או כשזה קורה שוב ושוב
+    באותה ריצה (``MAX_SESSION_REOPENS``). מי שקורא לה צריך **לעצור**, לא
+    לספור כישלון ולהמשיך: כל בקשה נוספת תחזור בשנה הלא נכונה.
+
+    יורשת מ-``YearMismatchError`` כדי שמי שתופס "כל בעיית שנה" יתפוס גם אותה.
     """
 
 
@@ -796,6 +825,8 @@ class YedionHTTP:
         self.waits: list[float] = []
         self.dumps: list[Path] = []
         self.session_ready: bool = False
+        #: כמה פעמים הסשן נפתח מחדש בריצה הזאת (``reopen_session``).
+        self.session_reopens: int = 0
 
         #: ה-opener בפועל. ``None`` = ייבנה בבקשה הראשונה. זו התכונה שאפשר
         #: להציב עליה opener מזויף בבדיקות.
@@ -1243,6 +1274,32 @@ class YedionHTTP:
 
         self.session_ready = True
 
+    def reopen_session(self) -> None:
+        """
+        זורק את הסשן הנוכחי ופותח חדש: עוגיות ריקות, ואז שוב שלושת השלבים.
+
+        ``open_session`` מדלג כשהסשן כבר פתוח, וזה נכון — אבל כשהידיעון שכח
+        את השנה באמצע ריצה, "פתוח" כבר אינו אומר "על השנה הנכונה". עוגיות
+        ריקות ולא רק POST חוזר: לא ידוע אם השרת שכח את הסשן או רק את השנה
+        שבו, וסשן טרי עונה על שתי האפשרויות באותו מחיר.
+
+        כמו ב-``open_session``, דף החימום אינו קורס ולכן האימות נדחה לדף
+        הקורס הבא — ``fetch_course_resyncing`` מנסה שוב בדיוק את הקורס שנכשל,
+        ו-``_assert_page_year`` אוכף עליו את השנה כרגיל.
+        """
+        self.session_reopens += 1
+        self._emit(
+            f"פותח את הסשן מחדש (פעם {self.session_reopens} בריצה הזאת). "
+            "(re-opening the yedion session)"
+        )
+        self.cookies.clear()
+        self.session_ready = False
+        self._warmed_up = False
+        self._year_posted = False
+        self._year_verified = False
+        self.year_label = ""
+        self.open_session()
+
     def _step_1_warm_up(self) -> str:
         """
         שלב 0 בפרוטוקול: GET אחד ל-``S_LOOK_FOR_NOSE``, רק כדי שייווצר סשן.
@@ -1446,6 +1503,97 @@ class YedionHTTP:
                 "אינו נפתח בשנה/סמסטר האלה. (no groups; may not be offered)"
             )
         return html
+
+    def fetch_course_resyncing(
+        self,
+        code: str,
+        *,
+        max_resyncs: int = MAX_RESYNCS_PER_COURSE,
+        max_reopens: int = MAX_SESSION_REOPENS,
+    ) -> str:
+        """
+        ``fetch_course``, ועל דף בשנה הלא נכונה: פותח סשן מחדש ומנסה שוב.
+
+        בדיקת השנה עצמה לא התרככה בכלום — דף בשנה הלא נכונה עדיין לא מוחזר
+        ולא מפוענח. מה שהשתנה הוא מה עושים *אחריה*: אי-התאמה אומרת שהסשן
+        שכח את השנה, ולכן כל הקורסים שאחריו ייכשלו באותה צורה. פתיחה מחדש
+        מתקנת את הסשן; לספור כישלון ולהמשיך רק שורף את שאר הריצה.
+
+        הדמפ של הדף שנדחה עובר ל-``raw_dir/wrong_year/``. הוא נשמר לפני
+        הבדיקה, כמו כל דף (חוק הברזל), אבל ב-``raw_dir`` עצמו הוא נראה כמו
+        דמפ תקין: ``build_catalog.scan_raw`` סופר אותו כ"תקין", בנייה שממשיכה
+        מאמצע לא תשלוף אותו שוב, והוא מפוענח לקטלוג. כך נכנסו לבנייה של
+        2026-09-25 כ-374 דפי תשפ"ו, ושער 3, שבודק רק מדגם של 60, לא ראה אותם.
+
+        Raises:
+            SessionRevertedError: הדף חזר בשנה הלא נכונה גם אחרי
+                ``max_resyncs`` פתיחות, או שהריצה כבר פתחה ``max_reopens``
+                סשנים. **לעצור את הריצה.**
+            ThrottledError / GatedEndpointError / YedionHTTPError: כמו
+                ``fetch_course``, וגם מהפתיחה מחדש עצמה.
+        """
+        clean = str(code).strip()
+        resyncs = 0
+        while True:
+            before = len(self.dumps)
+            try:
+                return self.fetch_course(clean)
+            except YearMismatchError as exc:
+                self._quarantine_wrong_year(clean, before)
+                if resyncs >= max_resyncs:
+                    raise SessionRevertedError(
+                        f"קורס {clean}: הדף חזר בשנה הלא נכונה גם אחרי {resyncs} "
+                        "פתיחות מחדש של הסשן. הידיעון לא מחזיק את השנה — עוצרים "
+                        "במקום לשלוף עוד שעה של דפים שייפסלו. "
+                        f"(session keeps reverting the year: {exc})"
+                    ) from exc
+                if self.session_reopens >= max_reopens:
+                    raise SessionRevertedError(
+                        f"קורס {clean}: הסשן כבר נפתח מחדש {self.session_reopens} "
+                        "פעמים בריצה הזאת, וחזר שוב לשנה אחרת. עוצרים. "
+                        f"(session reverted too many times in one run: {exc})"
+                    ) from exc
+                resyncs += 1
+                self._emit(
+                    f"קורס {clean}: הסשן חזר לשנה אחרת. פותחים אותו מחדש "
+                    f"ומנסים שוב ({resyncs}/{max_resyncs})."
+                )
+                try:
+                    self.reopen_session()
+                except YearSwitchError as switch_exc:
+                    raise SessionRevertedError(
+                        f"קורס {clean}: פתיחת הסשן מחדש לא הצליחה להחליף את "
+                        f"השנה. ({switch_exc})"
+                    ) from switch_exc
+
+    def _quarantine_wrong_year(self, code: str, first_new: int) -> None:
+        """מעביר ל-``raw_dir/wrong_year/`` את הדמפים של ``code`` שנכתבו מאז
+        ``self.dumps[first_new]``, כדי ש-glob של ``<code>_*.html`` לא ימצא
+        אותם. אותו רעיון כמו תיקיית ``blocked`` של ``dump_html``."""
+        if self.raw_dir is None:
+            return
+        fresh = self.dumps[first_new:]
+        moved = [p for p in fresh if p.name.startswith(f"{code}_")]
+        if not moved:
+            return
+        shed = self.raw_dir / "wrong_year"
+        # ‏מיקרו-שניות: הניסיון החוזר נכתב שוב בשם ``<code>_1``, ושני ניסיונות
+        # שנפסלו באותה שנייה היו דורסים זה את זה כאן.
+        stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+        for path in moved:
+            try:
+                shed.mkdir(parents=True, exist_ok=True)
+                os.replace(path, shed / f"{path.stem}_{stamp}.html")
+            except OSError as exc:
+                self._emit(
+                    f"אזהרה: הדמפ {path.name} בשנה הלא נכונה לא הועבר "
+                    f"({type(exc).__name__}: {exc})."
+                )
+                continue
+            self.dumps.remove(path)
+        # המספר הרץ נקבע מחדש מהדיסק, כך שהניסיון הבא ייכתב במקום הדמפ
+        # שהועבר ולא מעליו.
+        self._dump_counters.pop(code, None)
 
     def fetch_details(
         self,

@@ -76,6 +76,10 @@ EXIT_THROTTLED = 3
 #: הבקשה הופנתה אל מחוץ לידיעון, כלומר אל שער ההתחברות. זה היום שבו
 #: בראודה סגרה את נקודות הקצה הציבוריות — ואז שום ריצה אוטומטית לא תעזור.
 EXIT_GATED = 4
+#: הסשן של הידיעון חזר לשנה אחרת, ופתיחה מחדש לא החזיקה. ‏2026-09-25 זה קרה
+#: אחרי 25 דקות בריצה ששמונה קודמותיה החזיקו סשן אחד כ-97 דקות — תקלה אצל
+#: השרת, לא אצלנו. ריצה חוזרת היא התגובה הנכונה.
+EXIT_SESSION_REVERTED = 5
 
 #: מתחת לזה שום תשובה אינה דף. זהה ל-``yedion_http._MIN_REAL_PAGE_CHARS``.
 MIN_REAL_PAGE_CHARS = 500
@@ -418,6 +422,16 @@ def _yedion_errors():
     return ((throttled,) if throttled else ()), ((gated,) if gated else ())
 
 
+def _session_reverted_error():
+    """‏(SessionRevertedError,) — ריק אם המודול חסר, מאותה סיבה כמו למעלה."""
+    try:
+        import yedion_http  # type: ignore
+    except Exception:  # noqa: BLE001
+        return ()
+    reverted = getattr(yedion_http, "SessionRevertedError", None)
+    return (reverted,) if reverted else ()
+
+
 def fetch_missing(codes: list[str], year: str, pace: float) -> tuple[int, int]:
     """
     שולף רק את מה שחסר או פסול, בקצב ``pace`` שניות לבקשה.
@@ -432,10 +446,18 @@ def fetch_missing(codes: list[str], year: str, pace: float) -> tuple[int, int]:
     ההתחברות, כלומר שנקודת הקצה הציבורית נסגרה — ושום ריצה אוטומטית לא
     תפתור זאת. שתיהן עולות למעלה ומתורגמות לקוד יציאה משלהן, כדי שה-CI
     יבדיל בין "בראודה חסמה אותנו" לבין "הפרסר נשבר".
+
+    **דף בשנה הלא נכונה אינו כישלון של קורס — הוא כישלון של הסשן.** עד
+    2026-09-25 הוא נספר כמו כל כישלון, והלולאה המשיכה על אותו סשן: אחרי
+    145 דפים תקינים הידיעון חזר בשקט לתשפ"ו, ו-374 הקורסים שנותרו נכשלו
+    אחד-אחד במשך 74 דקות. ‏``fetch_course_resyncing`` פותח את הסשן מחדש
+    ומנסה שוב את אותו קורס; אם זה לא מחזיק הוא זורק ``SessionRevertedError``,
+    וזו התקלה השלישית שעוצרת את הבנייה.
     """
     import yedion_http  # type: ignore
 
     throttled_exc, gated_exc = _yedion_errors()
+    stop_exc = throttled_exc + gated_exc + _session_reverted_error()
 
     fetcher = yedion_http.YedionHTTP(
         year=year, delay_s=pace, raw_dir=str(RAW_DIR),
@@ -449,9 +471,9 @@ def fetch_missing(codes: list[str], year: str, pace: float) -> tuple[int, int]:
     # ל-18 שניות לבקשה, כלומר שלוש שעות במקום שעה וחצי.
     for i, code in enumerate(codes, start=1):
         try:
-            fetcher.fetch_course(code)
+            fetcher.fetch_course_resyncing(code)
             ok += 1
-        except (throttled_exc + gated_exc) as exc:
+        except stop_exc as exc:
             print(f"  ({i}/{total}) {code}: {type(exc).__name__}: {exc}", flush=True)
             raise
         except Exception as exc:  # noqa: BLE001 - קורס בודד שנכשל אינו עוצר
@@ -459,6 +481,9 @@ def fetch_missing(codes: list[str], year: str, pace: float) -> tuple[int, int]:
             print(f"  ({i}/{total}) {code}: {type(exc).__name__}: {exc}", flush=True)
         if i % 25 == 0:
             print(f"  ({i}/{total}) נשלפו {ok}, נכשלו {failed}", flush=True)
+    if fetcher.session_reopens:
+        print(f"  הסשן נפתח מחדש {fetcher.session_reopens} פעמים בריצה הזאת.",
+              flush=True)
     return ok, failed
 
 
@@ -523,7 +548,8 @@ def main(argv: list[str] | None = None) -> int:
         description="בונה את הקטלוג שנשלח עם הקוד.",
         epilog=(
             "קודי יציאה: 0 הצלחה · 1 שער איכות נכשל · 2 תקלה · "
-            "3 הידיעון חסם · 4 נקודת הקצה נסגרה (שער התחברות).\n"
+            "3 הידיעון חסם · 4 נקודת הקצה נסגרה (שער התחברות) · "
+            "5 הסשן חזר לשנה אחרת גם אחרי פתיחה מחדש.\n"
             "בכל קוד שאינו 0 קובצי הפלט **לא** נגעו."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -550,6 +576,7 @@ def main(argv: list[str] | None = None) -> int:
 
     catalog = load_catalog_index()
     throttled_exc, gated_exc = _yedion_errors()
+    reverted_exc = _session_reverted_error()
 
     if not args.check:
         census = scan_raw(RAW_DIR)
@@ -567,6 +594,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"\nהידיעון חסם: {exc}")
                 print("הקטלוג הקודם נשאר כמו שהוא. כדאי לנסות שוב מאוחר יותר.")
                 return EXIT_THROTTLED
+            except reverted_exc as exc:
+                print(f"\nהסשן של הידיעון לא מחזיק את השנה: {exc}")
+                print("הקטלוג הקודם נשאר כמו שהוא. הדפים התקינים שכבר נשלפו "
+                      "נשארים על הדיסק, וריצה חוזרת תמשיך מהם.")
+                return EXIT_SESSION_REVERTED
         else:
             print("כל הקטלוג כבר על הדיסק ותקין — לא נדרשת שליפה.")
 

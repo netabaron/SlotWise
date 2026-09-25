@@ -121,7 +121,8 @@ jobs:
           rc=${PIPESTATUS[0]}
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           # Exit codes are build_catalog.py's contract (see its --help):
-          # 0 ok · 1 gate failed · 2 error · 3 throttled · 4 endpoint gated.
+          # 0 ok · 1 gate failed · 2 error · 3 throttled · 4 endpoint gated ·
+          # 5 the yedion session kept reverting the year after re-opening.
           # In every non-zero case the output files were NOT touched, so the
           # previously committed catalog stays live. That is the design:
           # "the previous catalog beats a new broken one, always."
@@ -130,6 +131,7 @@ jobs:
             1) echo "::error::a validation gate failed - the committed catalog was left alone" ;;
             3) echo "::error::the yedion throttled us - try again later, do not lower --pace" ;;
             4) echo "::error::the public endpoint is gated (login wall). Automation cannot fix this; see DEPLOY.md" ;;
+            5) echo "::error::the yedion session kept reverting to another academic year, even after re-opening it - the run stopped early. Try again later" ;;
             *) echo "::error::build failed with exit code $rc" ;;
           esac
           exit "$rc"
