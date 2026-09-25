@@ -5098,7 +5098,8 @@
     setText(
       ui.electivesSource,
       Tf("app.electives.source", {
-        program: txt(data.program),
+        // ‏השם המוצג, לא המזהה: ``label`` הוא איך שהשנתון קורא למסלול.
+        program: txt((programEntry() || {}).label) || txt(data.program),
         year: txt(data.year_text),
       })
     );

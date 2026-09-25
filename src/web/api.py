@@ -1479,6 +1479,27 @@ def _curriculum(program: Any = None, intake: Any = None) -> dict:
     return _curricula().get(norm, {})
 
 
+def _program_label(program: Any) -> str:
+    """השם שמוצג לסטודנט/ית: כפי שתוכנית הלימודים עצמה קוראת למסלול.
+
+    ‏``programs.json`` נושא את הכיתוב של אתר המכללה, וזה משמש **מזהה**:
+    בחירות שמורות בדפדפן ופרמטר ``?program=`` נשענים עליו. אבל האתר לא
+    תמיד קורא למסלול כפי שהשנתון קורא לו — מתמטיקה שימושית מופיעה שם
+    "עם התמחות ב-AI ובאלגוריתמיקה", ובשנתון זו "מתמטיקה שימושית" אחת, שבה
+    ‏AI הוא תחום בחירה. קובץ תוכנית שנושא ``program_label`` גובר; בלעדיו
+    מוצג המזהה עצמו, כמו קודם.
+    """
+    norm = _norm_program(program)
+    files = list(_curricula_by_intake().get(norm, {}).values())
+    if norm in _curricula():
+        files.insert(0, _curricula()[norm])
+    for data in files:
+        label = str(data.get("program_label") or "").strip()
+        if label:
+            return label
+    return str(program or "").strip()
+
+
 def _default_curriculum() -> dict:
     """תוכנית הלימודים, בקאש עם בדיקת mtime (עריכה של הקובץ נקלטת מיד).
 
@@ -2059,7 +2080,7 @@ def _program_choices(
         out.append(
             {
                 "id": name,
-                "label": name,
+                "label": _program_label(name),
                 "has_curriculum": has,
                 "curriculum_absence": absence,
                 # ריק לכל מסלול רגיל, וזה מה שמסתיר את התיבה בממשק.
