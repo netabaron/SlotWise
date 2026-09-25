@@ -25,11 +25,11 @@ Notes from a manual walkthrough of every study program (מסלול) on the site.
 - [x] **Space between a course name and its number.** Some courses appear with the number glued to the name, e.g. `חדוא2` in Civil Engineering. Every course whose name ends with a number should have a space before it: `חדוא 2`. Apply this globally (all programs), ideally as a normalization step in the data pipeline.
   - *Done 2026-09-25:* the civil PDF extraction glued 12 numbers; `models.normalize_course_name` now runs when any curriculum file loads and when the yedion is parsed, and `civil.json` is fixed at rest. No other program had the problem.
 - [x] **Truncated / abbreviated names in Biotechnology.** Year 4, Semester A shows `כתיבה מדעית ושימוש במאגרי מידע בביוט.` — the word should be written in full: `בביוטכנולוגיה`. Audit all programs for similar truncations (names ending in an abbreviation or a period) and restore the full names.
-  - *Done 2026-09-25:* `biotech.json` had copied the yedion's names (cut at 40 characters) instead of the PDF's; 15 names now follow `biotech.pdf`. The student's own curriculum name now also wins in the lecturers step and timetable, and a cut-off yedion name is restored wherever any curriculum prints it in full (41711, 62015). 20 yedion names have no full version in any source; they are listed in `docs/PROGRAM_FINDINGS.md`.
+  - *Done 2026-09-25:* `biotech.json` had copied the yedion's names (cut at 40 characters) instead of the PDF's; 15 names now follow `biotech.pdf`. The student's own curriculum name now also wins in the lecturers step and timetable, and a cut-off yedion name is restored wherever any curriculum prints it in full (41711, 62015). The 20 yedion names with no full version in any source are tabled in `docs/PROGRAM_FINDINGS.md` §10, waiting for full names; civil's printed misspelling of 421223 is kept until confirmed.
 - [x] **GMP course name.** A Biotechnology course is displayed as `דרישות רגולטוריות ו-GMP בביוטכ`. It should be displayed simply as `GMP`. Check the curriculum for the correct display name and use it.
   - *Done 2026-09-25:* `biotech.pdf` prints it as `GMP`, and it is now shown as `GMP` everywhere for biotech students.
 - [x] **Physics 3 in Biotechnology.** Year 3, Semester B shows `פיזיקה 3ב` instead of `פיזיקה 3`. Check the curriculum and the catalog: if it's the same course, display it as `פיזיקה 3`; if they're genuinely different courses, make sure the one the curriculum requires for this program is the one shown.
-  - *Done 2026-09-25:* it is the same course (11027 in both the curriculum and the catalog); the PDF prints `פיזיקה 3`, so that is what biotech students now see.
+  - *Done 2026-09-25:* same course (11027 in both sources), shown as `פיזיקה 3`; by decision, biotech Physics 1 and 2 keep the yedion's names `פיזיקה 1ב` / `פיזיקה 2ב` (not the PDF's `פיזיקה 1 ב'`).
 
 ## 3. Elective and general-course reminders
 
@@ -40,6 +40,8 @@ Notes from a manual walkthrough of every study program (מסלול) on the site.
 ## 4. Specializations (מסלולי התמחות)
 
 Several programs split into specializations, and the courses offered (mandatory and elective) depend on the specialization. Today the app doesn't handle this well enough, so students would have to check their curriculum. The goal is to make specialization a first-class part of the flow.
+
+*Interim, 2026-09-25:* the generic "at least one course from each cluster" rule is now shown only where the curriculum states it (Software, Information Systems) and comes from the program's data file; Industrial and Applied Math show no rule until their real rules are added with the courses-step work.
 
 ### 4.1 Civil Engineering
 - [ ] Let the student choose their specialization, and adjust the offered courses accordingly.

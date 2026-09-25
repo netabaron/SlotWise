@@ -173,7 +173,9 @@ def test_applied_maths_shows_its_four_domains(page, intake):
     assert seen["hidden"] is False, "החלק נשאר מוסתר — כנראה לא נשלח מועד הכניסה"
     assert seen["title"] == "אשכולות קורסי בחירה"
     assert seen["groups"] == MATH_TITLES
-    assert seen["rule"].strip()
+    # השנתון של מתמטיקה אינו קובע "קורס מכל תחום", ולכן שורת הכלל ריקה.
+    # שורה זו שונתה באישור מפורש, 2026-09-25 (PROGRAM_REVIEW §2, המשך).
+    assert seen["rule"].strip() == ""
     assert page.errors == []
 
 

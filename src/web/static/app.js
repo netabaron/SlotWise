@@ -5101,7 +5101,10 @@
       isTracks ? T("app.electives.titleTracks") : T("app.electives.titleClusters")
     );
     // הכלל אינו קוסמטי: אשכול = אחד מכל קבוצה, מסלול = בוחרים מסלול אחד.
-    setText(ui.electivesRule, txt(isTracks ? data.track_rule : data.cluster_rule));
+    var rule = txt(isTracks ? data.track_rule : data.cluster_rule);
+    setText(ui.electivesRule, rule);
+    // ‏כלל שהתוכנית לא מצהירה עליו מגיע ריק — ואז גם השורה לא מוצגת.
+    setHidden(ui.electivesRule, !rule);
     // שנה מוצגת תמיד — גם כשהמסמך לא ציין אותה, ואז נאמר בדיוק את זה.
     setText(
       ui.electivesSource,

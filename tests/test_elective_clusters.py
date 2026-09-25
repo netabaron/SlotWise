@@ -163,7 +163,9 @@ def test_applied_maths_now_has_electives(client, intake):
     assert data["origin"] == "curriculum"
     assert data["structure"] == "clusters"
     assert {k: len(v) for k, v in data["clusters"].items()} == MATH_CLUSTERS
-    assert data["cluster_rule"]
+    # השנתון של מתמטיקה אינו קובע "קורס מכל תחום", ולכן אין כלל להציג.
+    # שורה זו שונתה באישור מפורש, 2026-09-25 (PROGRAM_REVIEW §2, המשך).
+    assert data["cluster_rule"] == ""
     # אין שנת מחזור בפרק הזה, ואז נאמר בדיוק את זה ולא מנחשים.
     assert data["year"] in (None, "")
     assert "לא צוינה" in data["year_text"]

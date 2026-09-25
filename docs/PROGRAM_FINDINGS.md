@@ -34,10 +34,11 @@ Page numbers are PDF pages counted from 1. Where the chapter prints its own page
 | Applied Math | none. "AI" and "algorithms" are elective **domains** | — | ≥ 3.0 credits of "בחירה מתמטיים". 201198 / 61957: one only. **No per-domain rule** | winter and spring intakes: sem. 4, 5, 6 | "לאורך כל תקופת הלימודים"; spring intake only: "מומלץ... בסמ' 1+2+3" |
 | Biotechnology | none | — | none: the PDF lists mandatory courses only | none | none |
 
-**Bugs in what the repo serves today.** None of these is fixed here.
-1. `/program/electives` hard-codes the rule `"יש לקחת קורס אחד לפחות מכל אשכול."`, in `src/web/api.py` (the `cluster_rule` of the math fallback and of the chapter branch).
+**Bugs in what the repo serves today.** Only #1 has been fixed since (2026-09-25).
+1. **Fixed 2026-09-25.** `/program/electives` hard-coded the rule `"יש לקחת קורס אחד לפחות מכל אשכול."`, in `src/web/api.py` (the `cluster_rule` of the math fallback and of the chapter branch).
    - Math: the PDF never states that rule.
    - Industrial: the real rule is 4 / 2 / 1 per cluster, or 7–8 courses. "One from each" understates it.
+   - Now the rule is a `cluster_rule` field in the program's curriculum file, with its source. Only Software and Information Systems have one; Industrial and Math show no rule until their real rules are entered.
 2. `data/curricula.json` (built by `src/shnaton.py`) has wrong elective lists for three programs:
    - Civil: 4 "tracks" instead of 2; groups 1 and 2 merged; 51600 missing.
    - Mechanical: 4 courses missing; the shared enrichment list is filed under Industry 4.0 only.
@@ -450,9 +451,33 @@ A student in a listed program could pick it only to avoid the auto-selected reco
 
 ### Yedion names still cut off, with no full name in any source
 
-These 20 are shown as the yedion prints them. No curriculum in the repo has a longer name for them. Most are teaching-certificate, general or out-of-program courses.
+These 20 are shown as the yedion prints them (it cuts names at 40 characters). No curriculum in the repo has a longer name for them, so the full names have to be supplied by hand. **Nothing here is guessed.**
 
-11375, 11578, 11871, 31032, 31033, 43101, 51023, 51024, 51230, 51231, 51742, 51963, 81280, 81403, 81404, 81561, 81578, 81671, 85405, and 41526 (whose curriculum name is the shorter "קינטיקה ותכנון ריאקטורים").
+"Program" is the curriculum that lists the course. "—" means no curriculum in the repo lists it. "Why listed" says what flagged it. Those marked *may be complete* only reach the length limit or end in a normal "א'"/"ב'", and may need no change.
 
-- Several of these are only at the 39–40-character limit and may be complete.
-- 51742 and 41526 show their curriculum name to students of that program.
+| Code | Program | Current name (yedion) | Length | Why listed |
+|---|---|---|---|---|
+| 11375 | — | פרשיות סוערות במשפט ישראלי: השלכות תרבות | 40 | at the limit |
+| 11578 | — | חינוך וטכנולוגיה בעידן המהפכה התעשייתית | 39 | at the limit; *may be complete* |
+| 11871 | — | שילוב טכנולוגיות מתקדמות בהוראה ובהדרכה | 39 | at the limit; *may be complete* |
+| 31032 | — | בחינת סווג-יסודות הפיזיקה-חשמל ואלקטרו' | 39 | ends in an abbreviation |
+| 31033 | — | יסודות הפיזיקה - הנדסת חשמל ואלקטרוניקה | 39 | at the limit; *may be complete* |
+| 41526 | הנדסת ביוטכנולוגיה | קינטיקה ותכנון ריאקטורים כימיים וביולוגי | 40 | at the limit. Biotech students see the PDF's shorter "קינטיקה ותכנון ריאקטורים" |
+| 43101 | — | תקינה ופיתוח מוצרים ביוטכנולוגיים ורפוא | 39 | cut mid-word |
+| 51023 | הנדסת תעשייה וניהול | פרוייקט גמר בהתמחות מדעי הנתונים שלב א' | 39 | ends in "א'"; *may be complete* |
+| 51024 | הנדסת תעשייה וניהול | פרוייקט גמר בהתמחות מדעי הנתונים שלב ב' | 39 | ends in "ב'"; *may be complete* |
+| 51230 | — | פרויקט גמר בהתמחות תכן ותפעול שלב א' | 36 | ends in "א'"; *may be complete* |
+| 51231 | — | פרויקט גמר בהתמחות תכן ותפעול שלב ב' | 36 | ends in "ב'"; *may be complete* |
+| 51742 | הנדסת חשמל ואלקטרוניקה | הסתברות ויסודות הסטטיסטיקה להנדסת אלקטרו | 40 | cut mid-word. Electrical students see the curriculum's "הסתברות ויסודות הסטטיסטיקה" |
+| 51963 | — | פיתוח מערכות ארגוניות בעזרת Vibe Coding | 39 | at the limit; *may be complete* |
+| 81280 | — | מבוא להוראת המקצועות העיוניים ההתנסותיים | 40 | at the limit |
+| 81403 | — | התנסות מעשית בהוראת מתמטיקה והנדסה משולב | 40 | at the limit |
+| 81404 | — | התנ' מעשית בהוראת מתמטיקה והנדסה משולב 2 | 40 | abbreviation "התנ'" |
+| 81561 | — | נושאים מתמטיים נבחרים למורים למתמט' | 35 | ends in an abbreviation |
+| 81578 | — | חינוך וטכנולוגיה בעידן המהפכה התעשייתית | 39 | at the limit; *may be complete* |
+| 81671 | — | שילוב טכנולוגיות מתקדמות בהוראה ובהדרכה | 39 | at the limit; *may be complete* |
+| 85405 | — | פרויקט אינדוודואלי בהוראת הנדסה ומתמטיקה | 40 | at the limit |
+
+### Civil 421223: a printed misspelling, pending confirmation
+
+`civil.pdf` prints "מבוא לאלגרומיתקה ותכנות". The same chapter elsewhere, and the yedion, write "מבוא לאלגוריתמיקה ותכנות". The file keeps the printed spelling until the correction is confirmed.

@@ -1598,6 +1598,22 @@ def _curriculum_notes(program: Any = None, intake: Any = None) -> list[str]:
     return [str(note).strip() for note in (curr.get("notes") or []) if str(note).strip()]
 
 
+def _cluster_rule(program: Any = None, intake: Any = None) -> str:
+    """כלל הבחירה מהאשכולות, **רק** כשתוכנית הלימודים של המסלול מצהירה עליו.
+
+    עד 2026-09-25 כל מסלול עם אשכולות קיבל "קורס אחד לפחות מכל אשכול".
+    זה נכון לתוכנה ולמערכות מידע, שהשנתון שלהן אומר זאת במפורש, אבל
+    מתמטיקה שימושית לא קובעת כלל כזה, ותעשייה וניהול קובעת כללים אחרים
+    (4/2/1 קורסים, או 7–8 לפי מסלול). כלל שלא נכתב אינו מוצג. הכלל
+    והמקור שלו יושבים ב-``cluster_rule``/``cluster_rule_source`` בקובץ
+    התוכנית. ‏docs/PROGRAM_FINDINGS.md.
+    """
+    curr = _curriculum(program, intake)
+    if not isinstance(curr, dict):
+        return ""
+    return str(curr.get("cluster_rule") or "").strip()
+
+
 def _profile() -> dict:
     """‏data/profile.json — התשובות האמיתיות של הסטודנט/ית. חסר = ``{}``."""
     from flask import current_app
@@ -4647,7 +4663,7 @@ def program_electives():
                 "source": curr.get("source", ""),
                 "clusters": own,
                 "tracks": {},
-                "cluster_rule": "יש לקחת קורס אחד לפחות מכל אשכול.",
+                "cluster_rule": _cluster_rule(program, intake),
                 "track_rule": "",
                 "notes": _curriculum_notes(program, intake),
                 "warnings": curr.get("warnings", []),
@@ -4688,7 +4704,7 @@ def program_electives():
         "source": chapter.get("source", ""),
         "clusters": clusters,
         "tracks": tracks,
-        "cluster_rule": "יש לקחת קורס אחד לפחות מכל אשכול." if clusters else "",
+        "cluster_rule": _cluster_rule(program, intake) if clusters else "",
         "track_rule": "יש לבחור מסלול התמחות אחד ולהתמחות בו." if tracks else "",
         # מקובץ התוכנית של המסלול, גם כשהאשכולות עצמם באו מפרק השנתון:
         # ההערה שייכת למסלול, לא למקור שממנו נגזרה הרשימה.

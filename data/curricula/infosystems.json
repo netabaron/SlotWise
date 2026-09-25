@@ -4,6 +4,8 @@
   "source": "system.pdf",
   "cohort_year": "תשפ\"ד",
   "degree_credits_required": 160,
+  "cluster_rule": "יש לקחת קורס אחד לפחות מכל אשכול.",
+  "cluster_rule_source": "system.pdf, עמ' 9 [161]: \"כל סטודנט חייב לקחת קורס אחד מכל אשכול\"",
   "hour_legend": {
     "he": "הרצאה",
     "te": "תרגול",
