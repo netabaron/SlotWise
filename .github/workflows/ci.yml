@@ -26,8 +26,9 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
-    # The full suite is ~14 min locally, most of it Playwright. 30 leaves
-    # room for a slower runner without letting a wedged browser hang the job.
+    # Serially the suite is ~21 min, almost all of it fixed Playwright waits.
+    # Run in parallel below it is ~6. 30 still leaves room for a slow runner
+    # without letting a wedged browser hang the job.
     timeout-minutes: 30
 
     env:
@@ -94,7 +95,12 @@ jobs:
         # The whole suite. No --ignore: see the Playwright step.
         # -ra prints the reason for every skip, so a skip can never again be
         # invisible in the log.
-        run: python -m pytest -q -ra
+        #
+        # -n 4: the runner has 4 vCPUs and 16 GB; a worker (Python plus its
+        # Chromium) peaks at ~0.6 GB. --dist loadfile keeps every module on
+        # one worker, because several modules share one browser page across
+        # their tests. Measured 2026-09-24: 21:21 serial -> 5:27 locally.
+        run: python -m pytest -q -ra -n 4 --dist loadfile
 
   docker:
     name: docker

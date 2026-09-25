@@ -630,6 +630,29 @@ semester **ב**, both with `אין מועד קבוע` — no meeting rows at all
 
 ---
 
+### Fixed sleeps are most of the suite's runtime — **after the redesign; approved as a note only**
+**Where:** 207 `wait_for_timeout` calls in 20 browser test files, mostly in
+shared helpers (`_ready`, `_fresh`, `_open`, `_with_schedule`, `choose`, …).
+**Owner:** after the UI redesign (`docs/DESIGN.md` phases). Decided 2026-09-24:
+parallel runs (pytest-xdist) were done first; this was kept as a note, not started.
+**Measured 2026-09-24:** a serial run takes 21:21, and the browser tests' fixed
+waits add up to ~19.5 min of it. The biggest files: `test_rendered_copy_browser`
+291 s, `test_lecturers_step` 133 s, `test_settings_screen` 128 s,
+`test_recommended_defaults_browser` 112 s. The common helper "goto, wait 3500,
+pick identity, wait 2500, recommended, wait 6000" alone costs ~12 s per test.
+**What would fix it:** a small app change that exposes when the page has settled,
+e.g. a `data-solve` attribute on `<html>` reading `pending` → `busy` → `idle`,
+set in `scheduleSolve`/`doSolve`. `#busy-bar` alone is not enough: it is hidden
+during the 150 ms debounce, so a test would read "done" too early. The helpers
+would then wait on that condition instead of the clock.
+**Why it matters beyond speed:** the fixed waits are timing assumptions. This is
+the same fix the `test_neither_physics_track_is_recommended` entry above asks
+for, and it would remove that class of load-sensitive failures.
+**Estimate, not measured:** serial perhaps 5–8 min, and 2–3 min combined with
+`-n`. Measure how long a solve takes on the frozen catalog before promising it.
+**Why not now:** it edits many protected test files, which needs an explicit
+decision per the standing rule, and it was deferred until after the redesign.
+
 ## Closed
 
 ### Local `sections.json` shadows the shipped catalog with an older build's stamp — closed 2026-09-20

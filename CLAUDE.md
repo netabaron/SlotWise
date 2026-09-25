@@ -170,6 +170,27 @@ the reason it was deferred. Read it before "discovering" one of them.
 Do not modify existing test files (`SPEC_WEB.md:230`). Add new ones
 instead.
 
+### Running the tests
+
+Locally, run the full suite with three workers:
+
+```
+python -m pytest -q -ra -n 3 --dist loadfile
+```
+
+* **Three, not more.** Each worker is one Python process plus its own
+  Chromium, about 0.6 GB at peak. This machine usually has only 2–3 GB
+  free with its other apps open, and Claude Code stops background runs
+  when memory runs critically low. That is what killed two full runs on
+  2026-09-24; neither was a test failing. CI uses `-n 4`.
+* **Always `--dist loadfile`.** Several modules share one browser page
+  across their tests (module-scoped fixtures), so a file must stay on one
+  worker. Plain `-n` would split them.
+* Serial (`python -m pytest -q -ra`) still works and takes ~21 min.
+  Almost all of that is fixed `wait_for_timeout` sleeps in the browser
+  tests, which is why parallel runs overlap so well.
+* `pytest-xdist` is in `requirements-dev.txt`.
+
 `tests/test_rendered_copy_browser.py` and `tests/test_lunch_window.py`
 were written by Claude during the 2026-09 UI work and may be edited
 freely.

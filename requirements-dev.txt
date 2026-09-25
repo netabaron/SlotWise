@@ -13,3 +13,11 @@
 pytest==9.1.1
 iniconfig==2.3.0
 pluggy==1.6.0
+
+# Parallel runs. Most of the suite's wall time is fixed Playwright waits,
+# not CPU, so workers overlap almost perfectly: measured 2026-09-24, 21:21
+# serial -> 5:27 with -n 4. Always with --dist loadfile: several modules
+# share one browser page across their tests, so a file must stay on one
+# worker. See CLAUDE.md, "Running the tests".
+pytest-xdist==3.8.0
+execnet==2.1.2
