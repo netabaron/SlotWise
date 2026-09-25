@@ -571,7 +571,17 @@ class TestStaleness:
         assert store.is_stale("61753", 24.0) is True
 
     def test_one_second_under_max_age_is_fresh(self, store: Store):
-        store.save_course(mk_course(), mk_meta(fetched_at=iso_ago(hours=24.0, seconds=-1)))
+        # ‏‎iso_ago‎ קוצץ לשנייה שלמה, כלומר מזיז את החותמת עד שנייה *אחורה* —
+        # ‏וכאן זה אוכל את המרווח: "שנייה מתחת לגבול" היה בפועל 0 עד 1 שניות,
+        # ‏ותחת עומס (‎-n 3‎, 2026-09-25) הכתיבה לדיסק גמרה אותו והבדיקה נכשלה.
+        # ‏מעגלים כאן *למעלה* לשנייה השלמה הבאה, כך שהחותמת לעולם אינה ותיקה
+        # מ-24 שעות פחות שנייה: המרווח הוא שנייה אמיתית. הטענה לא השתנתה.
+        # (תוקן באישור מפורש.)
+        moment = datetime.now(timezone.utc) - timedelta(hours=24.0, seconds=-1)
+        if moment.microsecond:
+            moment = moment.replace(microsecond=0) + timedelta(seconds=1)
+        stamp = moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+        store.save_course(mk_course(), mk_meta(fetched_at=stamp))
         assert store.is_stale("61753", 24.0) is False
 
     def test_one_second_over_max_age_is_stale(self, store: Store):
