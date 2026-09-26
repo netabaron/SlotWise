@@ -66,6 +66,17 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
         with:
+          # The branch as it is when the job STARTS, not github.sha. A run's
+          # SHA is fixed when it is triggered, and the concurrency group above
+          # queues a second build rather than running it alongside the first
+          # — so without this a queued build checks out a commit from before
+          # the catalog the first build just pushed. That is what failed run
+          # 36207384586: queued at 01:08, started at 01:36 on 4765868, and the
+          # rebase onto main (6351af5, pushed by the manual run 36203029195
+          # four seconds earlier) conflicted in catalog.meta.json. Starting
+          # from the tip means the previous catalog is the one gate 4 compares
+          # against and the rebase below only has to carry non-catalog commits.
+          ref: ${{ github.ref_name }}
           # Needed so the commit at the end can be pushed back.
           persist-credentials: true
           # Full history, because the commit step rebases onto the new tip of
