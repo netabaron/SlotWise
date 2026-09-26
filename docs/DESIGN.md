@@ -145,7 +145,12 @@ RTL throughout; English strings (footer) are marked `dir="ltr"`. If the full blo
 
 ### Program, year and semester
 
-Keep the current controls and behaviour; apply tokens, type and the general step behaviour only.
+Keep the current controls and behaviour; apply tokens, type and the general step behaviour only, with these additions (decided 2026-09-26):
+
+- **Specialization picker.** Appears only for programs that have specializations, and only from the semester where the curriculum diverges: Civil and Industrial from semester 3, Mechanical from semester 5, Electrical from semester 7. When shown it is required, and marked with an `--ink` border like the active control. Industrial also shows the line "את ההתמחות בוחרים עד סוף שנה א׳".
+- **Electrical, from semester 7:** two pickers, "סוג תכן הנדסי" (בתעשייה / מחקרי / פרויקט גמר) and "התמחות ראשית". A third, "התמחות משנית", appears only when the design route is מחקרי or פרויקט גמר.
+- **Industrial, תכן ותפעול specialization, from semester 7:** one more picker for the route: "התמחות בתעשייה" or "פרויקט גמר".
+- **"Other program" option** stays, relabelled "לא מופיע ברשימה — עבודה מהקטלוג בלבד".
 
 ### Courses
 
@@ -154,9 +159,13 @@ Keep the current controls and behaviour; apply tokens, type and the general step
 - **Recommended courses:** the paragraph about recommended courses becomes a heading "מומלצים לסמסטר X", with "לפי תכנית הלימודים" as secondary text and a "סמנו הכל" link. The list of unchecked ("בוטלו") courses is removed; the cards already show their state.
 - **Course card:** checkbox, name (600) with the code in muted text, credits at the end; one line with the lesson structure and prerequisites; and an optional muted "מחליף את …" line. The "בתוכנית-סמסטר X" tag on each card is removed. A selected card gets its course color as the inline-start stripe and tint: the same color the course will have in the timetable.
 - **Linked courses:** each linked card keeps today's "קורס צמוד" badge in its current color, plus one short line "נבחר יחד עם …". Selecting one still selects all of them. The long per-card sentence and the paragraph below the cards are removed.
-- **Elective clusters:** a heading "אשכולות בחירה" with the rule as secondary text. Each cluster is a box with its name, a progress pill "k מתוך n" (filled `--ink` with a check when the rule is met) and its courses as chips. The source line stays, small, at the end.
-
-This section will be extended with specializations and with the elective and general-course notes once the research in `docs/PROGRAM_REVIEW.md` is done.
+- **Semester notes:** a gold note at the top of the step, shown only in semesters where the curriculum places an elective or general-course slot, e.g. "בסמסטר הזה מומלץ לבחור קורסי בחירה" or "בסמסטר הזה מומלץ לבחור קורס כללי (קורס כללי 2)". Colors: light text and icon `#9a7a32`, background `#faf3e3`, border `#e8d6ab`; dark `#d4b06a`, `#2a2418`, `#4a3f28`. Where the curriculum says "any semester" instead of naming one, show one quiet info line, not a gold note.
+- **Specialization badge:** a recommended course that is mandatory only in the chosen specialization carries a "חובה בהתמחות X" badge, an `--ink` outline pill. It is separate from the "קורס צמוד" badge; a card can carry both.
+- **Elective requirements** (replaces the earlier cluster-progress rule, 2026-09-26). The app does not know which electives the student took in earlier semesters, so there are no "met" states and no checkmarks.
+  - A heading "קורסי בחירה" with "דרישות לתואר, לפי תכנית הלימודים" as secondary text.
+  - A list of the program's own requirements, taken from its data file, with the source. Each row shows "בסמסטר הזה: X", counting the current selection only.
+  - Each cluster is a box with its name, its minimum as a pill, and its courses as chips.
+  - A program with no rules in its data shows no rules.
 
 ### Study days
 
@@ -229,7 +238,7 @@ Each phase is its own commit, keeps all existing tests green, adds tests where b
 2. **Stepper.** General step behaviour: completed/active/upcoming states, remove the progress pills and the per-step summary line while open, animated open/close.
 3. **Study days** step as specified.
 4. **Lecturers** step as specified.
-   - **Courses step** as specified under Steps → Courses. *Waiting for the `docs/PROGRAM_REVIEW.md` research; not started.* Listed after Phase 4 without a number of its own, so that the phase numbers referenced elsewhere (e.g. "Phase 8") stay valid.
+   - **Courses step** as specified under Steps → Courses. Now includes specializations (the pickers under Program, year and semester, the specialization badge, the semester notes and the elective requirements). *Research done; to be built after its data work (specialization, elective-rule and semester-slot data in the program files).* Listed after Phase 4 without a number of its own, so that the phase numbers referenced elsewhere (e.g. "Phase 8") stay valid.
 5. **Results page:** settings pills, stats pills and the new timetable styling with course colors and legend.
 6. **Alternatives:** previews, sorting, previous/next, animated transitions between alternatives, lesson details.
 7. **Wide layout:** side-by-side steps and sticky timetable at ≥1200px, hiding the build button, floating bar and settings pills there.

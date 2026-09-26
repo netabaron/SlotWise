@@ -53,13 +53,21 @@ Several programs split into specializations, and the courses offered (mandatory 
 - [ ] Based on the semester the student selects, require them to pick a specialization when it's relevant (e.g. if the specialization applies from year 4, a student entering year 4 must choose one), so the app knows which courses to offer.
 - [ ] Mandatory courses and electives should both be filtered by the specialization, with notes like in Civil Engineering.
 
+- *Decided 2026-09-26 (user):* sections 1–6 of the curriculum are common to everyone; the specialization and the design route are chosen from semester 7. The curriculum does not state this outright; it follows from its structure, and the user confirmed it. Rules:
+  - **Main specialization:** ≥ 20 credits, with ≥ 4 core courses (Computers: ≥ 6 core, 3 hardware and 3 software).
+  - **Secondary specialization:** ≥ 10 credits, with ≥ 3 core courses. Only for the research (מחקרי) and final-project (פרויקט גמר) routes.
+  - Up to 3 credits from the multidisciplinary strip.
+  - UI: see `docs/DESIGN.md` → Program, year and semester.
+
 ### 4.3 Industrial Engineering & Management, and Mechanical Engineering
 - [ ] Both are organized by specializations as well. Apply the same approach: determine from the curriculum when the specialization is chosen, require the choice at the right point, and adjust mandatory courses, elective filtering and notes accordingly.
 
 ### 4.4 General
 - [ ] Check every other program for specializations that aren't handled yet, and report what you find before implementing.
+  - *Decided 2026-09-26 (user):* **Biotechnology** has no elective data, so no elective rules are shown for it.
 - [ ] Keep the specialization picker consistent across programs (same component, same place in the flow, per `docs/DESIGN.md`).
 
 ## 5. The "other program — not relevant" option
 
 - [ ] There's an option for "another program — not relevant". It's unclear what purpose it serves. Explain what it currently does and in which cases a student would need it. If it has no real use, propose removing it — ask before removing.
+  - *Decided 2026-09-26 (user):* keep it, relabelled "לא מופיע ברשימה — עבודה מהקטלוג בלבד". See `docs/PROGRAM_FINDINGS.md` §9 for what it does.
