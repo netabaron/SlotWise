@@ -58,6 +58,7 @@ Technical notes:
 from __future__ import annotations
 
 import bisect
+import difflib
 import json
 import re
 from pathlib import Path
@@ -143,6 +144,9 @@ class Line(NamedTuple):
     y: float
     words: tuple[Word, ...]
     text: str
+    #: גובה כל מילה, באותו סדר כמו ``words``. משמש רק את ``parse_electives``
+    #: כדי לזהות סימני הערת שוליים בכתב עילי; ריק בשורות שנבנו ביד.
+    heights: tuple[float, ...] = ()
 
 
 def _reading_order(words: list[Any]) -> list[Any]:
@@ -185,7 +189,38 @@ def _reading_order(words: list[Any]) -> list[Any]:
             ordered_runs.append(_unmirror(sorted(run, key=lambda w: -w[0])))
 
     ordered_runs.sort(key=lambda run: -max(w[2] for w in run))
-    return [word for run in ordered_runs for word in run]
+    return [word for run in _latin_fragments_forward(ordered_runs) for word in run]
+
+
+def _latin_only(run: list[Any]) -> bool:
+    return all(_LATIN_RE.search(w[4]) and not _HEBREW_RE.search(w[4]) for w in run)
+
+
+def _latin_fragments_forward(runs: list[list[Any]]) -> list[list[Any]]:
+    """קטעים לטיניים **נוגעים** זה בזה נקראים משמאל לימין.
+
+    ‏electric.pdf עמוד 13 מצייר את "NLP" של ‏51914 כשני קטעים: ‏"LP" ואז
+    ‏"N" משמאלו, צמוד. מיון הקטעים מימין לשמאל שם את "LP" ראשון, והשם יצא
+    ‏"LPN מבוא לעיבוד שפה טבעית". קטעים לטיניים עם רווח ביניהם אינם נוגעים
+    ונשארים כפי שהיו.
+    """
+    out: list[list[Any]] = []
+    group: list[list[Any]] = []
+    for run in runs:
+        touching = (
+            group
+            and _latin_only(run)
+            and min(w[0] for w in group[-1]) - max(w[2] for w in run) < _GLUE_GAP
+        )
+        if touching:
+            group.append(run)
+            continue
+        out.extend(reversed(group))
+        group = [run] if _latin_only(run) else []
+        if not group:
+            out.append(run)
+    out.extend(reversed(group))
+    return out
 
 
 def _unmirror(run: list[Any]) -> list[Any]:
@@ -239,9 +274,10 @@ def _document_lines(pdf_path: str | Path) -> list[Line]:
             for bucket in sorted(buckets, key=lambda b: b["y"]):
                 ordered = _reading_order(bucket["w"])
                 words = tuple((float(w[0]), float(w[2]), w[4]) for w in ordered)
+                heights = tuple(float(w[3]) - float(w[1]) for w in ordered)
                 text = "  ".join(w[2] for w in words).strip()
                 if text:
-                    out.append(Line(index + 1, float(bucket["y"]), words, text))
+                    out.append(Line(index + 1, float(bucket["y"]), words, text, heights))
     finally:
         doc.close()
     return out
@@ -370,6 +406,8 @@ _GLUE_GAP = 1.0
 
 #: אות לטינית — הסימן שקטע נכתב משמאל לימין.
 _LATIN_RE = re.compile(r"[A-Za-z]")
+#: אות עברית — קטע שיש בו אחת אינו "לטיני בלבד".
+_HEBREW_RE = re.compile(r"[\u0590-\u05FF]")
 
 #: סוגריים והבבואה שלהם. ‏Unicode מגדיר לתווים האלה "mirroring": בהקשר
 #: ימין-לשמאל הם **מצוירים** הפוך מכפי שהם מאוחסנים, ויש מחוללי PDF
@@ -642,6 +680,800 @@ def parse_chapter(pdf_path: str | Path) -> dict:
     }
 
 
+# ==========================================================================
+# רשימות בחירה לפי התמחות — ``parse_electives``
+# ==========================================================================
+#
+# ‏``parse_chapter`` מכיר רק כותרות "אשכול X" ו"מסלול X", ולכן (נמדד
+# 2026-09-26 מול ``docs/PROGRAM_FINDINGS.md``): באזרחית יצאו 4 "מסלולים"
+# במקום 2 וקבוצות 1 ו-2 התמזגו; במכונות רשימת ההעשרה המשותפת נרשמה תחת
+# תעשייה 4.0 בלבד; בתעשייה וניהול שתי ההדפסות התמזגו; וחשמל יצא ``flat``.
+#
+# ‏``clusters``/``tracks`` נשארים כפי שהם — הממשק הנוכחי ובדיקות נעולות
+# קוראים אותם. המודל הזה נכתב **לצידם**, בשדות ``specializations`` ו-
+# ``elective_lists``:
+#
+# * ‏``elective_lists`` — ‏``{מזהה: {title, page, courses, ...}}``. רשימה
+#   שכמה התמחויות חולקות נרשמת **פעם אחת**.
+# * ‏``specializations`` — ‏``{שם התמחות: [מזהי רשימות]}``. ריק בתוכנית
+#   בלי התמחויות, ואז כל הרשימות חלות על כולם.
+#
+# החילוץ מזהה גם שורות שהמחלץ הישן מפספס. כל אחת נמדדה על שורה אמיתית:
+#
+# * ‏נ"ז שלם ("2", "4") או בשתי ספרות אחרי הנקודה ("0.25") — ‏51600,
+#   ‏51916, שורות ‏251xxx, סמינרים ‏31060–31062.
+# * מספר קורס שמודפס בשורה ויזואלית אחרת מהעמודות המספריות, או בלי נ"ז
+#   כלל — ‏22777, ‏22748, ‏21461, ‏31905–31907.
+# * סימן הערת שוליים בכתב עילי (‏"1", "6", "7", "9") — נראה כמו תא
+#   מספרי והזיז את גבול עמודת השם. מזוהה לפי גובה המילה.
+
+#: נ"ז בתא משלו, רחב מ-``_CREDITS_CELL_RE``: גם ‏"0.25".
+_WIDE_CREDITS_RE = re.compile(r"^\d{1,2}\.\d{1,2}$")
+#: נ"ז שלם — נחשב נ"ז רק כתא האחרון בגוש של ארבעה תאים לפחות.
+_INT_CELL_RE = re.compile(r"^\d{1,2}$")
+_CODE_RE = re.compile(r"^\d{5,6}$")
+
+#: מילה נמוכה מזה ביחס לחציון השורה היא כתב עילי. נמדד: ‏7.0 מול ‏11.0
+#: בחשמל, ‏11.2 מול ‏13.3 בתוכנה.
+_SUPERSCRIPT_RATIO = 0.9
+#: תא מספרי שמתחיל ימינה מזה, ביחס לקצה כותרת "ה" של הטבלה, הוא חלק מהשם.
+_FIRST_CELL_SLACK = 12.0
+#: מספר קורס שמתחיל שמאלה מזה נמצא בעמודת "קורסי קדם", לא בעמודת מספר הקורס.
+#: נמדד על כל הפרקים: עמודת הקדם מסתיימת לפני ‏320, עמודת מספר הקורס מתחילה אחרי ‏400.
+_CODE_COLUMN_MIN_X = 380.0
+#: כמה רחוק ב-x מספר קורס יכול להיות מעמודת מספרי הקורס של העמוד.
+_CODE_COLUMN_TOLERANCE = 4.0
+#: המרחק האנכי המרבי בין שורת קורס "תלושה" לשורות שנושאות את שמה.
+_BAND = 16.0
+
+#: תחום/חומרה/תוכנה בסוף שם קורס ליבה בחשמל: "מיקרו-מעבדים (חומרה(".
+_AREA_RE = re.compile(r"\s*[()]\s*(חומרה|תוכנה)\s*[()]\s*$")
+
+#: הדפסה שלמה של התוכנית להתמחות אחת (תעשייה וניהול): "התמחות במדעי הנתונים :".
+_SPEC_PRINTING_RE = re.compile(r"^התמחות\s+ב(.{3,60}?)\s*:$")
+_GROUP_RE = re.compile(r"^קבוצה\s*(\d+)")
+_DOMAIN_RE = re.compile(r"^תחום\s+(.{2,60})$")
+
+#: כותרות שסוגרות רשימה פתוחה (בנוסף לסמסטר ולפתיחת פרק).
+_LIST_END_PREFIXES = (
+    "קורסיחובה",
+    "הערות",
+    "סטודנטיםמצטיינים",
+    "חלופותלהתנסות",
+)
+
+#: מאגרי חשמל: כותרת -> ‏(שם הרשימה, pool).
+_POOLS = (
+    ("קורסיליבהבהתמחות", "קורסי ליבה בהתמחות", "core"),
+    ("קורסיםמשותפיםלמספרהתמחויות", "קורסים משותפים למספר התמחויות", "shared"),
+    ("קורסיםלהתמחותזובלבד", "קורסים להתמחות זו בלבד", "only"),
+    ("קורסיםבהתמחותזובלבד", "קורסים להתמחות זו בלבד", "only"),
+)
+#: רשימות שחלות על כל ההתמחויות: כותרת -> שם הרשימה.
+_FOR_ALL = (
+    ("קורסיהעשרהלכללההתמחויות", "קורסי העשרה לכלל ההתמחויות"),
+    ("מקצועותבחירהנוספים", "מקצועות בחירה נוספים"),
+    ("רצועהרב", "רצועה רב-תחומית"),
+)
+_CENTER_PREFIX = "במסגרתקורסיהבחירהניתןגםלקחתקורסיםמהמרכז"
+_CENTER_TITLE = "המרכז לחינוך הנדסי וליזמות"
+
+
+def _strip_superscripts(line: Line) -> tuple[Line, list[str]]:
+    """השורה בלי סימני הערות שוליים, ורשימת הסימנים שהוסרו."""
+    if not line.heights or len(line.heights) != len(line.words):
+        return line, []
+    body = sorted(line.heights)[len(line.heights) // 2]
+    keep: list[tuple[Word, float]] = []
+    marks: list[str] = []
+    for index, (word, height) in enumerate(zip(line.words, line.heights)):
+        small = height < body * _SUPERSCRIPT_RATIO and re.fullmatch(r"\d{1,2}|\*", word[2])
+        # ספרה שדבוקה למילה שלפניה ("משלכם1") היא סימן הערה גם כשגובהה רגיל.
+        # **אחרי מילה של שלוש אותיות לפחות**: ‏"א1" ו-"ב2" במכונות (‏22971–
+        # ‏22977) הם חלק מהשם, והם באותו גובה בדיוק.
+        before = line.words[index - 1] if index else None
+        glued = (
+            before is not None
+            and re.fullmatch(r"\d{1,2}", word[2])
+            and len(re.sub(r"[\d.\-–—]", "", before[2])) >= 3
+            and max(before[0], word[0]) - min(before[1], word[1]) < _GLUE_GAP
+        )
+        if small or glued:
+            marks.append(word[2])
+        else:
+            keep.append((word, height))
+    if not marks:
+        return line, []
+    words = tuple(w for w, _h in keep)
+    return (
+        line._replace(
+            words=words,
+            heights=tuple(h for _w, h in keep),
+            text="  ".join(w[2] for w in words),
+        ),
+        marks,
+    )
+
+
+def _first_cell_edge(line: Line) -> float | None:
+    """הקצה השמאלי-ימני של כותרת "ה" — העמודה המספרית הראשונה. ``None`` = לא כותרת.
+
+    תא מספרי שמתחיל ימינה ממנה הוא חלק מהשם: בלי זה ‏"1" שבסוף "סמינר
+    מחלקתי 1" (‏31060) נספר כתא ונחתך מהשם. **ספירת עמודות אינה עובדת
+    כאן** — הכותרת של מערכות מידע מדפיסה "ה ת מ נ"ז" מעל חמישה תאים.
+    """
+    texts = [w[2] for w in line.words]
+    if "ה" not in texts or "ת" not in texts:
+        return None
+    if not {"קדם", "הקורס", "קורס"} & set(texts):
+        return None
+    return next(w[1] for w in line.words if w[2] == "ה")
+
+
+def _wide_block(words: tuple[Word, ...], first_cell: float | None) -> tuple[float, float | None] | None:
+    """‏(קצה ימני של גוש העמודות, נ"ז) — כמו ``_numeric_block_edge``, ברוחב.
+
+    ‏``first_cell`` הוא קצה כותרת "ה" באותו עמוד (‏``_first_cell_edge``);
+    תא שמתחיל ימינה ממנו אינו תא.
+    """
+    runs: list[list[Word]] = []
+    open_run = False
+    for word in words:
+        beyond = first_cell is not None and word[0] > first_cell + _FIRST_CELL_SLACK
+        if _COLUMN_CELL_RE.match(word[2]) and not beyond:
+            if not open_run:
+                runs.append([])
+                open_run = True
+            runs[-1].append(word)
+        else:
+            open_run = False
+    blocks = [
+        r
+        for r in runs
+        if any(_WIDE_CREDITS_RE.match(w[2]) for w in r)
+        or (len(r) >= 4 and _INT_CELL_RE.match(r[-1][2]))
+    ]
+    if not blocks:
+        return None
+    block = blocks[-1]
+    last = block[-1][2]
+    credits = float(last) if (_WIDE_CREDITS_RE.match(last) or _INT_CELL_RE.match(last)) else None
+    return block[0][1], credits
+
+
+def _bind_rows(lines: list[Line]) -> dict[int, dict]:
+    """כל שורות הקורס במסמך, ברוחב המלא. ‏``{אינדקס שורה: {code, name, credits, marks}}``.
+
+    שלושה שלבים:
+
+    1. עוגנים רגילים, ב-``_wide_block``.
+    2. עוגנים "תלושים": מספר קורס בעמודת מספרי הקורס של העמוד, בלי עמודות
+       מספריות בשורתו. הם נכנסים ל-``anchors`` **לפני** איסוף השמות, כך
+       ששורת ‏22748 כבר אינה נבלעת כהמשך של ‏22874 שמעליה.
+    3. שם לעוגן תלוש: עמודת השם של כל שורה פנויה ברצועה של ``_BAND``
+       נקודות, שהעוגן הקרוב אליה ביותר הוא הוא.
+    """
+    marks: dict[int, list[str]] = {}
+    clean: list[Line] = []
+    for index, line in enumerate(lines):
+        stripped, found = _strip_superscripts(line)
+        clean.append(stripped)
+        if found:
+            marks[index] = found
+
+    # קצה "ה" של הכותרת האחרונה. טבלה שנמשכת לעמוד הבא אינה חוזרת תמיד על
+    # הכותרת (‏mecho.pdf עמוד 14), ולכן הכותרת נשארת בתוקף עד הבאה אחריה.
+    # ‏``same_page`` — רק כותרת מאותו עמוד. היא לבדה מזיזה את תחילת עמודת
+    # השם: כותרת מעמוד 10 של מערכות מידע קטעה את "מכונה" מ-62002 בעמוד 11.
+    edge_now: float | None = None
+    edge_page = 0
+    at_line: list[float | None] = []
+    same_page: list[float | None] = []
+    for line in clean:
+        edge = _first_cell_edge(line)
+        if edge is not None:
+            edge_now, edge_page = edge, line.page
+        at_line.append(edge_now)
+        same_page.append(edge_now if edge_page == line.page else None)
+
+    anchors: dict[int, _Anchor] = {}
+    credits: dict[int, float | None] = {}
+    for index, line in enumerate(clean):
+        columns = at_line[index]
+        if _first_cell_edge(line) is not None:
+            continue
+        if not line.words or not _CODE_RE.match(line.words[0][2]):
+            continue
+        x0 = line.words[0][0]
+        got = _wide_block(tuple(w for w in line.words[1:] if w[1] < x0), columns)
+        if got is not None:
+            # שורה שתא "ה" שלה מודפס בשורה ויזואלית אחרת (‏51025 בהדפסת תכן
+            # ותפעול) מתחילה שמאלה מעמודת "ה" — ואז הגבול הוא הכותרת.
+            header = same_page[index]
+            start = got[0] if header is None else max(got[0], header + 2.0)
+            anchors[index] = _Anchor(index, line.words[0][2], start, x0)
+            credits[index] = got[1]
+
+    # ── עמודת מספרי הקורס, ועמודת השם, לכל עמוד ──
+    code_x: dict[int, list[float]] = {}
+    name_from: dict[int, list[float]] = {}
+    for index, anchor in anchors.items():
+        code_x.setdefault(clean[index].page, []).append(anchor.name_to)
+        name_from.setdefault(clean[index].page, []).append(anchor.name_from)
+
+    loose: set[int] = set()
+    for index, line in enumerate(clean):
+        if index in anchors or not line.words or not _CODE_RE.match(line.words[0][2]):
+            continue
+        x0 = line.words[0][0]
+        if not any(abs(x0 - x) <= _CODE_COLUMN_TOLERANCE for x in code_x.get(line.page, [])):
+            continue
+        edges = sorted(name_from[line.page])
+        start = edges[len(edges) // 2]
+        if same_page[index] is not None:
+            # תא "ה" של השורה עצמה יכול לשבת בשורה ויזואלית אחרת.
+            start = max(start, same_page[index] + 2.0)
+        anchors[index] = _Anchor(index, line.words[0][2], start, x0)
+        loose.add(index)
+
+    names = _collect_names(clean, anchors, skip=loose)
+
+    # ── שמות ונ"ז לעוגנים התלושים ──
+    taken = set(anchors)
+    for index in anchors:
+        taken.update(names.get(("lines", index), ()))
+    by_page: dict[int, list[int]] = {}
+    for index in anchors:
+        by_page.setdefault(clean[index].page, []).append(index)
+    parts: dict[int, list[tuple[float, list[Word]]]] = {
+        i: [(clean[i].y, _name_words(clean[i], anchors[i]))] for i in loose
+    }
+    for j, line in enumerate(clean):
+        if j in taken or not _may_continue(line):
+            continue
+        near = [
+            (abs(clean[i].y - line.y), i)
+            for i in by_page.get(line.page, [])
+            if abs(clean[i].y - line.y) <= _BAND
+        ]
+        if not near:
+            continue
+        _dist, owner = min(near)
+        if owner not in loose:
+            continue
+        got = _name_words(line, anchors[owner])
+        if got:
+            parts[owner].append((line.y, got))
+        if credits.get(owner) is None:
+            block = _wide_block(
+                tuple(w for w in line.words if w[1] < anchors[owner].name_from), at_line[j]
+            )
+            if block is not None:
+                credits[owner] = block[1]
+
+    # ── שורת שם שהמעבר הרגיל לא הגיע אליה, מעל או מתחת לעוגן רגיל:
+    #    ‏251512 ("מבוא לניהול" מעל השורה), ‏51030 בהדפסת תכן ותפעול ("שירות"
+    #    מתחת, אחרי שורת קדם ריקה בעמודת השם). רק שורה שאף עוגן לא לקח, עד
+    #    ‏12 נקודות, ורק כשהמילה הראשונה שלה פותחת באותו קצה כמו השם —
+    #    כותרת מתחילה בשוליים ואינה עוברת את זה. ──
+    extra_above: dict[int, list[Word]] = {}
+    extra_below: dict[int, list[Word]] = {}
+    for index, anchor in anchors.items():
+        if index in loose:
+            continue
+        own = _name_words(clean[index], anchor)
+        if not own:
+            continue
+        for direction, found in ((-1, extra_above), (1, extra_below)):
+            j = index + direction
+            while 0 <= j < len(clean) and j not in anchors:
+                other = clean[j]
+                if other.page != clean[index].page or abs(clean[index].y - other.y) > 12.0:
+                    break
+                got = _name_words(other, anchor)
+                if not got:
+                    j += direction
+                    continue
+                if (
+                    j not in taken
+                    and _may_continue(other)
+                    and other.words[0] == got[0]
+                    and abs(got[0][1] - own[0][1]) <= 3.0
+                    and not any(_CREDITS_CELL_RE.match(w[2]) for w in other.words)
+                ):
+                    found[index] = got
+                    taken.add(j)
+                break
+
+    # ── מילה לטינית על קו בסיס משלה, בתוך שם עברי (‏51154: "מבוא ל-ERP") ──
+    latin_inside: dict[int, list[Word]] = {}
+    for j, line in enumerate(clean):
+        if j in taken or j in anchors or not line.words:
+            continue
+        for index in (j - 1, j + 1):
+            if index not in anchors or abs(clean[index].y - line.y) > 6.0:
+                continue
+            got = _name_words(line, anchors[index])
+            if not got or not all(
+                _LATIN_RE.search(w[2]) and not _HEBREW_RE.search(w[2]) for w in got
+            ):
+                continue
+            own = _name_words(clean[index], anchors[index])
+            lo, hi = min(w[0] for w in got), max(w[1] for w in got)
+            gaps = [
+                (a, b) for a, b in zip(own, own[1:]) if b[1] <= lo + 1 and hi <= a[0] + 1
+            ]
+            if gaps:
+                latin_inside[index] = got
+                taken.add(j)
+                break
+
+    rows: dict[int, dict] = {}
+    for index, anchor in anchors.items():
+        if index in latin_inside:
+            own = _name_words(clean[index], anchor) + latin_inside[index]
+            names[index] = _join_words(sorted(own, key=lambda w: -w[0]))
+            # שם שנמשך לשורות נוספות — לא קרה בשורות שנמדדו, ואז פשוט נופלים לשם הרגיל.
+        if index in extra_above:
+            names[index] = _tidy(_join_words(extra_above[index]) + " " + names[index])
+        if index in extra_below:
+            names[index] = _tidy(names[index] + " " + _join_words(extra_below[index]))
+        if index in loose:
+            name = _tidy(" ".join(_join_words(ws) for _y, ws in sorted(parts[index]) if ws))
+        else:
+            name = names[index]
+        rows[index] = {
+            "code": anchor.code,
+            "name": name,
+            "credits": credits.get(index),
+            "marks": marks.get(index, []),
+            "loose": index in loose,
+            "bounds": (anchor.name_from, anchor.name_to),
+        }
+    return rows
+
+
+def _collect_names(
+    lines: list[Line], anchors: dict[int, _Anchor], skip: set[int] = frozenset()  # type: ignore[assignment]
+) -> dict:
+    """שני שלבי האיסוף של ``_bind_names`` על עוגנים נתונים.
+
+    עוגן שב-``skip`` אינו אוסף — אבל הוא עדיין חוסם: שורה שלו לא תיבלע
+    בשם של העוגן שמעליו. מחזיר ``{אינדקס: שם}`` וגם, תחת
+    ``("lines", אינדקס)``, את השורות שכל עוגן לקח.
+    """
+    pieces: dict[int, list[tuple[float, list[Word]]]] = {}
+    for index in anchors:
+        if index in skip:
+            continue
+        own = _name_words(lines[index], anchors[index])
+        pieces[index] = [(lines[index].y, own)] if own else []
+    taken: dict[int, int] = {}
+
+    def reachable(anchor_index: int, j: int) -> bool:
+        if j < 0 or j >= len(lines) or j in anchors or j in taken:
+            return False
+        if lines[j].page != lines[anchor_index].page:
+            return False
+        if abs(lines[anchor_index].y - lines[j].y) > _MAX_CONTINUATION_GAP:
+            return False
+        return _may_continue(lines[j])
+
+    for index in sorted(pieces):
+        if pieces[index]:
+            continue
+        for step in range(1, _MAX_PREFIX_LINES + 1):
+            j = index - step
+            if not reachable(index, j):
+                break
+            got = _claims(lines[j], anchors[index])
+            if got is None:
+                break
+            pieces[index].insert(0, (lines[j].y, got))
+            taken[j] = index
+
+    for index in sorted(pieces):
+        for step in range(1, _MAX_CONTINUATION_LINES + 1):
+            j = index + step
+            if not reachable(index, j):
+                break
+            got = _claims(lines[j], anchors[index])
+            if got is None:
+                break
+            pieces[index].append((lines[j].y, got))
+            taken[j] = index
+
+    out: dict = {
+        index: _tidy(" ".join(_join_words(ws) for _y, ws in sorted(parts) if ws))
+        for index, parts in pieces.items()
+    }
+    for j, index in taken.items():
+        out.setdefault(("lines", index), []).append(j)
+    return out
+
+
+def _balance_parens(name: str) -> str:
+    """סוגריים שהשנתון הדפיס בבבואה: ‏"(EMC(" -> "(EMC)", ‏"זימקס )(" -> "(זימקס)"."""
+    name = re.sub(r"(\S+)\s*\)\(\s*$", r"(\1)", name)
+    if name.count("(") == 2 and ")" not in name:
+        cut = name.rfind("(")
+        name = name[:cut] + ")" + name[cut + 1 :]
+    elif name.count(")") == 2 and "(" not in name:
+        cut = name.find(")")
+        name = name[:cut] + "(" + name[cut + 1 :]
+    name = re.sub(r"\(\s+", "(", name)
+    return re.sub(r"\s+\)", ")", name)
+
+
+def _course_entry(row: dict) -> dict:
+    """רשומת קורס לרשימת בחירה: ‏code, name, ולפי הצורך credits, area, footnote."""
+    name = row["name"]
+    entry: dict[str, Any] = {"code": row["code"]}
+    area = _AREA_RE.search(name)
+    if area:
+        entry["area"] = area.group(1)
+        name = name[: area.start()]
+    footnote = list(row["marks"])
+    if name.rstrip().endswith("*"):
+        footnote.append("*")
+        name = name.rstrip()[:-1]
+    entry["name"] = _tidy(_balance_parens(_tidy(name)))
+    if row["credits"] is not None:
+        entry["credits"] = row["credits"]
+    if footnote:
+        entry["footnote"] = " ".join(dict.fromkeys(footnote))
+    if area:  # סדר מפתחות קבוע: code, name, credits, area, footnote
+        entry["area"] = entry.pop("area")
+    return entry
+
+
+#: נ"ז כטווח, בתא משלו: ‏"1-2".
+_RANGE_CELL_RE = re.compile(r"^\d+(?:\.\d+)?-\d+(?:\.\d+)?$")
+
+
+def _codeless_note(lines: list[Line], index: int, rows: dict[int, dict]) -> str:
+    """הערה לשורה בלי מספר קורס: השם מעמודת השם, והטווח של הנ"ז.
+
+    עמודת השם נלקחת משורת הקורס הקרובה באותו עמוד; השם מודפס לעיתים מעל
+    ומתחת לשורת הטווח, ולכן נאספות גם השורות שבטווח ‏8 נקודות.
+    """
+    line = lines[index]
+    near = [
+        (abs(lines[i].y - line.y), row["bounds"])
+        for i, row in rows.items()
+        if lines[i].page == line.page
+    ]
+    if not near:
+        return ""
+    name_from, name_to = min(near)[1]
+    words: list[tuple[float, list[Word]]] = []
+    for j in range(max(0, index - 3), min(len(lines), index + 4)):
+        other = lines[j]
+        if j in rows or other.page != line.page or abs(other.y - line.y) > 8.0:
+            continue
+        clean, _marks = _strip_superscripts(other)
+        got = [w for w in clean.words if name_from < w[0] < name_to]
+        if got:
+            words.append((other.y, got))
+    name = _tidy(" ".join(_join_words(ws) for _y, ws in sorted(words)))
+    span = next(w[2] for w in line.words if _RANGE_CELL_RE.match(w[2]))
+    return f'{name} — {span} נ"ז, מודפס בלי מספר קורס.' if name else ""
+
+
+def _canonical_spec(printed: str, known: tuple[str, ...], declared: tuple[str, ...] = ()) -> str:
+    """שם ההתמחות.
+
+    1. כפי שקובץ התוכנית של המסלול קורא לה (‏``known``), אם יש התאמה אחת.
+    2. אחרת הכותרת כפי שהודפסה — **אלא** אם היא שגיאת כתיב של שם שהפרק
+       עצמו מצהיר עליו (‏``declared``, ‏``_declared_specializations``):
+       הכותרת בחשמל עמוד 11 היא "עיבוד אות ותקשורת", ועמוד 2 וסעיף ב
+       מדפיסים "עיבוד אותות ותקשורת". הבדל של רווח או מקף בלבד אינו שגיאה
+       — "התקנים ואלקטרואופטיקה" נשארת כפי שהודפסה.
+    """
+    printed = _tidy(_balance_parens(_tidy(printed))).strip(" :-–")
+    squashed = _squash(printed)
+    hits = [name for name in known if _squash(name) and _squash(name) in squashed]
+    if len(hits) == 1:
+        return hits[0]
+
+    def bare(text: str) -> str:
+        return re.sub(r"[-–()]", "", _squash(text))
+
+    if any(bare(name) == bare(printed) for name in declared):
+        return printed
+    close = [
+        name for name in declared
+        if difflib.SequenceMatcher(None, bare(name), bare(printed)).ratio() >= 0.9
+    ]
+    return close[0] if len(close) == 1 else printed
+
+
+def _declared_specializations(lines: list[Line]) -> tuple[str, ...]:
+    """שמות ההתמחויות מהרשימה שבפתיחת הפרק: שורת "…התמחויות:" ואחריה תבליטים."""
+    for index, line in enumerate(lines):
+        squashed = _squash(line.text)
+        if not (squashed.endswith(":") and "התמחויות" in squashed):
+            continue
+        names: list[str] = []
+        for following in lines[index + 1 : index + 8]:
+            text = _tidy(following.text)
+            if not text.startswith("•"):
+                break
+            name = _tidy(_balance_parens(text.lstrip("• ")))
+            names.append(re.sub(r"\s*-\s*", "-", name))
+        if names:
+            return tuple(names)
+    return ()
+
+
+def parse_electives(pdf_path: str | Path, track_names: tuple[str, ...] = ()) -> dict:
+    """רשימות הבחירה של פרק שנתון, לפי התמחות.
+
+    Args:
+        track_names: שמות ההתמחויות כפי שקובץ התוכנית של המסלול קורא להן
+            (‏``tracks``). כותרת שמכילה בדיוק אחד מהם מקבלת את השם הזה —
+            ‏"מסלול הנדסת מבנים" היא "מבנים".
+
+    Returns:
+        ``{specializations, elective_lists, warnings}``. ראו את ההסבר מעל
+        ``_WIDE_CREDITS_RE``.
+    """
+    lines = _document_lines(Path(pdf_path))
+    rows = _bind_rows(lines)
+    declared = _declared_specializations(lines)
+    warnings: list[str] = []
+
+    specs: list[str] = []
+    lists: dict[tuple[str | None, str], dict] = {}
+    spec: str | None = None
+    current: dict | None = None
+    zone = False
+    pending_title = "קורסי בחירה"
+    frags: list[tuple[int, float, str]] = []
+    unbound: list[str] = []
+
+    def open_list(owner: str | None, title: str, page: int, **extra: Any) -> dict:
+        key = (owner, title)
+        if key in lists:
+            # אותה כותרת פעם שנייה: המשך, או הדפסה חוזרת (תעשייה מדפיסה את
+            # "מדע וטכנולוגיה" בשתי ההדפסות). ההדפסה החוזרת נבדקת בסוף.
+            again = dict(lists[key], courses=[], again=True)
+            lists[(owner, title, len(lists))] = again  # type: ignore[index]
+            return again
+        lists[key] = {"owner": owner, "title": title, "page": page, "courses": [], **extra}
+        return lists[key]
+
+    def use_spec(name: str) -> str:
+        if name not in specs:
+            specs.append(name)
+        return name
+
+    previous = ""
+    #: השורה האחרונה שאינה שורת קורס ואינה כותרת טבלה. בחשמל שם ההתמחות
+    #: מודפס מעל הטבלה, ו"קורסי ליבה בהתמחות" היא שורה בתוכה.
+    previous_heading = ""
+    cluster_edge: float | None = None
+    for index, line in enumerate(lines):
+        tidy = _tidy(line.text)
+        squashed = _squash(line.text)
+        texts = [w[2] for w in line.words]
+
+        # עמודת "אשכול" בטבלת המרכז לחינוך הנדסי: כל קורס משויך בה לאשכול.
+        if "אשכול" in texts and "ה" in texts and "ת" in texts:
+            cluster_edge = next(w[1] for w in line.words if w[2] == "אשכול")
+            previous = tidy
+            continue
+        if current is not None and current.get("center") and cluster_edge is not None:
+            frags.extend(
+                (line.page, line.y, w)
+                for w in line.words
+                if w[1] <= cluster_edge + 6 and not _CODE_RE.match(w[2])
+            )
+
+        if (
+            index not in rows
+            and current is not None
+            and zone
+            and line.words
+            and _CODE_RE.match(line.words[0][2])
+            and line.words[0][0] > _CODE_COLUMN_MIN_X
+        ):
+            unbound.append(f"{line.words[0][2]} (עמוד {line.page})")
+
+        # שורה בלי מספר קורס, עם נ"ז כטווח ("1-2"): ‏"פרויקט מיוחד" בחשמל.
+        # אין לה קוד, ולכן אינה קורס ברשימה — היא נרשמת כהערה של הרשימה.
+        if current is not None and zone and index not in rows and any(
+            _RANGE_CELL_RE.match(w[2]) for w in line.words
+        ):
+            note = _codeless_note(lines, index, rows)
+            if note:
+                current.setdefault("notes", []).append(note)
+
+        if index in rows:
+            if current is not None and zone:
+                row = rows[index]
+                if not any(c["code"] == row["code"] for c in current["courses"]):
+                    current["courses"].append(dict(_course_entry(row), _y=(line.page, line.y)))
+            previous = tidy
+            continue
+
+        # ‏"מחשבים (חומרה ותוכנה) – המשך": אותה התמחות ואותו מאגר, בעמוד הבא.
+        if "–המשך" in squashed or "-המשך" in squashed:
+            previous = tidy
+            continue
+
+        printing = _SPEC_PRINTING_RE.match(tidy)
+        if printing:
+            spec = use_spec(_canonical_spec(printing.group(1), track_names, declared))
+            current, zone = None, False
+        elif re.match(r"^סמסטר\s*\d", tidy) or re.match(r"^סמסטר\d", squashed) or _SECTION_END_RE.match(tidy):
+            current, zone = None, False
+        elif squashed.startswith(_LIST_END_PREFIXES) or "קורסיםמקבילים" in squashed[:20]:
+            current = None
+            if squashed.startswith("קורסיחובה"):
+                zone = False
+        elif squashed.startswith("קורסיבחירהבהתמחות"):
+            zone, current, pending_title = True, None, "קורסי בחירה בהתמחות"
+        elif squashed in ("קורסיבחירה",) or squashed.startswith("קורסיבחירהלפיאשכולות"):
+            zone, current = True, None
+        elif any(squashed.startswith(p) for p, _t, _k in _POOLS):
+            _p, title, pool = next(x for x in _POOLS if squashed.startswith(x[0]))
+            if pool == "core":
+                spec = use_spec(_canonical_spec(previous_heading, track_names, declared))
+            zone = True
+            current = open_list(spec, title, line.page, pool=pool)
+        elif any(squashed.startswith(p) for p, _t in _FOR_ALL):
+            title = next(t for p, t in _FOR_ALL if squashed.startswith(p))
+            zone = True
+            current = open_list(None, title, line.page, for_all=True)
+        elif squashed.startswith(_CENTER_PREFIX):
+            zone = True
+            current = open_list(spec, _CENTER_TITLE, line.page, center=True)
+        elif _CLUSTER_RE.match(tidy):
+            raw = _CLUSTER_RE.match(tidy).group(1)
+            title = _tidy(re.split(r"[(*]", raw)[0]).strip(" :-–")
+            zone = True
+            if "עבורשתיההתמחויות" in squashed:
+                current = open_list(None, title, line.page, for_all=True)
+            else:
+                current = open_list(spec, title, line.page)
+        elif _GROUP_RE.match(tidy) and zone:
+            title = f"קבוצה {_GROUP_RE.match(tidy).group(1)}"
+            current = open_list(spec, title, line.page)
+        elif _DOMAIN_RE.match(tidy) and zone:
+            current = open_list(None, tidy, line.page)
+        elif _TRACK_RE.match(tidy):
+            if "עדצבירה" in squashed:
+                zone = True
+                pending_title = "קורסי בחירה"
+            if zone:
+                raw = re.split(r"[(]|-\s*\(|-\s*עד\s+צבירה|–", _TRACK_RE.match(tidy).group(1))[0]
+                spec = use_spec(_canonical_spec(raw, track_names, declared))
+                current = open_list(spec, pending_title, line.page)
+        previous = tidy
+        if not (_first_cell_edge(line) is not None or _is_table_header(line)):
+            previous_heading = tidy
+
+    if unbound:
+        # רשימה שידוע שחסרות בה שורות אינה נכתבת בכלל: חצי רשימה נראית
+        # שלמה בממשק, ורשימה חסרה נראית חסרה.
+        return {
+            "specializations": {},
+            "elective_lists": {},
+            "warnings": [
+                "שורות קורס ברשימות הבחירה לא זוהו, ולכן הרשימות לא נכתבו: "
+                + ", ".join(unbound)
+            ],
+        }
+    return _assemble(specs, lists, frags, warnings)
+
+
+def _assemble(
+    specs: list[str],
+    lists: dict,
+    frags: list[tuple[int, float, Word]],
+    warnings: list[str],
+) -> dict:
+    """מאחד הדפסות חוזרות, רושם רשימה משותפת פעם אחת, ומשייך לאשכולות."""
+    # ── הדפסה חוזרת של אותה רשימה (אותו בעלים, אותה כותרת) ──
+    merged: dict[tuple[str | None, str], dict] = {}
+    for key, entry in lists.items():
+        base = (entry["owner"], entry["title"])
+        if not entry.get("again"):
+            merged[base] = entry
+            continue
+        first = merged[base]
+        codes = [c["code"] for c in first["courses"]]
+        more = [c["code"] for c in entry["courses"]]
+        if not codes or not more:
+            first["courses"].extend(c for c in entry["courses"] if c["code"] not in codes)
+        elif codes != more:
+            warnings.append(
+                f"'{entry['title']}' מודפסת פעמיים ברשימות שונות; נשמרה ההדפסה הראשונה "
+                f"(עמוד {first['page']}). בשנייה בלבד: {sorted(set(more) - set(codes))}; "
+                f"בראשונה בלבד: {sorted(set(codes) - set(more))}."
+            )
+    merged = {k: v for k, v in merged.items() if v["courses"]}
+
+    # ── שיוך שורות המרכז לחינוך הנדסי לאשכול, לפי עמודת "אשכול" ──
+    for (owner, _title), entry in merged.items():
+        if not entry.get("center"):
+            continue
+        clusters = [
+            e["title"] for (o, _t), e in merged.items()
+            if (o == owner or e.get("for_all")) and not e.get("center") and not e.get("pool")
+        ]
+        at: dict[str, list[tuple[float, Word]]] = {}
+        for course in entry["courses"]:
+            at[course["code"]] = []
+        for page, y, word in frags:
+            near = [
+                (abs(y - c["_y"][1]), c["code"])
+                for c in entry["courses"]
+                if c["_y"][0] == page and abs(y - c["_y"][1]) <= _BAND
+            ]
+            if near:
+                at[min(near)[1]].append((y, word))
+        for course in entry["courses"]:
+            parts = sorted(at[course["code"]], key=lambda p: (p[0], -p[1][0]))
+            text = _squash(" ".join(w[2] for _y, w in parts))
+            hits = [t for t in clusters if text and (_squash(t).startswith(text) or text.startswith(_squash(t)))]
+            if len(hits) == 1:
+                course["cluster"] = hits[0]
+            else:
+                warnings.append(f"{course['code']}: עמודת האשכול לא זוהתה ('{text}').")
+
+    # ── רשימה זהה בכמה התמחויות נרשמת פעם אחת ──
+    def signature(entry: dict) -> tuple:
+        return (entry["title"], tuple(c["code"] for c in entry["courses"]))
+
+    owners_of: dict[tuple, list[str | None]] = {}
+    for (owner, _t), entry in merged.items():
+        owners_of.setdefault(signature(entry), []).append(owner)
+
+    out_lists: dict[str, dict] = {}
+    ids: dict[tuple[str | None, str], str] = {}
+    for (owner, title), entry in merged.items():
+        shared = owner is None or len(owners_of[signature(entry)]) > 1
+        list_id = title if shared else f"{owner} · {title}"
+        ids[(owner, title)] = list_id
+        if list_id in out_lists:
+            continue
+        body: dict[str, Any] = {"title": title, "page": entry["page"]}
+        if entry.get("pool"):
+            body["pool"] = entry["pool"]
+        if owner is None and entry.get("for_all"):
+            body["for_all_specializations"] = True
+        body["courses"] = entry["courses"]
+        if entry.get("notes"):
+            body["notes"] = entry["notes"]
+        out_lists[list_id] = body
+
+    # שם אשכול -> מזהה הרשימה שלו באותה התמחות.
+    for (owner, _t), entry in merged.items():
+        if not entry.get("center"):
+            continue
+        for course in entry["courses"]:
+            if "cluster" in course:
+                course["cluster"] = ids.get((owner, course["cluster"]), ids.get((None, course["cluster"])))
+    for body in out_lists.values():
+        for course in body["courses"]:
+            course.pop("_y", None)
+
+    for_all = [ids[k] for k, e in merged.items() if k[0] is None and e.get("for_all")]
+    specializations: dict[str, list[str]] = {}
+    for spec in specs:
+        own = [ids[k] for k in merged if k[0] == spec]
+        refs = list(dict.fromkeys(own + for_all))
+        if own:
+            specializations[spec] = refs
+    return {
+        "specializations": specializations,
+        "elective_lists": out_lists,
+        "warnings": warnings,
+    }
+
+
 def parse_all(folder: str | Path = ".", pattern: str = "*.pdf") -> dict:
     """מפענח את כל פרקי השנתון בתיקייה. ``{source: chapter}``."""
     out: dict[str, dict] = {}
@@ -686,11 +1518,15 @@ def build_curricula(
     מה שהסטודנט/ית בחר/ה בשלב 1.
     """
     chapters = parse_all(folder)
+    track_names = _track_names_by_source()
     by_program: dict[str, dict] = {}
     for chapter in chapters.values():
         name = chapter.get("program") or ""
         if not name:
             continue
+        electives = parse_electives(
+            Path(folder) / chapter["source"], track_names.get(chapter["source"], ())
+        )
         by_program[name] = {
             "program": name,
             "source": chapter["source"],
@@ -699,6 +1535,9 @@ def build_curricula(
             "clusters": chapter["clusters"],
             "tracks": chapter["tracks"],
             "warnings": chapter["warnings"],
+            "specializations": electives["specializations"],
+            "elective_lists": electives["elective_lists"],
+            "elective_list_warnings": electives["warnings"],
         }
     payload = {
         "schema": "braude-schedule-builder/curricula",
@@ -715,6 +1554,22 @@ def build_curricula(
         json.dumps(payload, ensure_ascii=False, indent=2) + chr(10), encoding="utf-8"
     )
     return str(target)
+
+
+def _track_names_by_source(
+    folder: str | Path = Path(__file__).resolve().parent.parent / "data" / "curricula",
+) -> dict[str, tuple[str, ...]]:
+    """‏``{קובץ PDF: שמות ההתמחויות}`` מקובצי התוכנית של המסלולים (‏``tracks``)."""
+    out: dict[str, tuple[str, ...]] = {}
+    for path in sorted(Path(folder).glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        tracks = data.get("tracks") if isinstance(data, dict) else None
+        if data.get("source") and isinstance(tracks, list):
+            out.setdefault(str(data["source"]), tuple(str(t) for t in tracks))
+    return out
 
 
 def load_curricula(path: str | Path = DEFAULT_CURRICULA_PATH) -> dict:

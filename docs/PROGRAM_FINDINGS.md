@@ -34,7 +34,7 @@ Page numbers are PDF pages counted from 1. Where the chapter prints its own page
 | Applied Math | none. "AI" and "algorithms" are elective **domains** | — | ≥ 3.0 credits of "בחירה מתמטיים". 201198 / 61957: one only. **No per-domain rule** | winter and spring intakes: sem. 4, 5, 6 | "לאורך כל תקופת הלימודים"; spring intake only: "מומלץ... בסמ' 1+2+3" |
 | Biotechnology | none | — | none: the PDF lists mandatory courses only | none | none |
 
-**Bugs in what the repo serves today.** Only #1 has been fixed since (2026-09-25).
+**Bugs in what the repo serves today.** #1 was fixed on 2026-09-25; #2 on 2026-09-26, in new fields only (see below).
 1. **Fixed 2026-09-25.** `/program/electives` hard-coded the rule `"יש לקחת קורס אחד לפחות מכל אשכול."`, in `src/web/api.py` (the `cluster_rule` of the math fallback and of the chapter branch).
    - Math: the PDF never states that rule.
    - Industrial: the real rule is 4 / 2 / 1 per cluster, or 7–8 courses. "One from each" understates it.
@@ -45,6 +45,8 @@ Page numbers are PDF pages counted from 1. Where the chapter prints its own page
    - Industrial: the two specializations' printings are merged; 51916 is missing; 251966 is filed in the wrong cluster; most 251xxx rows are missing.
 
    The cause is the same in all three. `shnaton.py` recognises only headings that start with "אשכול" or "מסלול". It misses "קבוצה N:", "קורסי העשרה לכלל ההתמחויות", "קורסי בחירה בהתמחות", "תחום X", and Electrical's bare specialization names. Electrical therefore comes out as `structure: "flat"`.
+
+   **Fixed 2026-09-26** by `shnaton.parse_electives`, which writes `specializations` and `elective_lists` next to the old fields in `data/curricula.json`. A list shared by several specializations is recorded once. The old `clusters`/`tracks` are unchanged on purpose: the current courses step and existing tests read them, and they switch to the new fields with the courses step. Math's lists are not written, because 10 of its rows use a table layout the parser does not read; its hand-typed `elective_clusters` stay the source. Tests: `tests/test_elective_lists.py`.
 3. The PDF's placeholder rows ("קורסי בחירה", "קורס כללי N", "ספורט") are recorded inconsistently:
    - Software: `code: null` rows plus `plus: "קורסי בחירה"`.
    - Information Systems: general and sport rows only; the elective rows survive only in the semester `note`.
@@ -119,7 +121,7 @@ The review item's "a maximum of X credits per group" is therefore **not** printe
 |---|---|
 | Track names | **in repo**: `civil.json` → `tracks` |
 | Track-mandatory courses | **in repo**: `civil.json` course `track` field; the 29 / 24 totals check out |
-| Elective lists | **parser**. `curricula.json` has 4 keys and is wrong: groups merged, 51600 missing, raw heading used as a key |
+| Elective lists | **in repo** (2026-09-26): `curricula.json` → `specializations` / `elective_lists`: groups 1 and 2 for Structures, one list with 51600 for Management. The old `tracks` field still has the 4 wrong keys until the courses step switches |
 | Group minimums (2 / 1) and "~9" / "~14" | **by hand**: they are in headings |
 | The p. 16 note (two starred courses count as mandatory) | **by hand** |
 | When the choice is made | **not in the PDF** |
@@ -197,8 +199,8 @@ The only route-specific mandatory courses are the design courses above.
 | Item | Status |
 |---|---|
 | Design routes (31100–31104) | **in repo**: `electronic.json` → `tracks` plus a `track` on each design course |
-| The three specialization names | missing. **parser**, or by hand: `electronic.json` warning #12 says specialization study is not included |
-| Pools (core, shared, only this) | **parser**, and feasible: the section rows are stable. Watch for the "– המשך" continuation headings and the 31985 contradiction |
+| The three specialization names | **in repo** (2026-09-26): `curricula.json` → `specializations`, named as on p. 2 and in section ב (the p. 11 heading prints "עיבוד אות ותקשורת") |
+| Pools (core, shared, only this) | **in repo** (2026-09-26): `elective_lists`, each with its `pool`; computers core rows carry `area`. The additional courses and the strip are recorded once for all three; "פרויקט מיוחד" (no course number) is a note on the additional-courses list. The 31985 contradiction is kept as printed |
 | Rules (20/4, 6 = 3+3, 10/3, 12/4/6, ≤ 3 from the strip) | **by hand**: prose plus a merged-cell table |
 | When the specialization starts | **not in the PDF** |
 | General courses: any semester | **in repo** as warning text only |
@@ -256,7 +258,7 @@ p. 6: "בכל התמחות ארבעה קורסי חובה אשר אינם נית
 |---|---|
 | Track names and the 16 mandatory courses | **in repo**: `mechines.json`, correct |
 | Foundation-course condition | **by hand** |
-| Elective lists | **parser**. `curricula.json` mixes mandatory courses and electives in each key. Missing: 22720 and 22777 (design), 22748 (mechatronics), 21461 (biomechanics). The 42-course enrichment list sits only under "…– תעשייה 4.0" |
+| Elective lists | **in repo** (2026-09-26): `curricula.json` → `elective_lists`, 19 / 23 / 18 / 22 per specialization plus the 42-course enrichment list recorded once for all four. The old `tracks` mixed mandatory courses and electives, and missed 22777 (design), 22748 (mechatronics) and 21461 (biomechanics). 22720 is **not** in the design list: the PDF prints it there only as a prerequisite, since it is design's own mandatory course (sem. 5) |
 | 28.5 / 20 / entrepreneurship ≤ 4 credits | **by hand**. Which courses count as entrepreneurship needs a decision |
 | Elective / general semesters | **by hand**: "5–8", "any time" |
 
@@ -334,7 +336,7 @@ The cluster contents also differ between the two printings. The D&O printing add
 | D&O practical-experience alternatives | **by hand**, as route alternatives like Electrical's design routes |
 | Elective placeholder rows (DS 7; D&O 7, 8) | **parser**: the literal "קורסי בחירה (לפי המפורט בהמשך)" is detectable. Or by hand |
 | Cluster rules (4/2/1; 7 or 8 courses with 3/1/1 or 4/1/1, plus 2 from the list; 251xxx ≤ 3; exclusive pairs; one cluster per course; 1 science & technology course) | **by hand** |
-| Clusters per specialization | **parser**. They are merged today, and 51916, 251966 and the 251xxx rows are wrong or missing |
+| Clusters per specialization | **in repo** (2026-09-26): `elective_lists` per specialization; ניהול and מדע וטכנולוגיה are identical in both printings and recorded once. 51916 and every 251xxx row are in, each 251xxx row filed under the cluster its "אשכול" column prints (251966 → מערכות מידע). The old `clusters` field is unchanged until the courses step |
 
 ---
 
