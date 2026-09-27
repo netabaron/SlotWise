@@ -1055,5 +1055,172 @@
     "שרשרת האנגלית (11063 / 11064 / 11061) נבחרת לפי ציון פסיכומטרי/אמיר\"ם — סומנה placement=true. הפרק מציין שניתן לשלב את לימודי האנגלית בכל אחד מסמסטרים 1-4 ושיש לסיימם עד סוף הסמסטר הרביעי; המיקום כאן הוא זה שמודפס בטבלאות.",
     "לתואר נדרשות לפחות 160 נ\"ז ולא יותר מ-165 נ\"ז: 114.0 חובה + 24.0-29.0 התמחות + 9.0-14.0 בחירה מחלקתיים + 6.0 כלליים + 1.0 מיומנות יסוד הנדסית + 1.0 ספורט.",
     "tied_with ריק בכל הקורסים: המקרא מציין \"קו תחתי - קורס צמוד\", אך סימון הקו התחתי מופיע בעמודת הקדם שלא חולצה, ולכן לא ניתן היה לזהות צמידויות באופן אמין."
-  ]
+  ],
+  "elective_rules": {
+    "note": "חוקים מוקלדים ידנית מהשנתון, כל אחד עם מקורו. ‏lists הם מפתחות ב-data/curricula.json → programs[program].elective_lists; codes הם רשימה מפורשת. applies_to ריק = כל הסטודנטים בתוכנית. type=text הוא חוק שהאפליקציה לא יכולה לספור ומוצג כלשונו.",
+    "lists_file": "data/curricula.json",
+    "rules": [
+      {
+        "id": "structures-group-1",
+        "type": "min_courses",
+        "applies_to": {
+          "specialization": [
+            "מבנים"
+          ]
+        },
+        "lists": [
+          "מבנים · קבוצה 1"
+        ],
+        "min": 2,
+        "text": "לפחות 2 קורסים מקבוצה 1",
+        "source": {
+          "pdf": "civil.pdf",
+          "page": 12,
+          "quote": "קבוצה 1: חובה ללמוד לפחות 2 קורסים מהרשימה הבאה"
+        }
+      },
+      {
+        "id": "structures-group-2",
+        "type": "min_courses",
+        "applies_to": {
+          "specialization": [
+            "מבנים"
+          ]
+        },
+        "lists": [
+          "מבנים · קבוצה 2"
+        ],
+        "min": 1,
+        "text": "לפחות קורס אחד מקבוצה 2",
+        "source": {
+          "pdf": "civil.pdf",
+          "page": 13,
+          "quote": "קבוצה 2: חובה ללמוד לפחות קורס אחד מהרשימה הבאה"
+        }
+      },
+      {
+        "id": "structures-credits",
+        "type": "min_credits",
+        "applies_to": {
+          "specialization": [
+            "מבנים"
+          ]
+        },
+        "lists": [
+          "מבנים · קבוצה 1",
+          "מבנים · קבוצה 2"
+        ],
+        "min": 9.0,
+        "approximate": true,
+        "text": "כ-9 נ״ז בקורסי בחירה",
+        "source": {
+          "pdf": "civil.pdf",
+          "page": 12,
+          "quote": "מסלול הנדסת מבנים- (עד צבירה של כ-9 נק\"ז)"
+        }
+      },
+      {
+        "id": "management-credits",
+        "type": "min_credits",
+        "applies_to": {
+          "specialization": [
+            "ניהול הבנייה"
+          ]
+        },
+        "lists": [
+          "ניהול הבנייה · קורסי בחירה"
+        ],
+        "min": 14.0,
+        "approximate": true,
+        "text": "כ-14 נ״ז בקורסי בחירה",
+        "source": {
+          "pdf": "civil.pdf",
+          "page": 15,
+          "quote": "מסלול להנדסת ניהול הבנייה- עד צבירה של כ-14 נק\"ז"
+        }
+      },
+      {
+        "id": "management-starred-mandatory",
+        "type": "text",
+        "applies_to": {
+          "specialization": [
+            "ניהול הבנייה"
+          ]
+        },
+        "codes": [
+          "500210",
+          "51600"
+        ],
+        "text": "\"מבוא לכלכלה\" ו\"ניהול משאבי אנוש בבנייה\" הם קורסי חובה לפי רשם המהנדסים, ולוקחים אותם כחובה ולא כבחירה.",
+        "source": {
+          "pdf": "civil.pdf",
+          "page": 16,
+          "quote": "הם קורסי חובה לפי רשם המהנדסים וצריכים לקחת אותם כחובה ולא כבחירה"
+        }
+      }
+    ]
+  },
+  "semester_slots": [
+    {
+      "kind": "electives",
+      "semesters": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "any_semester": false,
+      "basis": "prose",
+      "note": "קורסי הבחירה נלמדים בשנתיים האחרונות",
+      "source": {
+        "pdf": "civil.pdf",
+        "page": 2,
+        "quote": "תוכנית הלימודים, שאורכה 4 שנים... בשנתיים האחרונות יינתנו גם קורסי הבחירה"
+      }
+    },
+    {
+      "kind": "general",
+      "semesters": null,
+      "any_semester": true,
+      "basis": "prose",
+      "source": {
+        "pdf": "civil.pdf",
+        "page": 3,
+        "quote": "לא שובצו בתוכנית המובאת כאן וניתן לשלבם בכל סמסטר"
+      }
+    },
+    {
+      "kind": "sport",
+      "semesters": null,
+      "any_semester": true,
+      "basis": "prose",
+      "source": {
+        "pdf": "civil.pdf",
+        "page": 3,
+        "quote": "לא שובצו בתוכנית המובאת כאן וניתן לשלבם בכל סמסטר"
+      }
+    }
+  ],
+  "specialization": {
+    "options": [
+      "מבנים",
+      "ניהול הבנייה"
+    ],
+    "choose_from_semester": 3,
+    "source": [
+      {
+        "doc": "docs/DESIGN.md",
+        "section": "Program, year and semester (2026-09-26)",
+        "quote": "Civil and Industrial from semester 3"
+      },
+      {
+        "pdf": "civil.pdf",
+        "page": 6,
+        "quote": "קורסי חובה בהתמחות לסמסטר 3 — מסלול מבנים"
+      }
+    ],
+    "deadline": null,
+    "routes": [],
+    "secondary": null
+  }
 }

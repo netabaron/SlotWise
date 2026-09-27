@@ -53,6 +53,13 @@ Page numbers are PDF pages counted from 1. Where the chapter prints its own page
    - Math: the elective rows were dropped on purpose.
    - Industrial: not recorded.
 
+**Rules, semester slots and specialization settings: entered 2026-09-27.** Each program's curriculum file (`data/curricula/*.json`, and `data/curriculum.json` for Software) now carries three hand-entered blocks, each value with its PDF, page and quote:
+- `elective_rules`: typed rules (`min_courses`, `min_credits`, `max_credits`, `exact_courses`, `min_total_courses`, `mutually_exclusive`, `only_one_counts`, and `text` for rules the app can't count), scoped by specialization and route, pointing at the `elective_lists` keys in `data/curricula.json`.
+- `semester_slots`: for electives, general courses and sport, the semesters the curriculum names, or `any_semester`.
+- `specialization`: options, the semester the choice starts (`docs/DESIGN.md`), route pickers, and Industrial's deadline line.
+
+Software's rules use the `curricula.json` lists. They match sw.pdf p. 12 [140], which prints 17 rows including 62003 and 62004; `curriculum.json` has 15. Neither file's algorithms cluster carries a code for the codeless row "פרויקט בינתחומי בתעשייה" (p. 11 [139]). Only two values are marked **Interpretation** in the data (`interpretation` field); both are noted where they apply below. Tests: `tests/test_program_rules.py`.
+
 ---
 
 ## 1. Civil Engineering — `civil.pdf`, `data/curricula/civil.json`
@@ -122,10 +129,10 @@ The review item's "a maximum of X credits per group" is therefore **not** printe
 | Track names | **in repo**: `civil.json` → `tracks` |
 | Track-mandatory courses | **in repo**: `civil.json` course `track` field; the 29 / 24 totals check out |
 | Elective lists | **in repo** (2026-09-26): `curricula.json` → `specializations` / `elective_lists`: groups 1 and 2 for Structures, one list with 51600 for Management. The old `tracks` field still has the 4 wrong keys until the courses step switches |
-| Group minimums (2 / 1) and "~9" / "~14" | **by hand**: they are in headings |
-| The p. 16 note (two starred courses count as mandatory) | **by hand** |
-| When the choice is made | **not in the PDF** |
-| Elective / general semesters | **by hand**, and prose only: "last two years", "any semester" |
+| Group minimums (2 / 1) and "~9" / "~14" | **in repo** (2026-09-27): `civil.json` → `elective_rules`; ~9 and ~14 carry `approximate` |
+| The p. 16 note (two starred courses count as mandatory) | **in repo** (2026-09-27), as a text rule |
+| When the choice is made | **not in the PDF**; semester 3 by decision (`docs/DESIGN.md`), in `civil.json` → `specialization` |
+| Elective / general semesters | **in repo** (2026-09-27): electives semesters 5–8 from p. 2 ("בשנתיים האחרונות"), general and sport any semester |
 
 ---
 
@@ -173,6 +180,7 @@ The only route-specific mandatory courses are the design courses above.
 - **Main specialization.** p. 8, §3.1: "יש להשלים קורסים בהיקף 20 נ"ז לפחות, מתוכם לפחות 4 קורסי ליבה בהתמחות. בהתמחות מחשבים… לפחות 6 קורסים: 3 קורסים מתחום החומרה ו-3 קורסים מתחום התוכנה."
 - **Secondary specialization.** p. 8, §3.2: "יש להשלים לפחות 10 נ"ז, מתוכם יש לבחור לפחות 3 קורסי ליבה בהתמחות: בהתמחות מחשבים לפחות קורס אחד מתחום החומרה וקורס אחד מתחום התוכנה."
 - **Other electives.** p. 8, §3.3: "ניתן לבחור קורסים מכל ההתמחויות… אפשר ללמוד עד 3 נ"ז מרצועת הקורסים הרב-תחומית."
+  - **Interpretation (decided 2026-09-26):** a course counted toward the main or secondary specialization is not counted again among the other electives. The PDF does not say so.
   - p. 15, the strip itself: "מרצועה זו ניתן ללמוד קורסים בהיקף של עד 3 נ"ז". Its courses: 51301, 51605, 51160, 251100, 251504, 251506, 251507, 251510, 251512, 251513, 251514, 251520, 251965.
   - Further additional courses (pp. 13–14): 13069, 51914 (footnote 9: "יש לקבל אישור לרישום מיועץ ומרמ"ח"), 22784, 21461, 22486, 22864, and "פרויקט מיוחד", which has no course number and "1-2" credits.
 - **Totals.** p. 3 states "32 נ"ז" for specialization plus electives. That figure fits only the default industry route; the other routes need 34 and 36 (p. 8 table).
@@ -201,8 +209,8 @@ The only route-specific mandatory courses are the design courses above.
 | Design routes (31100–31104) | **in repo**: `electronic.json` → `tracks` plus a `track` on each design course |
 | The three specialization names | **in repo** (2026-09-26): `curricula.json` → `specializations`, named as on p. 2 and in section ב (the p. 11 heading prints "עיבוד אות ותקשורת") |
 | Pools (core, shared, only this) | **in repo** (2026-09-26): `elective_lists`, each with its `pool`; computers core rows carry `area`. The additional courses and the strip are recorded once for all three; "פרויקט מיוחד" (no course number) is a note on the additional-courses list. The 31985 contradiction is kept as printed |
-| Rules (20/4, 6 = 3+3, 10/3, 12/4/6, ≤ 3 from the strip) | **by hand**: prose plus a merged-cell table |
-| When the specialization starts | **not in the PDF** |
+| Rules (20/4, 6 = 3+3, 10/3, 12/4/6, ≤ 3 from the strip) | **in repo** (2026-09-27): `electronic.json` → `elective_rules`, per main / secondary specialization and route. A specialization's credits count all three of its pools |
+| When the specialization starts | **not in the PDF**; semester 7 by decision (`PROGRAM_REVIEW.md` §4.2), in `electronic.json` → `specialization` with the three pickers |
 | General courses: any semester | **in repo** as warning text only |
 
 ---
@@ -259,8 +267,8 @@ p. 6: "בכל התמחות ארבעה קורסי חובה אשר אינם נית
 | Track names and the 16 mandatory courses | **in repo**: `mechines.json`, correct |
 | Foundation-course condition | **by hand** |
 | Elective lists | **in repo** (2026-09-26): `curricula.json` → `elective_lists`, 19 / 23 / 18 / 22 per specialization plus the 42-course enrichment list recorded once for all four. The old `tracks` mixed mandatory courses and electives, and missed 22777 (design), 22748 (mechatronics) and 21461 (biomechanics). 22720 is **not** in the design list: the PDF prints it there only as a prerequisite, since it is design's own mandatory course (sem. 5) |
-| 28.5 / 20 / entrepreneurship ≤ 4 credits | **by hand**. Which courses count as entrepreneurship needs a decision |
-| Elective / general semesters | **by hand**: "5–8", "any time" |
+| 28.5 / 20 / entrepreneurship ≤ 4 credits | **in repo** (2026-09-27): 28.5 as a counted rule; "עד צבירה של 20" and entrepreneurship ≤ 4 as **text only**, because the PDF says neither whether 20 is a cap or a target nor which courses are entrepreneurship |
+| Elective / general semesters | **in repo** (2026-09-27): electives 5–8 (list headings), general and sport any semester |
 
 ---
 
@@ -307,6 +315,8 @@ p. 2: "…וכוללת שתי התמחויות (ההתמחויות אינן נר
 **Design & Operations, final-project route** (pp. 13–14): "8 קורסי בחירה לפחות"
 - at least four from תכן ותפעול, one from ניהול and one from מערכות מידע
 - at least two from the same special list, with 51156 added. 51156 is in no cluster and no credits are printed for it.
+- **Interpretation (decided 2026-09-26):** 51535 and 51537 are printed as one item joined by "או", so only one of them counts toward the ≥ 2.
+- The 7 / 8 total counts the תכן ותפעול, ניהול and מערכות מידע ומדע הנתונים clusters, 251xxx rows included under the cluster their "אשכול" column prints; מדע וטכנולוגיה is a separate requirement (p. 3).
 
 **Both specializations:**
 - Exactly one science & technology course. p. 3: "קורס אחד מאשכול מדע וטכנולוגיה" (22993, 41095, 41942).
@@ -332,10 +342,10 @@ The cluster contents also differ between the two printings. The D&O printing add
 | Item | Status |
 |---|---|
 | Specializations, divergence, per-specialization mandatory courses | **in repo**: `industry.json` → `tracks` plus a per-course `track`, correct |
-| "Choose by end of year 1" | **by hand** |
-| D&O practical-experience alternatives | **by hand**, as route alternatives like Electrical's design routes |
-| Elective placeholder rows (DS 7; D&O 7, 8) | **parser**: the literal "קורסי בחירה (לפי המפורט בהמשך)" is detectable. Or by hand |
-| Cluster rules (4/2/1; 7 or 8 courses with 3/1/1 or 4/1/1, plus 2 from the list; 251xxx ≤ 3; exclusive pairs; one cluster per course; 1 science & technology course) | **by hand** |
+| "Choose by end of year 1" | **in repo** (2026-09-27): `industry.json` → `specialization.deadline` |
+| D&O practical-experience alternatives | **in repo** (2026-09-27): a route picker from semester 7 |
+| Elective placeholder rows (DS 7; D&O 7, 8) | **in repo** (2026-09-27), by hand: `industry.json` → `semester_slots` |
+| Cluster rules (4/2/1; 7 or 8 courses with 3/1/1 or 4/1/1, plus 2 from the list; 251xxx ≤ 3; exclusive pairs; one cluster per course; 1 science & technology course) | **in repo** (2026-09-27): `industry.json` → `elective_rules`; one cluster per course is a text rule |
 | Clusters per specialization | **in repo** (2026-09-26): `elective_lists` per specialization; ניהול and מדע וטכנולוגיה are identical in both printings and recorded once. 51916 and every 251xxx row are in, each 251xxx row filed under the cluster its "אשכול" column prints (251966 → מערכות מידע). The old `clusters` field is unchanged until the courses step |
 
 ---
@@ -360,6 +370,7 @@ The cluster contents also differ between the two printings. The D&O printing add
     - `curricula.json` has 17 codes in הנדסת תוכנה, including 62003 and 62004. This is the copy the API serves.
     - `curriculum.json` has 15 codes there, plus credits and `entrepreneurship: true` flags.
   - English seminars, one entrepreneurship course and `degree_notes`: in the repo but **not read** by any code.
+  - Rules and slots: **in repo** (2026-09-27), `curriculum.json` → `elective_rules` / `semester_slots`, including the 62019 / 61959 exclusion (p. 11 [139]: "סטודנטים שלמדו את הקורס 61959 אנליזה נומרית לא יכולים להירשם לקורס זה").
 
 ## 6. Information Systems Engineering — `system.pdf`, `data/curricula/infosystems.json`
 
@@ -377,7 +388,8 @@ The cluster contents also differ between the two printings. The D&O printing add
   - General and sport rows: **in repo** (`code: null`).
   - Elective rows: only in the semester `note` text. Adding a `plus` like Software's is **by hand**.
   - Clusters: **in repo** (`curricula.json`).
-  - The English-seminar rule: **by hand**. Which courses qualify needs a decision.
+  - The English-seminar rule: **in repo** (2026-09-27) as a **text-only** rule. Which courses qualify is still undecided.
+  - Rules and slots: **in repo** (2026-09-27), `infosystems.json` → `elective_rules` / `semester_slots`.
 
 ## 7. Applied Mathematics — `SHANTON MATH NOV 2025 .pdf`, `data/curricula/math-winter.json`, `math-spring.json`
 
@@ -400,7 +412,7 @@ The cluster contents also differ between the two printings. The D&O printing add
 - **Data status:**
   - The four domains: **in repo**, typed by hand into `elective_clusters`.
   - The elective placeholder rows were dropped on purpose (a file warning says so). The semesters are known: **by hand**.
-  - The 3.0-credit rule, the exclusion and the spring recommendation: **by hand**.
+  - The 3.0-credit rule (text only), the exclusion and the spring recommendation: **in repo** (2026-09-27), identical rules in both intake files.
 
 ## 8. Biotechnology — `biotech.pdf`, `data/curricula/biotech.json`
 

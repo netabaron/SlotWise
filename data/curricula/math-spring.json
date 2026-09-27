@@ -996,5 +996,132 @@
     "קורסי לימודים כלליים, ספורט ומיומנויות יסוד הנדסיות (251961) אינם משובצים בתוכנית שבמסמך וניתן לפזרם לאורך התואר; הם אינם מופיעים כאן.",
     "אין במסמך ציון שנת מחזור (תשפ\"X) לתוכנית; cohort_year הוא null.",
     "אשכולות הבחירה מודפסים בסוף הפרק (עמודים 7–9). שמונה קורסים מודפסים שם בלי מספר קורס (\"חדש\"/\"מחליף\") ונשמרים עם code: null. ההערה של השנתון עצמו על שינוי נ\"ז ותנאי קדם עברה ל-notes, שהוא השדה שהממשק מציג; warnings נשאר פנימי ואינו מוצג."
-  ]
+  ],
+  "elective_rules": {
+    "note": "חוקים מוקלדים ידנית מהשנתון, כל אחד עם מקורו. ‏lists הם מפתחות ב-data/curricula.json → programs[program].elective_lists; codes הם רשימה מפורשת. applies_to ריק = כל הסטודנטים בתוכנית. type=text הוא חוק שהאפליקציה לא יכולה לספור ומוצג כלשונו. לשני מועדי הכניסה אותם חוקים.",
+    "lists_file": null,
+    "rules": [
+      {
+        "id": "mathematical-electives",
+        "type": "text",
+        "text": "חובה לקחת 3.0 נ״ז בקורסי בחירה מתמטיים.",
+        "source": {
+          "pdf": "SHANTON MATH NOV 2025 .pdf",
+          "page": 2,
+          "quote": "חובה על הסטודנט לקחת 3.0 נ\"ז בקורסי בחירה מתמטיים"
+        }
+      },
+      {
+        "id": "exclusive-201198-61957",
+        "type": "mutually_exclusive",
+        "codes": [
+          "201198",
+          "61957"
+        ],
+        "text": "ניתן לקחת רק אחד מ-201198 ו-61957",
+        "source": {
+          "pdf": "SHANTON MATH NOV 2025 .pdf",
+          "page": 9,
+          "quote": "מבין שני הקורסים (201198 / 61957) ניתן לקחת קורס אחד בלבד"
+        }
+      }
+    ]
+  },
+  "semester_slots": [
+    {
+      "kind": "electives",
+      "semesters": [
+        4,
+        5
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "source": {
+        "pdf": "SHANTON MATH NOV 2025 .pdf",
+        "page": 6,
+        "quote": "קורסי בחירה"
+      }
+    },
+    {
+      "kind": "electives",
+      "semesters": [
+        6
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "source": {
+        "pdf": "SHANTON MATH NOV 2025 .pdf",
+        "page": 7,
+        "quote": "קורסי בחירה"
+      }
+    },
+    {
+      "kind": "general",
+      "semesters": null,
+      "any_semester": true,
+      "basis": "prose",
+      "source": {
+        "pdf": "SHANTON MATH NOV 2025 .pdf",
+        "page": 2,
+        "quote": "קורסי לימודים כללים וספורט לא שובצו בתוכנית המובאת כאן. ניתן לשלבם לאורך כל תקופת הלימודים"
+      }
+    },
+    {
+      "kind": "sport",
+      "semesters": null,
+      "any_semester": true,
+      "basis": "prose",
+      "source": {
+        "pdf": "SHANTON MATH NOV 2025 .pdf",
+        "page": 2,
+        "quote": "קורסי לימודים כללים וספורט לא שובצו בתוכנית המובאת כאן. ניתן לשלבם לאורך כל תקופת הלימודים"
+      }
+    },
+    {
+      "kind": "general",
+      "semesters": [
+        1,
+        2,
+        3
+      ],
+      "any_semester": false,
+      "basis": "recommendation",
+      "source": {
+        "pdf": "SHANTON MATH NOV 2025 .pdf",
+        "page": 5,
+        "quote": "מומלץ ללמוד בסמ' 1+2+3 קורסים כלליים, ספורט ומיומנויות"
+      }
+    },
+    {
+      "kind": "sport",
+      "semesters": [
+        1,
+        2,
+        3
+      ],
+      "any_semester": false,
+      "basis": "recommendation",
+      "source": {
+        "pdf": "SHANTON MATH NOV 2025 .pdf",
+        "page": 5,
+        "quote": "מומלץ ללמוד בסמ' 1+2+3 קורסים כלליים, ספורט ומיומנויות"
+      }
+    },
+    {
+      "kind": "skills",
+      "semesters": [
+        1,
+        2,
+        3
+      ],
+      "any_semester": false,
+      "basis": "recommendation",
+      "source": {
+        "pdf": "SHANTON MATH NOV 2025 .pdf",
+        "page": 5,
+        "quote": "מומלץ ללמוד בסמ' 1+2+3 קורסים כלליים, ספורט ומיומנויות"
+      }
+    }
+  ],
+  "specialization": null
 }

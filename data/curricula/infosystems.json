@@ -911,5 +911,192 @@
     "הקוד 251961 מודפס כך בשנתון – שש ספרות, חריג לשאר הקודים בני חמש. הועתק כפי שהוא.",
     "התוכנית משתרעת על קידומות 11xxx / 51xxx / 61xxx / 62xxx; אין לה קידומת מחלקתית אחת, והיא ניתנת במשותף על ידי הנדסת תוכנה והנדסת תעשייה וניהול.",
     "שמות הקורסים שוחזרו מסדר התווים הוויזואלי (RTL) של ה-PDF; ייתכנו הפרשים קלים בגרשיים ובסוגריים מול הטקסט המודפס."
-  ]
+  ],
+  "elective_rules": {
+    "note": "חוקים מוקלדים ידנית מהשנתון, כל אחד עם מקורו. ‏lists הם מפתחות ב-data/curricula.json → programs[program].elective_lists; codes הם רשימה מפורשת. applies_to ריק = כל הסטודנטים בתוכנית. type=text הוא חוק שהאפליקציה לא יכולה לספור ומוצג כלשונו.",
+    "lists_file": "data/curricula.json",
+    "rules": [
+      {
+        "id": "cluster-0",
+        "type": "min_courses",
+        "lists": [
+          "מדעים"
+        ],
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול מדעים",
+        "source": {
+          "pdf": "system.pdf",
+          "page": 9,
+          "printed_page": 161,
+          "quote": "כל סטודנט חייב לקחת קורס אחד מכל אשכול"
+        }
+      },
+      {
+        "id": "cluster-1",
+        "type": "min_courses",
+        "lists": [
+          "הנדסת תוכנה"
+        ],
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול הנדסת תוכנה",
+        "source": {
+          "pdf": "system.pdf",
+          "page": 9,
+          "printed_page": 161,
+          "quote": "כל סטודנט חייב לקחת קורס אחד מכל אשכול"
+        }
+      },
+      {
+        "id": "cluster-2",
+        "type": "min_courses",
+        "lists": [
+          "תכן , תפעול וניהול"
+        ],
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול תכן , תפעול וניהול",
+        "source": {
+          "pdf": "system.pdf",
+          "page": 9,
+          "printed_page": 161,
+          "quote": "כל סטודנט חייב לקחת קורס אחד מכל אשכול"
+        }
+      },
+      {
+        "id": "english-seminar",
+        "type": "text",
+        "text": "אחד מקורסי הבחירה חייב להיות סמינר בשפה האנגלית.",
+        "source": {
+          "pdf": "system.pdf",
+          "page": 9,
+          "printed_page": 161,
+          "quote": "אחד מקורסי הבחירה חייב להיות סמינר בשפה האנגלית"
+        }
+      },
+      {
+        "id": "english-seminar-no-substitute",
+        "type": "text",
+        "text": "לא ניתן להמיר את הסמינר באנגלית בפעילות חברתית או בשירות מילואים.",
+        "source": {
+          "pdf": "system.pdf",
+          "page": 3,
+          "printed_page": 155,
+          "quote": "(לא ניתן להמיר סמינר באנגלית)"
+        }
+      },
+      {
+        "id": "entrepreneurship-one",
+        "type": "only_one_counts",
+        "codes": [
+          "251100",
+          "251965"
+        ],
+        "text": "רק קורס יזמות אחד יוכר לזכאות לתואר",
+        "source": {
+          "pdf": "system.pdf",
+          "page": 12,
+          "printed_page": 164,
+          "quote": "למען הסר ספק – רק קורס יזמות אחד בלבד יוכר לזכאות לתואר"
+        }
+      },
+      {
+        "id": "exclusive-62023-62002",
+        "type": "mutually_exclusive",
+        "codes": [
+          "62023",
+          "62002"
+        ],
+        "text": "מי שלמד את 62002 לא יכול להירשם ל-62023",
+        "source": {
+          "pdf": "system.pdf",
+          "page": 11,
+          "printed_page": 163,
+          "quote": "סטודנטים שלמדו את הקורס 62002 \"עיבוד שפה טבעית עם למידת מכונה\", לא יכולים להירשם לקורס זה"
+        }
+      }
+    ]
+  },
+  "semester_slots": [
+    {
+      "kind": "electives",
+      "semesters": [
+        7
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "source": {
+        "pdf": "system.pdf",
+        "page": 7,
+        "quote": "קורסי בחירה"
+      }
+    },
+    {
+      "kind": "electives",
+      "semesters": [
+        8
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "source": {
+        "pdf": "system.pdf",
+        "page": 8,
+        "quote": "קורסי בחירה"
+      }
+    },
+    {
+      "kind": "general",
+      "semesters": [
+        5
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "label": "קורס כללי 1",
+      "source": {
+        "pdf": "system.pdf",
+        "page": 6,
+        "quote": "קורס כללי 1"
+      }
+    },
+    {
+      "kind": "general",
+      "semesters": [
+        6
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "label": "קורס כללי 2",
+      "source": {
+        "pdf": "system.pdf",
+        "page": 7,
+        "quote": "קורס כללי 2"
+      }
+    },
+    {
+      "kind": "general",
+      "semesters": [
+        7
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "label": "קורס כללי 3",
+      "source": {
+        "pdf": "system.pdf",
+        "page": 7,
+        "quote": "קורס כללי 3"
+      }
+    },
+    {
+      "kind": "sport",
+      "semesters": [
+        1
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "source": {
+        "pdf": "system.pdf",
+        "page": 3,
+        "quote": "ספורט"
+      }
+    }
+  ],
+  "specialization": null
 }

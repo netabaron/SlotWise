@@ -206,5 +206,232 @@
     {"new": "62018", "old": "61912", "name": "מבוא לארכיטקטורה ומבנה המחשב מחליף ארכיטקטורת מערכות תוכנה", "from": "תשפ\"ז 2027"},
     {"new": "62027", "old": "61769", "name": "אינטראקציית אדם מחשב (HCI) מחליף ממשק אדם מחשב", "from": "תשפ\"ז 2027"},
     {"new": "62028", "old": "61762", "name": "ניהול פרויקטים טכנולוגיים בעידן ה-AI מחליף ניהול פרויקטי תוכנה", "from": "תשפ\"ז 2027"}
-  ]
+  ],
+  "elective_rules": {
+    "note": "חוקים מוקלדים ידנית מהשנתון, כל אחד עם מקורו. ‏lists הם מפתחות ב-data/curricula.json → programs[program].elective_lists; codes הם רשימה מפורשת. applies_to ריק = כל הסטודנטים בתוכנית. type=text הוא חוק שהאפליקציה לא יכולה לספור ומוצג כלשונו.",
+    "lists_file": "data/curricula.json",
+    "rules": [
+      {
+        "id": "cluster-0",
+        "type": "min_courses",
+        "lists": [
+          "מדעים"
+        ],
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול מדעים",
+        "source": {
+          "pdf": "sw.pdf",
+          "page": 9,
+          "printed_page": 137,
+          "quote": "כל סטודנט חייב לקחת קורס אחד מכל אשכול"
+        }
+      },
+      {
+        "id": "cluster-1",
+        "type": "min_courses",
+        "lists": [
+          "עיבוד אותות ורשתות תקשורת"
+        ],
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול עיבוד אותות ורשתות תקשורת",
+        "source": {
+          "pdf": "sw.pdf",
+          "page": 9,
+          "printed_page": 137,
+          "quote": "כל סטודנט חייב לקחת קורס אחד מכל אשכול"
+        }
+      },
+      {
+        "id": "cluster-2",
+        "type": "min_courses",
+        "lists": [
+          "אלגוריתמים"
+        ],
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול אלגוריתמים",
+        "source": {
+          "pdf": "sw.pdf",
+          "page": 9,
+          "printed_page": 137,
+          "quote": "כל סטודנט חייב לקחת קורס אחד מכל אשכול"
+        }
+      },
+      {
+        "id": "cluster-3",
+        "type": "min_courses",
+        "lists": [
+          "סמינרים"
+        ],
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול סמינרים",
+        "source": {
+          "pdf": "sw.pdf",
+          "page": 9,
+          "printed_page": 137,
+          "quote": "כל סטודנט חייב לקחת קורס אחד מכל אשכול"
+        }
+      },
+      {
+        "id": "cluster-4",
+        "type": "min_courses",
+        "lists": [
+          "הנדסת תוכנה"
+        ],
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול הנדסת תוכנה",
+        "source": {
+          "pdf": "sw.pdf",
+          "page": 9,
+          "printed_page": 137,
+          "quote": "כל סטודנט חייב לקחת קורס אחד מכל אשכול"
+        }
+      },
+      {
+        "id": "cluster-5",
+        "type": "min_courses",
+        "lists": [
+          "מעבדות"
+        ],
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול מעבדות",
+        "source": {
+          "pdf": "sw.pdf",
+          "page": 9,
+          "printed_page": 137,
+          "quote": "כל סטודנט חייב לקחת קורס אחד מכל אשכול"
+        }
+      },
+      {
+        "id": "entrepreneurship-one",
+        "type": "only_one_counts",
+        "codes": [
+          "251100",
+          "251965"
+        ],
+        "text": "רק קורס יזמות אחד יוכר לזכאות לתואר",
+        "source": {
+          "pdf": "sw.pdf",
+          "page": 12,
+          "printed_page": 140,
+          "quote": "למען הסר ספק – רק קורס יזמות אחד בלבד יוכר לזכאות לתואר"
+        }
+      },
+      {
+        "id": "exclusive-62023-62002",
+        "type": "mutually_exclusive",
+        "codes": [
+          "62023",
+          "62002"
+        ],
+        "text": "מי שלמד את 62002 לא יכול להירשם ל-62023",
+        "source": {
+          "pdf": "sw.pdf",
+          "page": 9,
+          "printed_page": 137,
+          "quote": "סטודנטים שלמדו את הקורס 62002 \"עיבוד שפה טבעית עם למידת מכונה\", לא יכולים להירשם לקורס זה"
+        }
+      },
+      {
+        "id": "exclusive-62019-61959",
+        "type": "mutually_exclusive",
+        "codes": [
+          "62019",
+          "61959"
+        ],
+        "text": "מי שלמד את 61959 לא יכול להירשם ל-62019",
+        "source": {
+          "pdf": "sw.pdf",
+          "page": 11,
+          "printed_page": 139,
+          "quote": "סטודנטים שלמדו את הקורס 61959 אנליזה נומרית לא יכולים להירשם לקורס זה"
+        }
+      },
+      {
+        "id": "seminars-no-substitute",
+        "type": "text",
+        "lists": [
+          "סמינרים"
+        ],
+        "text": "לא ניתן להמיר מאשכול הסמינרים נ״ז בגין פעילות חברתית או שירות מילואים.",
+        "source": {
+          "pdf": "sw.pdf",
+          "page": 11,
+          "printed_page": 139,
+          "quote": "לא ניתן להמיר מאשכול זה נ\"ז בגין פעילות חברתית או שירות מילואים"
+        }
+      }
+    ]
+  },
+  "semester_slots": [
+    {
+      "kind": "electives",
+      "semesters": [
+        7,
+        8
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "source": {
+        "pdf": "sw.pdf",
+        "page": 8,
+        "quote": "קורסי בחירה"
+      }
+    },
+    {
+      "kind": "general",
+      "semesters": [
+        1
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "label": "קורס כללי 1",
+      "source": {
+        "pdf": "sw.pdf",
+        "page": 3,
+        "quote": "קורס כללי 1"
+      }
+    },
+    {
+      "kind": "general",
+      "semesters": [
+        4
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "label": "קורס כללי 2",
+      "source": {
+        "pdf": "sw.pdf",
+        "page": 5,
+        "quote": "קורס כללי 2"
+      }
+    },
+    {
+      "kind": "general",
+      "semesters": [
+        6
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "label": "קורס כללי 3",
+      "source": {
+        "pdf": "sw.pdf",
+        "page": 7,
+        "quote": "קורס כללי 3"
+      }
+    },
+    {
+      "kind": "sport",
+      "semesters": [
+        1
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "source": {
+        "pdf": "sw.pdf",
+        "page": 3,
+        "quote": "ספורט"
+      }
+    }
+  ],
+  "specialization": null
 }

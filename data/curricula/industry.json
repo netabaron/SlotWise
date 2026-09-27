@@ -1148,5 +1148,698 @@
     "אין בפרק זה ציון שנת מחזור (תשפ\"X) לתוכנית הלימודים; cohort_year הוא null.",
     "שנה וסמסטר (year/term) נגזרו ממספר הסמסטר הסידורי בלבד ולא נקראו מהמסמך — year_term_inferred=true.",
     "אשכולות הבחירה הועתקו מחילוץ השנתון שב-data/curricula.json (‏src/shnaton.py), והם זהים לו. המקור מדפיס שם ומספר קורס בלבד — בלי שעות, נ\"ז ותנאי קדם — ולכן גם כאן אין אותם, ולא מומצאים."
-  ]
+  ],
+  "elective_rules": {
+    "note": "חוקים מוקלדים ידנית מהשנתון, כל אחד עם מקורו. ‏lists הם מפתחות ב-data/curricula.json → programs[program].elective_lists; codes הם רשימה מפורשת. applies_to ריק = כל הסטודנטים בתוכנית. type=text הוא חוק שהאפליקציה לא יכולה לספור ומוצג כלשונו. ‏cluster_rows_from: שורות 251xxx ברשימה הזו נספרות לאשכול שעמודת \"אשכול\" שלהן מדפיסה (השדה cluster).",
+    "lists_file": "data/curricula.json",
+    "rules": [
+      {
+        "id": "ds-information-systems",
+        "type": "min_courses",
+        "applies_to": {
+          "specialization": [
+            "מדעי הנתונים"
+          ]
+        },
+        "lists": [
+          "מדעי הנתונים · מערכות מידע ומדע הנתונים"
+        ],
+        "cluster_rows_from": "מדעי הנתונים · המרכז לחינוך הנדסי וליזמות",
+        "min": 4,
+        "text": "לפחות 4 קורסים מאשכול מערכות מידע ומדע הנתונים",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 7,
+          "quote": "יש לבחור לפחות 4 קורסים מאשכול מערכות מידע ומדע הנתונים"
+        }
+      },
+      {
+        "id": "ds-design-operations",
+        "type": "min_courses",
+        "applies_to": {
+          "specialization": [
+            "מדעי הנתונים"
+          ]
+        },
+        "lists": [
+          "מדעי הנתונים · תכן ותפעול של מערכות ייצור ושירות"
+        ],
+        "cluster_rows_from": "מדעי הנתונים · המרכז לחינוך הנדסי וליזמות",
+        "min": 2,
+        "text": "לפחות 2 קורסים מאשכול תכן ותפעול של מערכות ייצור ושירות",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 7,
+          "quote": "יש לבחור לפחות 2 קורסים מאשכול תכן ותפעול של מערכות ייצור ושירות"
+        }
+      },
+      {
+        "id": "ds-management",
+        "type": "min_courses",
+        "applies_to": {
+          "specialization": [
+            "מדעי הנתונים"
+          ]
+        },
+        "lists": [
+          "ניהול"
+        ],
+        "cluster_rows_from": "מדעי הנתונים · המרכז לחינוך הנדסי וליזמות",
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול ניהול",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 7,
+          "quote": "יש לבחור לפחות קורס אחד מאשכול ניהול"
+        }
+      },
+      {
+        "id": "do-internship-total",
+        "type": "min_total_courses",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ],
+          "route": [
+            "התמחות בתעשייה"
+          ]
+        },
+        "lists": [
+          "תכן ותפעול של מערכות ייצור ושירות · תכן ותפעול של מערכות ייצור ושירות",
+          "ניהול",
+          "תכן ותפעול של מערכות ייצור ושירות · מערכות מידע ומדע הנתונים"
+        ],
+        "cluster_rows_from": "תכן ותפעול של מערכות ייצור ושירות · המרכז לחינוך הנדסי וליזמות",
+        "min": 7,
+        "text": "לפחות 7 קורסי בחירה",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 13,
+          "quote": "7 קורסי בחירה לפחות (יש להשלים ל-160 נ\"ז) לפי הפירוט הבא"
+        }
+      },
+      {
+        "id": "do-internship-design-operations",
+        "type": "min_courses",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ],
+          "route": [
+            "התמחות בתעשייה"
+          ]
+        },
+        "lists": [
+          "תכן ותפעול של מערכות ייצור ושירות · תכן ותפעול של מערכות ייצור ושירות"
+        ],
+        "cluster_rows_from": "תכן ותפעול של מערכות ייצור ושירות · המרכז לחינוך הנדסי וליזמות",
+        "min": 3,
+        "text": "לפחות 3 קורסים מאשכול תכן ותפעול של מערכות ייצור ושירות",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 13,
+          "quote": "יש לבחור לפחות שלושה קורסים מאשכול תכן ותפעול של מערכות ייצור ושירות"
+        }
+      },
+      {
+        "id": "do-internship-management",
+        "type": "min_courses",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ],
+          "route": [
+            "התמחות בתעשייה"
+          ]
+        },
+        "lists": [
+          "ניהול"
+        ],
+        "cluster_rows_from": "תכן ותפעול של מערכות ייצור ושירות · המרכז לחינוך הנדסי וליזמות",
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול ניהול",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 13,
+          "quote": "יש לבחור לפחות קורס אחד מאשכול ניהול"
+        }
+      },
+      {
+        "id": "do-internship-information-systems",
+        "type": "min_courses",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ],
+          "route": [
+            "התמחות בתעשייה"
+          ]
+        },
+        "lists": [
+          "תכן ותפעול של מערכות ייצור ושירות · מערכות מידע ומדע הנתונים"
+        ],
+        "cluster_rows_from": "תכן ותפעול של מערכות ייצור ושירות · המרכז לחינוך הנדסי וליזמות",
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול מערכות מידע ומדע הנתונים",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 13,
+          "quote": "יש לבחור לפחות קורס אחד מאשכול מערכות מידע ומדע הנתונים"
+        }
+      },
+      {
+        "id": "do-internship-special-list",
+        "type": "min_courses",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ],
+          "route": [
+            "התמחות בתעשייה"
+          ]
+        },
+        "codes": [
+          "51170",
+          "51025",
+          "51030",
+          "51106",
+          "51113",
+          "51120",
+          "51535",
+          "51537"
+        ],
+        "count_one_of": [
+          [
+            "51535",
+            "51537"
+          ]
+        ],
+        "min": 2,
+        "notes": [
+          "51170 מיועד לסטודנטים באחוזון ציונים של 80% ומעלה, באישור רמ\"ח בלבד."
+        ],
+        "interpretation": "51535 ו-51537 מודפסים כפריט אחד ברשימה, מחוברים ב\"או\", ולכן רק אחד מהם נספר לשני הקורסים מהרשימה. השנתון אינו אומר זאת במפורש; הוחלט 2026-09-26.",
+        "text": "לפחות 2 קורסי בחירה מהקבוצה המיוחדת",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 13,
+          "quote": "לפחות שניים מקורסי הבחירה חייבים להיות מהקבוצה הבאה"
+        }
+      },
+      {
+        "id": "do-project-total",
+        "type": "min_total_courses",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ],
+          "route": [
+            "פרויקט גמר"
+          ]
+        },
+        "lists": [
+          "תכן ותפעול של מערכות ייצור ושירות · תכן ותפעול של מערכות ייצור ושירות",
+          "ניהול",
+          "תכן ותפעול של מערכות ייצור ושירות · מערכות מידע ומדע הנתונים"
+        ],
+        "cluster_rows_from": "תכן ותפעול של מערכות ייצור ושירות · המרכז לחינוך הנדסי וליזמות",
+        "min": 8,
+        "text": "לפחות 8 קורסי בחירה",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 13,
+          "quote": "8 קורסי בחירה לפחות (יש להשלים ל-160 נ\"ז) לפי הפירוט הבא"
+        }
+      },
+      {
+        "id": "do-project-design-operations",
+        "type": "min_courses",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ],
+          "route": [
+            "פרויקט גמר"
+          ]
+        },
+        "lists": [
+          "תכן ותפעול של מערכות ייצור ושירות · תכן ותפעול של מערכות ייצור ושירות"
+        ],
+        "cluster_rows_from": "תכן ותפעול של מערכות ייצור ושירות · המרכז לחינוך הנדסי וליזמות",
+        "min": 4,
+        "text": "לפחות 4 קורסים מאשכול תכן ותפעול של מערכות ייצור ושירות",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 13,
+          "quote": "יש לבחור לפחות ארבעה קורסים מאשכול תכן ותפעול של מערכות ייצור ושירות"
+        }
+      },
+      {
+        "id": "do-project-management",
+        "type": "min_courses",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ],
+          "route": [
+            "פרויקט גמר"
+          ]
+        },
+        "lists": [
+          "ניהול"
+        ],
+        "cluster_rows_from": "תכן ותפעול של מערכות ייצור ושירות · המרכז לחינוך הנדסי וליזמות",
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול ניהול",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 13,
+          "quote": "יש לבחור לפחות קורס אחד מאשכול ניהול"
+        }
+      },
+      {
+        "id": "do-project-information-systems",
+        "type": "min_courses",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ],
+          "route": [
+            "פרויקט גמר"
+          ]
+        },
+        "lists": [
+          "תכן ותפעול של מערכות ייצור ושירות · מערכות מידע ומדע הנתונים"
+        ],
+        "cluster_rows_from": "תכן ותפעול של מערכות ייצור ושירות · המרכז לחינוך הנדסי וליזמות",
+        "min": 1,
+        "text": "לפחות קורס אחד מאשכול מערכות מידע ומדע הנתונים",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 13,
+          "quote": "יש לבחור לפחות קורס אחד מאשכול מערכות מידע ומדע הנתונים"
+        }
+      },
+      {
+        "id": "do-project-special-list",
+        "type": "min_courses",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ],
+          "route": [
+            "פרויקט גמר"
+          ]
+        },
+        "codes": [
+          "51170",
+          "51025",
+          "51030",
+          "51106",
+          "51113",
+          "51120",
+          "51156",
+          "51535",
+          "51537"
+        ],
+        "count_one_of": [
+          [
+            "51535",
+            "51537"
+          ]
+        ],
+        "min": 2,
+        "notes": [
+          "51170 מיועד לסטודנטים באחוזון ציונים של 80% ומעלה, באישור רמ\"ח בלבד."
+        ],
+        "interpretation": "51535 ו-51537 מודפסים כפריט אחד ברשימה, מחוברים ב\"או\", ולכן רק אחד מהם נספר לשני הקורסים מהרשימה. השנתון אינו אומר זאת במפורש; הוחלט 2026-09-26.",
+        "text": "לפחות 2 קורסי בחירה מהקבוצה המיוחדת",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 13,
+          "quote": "לפחות שניים מקורסי הבחירה חייבים להיות מהקבוצה הבאה"
+        }
+      },
+      {
+        "id": "science-technology",
+        "type": "exact_courses",
+        "lists": [
+          "מדע וטכנולוגיה"
+        ],
+        "count": 1,
+        "text": "קורס אחד מאשכול מדע וטכנולוגיה",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 3,
+          "quote": "קורס אחד מאשכול מדע וטכנולוגיה"
+        }
+      },
+      {
+        "id": "ds-center-cap",
+        "type": "max_credits",
+        "applies_to": {
+          "specialization": [
+            "מדעי הנתונים"
+          ]
+        },
+        "lists": [
+          "מדעי הנתונים · המרכז לחינוך הנדסי וליזמות"
+        ],
+        "max": 3.0,
+        "text": "עד 3 נ״ז מהמרכז לחינוך הנדסי וליזמות",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 9,
+          "quote": "ניתן גם לקחת קורסים מהמרכז לחינוך הנדסי וליזמות בסך של עד 3 נ\"ז"
+        }
+      },
+      {
+        "id": "do-center-cap",
+        "type": "max_credits",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ]
+        },
+        "lists": [
+          "תכן ותפעול של מערכות ייצור ושירות · המרכז לחינוך הנדסי וליזמות"
+        ],
+        "max": 3.0,
+        "text": "עד 3 נ״ז מהמרכז לחינוך הנדסי וליזמות",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 16,
+          "quote": "ניתן גם לקחת קורסים מהמרכז לחינוך הנדסי וליזמות בסך של עד 3 נ\"ז"
+        }
+      },
+      {
+        "id": "ds-exclusive-251509-251513",
+        "type": "mutually_exclusive",
+        "applies_to": {
+          "specialization": [
+            "מדעי הנתונים"
+          ]
+        },
+        "codes": [
+          "251509",
+          "251513"
+        ],
+        "text": "ניתן לקחת רק אחד משני הקורסים",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 9,
+          "quote": "קורסים מקבילים (ניתן לקחת רק אחד משני הקורסים)"
+        }
+      },
+      {
+        "id": "do-exclusive-251509-251513",
+        "type": "mutually_exclusive",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ]
+        },
+        "codes": [
+          "251509",
+          "251513"
+        ],
+        "text": "ניתן לקחת רק אחד משני הקורסים",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 17,
+          "quote": "קורסים מקבילים (ניתן לקחת רק אחד משני הקורסים)"
+        }
+      },
+      {
+        "id": "ds-exclusive-251514-251965",
+        "type": "mutually_exclusive",
+        "applies_to": {
+          "specialization": [
+            "מדעי הנתונים"
+          ]
+        },
+        "codes": [
+          "251514",
+          "251965"
+        ],
+        "text": "ניתן לקחת רק אחד משני הקורסים",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 9,
+          "quote": "קורסים מקבילים (ניתן לקחת רק אחד משני הקורסים)"
+        }
+      },
+      {
+        "id": "do-exclusive-251514-251965",
+        "type": "mutually_exclusive",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ]
+        },
+        "codes": [
+          "251514",
+          "251965"
+        ],
+        "text": "ניתן לקחת רק אחד משני הקורסים",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 17,
+          "quote": "קורסים מקבילים (ניתן לקחת רק אחד משני הקורסים)"
+        }
+      },
+      {
+        "id": "ds-exclusive-251507-251504",
+        "type": "mutually_exclusive",
+        "applies_to": {
+          "specialization": [
+            "מדעי הנתונים"
+          ]
+        },
+        "codes": [
+          "251507",
+          "251504"
+        ],
+        "text": "ניתן לקחת רק אחד משני הקורסים",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 9,
+          "quote": "קורסים מקבילים (ניתן לקחת רק אחד משני הקורסים)"
+        }
+      },
+      {
+        "id": "do-exclusive-251507-251504",
+        "type": "mutually_exclusive",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ]
+        },
+        "codes": [
+          "251507",
+          "251504"
+        ],
+        "text": "ניתן לקחת רק אחד משני הקורסים",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 17,
+          "quote": "קורסים מקבילים (ניתן לקחת רק אחד משני הקורסים)"
+        }
+      },
+      {
+        "id": "ds-exclusive-251966-51515",
+        "type": "mutually_exclusive",
+        "applies_to": {
+          "specialization": [
+            "מדעי הנתונים"
+          ]
+        },
+        "codes": [
+          "251966",
+          "51515"
+        ],
+        "text": "ניתן לקחת רק אחד משני הקורסים",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 9,
+          "quote": "קורסים מקבילים (ניתן לקחת רק אחד משני הקורסים)"
+        }
+      },
+      {
+        "id": "ds-one-cluster-per-course",
+        "type": "text",
+        "applies_to": {
+          "specialization": [
+            "מדעי הנתונים"
+          ]
+        },
+        "text": "לא ניתן להחשיב קורס ששייך לשני אשכולות ביותר מאשכול אחד.",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 6,
+          "quote": "לא ניתן להחשיב קורס ששייך לשני אשכולות ביותר מאשכול אחד."
+        }
+      },
+      {
+        "id": "do-one-cluster-per-course",
+        "type": "text",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ]
+        },
+        "text": "לא ניתן להחשיב קורס ששייך לשני אשכולות ביותר מאשכול אחד.",
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 14,
+          "quote": "לא ניתן להחשיב קורס ששייך לשני אשכולות ביותר מאשכול אחד."
+        }
+      }
+    ]
+  },
+  "semester_slots": [
+    {
+      "kind": "electives",
+      "semesters": [
+        7
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "applies_to": {
+        "specialization": [
+          "מדעי הנתונים"
+        ]
+      },
+      "source": {
+        "pdf": "industry.pdf",
+        "page": 6,
+        "quote": "קורסי בחירה (לפי המפורט בהמשך)"
+      }
+    },
+    {
+      "kind": "electives",
+      "semesters": [
+        7
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "applies_to": {
+        "specialization": [
+          "תכן ותפעול של מערכות ייצור ושירות"
+        ]
+      },
+      "source": {
+        "pdf": "industry.pdf",
+        "page": 12,
+        "quote": "קורסי בחירה (לפי המפורט בהמשך)"
+      }
+    },
+    {
+      "kind": "electives",
+      "semesters": [
+        8
+      ],
+      "any_semester": false,
+      "basis": "placeholder_row",
+      "applies_to": {
+        "specialization": [
+          "תכן ותפעול של מערכות ייצור ושירות"
+        ]
+      },
+      "source": {
+        "pdf": "industry.pdf",
+        "page": 13,
+        "quote": "קורסי בחירה (לפי המפורט בהמשך)"
+      }
+    },
+    {
+      "kind": "general",
+      "semesters": null,
+      "any_semester": true,
+      "basis": "prose",
+      "source": {
+        "pdf": "industry.pdf",
+        "page": 3,
+        "quote": "ניתן לשלב אותם לאורך כל תקופת הלימודים"
+      }
+    },
+    {
+      "kind": "sport",
+      "semesters": null,
+      "any_semester": true,
+      "basis": "prose",
+      "source": {
+        "pdf": "industry.pdf",
+        "page": 3,
+        "quote": "ניתן לשלב אותו לאורך כל תקופת הלימודים"
+      }
+    }
+  ],
+  "specialization": {
+    "options": [
+      "מדעי הנתונים",
+      "תכן ותפעול של מערכות ייצור ושירות"
+    ],
+    "choose_from_semester": 3,
+    "source": [
+      {
+        "doc": "docs/DESIGN.md",
+        "section": "Program, year and semester (2026-09-26)",
+        "quote": "Civil and Industrial from semester 3"
+      }
+    ],
+    "deadline": {
+      "text": "את ההתמחות בוחרים עד סוף שנה א׳",
+      "source": {
+        "pdf": "industry.pdf",
+        "page": 3,
+        "quote": "יש לבחור את ההתמחות עד סוף שנה א' לכל המאוחר"
+      }
+    },
+    "routes": [
+      {
+        "id": "practical_experience",
+        "applies_to": {
+          "specialization": [
+            "תכן ותפעול של מערכות ייצור ושירות"
+          ]
+        },
+        "from_semester": 7,
+        "options": [
+          {
+            "route": "התמחות בתעשייה",
+            "courses": [
+              {
+                "code": "51014",
+                "credits": 5.0
+              },
+              {
+                "code": "51020",
+                "credits": 5.0
+              }
+            ]
+          },
+          {
+            "route": "פרויקט גמר",
+            "courses": [
+              {
+                "code": "51230",
+                "credits": 4.0
+              },
+              {
+                "code": "51231",
+                "credits": 4.0
+              }
+            ]
+          }
+        ],
+        "source": {
+          "pdf": "industry.pdf",
+          "page": 13,
+          "quote": "יש להמשיך לבחור באותה חלופה להתנסות מעשית – התמחות בתעשייה או פרויקט גמר"
+        }
+      }
+    ],
+    "secondary": null
+  }
 }

@@ -1099,5 +1099,244 @@
     "רשימות קורסי הבחירה בהתמחות לסמסטרים 5-8 (עד צבירה של 20 נ\"ז) לא חולצו; הקובץ מכיל קורסי חובה בלבד, ומכאן הכיתוב \"ללא קורסי בחירה\" בשורות הסה\"כ של סמסטרים 7-8.",
     "cohort_year הוא null: הפרק אינו מציין שנת מחזור. אזכורי תשפ\"X בו מתייחסים למדיניות האנגלית ולהחלטות מל\"ג, לא למחזור.",
     "4 מתוך 8 הסמסטרים אינם מסתדרים מול הסכום המודפס (2, 4, 5, 7) והם מסומנים reconciles=false עם הסבר בשדה note."
-  ]
+  ],
+  "elective_rules": {
+    "note": "חוקים מוקלדים ידנית מהשנתון, כל אחד עם מקורו. ‏lists הם מפתחות ב-data/curricula.json → programs[program].elective_lists; codes הם רשימה מפורשת. applies_to ריק = כל הסטודנטים בתוכנית. type=text הוא חוק שהאפליקציה לא יכולה לספור ומוצג כלשונו.",
+    "lists_file": "data/curricula.json",
+    "rules": [
+      {
+        "id": "specialization-credits-0",
+        "type": "min_credits",
+        "applies_to": {
+          "specialization": [
+            "תכן וייצור"
+          ]
+        },
+        "lists": [
+          "תכן וייצור · קורסי בחירה בהתמחות",
+          "קורסי העשרה לכלל ההתמחויות"
+        ],
+        "include_track_mandatory": true,
+        "min": 28.5,
+        "text": "28.5 נ״ז לימודי התמחות (חובה+בחירה+העשרה)",
+        "source": {
+          "pdf": "mecho.pdf",
+          "page": 3,
+          "quote": "28.5 נ\"ז לימודי התמחות (חובה+בחירה+העשרה)"
+        }
+      },
+      {
+        "id": "specialization-list-20-0",
+        "type": "text",
+        "applies_to": {
+          "specialization": [
+            "תכן וייצור"
+          ]
+        },
+        "lists": [
+          "תכן וייצור · קורסי בחירה בהתמחות"
+        ],
+        "text": "מרשימת קורסי הבחירה בהתמחות: עד צבירה של 20 נ״ז בהתמחות.",
+        "source": {
+          "pdf": "mecho.pdf",
+          "page": 9,
+          "quote": "קורסי בחירה בהתמחות לסמסטרים 5–8 (עד צבירה של 20 נ\"ז בהתמחות)"
+        }
+      },
+      {
+        "id": "specialization-credits-1",
+        "type": "min_credits",
+        "applies_to": {
+          "specialization": [
+            "מכטרוניקה"
+          ]
+        },
+        "lists": [
+          "מכטרוניקה · קורסי בחירה בהתמחות",
+          "קורסי העשרה לכלל ההתמחויות"
+        ],
+        "include_track_mandatory": true,
+        "min": 28.5,
+        "text": "28.5 נ״ז לימודי התמחות (חובה+בחירה+העשרה)",
+        "source": {
+          "pdf": "mecho.pdf",
+          "page": 3,
+          "quote": "28.5 נ\"ז לימודי התמחות (חובה+בחירה+העשרה)"
+        }
+      },
+      {
+        "id": "specialization-list-20-1",
+        "type": "text",
+        "applies_to": {
+          "specialization": [
+            "מכטרוניקה"
+          ]
+        },
+        "lists": [
+          "מכטרוניקה · קורסי בחירה בהתמחות"
+        ],
+        "text": "מרשימת קורסי הבחירה בהתמחות: עד צבירה של 20 נ״ז בהתמחות.",
+        "source": {
+          "pdf": "mecho.pdf",
+          "page": 10,
+          "quote": "קורסי בחירה בהתמחות לסמסטרים 5–8 (עד צבירה של 20 נ\"ז בהתמחות)"
+        }
+      },
+      {
+        "id": "specialization-credits-2",
+        "type": "min_credits",
+        "applies_to": {
+          "specialization": [
+            "ביומכניקה"
+          ]
+        },
+        "lists": [
+          "ביומכניקה · קורסי בחירה בהתמחות",
+          "קורסי העשרה לכלל ההתמחויות"
+        ],
+        "include_track_mandatory": true,
+        "min": 28.5,
+        "text": "28.5 נ״ז לימודי התמחות (חובה+בחירה+העשרה)",
+        "source": {
+          "pdf": "mecho.pdf",
+          "page": 3,
+          "quote": "28.5 נ\"ז לימודי התמחות (חובה+בחירה+העשרה)"
+        }
+      },
+      {
+        "id": "specialization-list-20-2",
+        "type": "text",
+        "applies_to": {
+          "specialization": [
+            "ביומכניקה"
+          ]
+        },
+        "lists": [
+          "ביומכניקה · קורסי בחירה בהתמחות"
+        ],
+        "text": "מרשימת קורסי הבחירה בהתמחות: עד צבירה של 20 נ״ז בהתמחות.",
+        "source": {
+          "pdf": "mecho.pdf",
+          "page": 11,
+          "quote": "קורסי בחירה בהתמחות לסמסטרים 5–8 (עד צבירה של 20 נ\"ז בהתמחות)"
+        }
+      },
+      {
+        "id": "specialization-credits-3",
+        "type": "min_credits",
+        "applies_to": {
+          "specialization": [
+            "תעשייה מתקדמת בעידן המידע"
+          ]
+        },
+        "lists": [
+          "תעשייה מתקדמת בעידן המידע · קורסי בחירה בהתמחות",
+          "קורסי העשרה לכלל ההתמחויות"
+        ],
+        "include_track_mandatory": true,
+        "min": 28.5,
+        "text": "28.5 נ״ז לימודי התמחות (חובה+בחירה+העשרה)",
+        "source": {
+          "pdf": "mecho.pdf",
+          "page": 3,
+          "quote": "28.5 נ\"ז לימודי התמחות (חובה+בחירה+העשרה)"
+        }
+      },
+      {
+        "id": "specialization-list-20-3",
+        "type": "text",
+        "applies_to": {
+          "specialization": [
+            "תעשייה מתקדמת בעידן המידע"
+          ]
+        },
+        "lists": [
+          "תעשייה מתקדמת בעידן המידע · קורסי בחירה בהתמחות"
+        ],
+        "text": "מרשימת קורסי הבחירה בהתמחות: עד צבירה של 20 נ״ז בהתמחות.",
+        "source": {
+          "pdf": "mecho.pdf",
+          "page": 12,
+          "quote": "קורסי בחירה בהתמחות לסמסטרים 5–8 (עד צבירה של 20 נ\"ז בהתמחות)"
+        }
+      },
+      {
+        "id": "entrepreneurship-cap",
+        "type": "text",
+        "lists": [
+          "קורסי העשרה לכלל ההתמחויות"
+        ],
+        "text": "מקורסי היזמות ברשימת ההעשרה ניתן ללמוד עד 4 נ״ז.",
+        "source": {
+          "pdf": "mecho.pdf",
+          "page": 13,
+          "quote": "מקורסי היזמות המופיעים מטה ניתן ללמוד עד מכסה של 4 נ\"ז"
+        }
+      }
+    ]
+  },
+  "semester_slots": [
+    {
+      "kind": "electives",
+      "semesters": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "any_semester": false,
+      "basis": "list_heading",
+      "source": {
+        "pdf": "mecho.pdf",
+        "page": 9,
+        "quote": "קורסי בחירה בהתמחות לסמסטרים 5–8"
+      }
+    },
+    {
+      "kind": "general",
+      "semesters": null,
+      "any_semester": true,
+      "basis": "prose",
+      "source": {
+        "pdf": "mecho.pdf",
+        "page": 3,
+        "quote": "ניתן לשלבם לאורך כל תקופת הלימודים במחלקה"
+      }
+    },
+    {
+      "kind": "sport",
+      "semesters": null,
+      "any_semester": true,
+      "basis": "prose",
+      "source": {
+        "pdf": "mecho.pdf",
+        "page": 3,
+        "quote": "ניתן לשלבם לאורך כל תקופת הלימודים במחלקה"
+      }
+    }
+  ],
+  "specialization": {
+    "options": [
+      "תכן וייצור",
+      "מכטרוניקה",
+      "ביומכניקה",
+      "תעשייה מתקדמת בעידן המידע"
+    ],
+    "choose_from_semester": 5,
+    "source": [
+      {
+        "doc": "docs/DESIGN.md",
+        "section": "Program, year and semester (2026-09-26)",
+        "quote": "Mechanical from semester 5"
+      },
+      {
+        "pdf": "mecho.pdf",
+        "page": 6,
+        "quote": "תנאי קדם ללימוד קורסי התמחות: השלמת קורסי היסוד."
+      }
+    ],
+    "deadline": null,
+    "routes": [],
+    "secondary": null
+  }
 }
