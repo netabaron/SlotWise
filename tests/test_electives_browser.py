@@ -35,10 +35,10 @@ INDUSTRY = "הנדסת תעשייה וניהול"
 MATH = "מתמטיקה שימושית עם התמחות ב-AI ובאלגוריתמיקה"
 
 MATH_TITLES = [
-    "תחום AI (6)",
-    "תחום האלגוריתמים (7)",
-    "תחום בתורת המערכות, הבקרה ועיבוד אותות (5)",
-    "תחום אחר או מתמטיקה (19)",
+    "תחום AI",
+    "תחום האלגוריתמים",
+    "תחום בתורת המערכות, הבקרה ועיבוד אותות",
+    "תחום אחר או מתמטיקה",
 ]
 
 
@@ -106,7 +106,7 @@ def _expand(page, step_id: str) -> None:
     page.wait_for_timeout(200)
 
 
-def choose(page, program: str, intake: str = "") -> None:
+def choose(page, program: str, intake: str = "", year: str = "1") -> None:
     """בוחר זהות מלאה. מסלול עם מועדי כניסה נשאל מועד ומספר סמסטר."""
     _expand(page, "step-year")
     page.select_option("#select-program", program)
@@ -118,7 +118,7 @@ def choose(page, program: str, intake: str = "") -> None:
         _expand(page, "step-year")
         page.select_option("#select-plan-semester", "1")
     else:
-        page.select_option("#select-year", "1")
+        page.select_option("#select-year", year)
         _expand(page, "step-year")
         page.select_option("#select-term", "א")
     page.wait_for_timeout(2000)
@@ -129,12 +129,14 @@ def electives_on_screen(page) -> dict:
         """() => ({
       hidden: document.getElementById('electives').hidden,
       title: (document.getElementById('electives-title') || {}).textContent || '',
-      rule: (document.getElementById('electives-rule') || {}).textContent || '',
-      groups: [...document.querySelectorAll('.electives-group-title')]
+      groups: [...document.querySelectorAll('.elective-cluster-title')]
                 .map(x => (x.textContent || '').trim()),
+      chips: [...document.querySelectorAll('.elective-cluster')]
+                .map(x => x.querySelectorAll('.elective-chip').length),
+      pills: document.querySelectorAll('#electives-groups .elective-pill').length,
       checkboxes: document.querySelectorAll(
-        '#electives-groups .course-row input[type=checkbox]').length,
-      noteRows: document.querySelectorAll('#electives-groups .course-row--note').length,
+        '#electives-groups .elective-chip:not(.is-static)').length,
+      noteRows: document.querySelectorAll('#electives-groups .elective-chip.is-static').length,
     })"""
     )
 
@@ -144,25 +146,29 @@ def test_software_engineering_looks_exactly_as_before(page):
     seen = electives_on_screen(page)
     assert seen["hidden"] is False
     assert seen["groups"] == [
-        "מדעים (12)",
-        "עיבוד אותות ורשתות תקשורת (10)",
-        "אלגוריתמים (13)",
-        "סמינרים (10)",
-        "הנדסת תוכנה (17)",
-        "מעבדות (13)",
+        "מדעים",
+        "עיבוד אותות ורשתות תקשורת",
+        "אלגוריתמים",
+        "סמינרים",
+        "הנדסת תוכנה",
+        "מעבדות",
     ]
+    assert seen["chips"] == [12, 10, 13, 10, 17, 13]
     assert page.errors == []
 
 
 def test_industrial_engineering_looks_exactly_as_before(page):
-    choose(page, INDUSTRY)
+    choose(page, INDUSTRY, year="2")
+    page.select_option("#select-specialization", "מדעי הנתונים")
+    page.wait_for_timeout(1500)
     seen = electives_on_screen(page)
     assert seen["hidden"] is False
     assert seen["groups"] == [
-        "מערכות מידע ומדע הנתונים (13)",
-        "תכן ותפעול של מערכות ייצור ושירות (16)",
-        "ניהול (10)",
-        "מדע וטכנולוגיה (3)",
+        "מערכות מידע ומדע הנתונים",
+        "תכן ותפעול של מערכות ייצור ושירות",
+        "ניהול",
+        "המרכז לחינוך הנדסי וליזמות",
+        "מדע וטכנולוגיה",
     ]
 
 
@@ -171,11 +177,11 @@ def test_applied_maths_shows_its_four_domains(page, intake):
     choose(page, MATH, intake)
     seen = electives_on_screen(page)
     assert seen["hidden"] is False, "החלק נשאר מוסתר — כנראה לא נשלח מועד הכניסה"
-    assert seen["title"] == "אשכולות קורסי בחירה"
+    assert seen["title"] == "קורסי בחירה"
     assert seen["groups"] == MATH_TITLES
-    # השנתון של מתמטיקה אינו קובע "קורס מכל תחום", ולכן שורת הכלל ריקה.
-    # שורה זו שונתה באישור מפורש, 2026-09-25 (PROGRAM_REVIEW §2, המשך).
-    assert seen["rule"].strip() == ""
+    # השנתון של מתמטיקה אינו קובע "קורס מכל תחום", ולכן אין גלולה.
+    # שונתה באישור מפורש, 2026-09-27: הגלולה מחליפה את שורת הכלל.
+    assert seen["pills"] == 0
     assert page.errors == []
 
 

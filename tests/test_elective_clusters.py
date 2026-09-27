@@ -119,40 +119,41 @@ def test_industry_clusters_are_the_extraction_verbatim():
 
 
 # ------------------------------------------------------- סדר ההכרעה
-def test_software_engineering_is_untouched(client):
-    """הפרק גובר, ולכן הנדסת תוכנה מקבלת בדיוק את מה שקיבלה קודם."""
+def test_software_engineering_uses_the_elective_lists(client):
+    """הרשימות באות מ-``elective_lists`` שבפרק, כלשונן."""
     chapter = json.loads((ROOT / "data" / "curricula.json").read_text(encoding="utf-8"))
-    expected = chapter["programs"][SOFTWARE]["clusters"]
+    lists = chapter["programs"][SOFTWARE]["elective_lists"]
     data = electives(client, SOFTWARE)
     assert data["available"] is True
-    assert data["origin"] == "chapter"
-    assert data["clusters"] == expected
-    # ולא מה שיושב ב-data/curriculum.json, שאינו זהה לו.
-    own = json.loads((ROOT / "data" / "curriculum.json").read_text(encoding="utf-8"))
-    assert own["elective_clusters"] != expected  # אחרת הבדיקה אינה בודקת כלום
-    assert data["clusters"] != own["elective_clusters"]
+    assert [c["title"] for c in data["clusters"]] == list(lists)
+    for cluster in data["clusters"]:
+        assert [c["code"] for c in cluster["courses"]] == [
+            c["code"] for c in lists[cluster["key"]]["courses"]
+        ]
 
 
-def test_industry_still_comes_from_the_chapter(client):
-    """גם כשלקובץ שלה יש עכשיו אשכולות — התוכן זהה, והמקור נשאר הפרק."""
+def test_industry_lists_follow_the_specialization(client):
+    """בלי התמחות אין רשימה לנחש; עם מדעי הנתונים — הרשימות שלה."""
     data = electives(client, INDUSTRY)
-    assert data["available"] is True
-    assert data["origin"] == "chapter"
-    assert data["clusters"] == load("industry")["elective_clusters"]
+    assert data["needs_specialization"] is True
+    assert data["clusters"] == []
+    query = urllib.parse.urlencode({"program": INDUSTRY, "specialization": "מדעי הנתונים"})
+    data = client.get("/api/program/electives?" + query).get_json()
+    assert [c["title"] for c in data["clusters"]] == [
+        "מערכות מידע ומדע הנתונים",
+        "תכן ותפעול של מערכות ייצור ושירות",
+        "ניהול",
+        "המרכז לחינוך הנדסי וליזמות",
+        "מדע וטכנולוגיה",
+    ]
 
 
-def test_a_flat_chapter_with_no_file_clusters_stays_hidden(client):
-    """חשמל אין לה אשכולות בשום מקום — ואז לא ממציאים רשימה."""
+def test_electrical_waits_for_the_specialization(client):
+    """לחשמל יש עכשיו רשימות לכל התמחות. לפני הבחירה — רק החוק שחל על כולם."""
     data = electives(client, "הנדסת חשמל ואלקטרוניקה")
-    assert data["available"] is False
-
-
-def test_a_track_chapter_is_still_tracks(client):
-    """אזרחית בוחרת מסלול אחד, לא קורס מכל אשכול. ההבחנה נשמרת."""
-    data = electives(client, "הנדסה אזרחית")
-    assert data["available"] is True
-    assert data["structure"] == "tracks"
-    assert data["tracks"]
+    assert data["needs_specialization"] is True
+    assert data["clusters"] == []
+    assert [r["id"] for r in data["rules"]] == ["strip-cap"]
 
 
 # ------------------------------------------------- מתמטיקה שימושית
@@ -160,12 +161,10 @@ def test_a_track_chapter_is_still_tracks(client):
 def test_applied_maths_now_has_electives(client, intake):
     data = electives(client, MATH, intake)
     assert data["available"] is True
-    assert data["origin"] == "curriculum"
-    assert data["structure"] == "clusters"
-    assert {k: len(v) for k, v in data["clusters"].items()} == MATH_CLUSTERS
-    # השנתון של מתמטיקה אינו קובע "קורס מכל תחום", ולכן אין כלל להציג.
-    # שורה זו שונתה באישור מפורש, 2026-09-25 (PROGRAM_REVIEW §2, המשך).
-    assert data["cluster_rule"] == ""
+    assert {c["title"]: len(c["courses"]) for c in data["clusters"]} == MATH_CLUSTERS
+    # השנתון של מתמטיקה אינו קובע "קורס מכל תחום", ולכן אין גלולה.
+    # שונתה באישור מפורש, 2026-09-27: הגלולה מחליפה את cluster_rule.
+    assert all(c["pills"] == [] for c in data["clusters"])
     # אין שנת מחזור בפרק הזה, ואז נאמר בדיוק את זה ולא מנחשים.
     assert data["year"] in (None, "")
     assert "לא צוינה" in data["year_text"]

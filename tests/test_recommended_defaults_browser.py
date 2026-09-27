@@ -684,8 +684,16 @@ def test_track_courses_are_shown_but_never_auto_checked(page):
     assert tracked, "קורסי המסלולים מוצגים"
     for code, row in tracked.items():
         assert not row["checked"], f"{code} שייך למסלול ואין לסמן אותו אוטומטית"
-    note = snap(page)["note"]
-    assert "מסלול" in note, "וההסבר אומר למה הם ריקים"
+    # ‏ההסבר יושב על כל כרטיס, לא בפסקה מעל הרשימה (DESIGN.md, "Courses").
+    reasons = page.evaluate(
+        """codes => codes.map(code => [...document.querySelectorAll('#course-list .course-item')]
+          .filter(e => (e.querySelector('.course-code') || {}).textContent === code)
+          .map(e => [...e.querySelectorAll('.course-meta')].map(m => m.textContent).join(' '))
+          .join(' '))""",
+        list(tracked),
+    )
+    for code, text in zip(tracked, reasons):
+        assert "קורס של מסלול התמחות" in text, f"{code}: וההסבר אומר למה הוא ריק"
 
 
 def test_a_department_with_no_chapter_stays_on_the_catalog(page):

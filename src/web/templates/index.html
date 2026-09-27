@@ -141,15 +141,23 @@
                                  ‏hidden עד שהיא חלה על המסלול והסמסטר.
                   #specialization-deadline  "את ההתמחות בוחרים עד סוף שנה א׳"
                                  (תעשייה וניהול), מהקובץ.
-  2 קורסים       #course-search #course-search-results #course-list
-                  #credits-total  סכום הנ"ז הידועות ("—" כשאין אף אחת)
+  2 קורסים       #semester-note  פתק הזהב: התוכנית משבצת כאן בחירה / קורס כללי
+                  #semester-info  שורה שקטה: מה שהתוכנית אומרת "בכל סמסטר"
+                  #course-search #course-search-results #course-list
+                  #recommended-row  "מומלצים לסמסטר X" (#recommended-title)
+                                  ו"סמנו הכל" (#btn-restore-recommended)
+                  #recommended-note  רק הסתייגות על סכום הנ"ז; hidden אחרת
+                  #credits-total  מונה חי: "N נ״ז" ("—" כשאין אף נ"ז ידועה)
                   #credits-unknown  "(2 קורסים ללא נתון)" — hidden כשאין חוסר.
                                   נ"ז שאינן ידועות מוצגות "—", לעולם לא "0":
                                   86% מהקטלוג אינו בתוכנית הלימודים ואין לו
                                   נ"ז שמורות. לעומת זאת אפס שהוצהר בתוכנית
                                   (‏11063 אנגלית בסיסי ועוד ארבעה) מוצג "0" —
                                   הוא נתון, לא חוסר.
-                  #courses-note
+                  #electives  דרישות הבחירה: #electives-rules (שורה לכל
+                                  חוק, עם מקור ו"בסמסטר הזה: X"),
+                                  #electives-groups (תיבה לכל רשימה, גלולת
+                                  מינימום, קורסים כשבבים ‎.elective-chip‎)
                   מצב קטלוג (אין תוכנית לימודים טעונה):
                   #catalog-browse       העטיפה. hidden כשיש תוכנית.
                   #catalog-browse-note  שורת ההסבר האחת
@@ -397,60 +405,64 @@
     </div>
     <div class="step-fold">
     <div class="step-body" id="step-courses-body">
+      <!-- ‏משבצות מתוכנית הלימודים (``semester_slots``): פתק זהב כשהתוכנית
+           שמה בסמסטר הזה קורסי בחירה או קורס כללי, ושורת מידע שקטה כשהיא
+           אומרת "בכל סמסטר". שניהם מוסתרים כשאין מה לומר. -->
+      <p class="semester-note" id="semester-note" hidden></p>
+      <p class="note semester-info" id="semester-info" hidden></p>
+
       <div class="courses-toolbar">
         <div class="field field-grow">
-          <label class="label" for="course-search">{{ S.ui.fields.courseSearch }}</label>
+          <label class="label visually-hidden" for="course-search">{{ S.ui.fields.courseSearch }}</label>
           <input type="search" class="input" id="course-search" autocomplete="off" spellcheck="false"
                  role="combobox" aria-expanded="false" aria-autocomplete="list"
                  aria-controls="course-search-results"
                  placeholder="{{ S.ui.fields.courseSearchPlaceholder }}">
         </div>
+        <!-- ‏מונה הנ"ז החי, במקום האריח "סך נקודות זכות". -->
         <div class="credits" id="credits-box">
-          <span class="credits-label">{{ S.ui.fields.creditsLabel }}</span>
-          <strong class="credits-value" id="credits-total">0</strong>
+          <strong class="credits-value" id="credits-total"></strong>
           <span class="credits-label" id="credits-unknown" hidden></span>
         </div>
       </div>
       <ul class="search-results" id="course-search-results" role="listbox" aria-label="{{ S.ui.fields.searchResultsLabel }}" hidden></ul>
 
-      <!-- ‏רשימת ההמלצה של הסמסטר שנבחר בשלב 1: מה סומן מראש, ומה לעשות
-           כשצריך להשלים קורס מסמסטר קודם. ההסברים הארוכים יותר (קורסים
-           צמודים, תיבת החיפוש) נשארים ב-#courses-note מתחת לרשימה. -->
+      <!-- ‏"מומלצים לסמסטר X": כותרת, "לפי תכנית הלימודים", ו"סמנו הכל".
+           הכרטיסים עצמם מראים מה מסומן, ולכן אין כאן רשימת "בוטלו". -->
       <div class="recommended-row" id="recommended-row" hidden>
-        <!-- טקסט מתאר, לא סטטוס: אין כאן ‏aria-live, כדי לא להקריא את אותו
-             משפט מחדש בכל ציור. ההצהרה החיה על הסמסטר יושבת ב-#semester-summary. -->
-        <p class="note" id="recommended-note"></p>
-        <button type="button" class="btn btn-ghost btn-sm" id="btn-restore-recommended" hidden>
+        <h3 class="recommended-title" id="recommended-title"></h3>
+        <span class="recommended-sub">{{ S.app.courses.recommended.subheading }}</span>
+        <button type="button" class="link-btn" id="btn-restore-recommended" hidden>
           {{ S.ui.fields.restoreRecommended }}
         </button>
       </div>
+      <!-- ‏הסתייגות בלבד: הסכום המודפס בשנתון אינו תואם לרשימה. ריק ומוסתר
+           בכל סמסטר אחר. -->
+      <p class="note" id="recommended-note" hidden></p>
 
       <div class="course-list" id="course-list"></div>
 
       <!-- בחירה מהקטלוג — נפתח רק כשאין רשימת קורסים מתוכנית הלימודים.
-           ‏class="step-body" כאן הוא פריסה בלבד (עמודה עם רווחים), ואין
-           בקובץ הזה שום סגנון חדש: עיצוב הוא מעבר נפרד. -->
+           ‏class="step-body" כאן הוא פריסה בלבד (עמודה עם רווחים). -->
       <div class="step-body catalog-browse" id="catalog-browse" hidden>
         <p class="note" id="catalog-browse-note"></p>
         <div class="course-list" id="catalog-results"></div>
         <p class="note" id="catalog-browse-state" role="status" aria-live="polite"></p>
       </div>
 
-
-      <p class="note" id="courses-note"></p>
-
-      <!-- קבוצות קורסי בחירה מפרק השנתון של המסלול.
-           מוסתר לגמרי כשאין פרק, או כשהפרק אינו מקבץ את הבחירה — לא מציגים
-           רשימה ריקה ולא מנחשים. הכותרת משתנה לפי המבנה: "אשכולות" פירושו
-           קורס אחד מכל אחד, "מסלולי התמחות" פירושו לבחור מסלול אחד. -->
+      <!-- ‏דרישות הבחירה (DESIGN.md, "Elective requirements"): החוקים של
+           התוכנית עם מקורם, וכל רשימת בחירה כתיבה עם הגלולה שלה. אין מצב
+           "הושלם" — האפליקציה אינה יודעת מה נלמד קודם. מוסתר לגמרי לתוכנית
+           שאין לה חוקים ורשימות. -->
       <div class="step-body electives" id="electives" hidden>
-        <h3 class="electives-title" id="electives-title"></h3>
-        <p class="note" id="electives-rule"></p>
-        <p class="note" id="electives-source"></p>
-        <!-- הערת השנתון עצמו על רשימת הבחירה, כשיש כזאת. מגיעה מ-``notes``
-             שבקובץ התוכנית — **לא** מ-``warnings``, שהוא יומן החילוץ
-             ואינו לעיניים. ריק לכל מסלול שאין לו הערה, ואז מוסתר. -->
+        <div class="electives-head">
+          <h3 class="electives-title" id="electives-title">{{ S.app.electives.title }}</h3>
+          <span class="electives-sub">{{ S.app.electives.subtitle }}</span>
+        </div>
+        <!-- הערת השנתון עצמו על רשימת הבחירה, כשיש כזאת (``notes``, לא
+             ``warnings``, שהוא יומן החילוץ). -->
         <p class="note" id="electives-notes" hidden></p>
+        <ul class="elective-rules" id="electives-rules"></ul>
         <div class="electives-groups" id="electives-groups"></div>
       </div>
     </div>

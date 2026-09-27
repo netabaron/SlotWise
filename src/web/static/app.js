@@ -677,6 +677,11 @@
     bootstrap: null,
     bootstrapError: null,
     semesterCourses: [],
+    // ‏למי שייכת הרשימה: סמסטר|מסלול|מועד|התמחות — כדי לא לספור בשבב של
+    // ‏שלב 1 רשימה של בחירה קודמת בזמן שהחדשה עוד בדרך.
+    semesterCoursesFor: "",
+    // ‏``semester_notes`` מהשרת: {placed: [...], anywhere: [...]}.
+    semesterNotes: null,
     semesterError: null,
     catalogQuery: "",
     catalogResults: [],
@@ -1610,33 +1615,6 @@
     return Object.keys(group);
   }
 
-  function isTied(code) {
-    return tiedGroupFor(code).length > 1;
-  }
-
-  function tiedFamilies() {
-    var out = [];
-    var seen = Object.create(null);
-    runtime.semesterCourses.forEach(function (rec) {
-      if (!rec.tied_with || !rec.tied_with.length) return;
-      var family = tiedGroupFor(rec.code).sort();
-      var key = family.join(",");
-      if (!seen[key]) {
-        seen[key] = true;
-        out.push(family);
-      }
-    });
-    if (!out.length) {
-      TIED_FALLBACK.forEach(function (family) {
-        var present = family.filter(function (c) {
-          return semesterCourseByCode(c) || state.codes.indexOf(c) !== -1;
-        });
-        if (present.length > 1) out.push(family.slice());
-      });
-    }
-    return out;
-  }
-
   /* =====================================================================
    * 5א. רשימת ההמלצה של הסמסטר
    *
@@ -2287,6 +2265,11 @@
     saveState();
   }
 
+  /** החתימה של רשימת הסמסטר: מה שהשרת קיבל כשנשאל עליה. */
+  function semesterKey() {
+    return [txt(state.semester), txt(state.program), txt(state.intake), trackSig()].join("|");
+  }
+
   function fetchSemesterCourses() {
     var sem = txt(state.semester);
     // הקידום קורה **לפני** הענף של "אין סמסטר", ולא אחריו. מעבר לקיץ הוא
@@ -2296,6 +2279,8 @@
     var my = ++seq.semester;
     if (!sem) {
       runtime.semesterCourses = [];
+      runtime.semesterCoursesFor = "";
+      runtime.semesterNotes = null;
       runtime.semesterError = null;
       runtime.semesterCurriculumAvailable = null;
       runtime.semesterBusy = false;
@@ -2309,6 +2294,7 @@
       return Promise.resolve();
     }
     runtime.semesterBusy = true;
+    var forKey = semesterKey();
     return getJSON(
       "/api/semester/" + encodeURIComponent(sem) + "/courses" +
         "?program=" + encodeURIComponent(state.program || "") +
@@ -2328,6 +2314,8 @@
           .filter(function (rec) {
             return !!rec.code;
           });
+        runtime.semesterCoursesFor = forKey;
+        runtime.semesterNotes = (data && data.semester_notes) || null;
         runtime.semesterError = null;
         runtime.semesterCourses.forEach(function (rec) {
           var prev = state.known[rec.code] || {};
@@ -2363,6 +2351,8 @@
         runtime.semesterFetched = true;
         runtime.semesterCurriculumAvailable = null;
         runtime.semesterCourses = [];
+        runtime.semesterCoursesFor = "";
+        runtime.semesterNotes = null;
         runtime.semesterError = errorText(err);
         render();
         // גם כישלון כזה לא משאיר מסך ריק: עוברים לעיון בקטלוג.
@@ -2390,6 +2380,8 @@
       track: txt(rec.track),
       // ‏הקורס שייך להתמחות/למסלול שנבחרו בשלב 1 — מומלץ כמו קורס ליבה.
       trackChosen: rec.track_chosen === true,
+      // ‏"מחליף את …" — מטבלת ההחלפות של התוכנית: [{code, name}].
+      replaces: Array.isArray(rec.replaces) ? rec.replaces : [],
       offered: rec.offered !== false,
       has_data: rec.has_data === true,
     };
@@ -2919,7 +2911,9 @@
     }
     // קבוצות הבחירה תלויות במסלול — ובמסלול עם מועדי כניסה גם במועד, כי
     // קובץ התוכנית (והאשכולות שבו) הוא קובץ לכל מועד.
-    var electivesSig = txt(state.program) + "|" + txt(state.intake);
+    // ‏וגם בהתמחות, במסלול ובהתמחות המשנית: הם קובעים אילו חוקים ורשימות חלים.
+    var electivesSig =
+      txt(state.program) + "|" + txt(state.intake) + "|" + trackSig() + "|" + chosenSecondary();
     if (force || electivesSig !== lastSig.program) {
       lastSig.program = electivesSig;
       runtime.electives = null;
@@ -3058,10 +3052,8 @@
     ui.fieldYear = byId("field-year");
     ui.fieldTerm = byId("field-term");
     ui.electives = byId("electives");
-    ui.electivesTitle = byId("electives-title");
-    ui.electivesRule = byId("electives-rule");
-    ui.electivesSource = byId("electives-source");
     ui.electivesNotes = byId("electives-notes");
+    ui.electivesRules = byId("electives-rules");
     ui.electivesGroups = byId("electives-groups");
     ui.selYear = byId("select-year");
     ui.selTerm = byId("select-term");
@@ -3073,8 +3065,10 @@
     ui.courseList = byId("course-list");
     ui.creditsTotal = byId("credits-total");
     ui.creditsUnknown = byId("credits-unknown");
-    ui.coursesNote = byId("courses-note");
+    ui.semesterNote = byId("semester-note");
+    ui.semesterInfo = byId("semester-info");
     ui.recommendedRow = byId("recommended-row");
+    ui.recommendedTitle = byId("recommended-title");
     ui.recommendedNote = byId("recommended-note");
     ui.btnRestoreRecommended = byId("btn-restore-recommended");
     ui.advancedValues = byId("advanced-values");
@@ -4607,6 +4601,18 @@
     }
   }
 
+  /**
+   * ‏כמה קורסים מומלצים בשבב של שלב 1: אותה רשימה ש"סמנו הכל" מסמן —
+   * ‏רק של ההתמחות והמסלול שנבחרו, בלי חלופות ובלי קורסי התמחות אחרת.
+   * ‏``course_count`` של ‏/api/bootstrap סופר את כל שורות הסמסטר, כולל של
+   * ‏כל ההתמחויות, ולכן אינו המספר הזה. ‏null עד שהרשימה של הבחירה הנוכחית
+   * ‏בידינו — אז השבב נשאר בלי מספר ולא מראה מספר של בחירה קודמת.
+   */
+  function recommendedCount() {
+    if (!runtime.semesterCoursesFor || runtime.semesterCoursesFor !== semesterKey()) return null;
+    return recommendedCodes().length;
+  }
+
   function renderYearStep() {
     renderProgramSelect();
     renderIntakeSelect();
@@ -4662,6 +4668,7 @@
     if (ui.semesterSummary) ui.semesterSummary.hidden = false;
 
     var info = semesterInfo(state.semester);
+    var count = recommendedCount();
     // ‏"סמסטר 4 · סמסטר א׳ (חורף)" — התווית שהשרת גוזר מהתוכנית. היא
     // מחליפה את "שנה ג׳" למסלול שאין לו שנה, ולכן היא גם מה שמוצג
     // בשבב וגם מה שמופיע באפשרויות התיבה.
@@ -4676,10 +4683,10 @@
       // הקלנדרי — שנגזר ולא נבחר — וכמה קורסים יש בו.
       setText(
         ui.semesterSummary,
-        info && num(info.course_count, 0)
+        count
           ? Tf("app.year.summaryIntakePlan", {
               label: planLabel,
-              count: info.course_count,
+              count: count,
             })
           : planLabel
       );
@@ -4691,10 +4698,10 @@
       // וכמה קורסים מומלצים בו.
       setText(
         ui.semesterSummary,
-        info && num(info.course_count, 0)
+        count
           ? Tf("app.year.summaryPlan", {
               n: txt(state.semester),
-              count: info.course_count,
+              count: count,
             })
           : Tf("app.year.summaryPlanNoCount", { n: txt(state.semester) })
       );
@@ -4874,14 +4881,16 @@
     }
 
     // ‏SPEC §3: הסכום לעולם לא מציג 0 לנ"ז שאינה ידועה, ולעולם לא מסתיר
-    // בשקט קורסים שאין להם נתון — הם נספרים בשורה שמתחת למספר.
+    // בשקט קורסים שאין להם נתון — הם נספרים בשורה שליד המונה.
     var credits = creditsSummary(state.codes);
     // בלי קורסים כלל הסכום הוא באמת 0. "—" שמור למצב שבו יש קורסים
     // ואין לאף אחד מהם נ"ז ידועות — שני דברים שונים לגמרי.
     var noneChosen = state.codes.length === 0;
     setText(
       ui.creditsTotal,
-      credits.known || noneChosen ? fmtNumber(credits.total) : "—"
+      Tf("ui.fields.creditsCounter", {
+        credits: credits.known || noneChosen ? fmtNumber(credits.total) : "—",
+      })
     );
     setText(
       ui.creditsUnknown,
@@ -4889,90 +4898,96 @@
     );
     setHidden(ui.creditsUnknown, !credits.unknown);
 
+    renderSemesterNotes();
     renderRecommendedRow();
+  }
 
-    if (ui.coursesNote) {
-      var notes = [];
-      tiedFamilies().forEach(function (family) {
-        notes.push(Tf("app.courses.tiedNote", { courses: family.join(", ") }));
-      });
-      if (!catalogFallbackActive()) {
-        notes.push(T("app.courses.addAnyNote"));
-      }
-      setText(ui.coursesNote, notes.join(" "));
-    }
+  /** ‏"א, ב וג" — רשימה עברית קצרה. */
+  function joinHe(items) {
+    if (items.length < 2) return items.join("");
+    return (
+      items.slice(0, -1).join(", ") +
+      " " +
+      T("app.courses.semesterNotes.and") +
+      items[items.length - 1]
+    );
   }
 
   /**
-   * שורת ההמלצה: מה סומן מראש בעקבות הבחירה בשלב 1, ומה עושים כשצריך
-   * להשלים קורס מסמסטר קודם. מוסתרת לגמרי במצב קטלוג ובקיץ — שם אין
-   * רשימת המלצה, ומשפט שמדבר עליה היה מצהיר על משהו שאינו קיים.
+   * ‏הפתק שבראש השלב, מ-``semester_slots`` של התוכנית: פתק זהב כשהתוכנית
+   * ‏משבצת בסמסטר הזה קורסי בחירה או קורס כללי, ושורה שקטה אחת כשהיא
+   * ‏אומרת "בכל סמסטר". הניסוח הוא של הנתונים: התווית ("קורס כללי 2"),
+   * ‏ההערה, והציטוט מהשנתון.
+   */
+  function renderSemesterNotes() {
+    var notes = runtime.semesterNotes || {};
+    var live = !catalogFallbackActive() && runtime.semesterCoursesFor === semesterKey();
+    var placed = live ? notes.placed || [] : [];
+    var anywhere = live ? notes.anywhere || [] : [];
+
+    var what = [];
+    var extra = [];
+    placed.forEach(function (slot) {
+      var kind = txt(slot.kind);
+      var phrase =
+        kind === "general" && txt(slot.label)
+          ? Tf("app.courses.semesterNotes.placedKinds.generalLabel", { label: txt(slot.label) })
+          : T("app.courses.semesterNotes.placedKinds." + kind, "");
+      if (phrase && what.indexOf(phrase) === -1) what.push(phrase);
+      if (txt(slot.note) && extra.indexOf(txt(slot.note)) === -1) extra.push(txt(slot.note));
+    });
+    var gold = what.length
+      ? Tf("app.courses.semesterNotes.placed", { what: joinHe(what) })
+      : "";
+    if (gold && extra.length) {
+      gold = Tf("app.courses.semesterNotes.withNote", { text: gold, note: extra.join("; ") });
+    }
+    setText(ui.semesterNote, gold);
+    setHidden(ui.semesterNote, !gold);
+
+    var kinds = [];
+    anywhere.forEach(function (slot) {
+      var name = T("app.courses.semesterNotes.anywhereKinds." + txt(slot.kind), "");
+      if (name && kinds.indexOf(name) === -1) kinds.push(name);
+    });
+    var info = kinds.length
+      ? Tf("app.courses.semesterNotes.anywhere", {
+          what: joinHe(kinds),
+          quote: txt(anywhere[0].quote),
+        })
+      : "";
+    setText(ui.semesterInfo, info);
+    setHidden(ui.semesterInfo, !info);
+  }
+
+  /**
+   * ‏"מומלצים לסמסטר X", ‏"לפי תכנית הלימודים" ו"סמנו הכל". מוסתר לגמרי
+   * ‏במצב קטלוג ובקיץ — שם אין רשימת המלצה. הכרטיסים עצמם אומרים מה
+   * ‏מסומן ולמה קורס אינו מומלץ, ולכן כאן אין עוד פסקה.
    */
   function renderRecommendedRow() {
     if (!ui.recommendedRow) return;
     var sem = txt(state.autoSemester);
     var show = !catalogFallbackActive() && !!sem && runtime.semesterCourses.length > 0;
     setHidden(ui.recommendedRow, !show);
-    // ‏"סמן את כל המומלצים": מוצג כל עוד יש מומלץ שאינו מסומן. זה הופך
-    // הסכמה מלאה לקליק אחד — והקליק הוא שלה.
+    // ‏"סמנו הכל": מוצג כל עוד יש מומלץ שאינו מסומן. זה הופך הסכמה מלאה
+    // לקליק אחד — והקליק הוא שלה.
     var picked = selectedSet();
     var anyUnpicked = (state.autoCodes || []).some(function (c) {
       return picked[txt(c)] !== true;
     });
     setHidden(ui.btnRestoreRecommended, !show || !anyUnpicked);
-    if (!show) {
-      setText(ui.recommendedNote, "");
-      return;
-    }
+    setText(ui.recommendedTitle, show ? Tf("app.courses.recommended.heading", { semester: sem }) : "");
 
-    // ‏"N קורסים מתוך התוכנית" ולא "N הקורסים שהתוכנית ממליצה עליהם":
-    // בסמסטר 1 התוכנית מונה עשרה, ומהם סומנו חמישה — השאר הם חלופות
-    // ושורות בלי קוד. הניסוח השני היה מצהיר על מספר שאיש לא אמר.
-    var parts = [
-      state.autoCodes.length
-        ? Tf("app.courses.recommended.preselected", {
-            count: state.autoCodes.length,
-            semester: sem,
-          })
-        : // קורה כשכל הסמסטר הוא חלופות — למשל סמסטר 8 בהנדסת חשמל, שכולו
-          // שלושה מסלולי תכן הנדסי שבוחרים אחד מהם.
-          Tf("app.courses.recommended.allElectives", { semester: sem }),
-    ];
-    var alternatives = runtime.semesterCourses.filter(function (rec) {
-      return !!alternativeReason(rec);
-    });
-    if (alternatives.length) {
-      var tracks = uniq(
-        alternatives
-          .map(function (rec) {
-            return txt(rec.track);
-          })
-          .filter(Boolean)
-      );
-      parts.push(
-        tracks.length
-          ? Tf("app.courses.recommended.tracksNote", { tracks: tracks.join(", ") })
-          : T("app.courses.recommended.alternativesNote")
-      );
-    }
-    if (state.autoDropped.length) {
-      parts.push(
-        Tf("app.courses.recommended.dropped", {
-          codes: state.autoDropped.join(", "),
-        })
-      );
-    }
-    parts.push(T("app.courses.recommended.catchUpHint"));
     // ‏הסתייגות, לא תקלה: מספר הנ"ז שחולץ מהשנתון אינו שווה לסה"כ שהשנתון
-    // עצמו מדפיס לסמסטר הזה. לפעמים המסמך הוא שאינו מסתדר. עדיף לומר זאת
-    // מאשר להציג רשימה בביטחון שאינו קיים.
-    if (runtime.semesterReconciles === false) {
-      parts.push(
-        T("app.courses.recommended.creditsMismatch") +
+    // עצמו מדפיס לסמסטר הזה. לפעמים המסמך הוא שאינו מסתדר.
+    var mismatch =
+      show && runtime.semesterReconciles === false
+        ? T("app.courses.recommended.creditsMismatch") +
           (runtime.semesterNote ? " " + runtime.semesterNote : "")
-      );
-    }
-    setText(ui.recommendedNote, parts.join(" "));
+        : "";
+    setText(ui.recommendedNote, mismatch);
+    setHidden(ui.recommendedNote, !mismatch);
   }
 
   /**
@@ -5111,7 +5126,9 @@
   }
 
   /**
-   * כרטיס קורס אחד.
+   * כרטיס קורס אחד (DESIGN.md, "Course card"): תיבת סימון, שם וקוד, נ"ז
+   * בסוף; שורה אחת של מבנה השיעורים וקורסי הקדם; ושורה אופציונלית של
+   * ‏"מחליף את …". כרטיס נבחר מקבל את צבע הקורס — אותו צבע שיהיה לו במערכת.
    * ‏opts.onToggle — מי שמטפל בסימון במקום ``toggleCourse`` (שורת קטלוג
    * צריכה גם לשמור שם ונ"ז). ‏opts.quiet — בלי פסקת ההסבר על מצב הנתונים,
    * לרשימות ארוכות שבהן היא הייתה הופכת לרעש.
@@ -5123,6 +5140,8 @@
     // חלופה שלא סומנה אוטומטית. בלי ההסבר הזה הסטודנט/ית רואים שלוש
     // שורות אנגלית ריקות ולא יודעים אם זו תקלה או כוונה.
     var altReason = isExtra ? "" : alternativeReason(rec);
+    var family = tiedGroupFor(code);
+    var tied = family.length > 1;
 
     var box = el("input", {
       attrs: { type: "checkbox" },
@@ -5138,10 +5157,13 @@
     box.disabled = unavailable && !checked;
 
     var main = el("div", { class: "course-main" }, [
-      el("span", { class: "course-name", text: txt(rec.name) }),
-      el("span", { class: "course-code", text: code }),
+      el("span", { class: "course-title" }, [
+        el("span", { class: "course-name", text: txt(rec.name) }),
+        el("span", { class: "course-code", text: code }),
+      ]),
     ]);
 
+    // ‏השורה האחת: מבנה השיעורים וקורסי הקדם.
     var hours = [];
     if (num(rec.he, 0)) {
       hours.push(Tf("app.courses.hours.lecture", { n: fmtNumber(rec.he) }));
@@ -5155,15 +5177,51 @@
     if (num(rec.pr, 0)) {
       hours.push(Tf("app.courses.hours.project", { n: fmtNumber(rec.pr) }));
     }
-    // ‏SPEC §3: "—" ולא "0" — 86% מהקטלוג אינו בתוכנית, ואין לו נ"ז שמורות.
-    var meta = [Tf("app.courses.creditsUnit", { credits: fmtCredits(rec.credits) })];
+    var meta = [];
     if (hours.length) meta.push(hours.join(" · "));
     if (rec.prereq && rec.prereq.length) {
       meta.push(Tf("app.courses.prereq", { list: rec.prereq.join(", ") }));
     }
-    main.appendChild(el("span", { class: "course-meta", text: meta.join(" | ") }));
-    if (txt(rec.note)) {
-      main.appendChild(el("span", { class: "course-meta", text: txt(rec.note) }));
+    if (meta.length) {
+      main.appendChild(el("span", { class: "course-meta", text: meta.join(" | ") }));
+    }
+
+    // ‏"מחליף את …": מטבלת ההחלפות, ובלעדיה הערת התוכנית שאומרת זאת.
+    // ‏הערה של קורס צמוד ("חובה בצמוד ל-…") יורדת — "נבחר יחד עם" אומר אותה.
+    var replaces = (rec.replaces || [])
+      .map(function (r) {
+        return [txt(r.code), txt(r.name)].filter(Boolean).join(" ");
+      })
+      .filter(Boolean);
+    var note = txt(rec.note);
+    if (replaces.length) {
+      main.appendChild(
+        el("span", {
+          class: "course-meta course-replaces",
+          text: Tf("app.courses.replaces", { course: replaces.join(", ") }),
+        })
+      );
+      if (/^מחליף/.test(note)) note = "";
+    } else if (/^מחליף/.test(note)) {
+      main.appendChild(el("span", { class: "course-meta course-replaces", text: note }));
+      note = "";
+    }
+    if (note && !tied) {
+      main.appendChild(el("span", { class: "course-meta", text: note }));
+    }
+    if (tied) {
+      main.appendChild(
+        el("span", {
+          class: "course-meta course-tied-with",
+          text: Tf("app.courses.tiedWith", {
+            courses: family
+              .filter(function (c) {
+                return c !== code;
+              })
+              .join(", "),
+          }),
+        })
+      );
     }
     if (altReason) {
       main.appendChild(el("span", { class: "course-meta", text: altReason }));
@@ -5179,6 +5237,11 @@
             : T("app.courses.tags.fromCatalog"),
         })
       );
+    } else if (isExtra && electiveCodes()[code]) {
+      // ‏קורס מרשימות הבחירה של התוכנית אינו "מחוץ לסמסטר": כך בוחרים בחירה.
+      tags.appendChild(
+        el("span", { class: "tag tag--in-plan", text: T("app.courses.tags.elective") })
+      );
     } else if (isExtra) {
       tags.appendChild(
         el("span", {
@@ -5188,17 +5251,20 @@
             : T("app.courses.tags.outsideSemester"),
         })
       );
-    } else {
-      tags.appendChild(
-        el("span", {
-          class: "tag tag--in-plan",
-          text: Tf("app.courses.tags.inPlanSemester", { semester: txt(state.semester) }),
-        })
-      );
     }
-    if (isTied(code)) {
+    if (tied) {
       tags.appendChild(
         el("span", { class: "tag tag--tied", text: T("app.courses.tags.tied") })
+      );
+    }
+    // ‏חובה רק בהתמחות שנבחרה — ולא קורס של מסלול (סוג תכן, התנסות מעשית).
+    var mySpec = chosenSpecialization();
+    if (!isExtra && rec.trackChosen && mySpec && txt(rec.track).split(" / ").indexOf(mySpec) !== -1) {
+      tags.appendChild(
+        el("span", {
+          class: "tag tag--spec",
+          text: Tf("app.courses.tags.specialization", { name: mySpec }),
+        })
       );
     }
     if (altReason) {
@@ -5243,9 +5309,15 @@
     }
     if (status.retry && !opts.quiet) main.appendChild(retryButton(code));
 
+    // ‏SPEC §3: "—" ולא "0" — 86% מהקטלוג אינו בתוכנית, ואין לו נ"ז שמורות.
+    var creditsNode = el("span", {
+      class: "course-credits",
+      text: Tf("app.courses.creditsUnit", { credits: fmtCredits(rec.credits) }),
+    });
+
     var cls = "course-item";
-    if (checked) cls += " is-selected";
-    if (isTied(code)) cls += " is-tied";
+    if (checked) cls += " is-selected c" + colorOf(code);
+    if (tied) cls += " is-tied";
     if (unavailable) cls += " is-unavailable";
 
     // ‏<label> — לחיצה בכל מקום בכרטיס מחליפה את תיבת הסימון, בלי כפל אירועים.
@@ -5256,7 +5328,7 @@
         attrs: { title: unavailable ? T("app.courses.notOfferedTitle") : "" },
         style: { "--course-idx": String(colorOf(code)) },
       },
-      [box, main]
+      [box, main, creditsNode]
     );
   }
 
@@ -5352,11 +5424,11 @@
    */
 
   // ======================================================================
-  // קבוצות קורסי בחירה (אשכולות / מסלולי התמחות) מפרק השנתון של המסלול
+  // דרישות הבחירה: החוקים ורשימות הבחירה של התוכנית, לפי ההתמחות
   // ======================================================================
   function fetchElectives() {
     var program = txt(state.program);
-    var key = program + "|" + txt(state.intake);
+    var key = [program, txt(state.intake), trackSig(), chosenSecondary()].join("|");
     if (!program || program === "other") {
       runtime.electives = { available: false };
       runtime.electivesFor = key;
@@ -5368,7 +5440,10 @@
     var my = ++seq.electives;
     return getJSON(
       "/api/program/electives?program=" + encodeURIComponent(program) +
-        "&intake=" + encodeURIComponent(txt(state.intake))
+        "&intake=" + encodeURIComponent(txt(state.intake)) +
+        "&specialization=" + encodeURIComponent(chosenSpecialization()) +
+        "&route=" + encodeURIComponent(chosenRoute()) +
+        "&secondary=" + encodeURIComponent(chosenSecondary())
     )
       .then(function (data) {
         if (my !== seq.electives) return; // תשובה ישנה — מתעלמים
@@ -5379,11 +5454,75 @@
       .catch(function () {
         if (my !== seq.electives) return;
         runtime.electivesBusy = false;
-        // כישלון רשת אינו "אין אשכולות" — מסתירים, ולא ממציאים.
+        // כישלון רשת אינו "אין דרישות" — מסתירים, ולא ממציאים.
         runtime.electives = { available: false };
         runtime.electivesFor = "";
         render();
       });
+  }
+
+  /**
+   * ‏"בסמסטר הזה: X" — כמה מהבחירה הנוכחית נספרים לחוק. רק הבחירה של
+   * ‏עכשיו: האפליקציה אינה יודעת מה נלמד קודם, ולכן אין כאן "הושלם".
+   * ‏``count_one_of``: מתוך כל קבוצה כזו נספר קורס אחד בלבד.
+   */
+  /** ‏{קוד: true} לכל קורס ברשימות הבחירה שמוצגות עכשיו. */
+  function electiveCodes() {
+    var out = Object.create(null);
+    var data = runtime.electives;
+    ((data && data.available && data.clusters) || []).forEach(function (cluster) {
+      (cluster.courses || []).forEach(function (course) {
+        if (txt(course.code)) out[txt(course.code)] = true;
+      });
+    });
+    return out;
+  }
+
+  function ruleCount(rule, picked) {
+    var rows = rule.rows || {};
+    var hits = Object.keys(rows).filter(function (c) {
+      return picked[c] === true;
+    });
+    (rule.count_one_of || []).forEach(function (group) {
+      var extra = hits
+        .filter(function (c) {
+          return group.indexOf(c) !== -1;
+        })
+        .slice(1);
+      hits = hits.filter(function (c) {
+        return extra.indexOf(c) === -1;
+      });
+    });
+    if (rule.unit !== "credits") return hits.length;
+    return hits.reduce(function (sum, c) {
+      var value = rows[c] === null || rows[c] === undefined ? creditsOf(c) : rows[c];
+      return sum + num(value, 0);
+    }, 0);
+  }
+
+  function pillText(pill) {
+    var n = num(pill.n, 0);
+    var shown = fmtNumber(n);
+    switch (txt(pill.type)) {
+      case "min_courses":
+      case "min_total_courses":
+        return n === 1
+          ? T("app.electives.pills.minCoursesOne")
+          : Tf("app.electives.pills.minCourses", { n: shown });
+      case "min_credits":
+        return Tf(
+          pill.approximate ? "app.electives.pills.minCreditsApprox" : "app.electives.pills.minCredits",
+          { n: shown }
+        );
+      case "exact_courses":
+        return n === 1
+          ? T("app.electives.pills.exactCoursesOne")
+          : Tf("app.electives.pills.exactCourses", { n: shown });
+      case "max_credits":
+        return Tf("app.electives.pills.maxCredits", { n: shown });
+      default:
+        return "";
+    }
   }
 
   function renderElectives() {
@@ -5392,27 +5531,6 @@
     var show = !!(data && data.available);
     setHidden(ui.electives, !show);
     if (!show) return;
-
-    var isTracks = data.structure === "tracks";
-    var groups = (isTracks ? data.tracks : data.clusters) || {};
-    setText(
-      ui.electivesTitle,
-      isTracks ? T("app.electives.titleTracks") : T("app.electives.titleClusters")
-    );
-    // הכלל אינו קוסמטי: אשכול = אחד מכל קבוצה, מסלול = בוחרים מסלול אחד.
-    var rule = txt(isTracks ? data.track_rule : data.cluster_rule);
-    setText(ui.electivesRule, rule);
-    // ‏כלל שהתוכנית לא מצהירה עליו מגיע ריק — ואז גם השורה לא מוצגת.
-    setHidden(ui.electivesRule, !rule);
-    // שנה מוצגת תמיד — גם כשהמסמך לא ציין אותה, ואז נאמר בדיוק את זה.
-    setText(
-      ui.electivesSource,
-      Tf("app.electives.source", {
-        // ‏השם המוצג, לא המזהה: ``label`` הוא איך שהשנתון קורא למסלול.
-        program: txt((programEntry() || {}).label) || txt(data.program),
-        year: txt(data.year_text),
-      })
-    );
 
     // הערת השנתון על רשימת הבחירה. ‏``notes`` בלבד — ``warnings`` הוא יומן
     // החילוץ ("prereq ריק", "code: null") ואין לו מה לעשות על המסך.
@@ -5424,51 +5542,105 @@
       setHidden(ui.electivesNotes, notes.length === 0);
     }
 
-    rebuild(ui.electivesGroups, function (box) {
-      var selected = selectedSet();
-      Object.keys(groups).forEach(function (name) {
-        var courses = groups[name] || [];
-        var wrap = el("div", { class: "electives-group" });
-        wrap.appendChild(
-          el("h4", {
-            class: "electives-group-title",
-            text: Tf("app.electives.groupTitle", {
-              name: name,
-              count: courses.length,
-            }),
-          })
+    var picked = selectedSet();
+
+    rebuild(ui.electivesRules, function (list) {
+      if (data.needs_specialization) {
+        list.appendChild(
+          el("li", { class: "elective-rule note", text: T("app.electives.needsSpecialization") })
         );
-        var list = el("div", { class: "course-list" });
-        courses.forEach(function (course) {
+      }
+      (data.rules || []).forEach(function (rule) {
+        var src = rule.source || {};
+        var body = el("div", { class: "elective-rule-body" }, [
+          el("span", { class: "elective-rule-text", text: txt(rule.text) }),
+        ]);
+        (rule.notes || []).forEach(function (n) {
+          body.appendChild(el("span", { class: "elective-rule-note", text: txt(n) }));
+        });
+        if (txt(src.pdf)) {
+          body.appendChild(
+            el("span", {
+              class: "elective-rule-source",
+              attrs: { title: txt(src.quote) },
+              text: Tf("app.electives.source", { pdf: txt(src.pdf), page: txt(src.page) }),
+            })
+          );
+        }
+        var row = el("li", { class: "elective-rule", data: { rule: txt(rule.id) } }, [body]);
+        // ‏חוק מילולי מוצג בלי מספר: אין מה לספור בו.
+        if (rule.countable) {
+          var n = ruleCount(rule, picked);
+          row.appendChild(
+            el("span", {
+              class: "elective-rule-count",
+              text: Tf(
+                rule.unit === "credits"
+                  ? "app.electives.thisSemesterCredits"
+                  : "app.electives.thisSemester",
+                { n: fmtNumber(n) }
+              ),
+            })
+          );
+        }
+        list.appendChild(row);
+      });
+    });
+
+    rebuild(ui.electivesGroups, function (box) {
+      (data.clusters || []).forEach(function (cluster) {
+        var head = el("div", { class: "elective-cluster-head" }, [
+          el("h4", { class: "elective-cluster-title", text: txt(cluster.title) }),
+        ]);
+        (cluster.pills || []).forEach(function (pill) {
+          var label = pillText(pill);
+          if (label) head.appendChild(el("span", { class: "pill elective-pill", text: label }));
+        });
+        var chips = el("div", { class: "elective-chips" });
+        (cluster.courses || []).forEach(function (course) {
           var code = txt(course.code);
           // שורה בלי מספר קורס אינה ניתנת לבחירה: אין מה לשלוח לשרת ואין
-          // מה לשבץ. בשנתון המתמטיקה שמונה קורסי בחירה מודפסים כך ("חדש",
-          // "מחליף"), והם **כן** קורסים — ולכן הם נאמרים כשורת מידע ולא
-          // נמחקים מהרשימה. תיבת סימון שמוסיפה קוד ריק הייתה שוברת את
-          // ``state.codes`` בשקט.
+          // מה לשבץ. בשנתון המתמטיקה קורסי בחירה מודפסים כך ("חדש",
+          // "מחליף"), והם **כן** קורסים — ולכן הם נאמרים ולא נמחקים.
           if (!code) {
-            var info = el("div", { class: "course-row course-row--note" }, [
-              el("span", { class: "course-name", text: txt(course.name) }),
-              el("span", { class: "note", text: txt(course.note) || T("app.electives.noCode") }),
-            ]);
-            list.appendChild(info);
+            chips.appendChild(
+              el("span", {
+                class: "elective-chip is-static",
+                attrs: { title: txt(course.note) || T("app.electives.noCode") },
+                text: txt(course.name),
+              })
+            );
             return;
           }
-          var chosen = selected[code] === true;
-          var row = el("label", { class: "course-row" + (chosen ? " is-selected" : "") });
-          var box2 = el("input", { attrs: { type: "checkbox" } });
-          box2.checked = chosen;
-          box2.addEventListener("change", function () {
-            if (box2.checked) addCourse(code, course.name, null, { keepQuery: true });
-            else toggleCourse(code, false);
-          });
-          row.appendChild(box2);
-          row.appendChild(el("span", { class: "course-code", text: code }));
-          row.appendChild(el("span", { class: "course-name", text: txt(course.name) }));
-          list.appendChild(row);
+          var chosen = picked[code] === true;
+          chips.appendChild(
+            el(
+              "button",
+              {
+                class: "elective-chip" + (chosen ? " is-selected c" + colorOf(code) : ""),
+                attrs: {
+                  type: "button",
+                  "aria-pressed": chosen ? "true" : "false",
+                  title: course.credits !== null && course.credits !== undefined
+                    ? Tf("app.courses.creditsUnit", { credits: fmtCredits(course.credits) })
+                    : "",
+                },
+                data: { code: code },
+                on: {
+                  click: function () {
+                    if (chosen) toggleCourse(code, false);
+                    else addCourse(code, course.name, course.credits, { keepQuery: true });
+                  },
+                },
+              },
+              [
+                el("span", { class: "course-code", text: code }),
+                el("span", { class: "elective-chip-name", text: txt(course.name) }),
+              ]
+            )
+          );
         });
-        wrap.appendChild(list);
-        box.appendChild(wrap);
+        box.appendChild(el("section", { class: "elective-cluster" }, [head, chips]));
       });
     });
   }

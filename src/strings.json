@@ -48,7 +48,7 @@
       "yearTitle": "מסלול, שנה וסמסטר",
       "yearHint": "קובעים אילו קורסים יוצעו.",
       "coursesTitle": "קורסים",
-      "coursesHint": "לסמן מה לומדים. קורסים צמודים נבחרים יחד. אפשר להוסיף כל קורס אחר, כולל חזרה על קורס.",
+      "coursesHint": "סמנו את הקורסים שתלמדו בסמסטר.",
       "daysTitle": "ימי לימוד",
       "daysHint": "כמה ימים להגיע לקמפוס. זה יעד, והמינימום האפשרי מסומן מתחת למספר.",
       "lecturersTitle": "מרצים",
@@ -62,10 +62,10 @@
       "studyYear": "שנת לימודים",
       "term": "סמסטר",
       "courseSearch": "הוספת קורס מהידיעון",
-      "courseSearchPlaceholder": "קוד או שם קורס — למשל 61753 או אלגוריתמים",
+      "courseSearchPlaceholder": "הוספת קורס מהידיעון, גם מסמסטר קודם",
       "searchResultsLabel": "תוצאות חיפוש",
-      "creditsLabel": "סך נקודות זכות",
-      "restoreRecommended": "סמן את כל המומלצים",
+      "creditsCounter": "{credits} נ״ז",
+      "restoreRecommended": "סמנו הכל",
       "daysTargetLabel": "יעד ימי לימוד",
       "advancedSummary": "הגדרות נוספות",
       "earliest": "לא להתחיל לפני",
@@ -420,10 +420,21 @@
       "showingOfTotal": "מוצגים {count} קורסים מתוך {total} — אפשר לצמצם בחיפוש"
     },
     "electives": {
-      "titleTracks": "מסלולי התמחות",
-      "titleClusters": "אשכולות קורסי בחירה",
-      "source": "מקור: פרק השנתון של {program} · {year}",
-      "groupTitle": "{name} ({count})",
+      "title": "קורסי בחירה",
+      "subtitle": "דרישות לתואר, לפי תכנית הלימודים",
+      "thisSemester": "בסמסטר הזה: {n}",
+      "thisSemesterCredits": "בסמסטר הזה: {n} נ״ז",
+      "source": "{pdf}, עמ׳ {page}",
+      "needsSpecialization": "הדרישות תלויות בהתמחות. אחרי בחירת התמחות בשלב 1 הן יופיעו כאן.",
+      "pills": {
+        "minCourses": "לפחות {n} קורסים",
+        "minCoursesOne": "לפחות קורס אחד",
+        "minCredits": "לפחות {n} נ״ז",
+        "minCreditsApprox": "כ-{n} נ״ז",
+        "exactCourses": "{n} קורסים",
+        "exactCoursesOne": "קורס אחד",
+        "maxCredits": "עד {n} נ״ז"
+      },
       "noCode": "השנתון מדפיס את הקורס בלי מספר קורס, ולכן אי אפשר לסמן אותו כאן."
     },
     "sticky": {
@@ -606,10 +617,10 @@
     "courses": {
       "loading": "טוען…",
       "emptySemester": "אין קורסים להצגה בסמסטר הזה. אפשר להוסיף קורס דרך תיבת החיפוש.",
-      "tiedNote": "הידיעון רושם את {courses} כחבילה אחת: סימון של אחד מסמן את כולם, וביטול של אחד מבטל את כולם.",
       "tiedToastAdded": "נוספו יחד: {courses} — הידיעון רושם אותם כחבילה אחת.",
       "tiedToastRemoved": "הוסרו יחד: {courses} — הידיעון רושם אותם כחבילה אחת.",
-      "addAnyNote": "אפשר להוסיף כל קורס אחר מהידיעון דרך תיבת החיפוש — כולל חזרה על קורס מסמסטר קודם, שהוא מקרה רגיל לגמרי.",
+      "tiedWith": "נבחר יחד עם {courses}",
+      "replaces": "מחליף את {course}",
       "creditsUnit": "{credits} נ\"ז",
       "prereq": "קדם: {list}",
       "notOfferedTitle": "הקורס לא נפתח בסמסטר הזה",
@@ -626,8 +637,9 @@
         "fromCatalog": "מהקטלוג",
         "fromSemester": "מסמסטר {semester} בתוכנית",
         "outsideSemester": "מחוץ לסמסטר הזה",
-        "inPlanSemester": "בתוכנית-סמסטר {semester}",
+        "elective": "קורס בחירה",
         "tied": "קורס צמוד",
+        "specialization": "חובה בהתמחות {name}",
         "alternative": "חלופה — לבחירה ידנית",
         "notOffered": "לא נפתח בסמסטר"
       },
@@ -654,13 +666,28 @@
         "offlineText": "לא נפתחו קבוצות לקורס זה בסמסטר הנוכחי, לפי הקטלוג שנבנה."
       },
       "recommended": {
-        "preselected": "{count} קורסים מתוך תוכנית הלימודים לסמסטר {semester} מסומנים כמומלצים — ויש לבחור אותם ברשימה.",
-        "allElectives": "בסמסטר {semester} התוכנית מציעה רק קורסים לבחירה, ולכן אין המלצה — יש לבחור מהרשימה.",
-        "tracksNote": "קורסי מסלולי ההתמחות ({tracks}) וקורסי חלופה אינם מסומנים כמומלצים — הכלי אינו יודע באיזה מסלול אתם, ויש לבחור את הקורסים של המסלול שלכם.",
-        "alternativesNote": "קורסי חלופה — השמה או מסלול פיזיקה — אינם מסומנים כמומלצים, ויש לבחור את המתאים.",
-        "dropped": "בוטלו: {codes}.",
-        "catchUpHint": "צריך להשלים קורס מסמסטר קודם? אפשר לחפש אותו בתיבה שלמעלה ולהוסיף אותו לרשימה.",
+        "heading": "מומלצים לסמסטר {semester}",
+        "subheading": "לפי תכנית הלימודים",
         "creditsMismatch": "שימו לב: סכום הנ\"ז ברשימה הזאת אינו תואם לסה\"כ המודפס בשנתון לסמסטר הזה, ולכן כדאי לוודא אותה מול הידיעון."
+      },
+      "semesterNotes": {
+        "placed": "בסמסטר הזה מומלץ לבחור {what}",
+        "withNote": "{text} ({note})",
+        "anywhere": "{what}: \"{quote}\"",
+        "and": "ו",
+        "placedKinds": {
+          "electives": "קורסי בחירה",
+          "general": "קורס כללי",
+          "generalLabel": "קורס כללי ({label})",
+          "sport": "קורס ספורט",
+          "skills": "קורס מיומנויות"
+        },
+        "anywhereKinds": {
+          "electives": "קורסי בחירה",
+          "general": "קורסים כלליים",
+          "sport": "ספורט",
+          "skills": "מיומנויות"
+        }
       },
       "unnamedCourse": "קורס {code}",
       "tooManyCodes": "אפשר לשבץ עד {max} קורסים בבת אחת, ולכן לא סומנו: {codes}. אפשר להוסיף אותם אחרי הסרת קורס אחר."

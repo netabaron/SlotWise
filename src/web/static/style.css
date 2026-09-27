@@ -107,6 +107,11 @@
   --warn-bg: #fbf0d5;  --warn-line: #8a5a12;  --warn-ink: #5d3a05;
   --err-bg:  #fbe3e8;  --err-line:  #ad2c48;  --err-ink:  #8a1030;
 
+  /* ---- פתק הזהב של שלב הקורסים (docs/DESIGN.md, "Semester notes") ---- */
+  --gold-ink: #9a7a32;
+  --gold-bg: #faf3e3;
+  --gold-line: #e8d6ab;
+
   /* ---- סימוני טבלת המרצים ---- */
   --pin-bg: #e7f0dc;
   --pin-line: #366e2b;
@@ -176,6 +181,10 @@
   --dark-ok-bg:   #1a2c17;  --dark-ok-line:   #4f8a45;  --dark-ok-ink:   #b6e0a2;
   --dark-warn-bg: #3a2c0e;  --dark-warn-line: #c99a3f;  --dark-warn-ink: #f2cf8a;
   --dark-err-bg:  #3a1620;  --dark-err-line:  #d9697f;  --dark-err-ink:  #f5aab8;
+
+  --dark-gold-ink: #d4b06a;
+  --dark-gold-bg: #2a2418;
+  --dark-gold-line: #4a3f28;
 
   --dark-pin-bg: #1a2c17;
   --dark-pin-line: #66b356;
@@ -261,6 +270,10 @@
     --warn-bg: var(--dark-warn-bg);  --warn-line: var(--dark-warn-line);  --warn-ink: var(--dark-warn-ink);
     --err-bg: var(--dark-err-bg);  --err-line: var(--dark-err-line);  --err-ink: var(--dark-err-ink);
 
+    --gold-ink: var(--dark-gold-ink);
+    --gold-bg: var(--dark-gold-bg);
+    --gold-line: var(--dark-gold-line);
+
     --pin-bg: var(--dark-pin-bg);
     --pin-line: var(--dark-pin-line);
     --tie-line: var(--dark-tie-line);
@@ -310,6 +323,10 @@
     --ok-bg: var(--dark-ok-bg);  --ok-line: var(--dark-ok-line);  --ok-ink: var(--dark-ok-ink);
     --warn-bg: var(--dark-warn-bg);  --warn-line: var(--dark-warn-line);  --warn-ink: var(--dark-warn-ink);
     --err-bg: var(--dark-err-bg);  --err-line: var(--dark-err-line);  --err-ink: var(--dark-err-ink);
+
+    --gold-ink: var(--dark-gold-ink);
+    --gold-bg: var(--dark-gold-bg);
+    --gold-line: var(--dark-gold-line);
 
     --pin-bg: var(--dark-pin-bg);
     --pin-line: var(--dark-pin-line);
@@ -1389,36 +1406,80 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
    ========================================================================== */
 .courses-toolbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap);
-  align-items: flex-end;
-  justify-content: space-between;
-}
-
-/* שורת ההמלצה: ההסבר בצד אחד, "החזרת הרשימה המומלצת" בשני. */
-.recommended-row {
-  display: flex;
-  flex-wrap: wrap;
   gap: 10px;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
 }
 
-.recommended-row .note { margin: 0; }
+.visually-hidden {
+  position: absolute !important;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 
+/* ‏פתק הזהב: התוכנית משבצת בסמסטר הזה קורסי בחירה או קורס כללי. */
+.semester-note {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--gold-line);
+  border-radius: var(--radius-sm);
+  background: var(--gold-bg);
+  color: var(--gold-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.semester-note::before { content: "\2726"; flex: none; }
+.semester-note[hidden] { display: none; }
+/* ‏"בכל סמסטר" — שורת מידע שקטה, לא פתק. */
+.semester-info { margin: 0; }
+
+/* ‏מונה הנ"ז החי, ליד תיבת החיפוש. */
 .credits {
   display: flex;
   flex-direction: column;
   align-items: center;
+  flex: none;
   gap: 1px;
-  padding: 6px 18px;
+  padding: 6px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: var(--accent-soft);
+  background: var(--panel);
 }
 
-.credits-label { font-size: 13px; color: var(--muted); }
-.credits-value { font-size: 20px; font-variant-numeric: tabular-nums; }
+.credits-label { font-size: 12px; color: var(--muted); }
+.credits-value { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ‏"מומלצים לסמסטר X" · "לפי תכנית הלימודים" · "סמנו הכל". */
+.recommended-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  margin-block-start: 4px;
+}
+.recommended-row[hidden] { display: none; }
+.recommended-title { margin: 0; font-size: 15px; font-weight: 800; }
+.recommended-sub { font-size: 13px; color: var(--muted); }
+.recommended-row .link-btn { margin-inline-start: auto; }
+
+.link-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.link-btn[hidden] { display: none; }
 
 .search-results {
   border: 1px solid var(--line-strong);
@@ -1465,16 +1526,25 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   align-items: flex-start;
   padding: 11px 13px;
   border: 1px solid var(--line);
-  border-inline-start: 3px solid transparent;
-  border-radius: var(--radius-sm);
-  background: var(--panel-2);
+  border-inline-start: 4px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
   cursor: pointer;
   transition: background-color .15s ease, border-color .15s ease;
 }
 
 .course-item:hover { border-color: var(--accent); }
-.course-item.is-selected { background: var(--accent-soft); border-color: var(--accent); }
-.course-item.is-tied { border-inline-start-color: var(--tie-line); }
+/* ‏כרטיס נבחר: צבע הקורס כפס בצד ההתחלה וכגוון — אותו צבע שיהיה לו
+   במערכת (‏‎.cN‎ מגדיר ‎--ev-*‎, כמו לבלוקים ברשת). הטקסט עובר ל-‎--ev-fg‎,
+   שנבדק מול הגוון, כי ‎--muted‎ אינו עומד עליו ב-AA בכל הצבעים. */
+.course-item.is-selected {
+  background: var(--ev-bg, var(--accent-soft));
+  border-color: var(--ev-bd, var(--accent));
+  color: var(--ev-fg, inherit);
+}
+.course-item.is-selected .course-code,
+.course-item.is-selected .course-meta,
+.course-item.is-selected .course-credits { color: var(--ev-fg, var(--muted)); }
 
 .course-item.is-unavailable {
   color: var(--muted);
@@ -1483,10 +1553,19 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   text-decoration-color: var(--dead-line);
 }
 
-.course-main { display: flex; flex-direction: column; gap: 3px; min-inline-size: 0; }
+.course-main { display: flex; flex-direction: column; gap: 3px; min-inline-size: 0; flex: 1; }
+.course-title { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
 .course-name { font-weight: 600; }
 .course-code { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .course-meta { font-size: 13px; color: var(--muted); }
+.course-credits {
+  flex: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 
 .course-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-block-start: 3px; }
 
@@ -1511,6 +1590,87 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .tag--tied     { border-color: var(--tie-line);  color: var(--tie-line); background: transparent; }
 .tag--warn     { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
 .tag--dead     { border-color: var(--err-line);  background: var(--err-bg);  color: var(--err-ink); }
+/* ‏"חובה בהתמחות X": גלולה במתאר ‎--ink‎, נפרדת מ"קורס צמוד". */
+.tag--spec     { border-color: var(--ink); background: transparent; color: var(--ink); }
+.course-item.is-selected .tag--spec { border-color: var(--ev-fg); color: var(--ev-fg); }
+
+/* ==========================================================================
+   8א. שלב 2 — דרישות הבחירה
+   ========================================================================== */
+.electives-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-block-start: 8px; }
+.electives-title { margin: 0; font-size: 15px; font-weight: 800; }
+.electives-sub { font-size: 13px; color: var(--muted); }
+
+.elective-rules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.elective-rules:empty { display: none; }
+.elective-rule {
+  display: flex;
+  gap: 4px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-block-end: 1px solid var(--ln);
+  font-size: 13.5px;
+}
+.elective-rule:last-child { border-block-end: 0; }
+.elective-rule-body { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
+.elective-rule-note,
+.elective-rule-source { font-size: 12px; color: var(--muted); }
+.elective-rule-count { flex: none; font-size: 13px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.electives-groups { display: grid; gap: 10px; }
+.elective-cluster {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.elective-cluster-head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.elective-cluster-title { margin: 0; font-size: 14px; font-weight: 700; }
+.elective-pill {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 1px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.elective-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.elective-chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  max-inline-size: 100%;
+  font: inherit;
+  font-size: 13px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--ink);
+  text-align: start;
+  cursor: pointer;
+}
+.elective-chip:hover { border-color: var(--accent); }
+.elective-chip.is-selected {
+  background: var(--ev-bg);
+  border-color: var(--ev-bd);
+  color: var(--ev-fg);
+}
+.elective-chip.is-selected .course-code { color: var(--ev-fg); }
+.elective-chip.is-static { cursor: default; color: var(--muted); border-style: dashed; }
+.elective-chip-name { min-inline-size: 0; }
 
 /* ==========================================================================
    9. שלב 3 — כפתורי ימי הלימוד
@@ -2084,8 +2244,7 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   .header-side { inline-size: 100%; justify-content: space-between; }
   .brand-title { font-size: 23px; }
   .brand-icon { inline-size: 30px; block-size: 30px; }
-  .courses-toolbar { align-items: stretch; }
-  .credits { align-self: flex-start; }
+  .elective-rule { flex-wrap: wrap; }
 }
 
 @media (max-width: 380px) {

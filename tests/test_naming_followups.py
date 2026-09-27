@@ -63,17 +63,29 @@ def test_civil_421223_keeps_its_printed_spelling_until_confirmed():
 # --- כלל האשכולות --------------------------------------------------------
 @pytest.mark.parametrize("program", ["הנדסת תוכנה", "הנדסת מערכות מידע"])
 def test_the_rule_is_shown_where_the_curriculum_states_it(client, program):
-    assert electives(client, program)["cluster_rule"] == RULE
+    data = electives(client, program)
+    assert data["clusters"]
+    for cluster in data["clusters"]:
+        assert cluster["pills"] == [{"type": "min_courses", "n": 1, "approximate": False}]
+    quotes = [r["source"]["quote"] for r in data["rules"] if r["id"].startswith("cluster-")]
+    assert quotes and all("כל סטודנט חייב לקחת קורס אחד מכל אשכול" in q for q in quotes)
 
 
 @pytest.mark.parametrize(
     "program, intake",
-    [("הנדסת תעשייה וניהול", ""), (MATH, "winter"), (MATH, "spring")],
+    [("הנדסת תעשייה וניהול", "&specialization=מדעי הנתונים"), (MATH, "winter"), (MATH, "spring")],
 )
 def test_no_generic_rule_where_the_curriculum_does_not_state_it(client, program, intake):
     data = electives(client, program, intake)
     assert data["available"] is True and data["clusters"]
-    assert data["cluster_rule"] == ""
+    pills = {c["title"]: [p["n"] for p in c["pills"] if p["type"] == "min_courses"]
+             for c in data["clusters"]}
+    if program == MATH:
+        assert all(v == [] for v in pills.values())
+    else:
+        assert pills["מערכות מידע ומדע הנתונים"] == [4]
+        assert pills["תכן ותפעול של מערכות ייצור ושירות"] == [2]
+        assert pills["ניהול"] == [1]
 
 
 @pytest.mark.parametrize("rel", ["data/curriculum.json", "data/curricula/infosystems.json"])
@@ -87,7 +99,3 @@ def test_the_rule_is_not_hard_coded_in_the_api():
     source = (ROOT / "src" / "web" / "api.py").read_text(encoding="utf-8")
     assert RULE not in source
 
-
-def test_the_page_hides_an_empty_rule_line():
-    source = (ROOT / "src" / "web" / "static" / "app.js").read_text(encoding="utf-8")
-    assert "setHidden(ui.electivesRule, !rule)" in source

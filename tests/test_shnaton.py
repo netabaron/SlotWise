@@ -132,7 +132,6 @@ def _electives(client, program: str) -> dict:
 def test_api_serves_clusters_with_their_year(client):
     data = _electives(client, "הנדסת תוכנה")
     assert data["available"] is True
-    assert data["structure"] == "clusters"
     assert data["year"] == 'תשפ"ה'
     assert len(data["clusters"]) == 6
 
@@ -147,18 +146,12 @@ def test_api_labels_the_older_chapter_with_its_year(client):
 @pytest.mark.skipif(not MECHO.exists(), reason="mecho.pdf חסר")
 def test_api_keeps_tracks_separate_from_clusters(client):
     data = _electives(client, "הנדסת מכונות")
-    assert data["available"] is True
-    assert data["structure"] == "tracks"
-    assert data["tracks"] and not data["clusters"]
-    assert "מסלול" in data["track_rule"]
-
-
-@pytest.mark.skipif(not ELECTRIC.exists(), reason="electric.pdf חסר")
-def test_api_hides_the_section_when_the_chapter_has_no_grouping(client):
-    data = _electives(client, "הנדסת חשמל ואלקטרוניקה")
-    assert data["available"] is False
-    assert data.get("reason")
-    assert not data.get("clusters") and not data.get("tracks")
+    assert data["needs_specialization"] is True and not data["clusters"]
+    data = _electives(client, "הנדסת מכונות&specialization=תכן וייצור")
+    assert [c["title"] for c in data["clusters"]] == [
+        "קורסי בחירה בהתמחות",
+        "קורסי העשרה לכלל ההתמחויות",
+    ]
 
 
 def test_api_hides_the_section_when_there_is_no_chapter_at_all(client):

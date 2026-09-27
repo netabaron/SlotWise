@@ -1610,22 +1610,6 @@ def _curriculum_notes(program: Any = None, intake: Any = None) -> list[str]:
     return [str(note).strip() for note in (curr.get("notes") or []) if str(note).strip()]
 
 
-def _cluster_rule(program: Any = None, intake: Any = None) -> str:
-    """כלל הבחירה מהאשכולות, **רק** כשתוכנית הלימודים של המסלול מצהירה עליו.
-
-    עד 2026-09-25 כל מסלול עם אשכולות קיבל "קורס אחד לפחות מכל אשכול".
-    זה נכון לתוכנה ולמערכות מידע, שהשנתון שלהן אומר זאת במפורש, אבל
-    מתמטיקה שימושית לא קובעת כלל כזה, ותעשייה וניהול קובעת כללים אחרים
-    (4/2/1 קורסים, או 7–8 לפי מסלול). כלל שלא נכתב אינו מוצג. הכלל
-    והמקור שלו יושבים ב-``cluster_rule``/``cluster_rule_source`` בקובץ
-    התוכנית. ‏docs/PROGRAM_FINDINGS.md.
-    """
-    curr = _curriculum(program, intake)
-    if not isinstance(curr, dict):
-        return ""
-    return str(curr.get("cluster_rule") or "").strip()
-
-
 def _profile() -> dict:
     """‏data/profile.json — התשובות האמיתיות של הסטודנט/ית. חסר = ``{}``."""
     from flask import current_app
@@ -4130,6 +4114,15 @@ def semester_courses(sem: str):
     store = _store()
     have_data = set(store.codes())
 
+    # ‏"מחליף את …" בכרטיס: מטבלת ההחלפות הרשמית של התוכנית, כשיש כזאת.
+    # ‏``name`` שם הוא "<חדש> מחליף <ישן>", ולכן השם הישן הוא מה שאחרי "מחליף".
+    replaces: dict[str, list[tuple[str, str]]] = {}
+    for rep in curr.get("replacement_courses") or []:
+        old_name = str(rep.get("name") or "").partition(" מחליף ")[2].strip()
+        replaces.setdefault(str(rep.get("new") or ""), []).append(
+            (str(rep.get("old") or ""), old_name)
+        )
+
     chosen_rows: set[int] = set()
     if specialization or route:
         picked = _apply_track_choice(curr, str(sem), entries, specialization, route)
@@ -4182,6 +4175,11 @@ def semester_courses(sem: str):
             # ‏True = הקורס שייך להתמחות או למסלול שנבחרו בשלב 1, ולכן הוא
             # מומלץ כמו קורס ליבה. בלי בחירה — תמיד False.
             "track_chosen": id(entry) in chosen_rows,
+            "replaces": [
+                {"code": old, "name": old_name}
+                for old, old_name in replaces.get(code, [])
+                if old
+            ],
             "curriculum_semester": str(sem),
             "in_curriculum": True,
             "selectable": bool(code),
@@ -4211,6 +4209,9 @@ def semester_courses(sem: str):
 
         courses.append(item)
 
+    chosen_spec, chosen_route = _track_choice(curr, str(sem), specialization, route)[:2]
+    slot_choice = {"specialization": chosen_spec, "route": chosen_route}
+
     summary = credits_summary(credit_values)
     if not has_curriculum:
         note = CURRICULUM_MISSING_NOTE
@@ -4238,6 +4239,8 @@ def semester_courses(sem: str):
                 "semester_note": str(info.get("note") or ""),
                 "printed_total_credits": info.get("printed_total_credits"),
             },
+            # ‏משבצות בחירה / כללי / ספורט לסמסטר הזה (``semester_slots``).
+            "semester_notes": _semester_notes(curr, str(sem), slot_choice),
             # אזהרות ברמת התוכנית כולה, מקובץ התוכנית של המחלקה.
             "program_warnings": [str(w) for w in (curr.get("warnings") or [])],
             "cohort_year": str(curr.get("cohort_year") or ""),
@@ -4761,45 +4764,38 @@ def courses():
     )
 
 
-# ------------------------------------------------ electives (clusters/tracks)
-@bp.get("/program/electives")
-@_endpoint
-def program_electives():
-    """קבוצות קורסי הבחירה של תוכנית לימודים.
+# ------------------------------------------------ electives (lists and rules)
+#: סוגי החוקים שאפשר לספור מול הבחירה הנוכחית, ומה סופרים בהם. ‏``text``
+#: אינו ברשימה: הוא מוצג כלשונו, בלי מספר.
+_COUNTABLE_RULES = {
+    "min_courses": "courses",
+    "min_total_courses": "courses",
+    "exact_courses": "courses",
+    "mutually_exclusive": "courses",
+    "only_one_counts": "courses",
+    "min_credits": "credits",
+    "max_credits": "credits",
+}
 
-    שלושה מבנים אפשריים, והם **אינם** שקולים:
-      ``clusters`` — אשכולות: קורס אחד **מכל** אשכול (תוכנה, תעשייה, מערכות מידע)
-      ``tracks``   — מסלולי התמחות: בוחרים מסלול **אחד** (אזרחית, מכונות)
-      ``flat``     — אין קיבוץ בפרק (חשמל) -> אין מה להציג
 
-    **שני מקורות, בסדר הכרעה קבוע.** הראשון הוא פרק השנתון שחולץ ל-
-    ``data/curricula.json`` (‏``src/shnaton.py``), והוא **גובר** — כך קבוצות
-    הבחירה של הנדסת תוכנה, תעשייה וניהול, מערכות מידע, אזרחית ומכונות
-    נשארות בדיוק כפי שהיו. השני הוא ``elective_clusters`` שבקובץ התוכנית
-    של המסלול עצמו, והוא נכנס לפעולה **רק** כשהפרק שטוח, כלומר כשהחילוץ
-    האוטומטי לא מצא בו קיבוץ. זה המצב של מתמטיקה שימושית: השנתון שלה
-    מקבץ את הבחירה תחת "תחום X" ולא תחת "אשכול X", ‏``shnaton.py`` מזהה
-    רק את השני, ולכן ארבעת התחומים הוקלדו לתוך קובץ התוכנית.
+def _rule_applies(rule: dict, choice: dict[str, str]) -> bool:
+    """‏``applies_to`` ריק = כל הסטודנטים. אחרת כל ממד חייב להתאים לבחירה."""
+    for key, wanted in (rule.get("applies_to") or {}).items():
+        if not wanted:
+            continue
+        if choice.get(key, "") not in [str(w) for w in wanted]:
+            return False
+    return True
 
-    ``intake`` נדרש למסלול שיש לו מועדי כניסה: בלעדיו אין קובץ תוכנית
-    אחד להחזיר, ולכן גם אין ממנו אשכולות.
 
-    ``year`` הוא שנת המחזור **רק** כשהמקור מצהיר עליה. ``None`` = המסמך לא
-    ציין שנה, והממשק חייב לכתוב "שנה לא צוינה" ולא להמציא.
-    ``available: false`` = אין מקור לתוכנית הזאת, או שאין בו קיבוץ — ואז
-    הממשק **מסתיר** את החלק הזה לגמרי במקום להראות רשימה ריקה או מנוחשת.
-    """
-    program = str(request.args.get("program", "")).strip()
-    if not program:
-        raise ApiError(400, "חסר שם תוכנית.", "program is required")
-    intake = str(request.args.get("intake", "")).strip()
-
+def _elective_chapter(program: str) -> dict:
+    """הרשומה של התוכנית ב-``data/curricula.json`` (רשימות הבחירה)."""
     try:
         from shnaton import load_curricula
 
         all_programs = load_curricula(str(PROJECT_ROOT / "data" / "curricula.json"))
     except Exception:  # noqa: BLE001 - היעדר הקובץ אינו תקלה
-        all_programs = {}
+        return {}
 
     def norm(text: Any) -> str:
         return re.sub(r"[\s\"'׳״-]", "", str(text or ""))
@@ -4808,79 +4804,252 @@ def program_electives():
     if chapter is None:
         for name, entry in all_programs.items():
             if norm(name) == norm(program):
-                chapter = entry
-                break
+                return entry or {}
+    return chapter or {}
 
-    chapter = chapter or {}
-    clusters = chapter.get("clusters") or {}
-    tracks = chapter.get("tracks") or {}
 
-    if not clusters and not tracks:
-        # הפרק שטוח (או שאין פרק). הנפילה היא לקובץ התוכנית של המסלול.
-        curr = _curriculum(program, intake)
-        own = curr.get("elective_clusters") if isinstance(curr, dict) else None
-        if own:
-            year = curr.get("cohort_year")
-            return {
-                "ok": True,
-                "program": curr.get("program", program),
-                "available": True,
-                "structure": "clusters",
-                "origin": "curriculum",
-                "intake": intake,
-                "year": year,
-                "year_text": year or "שנה לא צוינה במסמך",
-                "source": curr.get("source", ""),
-                "clusters": own,
-                "tracks": {},
-                "cluster_rule": _cluster_rule(program, intake),
-                "track_rule": "",
-                "notes": _curriculum_notes(program, intake),
-                "warnings": curr.get("warnings", []),
-            }
-        if not chapter:
-            return {
-                "ok": True,
-                "program": program,
-                "available": False,
-                "reason": (
-                    "יש לבחור מועד כניסה כדי לראות את קורסי הבחירה."
-                    if _program_intakes(program) and not intake
-                    else "אין פרק שנתון לתוכנית הזאת."
-                ),
-            }
+def _rule_rows(
+    rule: dict, lists: dict[str, dict], curr: dict, choice: dict[str, str]
+) -> dict[str, Any]:
+    """‏{קוד: נ"ז} — השורות שהחוק סופר, כמו המונה ב-tests/test_program_rules.py.
+
+    ‏``where`` מסנן לפי שדה ברשימה (תחום חומרה/תוכנה בחשמל);
+    ‏``cluster_rows_from`` מוסיף שורות 251xxx לפי עמודת האשכול שלהן;
+    ‏``include_track_mandatory`` מוסיף את קורסי החובה של ההתמחות שנבחרה
+    מכל סמסטרי התוכנית ("חובה+בחירה+העשרה" במכונות).
+    """
+    rows: dict[str, Any] = {}
+    where = rule.get("where") or {}
+    names = [str(n) for n in rule.get("lists") or []]
+    for name in names:
+        for course in (lists.get(name) or {}).get("courses") or []:
+            if all(course.get(k) == v for k, v in where.items()):
+                rows[str(course.get("code"))] = course.get("credits")
+    source = rule.get("cluster_rows_from")
+    if source:
+        for course in (lists.get(source) or {}).get("courses") or []:
+            if course.get("cluster") in names:
+                rows[str(course.get("code"))] = course.get("credits")
+    for code in rule.get("codes") or []:
+        rows.setdefault(str(code), None)
+    if rule.get("include_track_mandatory") and choice.get("specialization"):
+        for sem in (curr.get("semesters") or {}).values():
+            entries = sem.get("courses", []) if isinstance(sem, dict) else sem or []
+            for entry in entries:
+                if entry.get("code") and choice["specialization"] in _track_tokens(entry.get("track")):
+                    rows[str(entry["code"])] = entry.get("credits")
+    return rows
+
+
+def _pill(rule: dict) -> dict | None:
+    """המספר של חוק שחל על רשימה אחת בדיוק, כגלולה על תיבת האשכול."""
+    kind = rule.get("type")
+    if kind in ("min_courses", "min_total_courses", "min_credits"):
+        return {"type": kind, "n": rule.get("min"), "approximate": bool(rule.get("approximate"))}
+    if kind == "exact_courses":
+        return {"type": kind, "n": rule.get("count"), "approximate": False}
+    if kind == "max_credits":
+        return {"type": kind, "n": rule.get("max"), "approximate": False}
+    return None
+
+
+@bp.get("/program/electives")
+@_endpoint
+def program_electives():
+    """דרישות הבחירה של התוכנית: החוקים ורשימות הבחירה, לפי ההתמחות.
+
+    ‏**שני מקורות, ולכל אחד תפקיד.** החוקים (``elective_rules``) יושבים בקובץ
+    התוכנית של המחלקה, כל אחד עם מקורו בשנתון. הרשימות שהם מצביעים עליהן
+    (``elective_lists``) יושבות ב-``data/curricula.json``, ו-``specializations``
+    שם אומר אילו מהן שייכות לכל התמחות. השדות הישנים ``clusters``/``tracks``
+    אינם נקראים יותר.
+
+    ‏``specialization``, ``route`` ו-``secondary`` הם הבחירה משלב 1. חוק
+    שממד שלו לא נבחר אינו חל, ולכן אינו מוצג. בתוכנית שיש לה רשימות לפי
+    התמחות ועוד לא נבחרה אחת, ``needs_specialization`` אומר זאת.
+
+    ‏**אין כאן מצב "הושלם".** האפליקציה אינה יודעת מה נלמד בסמסטרים
+    קודמים; ‏``rows`` מאפשר לממשק לספור את הבחירה הנוכחית בלבד.
+
+    מתמטיקה שימושית: ל-``curricula.json`` אין רשימות שלה (עשר שורות לא
+    זוהו), ולכן ארבעת התחומים שהוקלדו לקובץ התוכנית מוצגים כתיבות, בלי
+    גלולות — אף חוק אינו סופר אותם.
+    """
+    program = str(request.args.get("program", "")).strip()
+    if not program:
+        raise ApiError(400, "חסר שם תוכנית.", "program is required")
+    intake = str(request.args.get("intake", "")).strip()
+    choice = {
+        "specialization": str(request.args.get("specialization", "") or "").strip(),
+        "route": str(request.args.get("route", "") or "").strip(),
+        "secondary_specialization": str(request.args.get("secondary", "") or "").strip(),
+    }
+
+    curr = _curriculum(program, intake)
+    if not isinstance(curr, dict) or not curr:
         return {
             "ok": True,
-            "program": chapter.get("program", program),
+            "program": program,
             "available": False,
-            "structure": chapter.get("structure", "flat"),
             "reason": (
                 "יש לבחור מועד כניסה כדי לראות את קורסי הבחירה."
                 if _program_intakes(program) and not intake
-                else "פרק השנתון של התוכנית אינו מקבץ את קורסי הבחירה."
+                else "אין תוכנית לימודים לתוכנית הזאת."
             ),
         }
 
-    year = chapter.get("year")
+    chapter = _elective_chapter(str(curr.get("program") or program))
+    lists: dict[str, dict] = chapter.get("elective_lists") or {}
+    by_spec: dict[str, list[str]] = chapter.get("specializations") or {}
+    spec_block = curr.get("specialization") or {}
+    options = (
+        [str(o) for o in spec_block.get("options") or []] if isinstance(spec_block, dict) else []
+    )
+    for key in ("specialization", "secondary_specialization"):
+        if choice[key] not in options:
+            choice[key] = ""
+
+    # ‏הרשימות שמוצגות כתיבות: של ההתמחות (והמשנית), או כולן בתוכנית בלי
+    # ‏התמחויות. בלי בחירה בתוכנית עם התמחויות — אין רשימה לנחש.
+    if by_spec:
+        keys: list[str] = []
+        for spec in (choice["specialization"], choice["secondary_specialization"]):
+            for key in by_spec.get(spec, []) if spec else []:
+                if key not in keys:
+                    keys.append(key)
+    else:
+        keys = list(lists.keys())
+
+    rules_in = (curr.get("elective_rules") or {}).get("rules") or []
+    applicable = [r for r in rules_in if _rule_applies(r, choice)]
+
+    # ‏"קורס שנספר להתמחות אינו נספר שוב" (חשמל): השורות של חוקי ההתמחות
+    # ‏הראשית והמשנית שחלים יורדות מחוקי מקצועות הבחירה הנוספים.
+    spec_codes: set[str] = set()
+    for rule in applicable:
+        scope = rule.get("applies_to") or {}
+        if (scope.get("specialization") or scope.get("secondary_specialization")) and rule.get(
+            "type"
+        ) in ("min_credits", "min_courses"):
+            spec_codes.update(_rule_rows(rule, lists, curr, choice))
+
+    rules_out: list[dict] = []
+    pills: dict[str, list[dict]] = {}
+    for rule in applicable:
+        kind = str(rule.get("type") or "")
+        unit = _COUNTABLE_RULES.get(kind, "")
+        rows = _rule_rows(rule, lists, curr, choice) if unit else {}
+        if rule.get("not_counted_again"):
+            rows = {c: v for c, v in rows.items() if c not in spec_codes}
+        source = rule.get("source") or {}
+        rules_out.append(
+            {
+                "id": str(rule.get("id") or ""),
+                "type": kind,
+                "text": str(rule.get("text") or ""),
+                "countable": bool(unit),
+                "unit": unit,
+                "rows": rows,
+                "count_one_of": [[str(c) for c in g] for g in rule.get("count_one_of") or []],
+                "notes": [str(n) for n in rule.get("notes") or []],
+                "source": {
+                    "pdf": str(source.get("pdf") or ""),
+                    "page": source.get("page"),
+                    "quote": str(source.get("quote") or ""),
+                },
+            }
+        )
+        names = rule.get("lists") or []
+        pill = _pill(rule)
+        if pill and len(names) == 1 and not rule.get("where") and not rule.get("codes"):
+            pills.setdefault(str(names[0]), []).append(pill)
+
+    # ‏עם התמחות משנית אותה כותרת ("קורסי ליבה בהתמחות") מופיעה פעמיים;
+    # ‏המפתח המלא נושא גם את שם ההתמחות.
+    both = bool(choice["specialization"] and choice["secondary_specialization"])
+    clusters: list[dict] = []
+    for key in keys:
+        entry = lists.get(key) or {}
+        clusters.append(
+            {
+                "key": key,
+                "title": key if both else str(entry.get("title") or key),
+                "pills": pills.get(key, []),
+                "courses": [
+                    {
+                        "code": str(c.get("code") or ""),
+                        "name": str(c.get("name") or ""),
+                        "credits": c.get("credits"),
+                    }
+                    for c in entry.get("courses") or []
+                ],
+            }
+        )
+    if not lists and isinstance(curr.get("elective_clusters"), dict):
+        for name, courses in curr["elective_clusters"].items():
+            clusters.append(
+                {
+                    "key": str(name),
+                    "title": str(name),
+                    "pills": [],
+                    "courses": [
+                        {
+                            "code": str(c.get("code") or ""),
+                            "name": str(c.get("name") or ""),
+                            "credits": c.get("credits"),
+                            "note": str(c.get("note") or ""),
+                        }
+                        for c in courses or []
+                    ],
+                }
+            )
+
+    needs_spec = bool(by_spec) and not choice["specialization"]
+    year = curr.get("cohort_year") or chapter.get("year")
     return {
         "ok": True,
-        "program": chapter.get("program", program),
-        "available": True,
-        "structure": chapter.get("structure"),
-        "origin": "chapter",
+        "program": str(curr.get("program") or program),
+        "available": bool(rules_out or clusters or needs_spec),
+        "needs_specialization": needs_spec,
         "intake": intake,
         "year": year,
         "year_text": year or "שנה לא צוינה במסמך",
-        "source": chapter.get("source", ""),
+        "rules": rules_out,
         "clusters": clusters,
-        "tracks": tracks,
-        "cluster_rule": _cluster_rule(program, intake) if clusters else "",
-        "track_rule": "יש לבחור מסלול התמחות אחד ולהתמחות בו." if tracks else "",
-        # מקובץ התוכנית של המסלול, גם כשהאשכולות עצמם באו מפרק השנתון:
-        # ההערה שייכת למסלול, לא למקור שממנו נגזרה הרשימה.
+        # ‏מה שהשנתון עצמו אומר על רשימת הבחירה; לא ``warnings``.
         "notes": _curriculum_notes(program, intake),
-        "warnings": chapter.get("warnings", []),
     }
+
+
+def _semester_notes(curr: dict, sem: str, choice: dict[str, str]) -> dict[str, list]:
+    """‏``semester_slots`` לסמסטר ``sem``: מה התוכנית משבצת בו, ומה "בכל סמסטר".
+
+    ‏``placed`` — משבצות שהתוכנית שמה בסמסטר הזה (פתק זהב אחד בממשק).
+    ‏``anywhere`` — סוגים שהתוכנית אומרת עליהם "בכל סמסטר", עם הציטוט, רק
+    כשאינם משובצים כאן. ‏``not_stated``/``not_placed`` אינם נאמרים כלל.
+    """
+    number = int(sem) if str(sem).isdigit() else 0
+    placed: list[dict] = []
+    anywhere: list[dict] = []
+    if not number:
+        return {"placed": placed, "anywhere": anywhere}
+    for slot in curr.get("semester_slots") or []:
+        if not _rule_applies(slot, choice):
+            continue
+        kind = str(slot.get("kind") or "")
+        if number in (slot.get("semesters") or []):
+            placed.append(
+                {
+                    "kind": kind,
+                    "label": str(slot.get("label") or ""),
+                    "note": str(slot.get("note") or ""),
+                }
+            )
+        elif slot.get("any_semester"):
+            source = slot.get("source") or {}
+            anywhere.append({"kind": kind, "quote": str(source.get("quote") or "")})
+    here = {p["kind"] for p in placed}
+    return {"placed": placed, "anywhere": [a for a in anywhere if a["kind"] not in here]}
 
 
 # ------------------------------------------------------------------ solve
