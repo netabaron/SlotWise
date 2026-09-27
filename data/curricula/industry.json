@@ -1811,11 +1811,39 @@
             "courses": [
               {
                 "code": "51014",
-                "credits": 5.0
+                "credits": 5.0,
+                "semester": 7,
+                "stage": "א",
+                "source": [
+                  {
+                    "pdf": "industry.pdf",
+                    "page": 12,
+                    "quote": "סמסטר 7 … התנסות מעשית שלב א'"
+                  },
+                  {
+                    "pdf": "industry.pdf",
+                    "page": 13,
+                    "quote": "51014 התמחות בתעשייה שלב א' (5 נ\"ז)"
+                  }
+                ]
               },
               {
                 "code": "51020",
-                "credits": 5.0
+                "credits": 5.0,
+                "semester": 8,
+                "stage": "ב",
+                "source": [
+                  {
+                    "pdf": "industry.pdf",
+                    "page": 13,
+                    "quote": "סמסטר 8 … התנסות מעשית שלב ב'"
+                  },
+                  {
+                    "pdf": "industry.pdf",
+                    "page": 13,
+                    "quote": "51020 התמחות בתעשייה שלב ב' (5 נ\"ז)"
+                  }
+                ]
               }
             ]
           },
@@ -1824,11 +1852,39 @@
             "courses": [
               {
                 "code": "51230",
-                "credits": 4.0
+                "credits": 4.0,
+                "semester": 7,
+                "stage": "א",
+                "source": [
+                  {
+                    "pdf": "industry.pdf",
+                    "page": 12,
+                    "quote": "סמסטר 7 … התנסות מעשית שלב א'"
+                  },
+                  {
+                    "pdf": "industry.pdf",
+                    "page": 13,
+                    "quote": "51230 פרויקט גמר בהתמחות תכן ותפעול שלב א' (4 נ\"ז)"
+                  }
+                ]
               },
               {
                 "code": "51231",
-                "credits": 4.0
+                "credits": 4.0,
+                "semester": 8,
+                "stage": "ב",
+                "source": [
+                  {
+                    "pdf": "industry.pdf",
+                    "page": 13,
+                    "quote": "סמסטר 8 … התנסות מעשית שלב ב'"
+                  },
+                  {
+                    "pdf": "industry.pdf",
+                    "page": 13,
+                    "quote": "51231 פרויקט גמר בהתמחות תכן ותפעול שלב ב' (4 נ\"ז)"
+                  }
+                ]
               }
             ]
           }
