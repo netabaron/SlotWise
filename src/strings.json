@@ -77,7 +77,17 @@
       "intake": "סמסטר התחלה",
       "intakePlaceholder": "בחר/י מועד",
       "planSemester": "סמסטר לימודים",
-      "planSemesterPlaceholder": "בחר/י סמסטר"
+      "planSemesterPlaceholder": "בחר/י סמסטר",
+      "specialization": "התמחות",
+      "specializationPrimary": "התמחות ראשית",
+      "specializationSecondary": "התמחות משנית",
+      "specializationPlaceholder": "בחר/י התמחות",
+      "route": "מסלול",
+      "routeLabels": {
+        "design": "סוג תכן הנדסי",
+        "practical_experience": "התנסות מעשית"
+      },
+      "routePlaceholder": "בחר/י מסלול"
     },
     "lecturers": {
       "btnClearRanking": "איפוס",
@@ -105,6 +115,9 @@
     }
   },
   "server": {
+    "programs": {
+      "other": "לא מופיע ברשימה — עבודה מהקטלוג בלבד"
+    },
     "age": {
       "unknown": "לא ידוע מתי",
       "future": "חותמת זמן עתידית",
@@ -428,7 +441,9 @@
       "emptyIntake": "יש לבחור מסלול, מועד כניסה וסמסטר",
       "selectedIntake": "{intake} · {label}",
         "selected": "{year} · סמסטר {term}",
-        "selectedWithCurriculum": "{year} · סמסטר {term} · סמסטר {semester} בתוכנית"
+        "selectedWithCurriculum": "{year} · סמסטר {term} · סמסטר {semester} בתוכנית",
+        "trackMissing": "יש לבחור {what}",
+        "withTrack": "{identity} · {track}"
       },
       "courses": {
         "selected": "{count} קורסים · {credits}",

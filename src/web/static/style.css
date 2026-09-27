@@ -2665,6 +2665,13 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .field--md { flex: 0 1 13rem; }
 .field--lg { flex: 0 1 22rem; }
 
+/* ---- התמחות ומסלול (DESIGN.md, "Program, year and semester") ----
+   ‏שורה שנייה בשלב 1, מתחת למסלול/שנה/סמסטר. תיבה שמוצגת היא חובה, ולכן
+   מסגרת ‎--ink‎ כמו הפקד הפעיל — ולא ‎--line-strong‎ של שאר התיבות. */
+.track-row { margin-block-start: var(--gap); }
+.input--required { border-color: var(--ink); }
+.track-deadline { margin-block-start: 6px; }
+
 /* ==========================================================================
    22. תיקוני שלב 4 — סוג השיעור בבלוק, וחפיפה כשני חצאים
    ========================================================================== */

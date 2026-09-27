@@ -2170,21 +2170,30 @@ def _program_choices(
                 "url": entry.get("url", ""),
                 "description": entry.get("description", ""),
                 "tracks_text": entry.get("tracks_text", ""),
+                # ‏בחירת ההתמחות והמסלול בשלב 1. ‏None = אין למסלול התמחויות,
+                # והממשק אינו מציג את התיבות כלל.
+                "specialization": _specialization_public(
+                    _curriculum(name) if not intakes else {}
+                ),
             }
         )
     if mine and not any(p["id"] == mine for p in out):
         out.insert(0, {"id": mine, "label": mine, "has_curriculum": True,
                        "curriculum_absence": CURRICULUM_ABSENCE_NONE,
-                       "intakes": []})
+                       "intakes": [],
+                       "specialization": _specialization_public(curr)})
     out.append(
         {
             "id": OTHER_PROGRAM,
-            "label": "תוכנית אחרת / לא ברשימה",
+            "label": strings_mod.get(
+                "server.programs.other", "לא מופיע ברשימה — עבודה מהקטלוג בלבד"
+            ),
             "has_curriculum": False,
             # ‏"לא ברשימה" אינו מסלול, ולכן אין לו סיבה להיעדר תוכנית —
             # הוא **הוא** הבחירה לעבוד מול הקטלוג.
             "curriculum_absence": CURRICULUM_ABSENCE_MISSING,
             "intakes": [],
+            "specialization": None,
         }
     )
     return out
@@ -3945,6 +3954,139 @@ def bootstrap():
     )
 
 
+# ------------------------------------------------ specialization and route
+def _specialization_public(curr: dict | None) -> dict | None:
+    """בלוק ``specialization`` של התוכנית, כפי שהממשק צריך אותו בשלב 1.
+
+    רק מה שמצייר את התיבות: האפשרויות, הסמסטר שממנו בוחרים, שורת המועד
+    האחרון, המסלולים ותנאיהם, וההתמחות המשנית. הציטוטים נשארים בקובץ.
+    """
+    spec = (curr or {}).get("specialization")
+    if not isinstance(spec, dict) or not spec.get("options"):
+        return None
+    deadline = spec.get("deadline") or {}
+    secondary = spec.get("secondary") or None
+    return {
+        "options": [str(o) for o in spec["options"]],
+        "choose_from_semester": int(spec.get("choose_from_semester") or 0),
+        "deadline": str(deadline.get("text") or "") if isinstance(deadline, dict) else "",
+        "routes": [
+            {
+                "id": str(group.get("id") or ""),
+                "applies_to": {
+                    "specialization": [
+                        str(x) for x in (group.get("applies_to") or {}).get("specialization", [])
+                    ]
+                },
+                "from_semester": int(group.get("from_semester") or 0),
+                "options": [str(o.get("route") or "") for o in group.get("options") or []],
+            }
+            for group in spec.get("routes") or []
+        ],
+        "secondary": (
+            {
+                "from_semester": int(secondary.get("from_semester") or 0),
+                "when_route": [str(x) for x in secondary.get("when_route") or []],
+            }
+            if isinstance(secondary, dict)
+            else None
+        ),
+    }
+
+
+def _track_tokens(track: Any) -> list[str]:
+    """‏``"תכן הנדסי מחקרי / תכן הנדסי בתעשייה"`` — שורה אחת של שני מסלולים."""
+    return [t.strip() for t in str(track or "").split(" / ") if t.strip()]
+
+
+def _track_choice(
+    curr: dict, sem: str, specialization: str, route: str
+) -> tuple[str, str, set[str], set[str], list[dict]]:
+    """מה שנבחר בשלב 1 ותקף לסמסטר ``sem``, ומה שהוא מוסיף לרשימה.
+
+    Returns:
+        ‏``(התמחות, מסלול, כל ההתמחויות, כל המסלולים, שורות מסלול לסמסטר)``.
+        בחירה שאינה אחת האפשרויות, או שלפני הסמסטר שממנו בוחרים, נחשבת
+        "לא נבחר" — בדיוק כמו היום.
+    """
+    spec = curr.get("specialization") or {}
+    if not isinstance(spec, dict):
+        return "", "", set(), set(), []
+    number = int(sem) if str(sem).isdigit() else 0
+    options = {str(o) for o in spec.get("options") or []}
+    start = int(spec.get("choose_from_semester") or 0)
+    chosen_spec = specialization if specialization in options and number >= start > 0 else ""
+
+    chosen_route = ""
+    route_names: set[str] = set()
+    rows: list[dict] = []
+    for group in spec.get("routes") or []:
+        names = [str(o.get("route") or "") for o in group.get("options") or []]
+        route_names.update(names)
+        wanted = (group.get("applies_to") or {}).get("specialization") or []
+        applies = number >= int(group.get("from_semester") or 0) > 0 and (
+            not wanted or chosen_spec in wanted
+        )
+        if not applies:
+            continue
+        if route in names:
+            chosen_route = route
+        for option in group.get("options") or []:
+            name = str(option.get("route") or "")
+            if chosen_route and name != chosen_route:
+                continue
+            for course in option.get("courses") or []:
+                # רק קורס שהקובץ אומר באיזה סמסטר הוא — אין ניחוש.
+                if int(course.get("semester") or 0) != number:
+                    continue
+                rows.append(
+                    {
+                        "code": str(course.get("code") or ""),
+                        "credits": course.get("credits"),
+                        "he": 0,
+                        "te": 0,
+                        "ma": 0,
+                        "pr": 0,
+                        "prereq": [],
+                        "track": name,
+                        "note": "",
+                    }
+                )
+    return chosen_spec, chosen_route, options, route_names, rows
+
+
+def _apply_track_choice(
+    curr: dict, sem: str, entries: list[dict], specialization: str, route: str
+) -> list[tuple[dict, bool]]:
+    """שורות הסמסטר אחרי ההתמחות והמסלול שנבחרו: ``[(שורה, של הבחירה?)]``.
+
+    שורה של התמחות או מסלול **אחרים** יורדת. שורה של הבחירה נשארת ומסומנת,
+    ושורה שהממד שלה עוד לא נבחר נשארת כפי שהיא היום: מוצגת ולא מומלצת.
+    """
+    chosen_spec, chosen_route, spec_names, route_names, extra = _track_choice(
+        curr, sem, specialization, route
+    )
+    present = {str(e.get("code") or "") for e in entries}
+    out: list[tuple[dict, bool]] = []
+    for entry in list(entries) + [r for r in extra if r["code"] not in present]:
+        tokens = _track_tokens(entry.get("track"))
+        if not tokens:
+            out.append((entry, False))
+            continue
+        if all(t in spec_names for t in tokens):
+            chosen = chosen_spec
+        elif all(t in route_names for t in tokens):
+            chosen = chosen_route
+        else:
+            chosen = ""
+        if not chosen:
+            out.append((entry, False))
+        elif chosen in tokens:
+            out.append((entry, True))
+        # אחרת: של התמחות או מסלול אחרים — לא מומלץ, ולכן לא ברשימה.
+    return out
+
+
 # ------------------------------------------------------- semester courses
 @bp.get("/semester/<sem>/courses")
 @_endpoint
@@ -3967,6 +4109,9 @@ def semester_courses(sem: str):
     # מועד הכניסה נקרא רק למסלול שיש לו מועדים. בלעדיו אין תוכנית אחת
     # להחזיר, והתשובה היא "צריך לבחור מועד" ולא "אין תוכנית".
     intake = request.args.get("intake", "")
+    # ההתמחות והמסלול משלב 1. בלעדיהם התשובה זהה לזו שלפניהם.
+    specialization = str(request.args.get("specialization", "") or "").strip()
+    route = str(request.args.get("route", "") or "").strip()
     curr = _curriculum(program, intake)
     has_curriculum = _curriculum_available(curr, program)
     info: dict[str, Any] = {}
@@ -3985,6 +4130,12 @@ def semester_courses(sem: str):
     store = _store()
     have_data = set(store.codes())
 
+    chosen_rows: set[int] = set()
+    if specialization or route:
+        picked = _apply_track_choice(curr, str(sem), entries, specialization, route)
+        entries = [entry for entry, _ in picked]
+        chosen_rows = {id(entry) for entry, mine in picked if mine}
+
     courses: list[dict[str, Any]] = []
     credit_values: list[Any] = []
     for entry in entries:
@@ -3994,9 +4145,13 @@ def semester_courses(sem: str):
         credits = facts["credits"] if facts else _known_credits(entry.get("credits"))
         credit_values.append(credits)
 
+        name = entry.get("name", "")
+        if not name and code:
+            # ‏שורת מסלול מהבלוק ``specialization``: יש לה קוד, לא שם.
+            name = _restored_name(code, "") or str((catalog.get(code) or {}).get("name", ""))
         item: dict[str, Any] = {
             "code": code or None,
-            "name": entry.get("name", ""),
+            "name": name,
             # ‏None ולא ‏0.0 — הממשק מצייר "—" ולא מספר שאיש לא אמר.
             "credits": credits,
             "credits_source": facts["credits_source"] if facts else CREDITS_SOURCE_UNKNOWN,
@@ -4024,6 +4179,9 @@ def semester_courses(sem: str):
             # והכלי אינו יודע באיזה מסלול הסטודנט/ית — באזרחית הוא בכלל
             # נקבע לפי ציונים. ריק = קורס ליבה משותף לכולם.
             "track": str(entry.get("track") or ""),
+            # ‏True = הקורס שייך להתמחות או למסלול שנבחרו בשלב 1, ולכן הוא
+            # מומלץ כמו קורס ליבה. בלי בחירה — תמיד False.
+            "track_chosen": id(entry) in chosen_rows,
             "curriculum_semester": str(sem),
             "in_curriculum": True,
             "selectable": bool(code),

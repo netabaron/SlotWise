@@ -135,7 +135,13 @@
                                  למסלול עם מועדי כניסה, גלויות לכל השאר.
                                  ‏**אין להסתיר את ה-select עצמו** — בדיקות
                                  קיימות קוראות את ערכו.
-  2 קורסים        #course-search #course-search-results #course-list
+                  #track-row  התמחות / מסלול / התמחות משנית:
+                                 #select-specialization #select-route
+                                 #select-secondary, כל אחת בעטיפה ‎#field-*‎
+                                 ‏hidden עד שהיא חלה על המסלול והסמסטר.
+                  #specialization-deadline  "את ההתמחות בוחרים עד סוף שנה א׳"
+                                 (תעשייה וניהול), מהקובץ.
+  2 קורסים       #course-search #course-search-results #course-list
                   #credits-total  סכום הנ"ז הידועות ("—" כשאין אף אחת)
                   #credits-unknown  "(2 קורסים ללא נתון)" — hidden כשאין חוסר.
                                   נ"ז שאינן ידועות מוצגות "—", לעולם לא "0":
@@ -349,6 +355,25 @@
           <select class="input" id="select-term"></select>
         </div>
       </div>
+      <!-- ‏התמחות, מסלול והתמחות משנית (DESIGN.md, "Program, year and
+           semester"). ‏hidden כברירת מחדל: ``renderTrackPickers`` פותח רק את
+           מה שחל על המסלול והסמסטר שנבחרו, ומסדר את השדות (בחשמל סוג
+           התכן קודם). כשמוצגות — חובה, ולכן ‎input--required‎. -->
+      <div class="field-row track-row" id="track-row" hidden>
+        <div class="field field--lg" id="field-specialization" hidden>
+          <label class="label" id="label-specialization" for="select-specialization">{{ S.ui.fields.specialization }}</label>
+          <select class="input input--required" id="select-specialization" aria-required="true"></select>
+        </div>
+        <div class="field field--md" id="field-route" hidden>
+          <label class="label" id="label-route" for="select-route">{{ S.ui.fields.route }}</label>
+          <select class="input input--required" id="select-route" aria-required="true"></select>
+        </div>
+        <div class="field field--lg" id="field-secondary" hidden>
+          <label class="label" for="select-secondary">{{ S.ui.fields.specializationSecondary }}</label>
+          <select class="input input--required" id="select-secondary" aria-required="true"></select>
+        </div>
+      </div>
+      <p class="note track-deadline" id="specialization-deadline" hidden></p>
       <p class="resolved" id="semester-summary" role="status" aria-live="polite"></p>
       <p class="note" id="year-note"></p>
     </div>

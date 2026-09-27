@@ -613,6 +613,8 @@
       // ‏ומועד הכניסה שלו. אותו מספר סמסטר מציין קורסים אחרים בכל מועד,
       // ולכן מסלול+סמסטר לבדם אינם מזהים המלצה במסלול עם מועדי כניסה.
       autoIntake: "",
+      // ‏וההתמחות+המסלול שלו: בחירה אחרת מחליפה את רשימת ההמלצה.
+      autoTrack: "",
       autoCodes: [], // מה שסומן אוטומטית עבור autoSemester
       manualCodes: [], // מה שנוסף ידנית (חיפוש/קטלוג/בחירה) — שורד החלפת סמסטר
       autoDropped: [], // קורסים מומלצים שבוטלו ידנית — לא לסמן שוב
@@ -640,6 +642,12 @@
       // הסמסטר מציין דבר אחר בכל מועד, ולכן בלי בחירה כאן אין למסלול
       // תוכנית ולא לוח סמסטרים.
       intake: "",
+      // ‏ההתמחות, מסלול ההתמחות (סוג תכן הנדסי / התנסות מעשית) וההתמחות
+      // המשנית — רק למסלול שיש לו אותם, ורק מהסמסטר שהתוכנית בוחרת בו
+      // (``specialization`` ברשימת ``programs``). ריק = לא נבחר.
+      specialization: "",
+      route: "",
+      secondarySpecialization: "",
       earliest: null, // דקות מחצות, או null
       latest: null,
       blocked: [], // [[יום, התחלה, סוף], ...]
@@ -786,6 +794,10 @@
     base.autoSemester = txt(base.autoSemester);
     base.autoProgram = txt(base.autoProgram);
     base.autoIntake = txt(base.autoIntake);
+    base.autoTrack = txt(base.autoTrack);
+    base.specialization = txt(base.specialization);
+    base.route = txt(base.route);
+    base.secondarySpecialization = txt(base.secondarySpecialization);
     ["autoCodes", "manualCodes", "autoDropped"].forEach(function (k) {
       if (!Array.isArray(base[k])) base[k] = [];
       base[k] = uniq(base[k].map(txt).filter(Boolean));
@@ -1121,6 +1133,144 @@
       return !!txt(state.intake) && !!txt(state.semester) && !!txt(state.term);
     }
     return num(state.studyYear, null) !== null && !!txt(state.term);
+  }
+
+  /* --- התמחות ומסלול (DESIGN.md, "Program, year and semester") ----- */
+
+  /**
+   * ‏בלוק ``specialization`` של המסלול, מרשימת ``programs`` של
+   * ‏/api/bootstrap. ‏null = למסלול אין התמחויות, ואין מה להציג.
+   * ‏``s`` אופציונלי: המטפלים בשינוי שואלים על המצב שהם עומדים לכתוב.
+   */
+  function programSpec(s) {
+    var chosen = txt((s || state).program);
+    var list = runtime.programs || [];
+    for (var i = 0; i < list.length; i++) {
+      if (txt(list[i].id) === chosen) {
+        var spec = list[i].specialization;
+        return spec && Array.isArray(spec.options) && spec.options.length ? spec : null;
+      }
+    }
+    return null;
+  }
+
+  /** מספר הסמסטר בתוכנית, או 0 כשאין (קיץ, מסלול בלי תוכנית). */
+  function planNumber(s) {
+    return Math.round(num(txt((s || state).semester), 0)) || 0;
+  }
+
+  /** תיבת ההתמחות מוצגת: יש התמחויות, ומהסמסטר שבו בוחרים אותן. */
+  function specializationShown(s) {
+    var spec = programSpec(s);
+    var n = planNumber(s);
+    return !!spec && n > 0 && n >= num(spec.choose_from_semester, 0);
+  }
+
+  /** ההתמחות שנבחרה, רק אם היא תקפה לסמסטר ולמסלול הנוכחיים. */
+  function chosenSpecialization(s) {
+    var spec = programSpec(s);
+    var value = txt((s || state).specialization);
+    return specializationShown(s) && spec.options.indexOf(value) !== -1 ? value : "";
+  }
+
+  /**
+   * ‏קבוצת המסלולים שחלה עכשיו, או null. בחשמל ("סוג תכן הנדסי") היא
+   * ‏חלה על כולם מסמסטר 7; בתעשייה וניהול ("התנסות מעשית") רק למי שבחר/ה
+   * ‏תכן ותפעול — ולכן היא נשאלת רק אחרי ההתמחות.
+   */
+  function routeGroup(s) {
+    var spec = programSpec(s);
+    if (!spec) return null;
+    var n = planNumber(s);
+    var mine = chosenSpecialization(s);
+    var groups = spec.routes || [];
+    for (var i = 0; i < groups.length; i++) {
+      var g = groups[i];
+      var wanted = (g.applies_to && g.applies_to.specialization) || [];
+      if (n <= 0 || n < num(g.from_semester, 0)) continue;
+      if (wanted.length && wanted.indexOf(mine) === -1) continue;
+      return g;
+    }
+    return null;
+  }
+
+  function chosenRoute(s) {
+    var g = routeGroup(s);
+    var value = txt((s || state).route);
+    return g && (g.options || []).indexOf(value) !== -1 ? value : "";
+  }
+
+  /** ‏"התמחות משנית" — בחשמל, רק כשסוג התכן הוא מחקרי או פרויקט גמר. */
+  function secondaryShown(s) {
+    var spec = programSpec(s);
+    var sec = spec && spec.secondary;
+    if (!sec) return false;
+    var n = planNumber(s);
+    if (n <= 0 || n < num(sec.from_semester, 0)) return false;
+    return (sec.when_route || []).indexOf(chosenRoute(s)) !== -1;
+  }
+
+  function secondaryOptions(s) {
+    var spec = programSpec(s);
+    var primary = chosenSpecialization(s);
+    return spec
+      ? spec.options.filter(function (o) {
+          return o !== primary;
+        })
+      : [];
+  }
+
+  function chosenSecondary(s) {
+    var value = txt((s || state).secondarySpecialization);
+    return secondaryShown(s) && secondaryOptions(s).indexOf(value) !== -1 ? value : "";
+  }
+
+  /** התווית של תיבת המסלול: "סוג תכן הנדסי", "התנסות מעשית". */
+  function routeLabel(g) {
+    var labels = T("ui.fields.routeLabels", {}) || {};
+    return txt(labels[txt(g && g.id)]) || T("ui.fields.route");
+  }
+
+  /**
+   * ‏מה עוד חסר בבחירה, בשם התיבה ("התמחות", "סוג תכן הנדסי"), או "".
+   * ‏כשהתיבה מוצגת היא חובה (DESIGN.md) — השלב אינו מושלם בלעדיה. שאר
+   * ‏השלבים נשארים פתוחים, ובלי בחירה רשימת הקורסים היא זו של היום.
+   */
+  function trackMissing() {
+    var g = routeGroup();
+    var spec = programSpec();
+    if (g && !chosenRoute()) return routeLabel(g);
+    if (specializationShown() && !chosenSpecialization()) {
+      return spec && spec.secondary ? T("ui.fields.specializationPrimary") : T("ui.fields.specialization");
+    }
+    if (secondaryShown() && !chosenSecondary()) return T("ui.fields.specializationSecondary");
+    return "";
+  }
+
+  /** מה שנשלח לשרת ומה שההמלצה שייכת לו: ההתמחות והמסלול התקפים. */
+  function trackSig() {
+    // ‏"" בלי בחירה, ולא "|": מצב שמור מלפני התיבות נושא ``autoTrack: ""``,
+    // ‏וחתימה אחרת הייתה מחליפה לכולם את ההמלצה בטעינה הראשונה.
+    var spec = chosenSpecialization();
+    var route = chosenRoute();
+    return spec || route ? spec + "|" + route : "";
+  }
+
+  /**
+   * ‏מנקה בחירה שכבר אינה חלה — אחרי החלפת מסלול או סמסטר. סמסטר ריק
+   * ‏(קיץ) אינו מנקה: שם פשוט אין תוכנית, וההתמחות לא השתנתה.
+   */
+  function pruneTrackChoices(s) {
+    if (!programSpec(s)) {
+      s.specialization = "";
+      s.route = "";
+      s.secondarySpecialization = "";
+      return;
+    }
+    if (planNumber(s) <= 0) return;
+    s.specialization = chosenSpecialization(s);
+    s.route = chosenRoute(s);
+    s.secondarySpecialization = chosenSecondary(s);
   }
 
   /**
@@ -1518,7 +1668,9 @@
     // קורס ששייך למסלול התמחות מסוים. חלק מהמחלקות מפצלות סמסטרים לפי
     // מסלול, והכלי אינו יודע באיזה מסלול הסטודנט/ית — באזרחית הוא נקבע
     // לפי ציונים. מציגים, מסבירים, ולא מסמנים.
-    if (txt(rec.track)) {
+    // ‏מרגע שנבחרו התמחות או מסלול בשלב 1, השרת מסמן את הקורסים שלהם
+    // ‏(``track_chosen``) ומוריד את אלה של האחרים.
+    if (txt(rec.track) && !rec.trackChosen) {
       return Tf("app.courses.alternatives.track", { track: txt(rec.track) });
     }
     return "";
@@ -1624,7 +1776,8 @@
     var sameOwner =
       owned === target &&
       txt(state.autoProgram) === txt(state.program) &&
-      txt(state.autoIntake) === txt(state.intake);
+      txt(state.autoIntake) === txt(state.intake) &&
+      txt(state.autoTrack) === trackSig();
 
     // 1. אימוץ בחירה קיימת, פעם אחת בלבד. מצב שנשמר לפני שהתכונה הזאת
     //    הייתה קיימת מגיע בלי מקור לקודים שבו; הוא לא נמחק ולא מוחלף, רק
@@ -1648,6 +1801,7 @@
             autoSemester: target,
             autoProgram: txt(state.program),
             autoIntake: txt(state.intake),
+            autoTrack: trackSig(),
             autoCodes: adopted.slice(),
             // ‏הכול שלה. מרגע שאין סימון אוטומטי, אין "מומלץ שבוטל" —
             // יש רק מה שסומן ומה שלא.
@@ -1687,24 +1841,45 @@
       nextSemester === owned &&
       txt(state.autoProgram) === txt(state.program) &&
       txt(state.autoIntake) === txt(state.intake) &&
+      txt(state.autoTrack) === trackSig() &&
       state.provenanceReady &&
       !claimAsManual
     ) {
       return;
     }
 
+    // ‏החלפת התמחות או מסלול בלבד — אותו מסלול, מועד וסמסטר: מה שסומן
+    // ‏מההמלצה הקודמת ונשאר מומלץ (קורסי הליבה) נשאר מסומן, וכך גם
+    // ‏ה"בוטל" שלו. רק הקורסים של הבחירה הקודמת יורדים.
+    var trackOnly =
+      !!owned &&
+      owned === nextSemester &&
+      !claimAsManual &&
+      txt(state.autoProgram) === txt(state.program) &&
+      txt(state.autoIntake) === txt(state.intake) &&
+      txt(state.autoTrack) !== trackSig();
+    var stillRecommended = function (c) {
+      return recommended.indexOf(c) !== -1 && state.autoCodes.indexOf(c) !== -1;
+    };
+    var keep = trackOnly
+      ? state.codes.filter(function (c) {
+          return manual.indexOf(c) !== -1 || stillRecommended(c);
+        })
+      : manual;
+
     // ‏codes: manual ולא next — ההמלצה **מוצגת** ואינה מסומנת. סטודנט/ית
     // שלא סימנה דבר לא בחרה דבר, ולכן אין לה מה לרשת. ``autoCodes`` נשאר
     // רשימת ההמלצה, כי ממנה מסומן הכול בלחיצה אחת.
     setState({
-      codes: manual,
+      codes: keep,
       provenanceReady: true,
       manualCodes: manual,
       autoSemester: nextSemester,
       autoProgram: nextSemester ? txt(state.program) : "",
       autoIntake: nextSemester ? txt(state.intake) : "",
+      autoTrack: nextSemester ? trackSig() : "",
       autoCodes: recommended.slice(),
-      autoDropped: [],
+      autoDropped: trackOnly ? state.autoDropped.filter(stillRecommended) : [],
       activeSchedule: 0,
     });
     if (over.length) {
@@ -1729,6 +1904,7 @@
       autoSemester: target,
       autoProgram: txt(state.program),
       autoIntake: txt(state.intake),
+      autoTrack: trackSig(),
       autoCodes: capped.recommended.slice(),
       autoDropped: [],
       activeSchedule: 0,
@@ -2136,7 +2312,9 @@
     return getJSON(
       "/api/semester/" + encodeURIComponent(sem) + "/courses" +
         "?program=" + encodeURIComponent(state.program || "") +
-        "&intake=" + encodeURIComponent(state.intake || "")
+        "&intake=" + encodeURIComponent(state.intake || "") +
+        "&specialization=" + encodeURIComponent(chosenSpecialization()) +
+        "&route=" + encodeURIComponent(chosenRoute())
     )
       .then(function (data) {
         if (my !== seq.semester) return;
@@ -2210,6 +2388,8 @@
       placement: rec.placement === true,
       physicsTrack: txt(rec.physics_track),
       track: txt(rec.track),
+      // ‏הקורס שייך להתמחות/למסלול שנבחרו בשלב 1 — מומלץ כמו קורס ליבה.
+      trackChosen: rec.track_chosen === true,
       offered: rec.offered !== false,
       has_data: rec.has_data === true,
     };
@@ -2729,8 +2909,10 @@
     // שסומן ממנה — הייתה נשארת על המסך.
     // גם מועד הכניסה: אותו מספר סמסטר מציין קורסים אחרים בכל מועד, ולכן
     // החלפת מועד לבדה חייבת למשוך מחדש.
+    // ‏וגם ההתמחות והמסלול: הם קובעים אילו קורסי מסלול מומלצים.
     var semSig =
-      txt(state.semester) + "|" + txt(state.program) + "|" + txt(state.intake);
+      txt(state.semester) + "|" + txt(state.program) + "|" + txt(state.intake) +
+      "|" + trackSig();
     if (force || semSig !== lastSig.semester) {
       lastSig.semester = semSig;
       fetchSemesterCourses();
@@ -2860,6 +3042,16 @@
 
     ui.selProgram = byId("select-program");
     ui.selIntake = byId("select-intake");
+    ui.trackRow = byId("track-row");
+    ui.fieldSpecialization = byId("field-specialization");
+    ui.selSpecialization = byId("select-specialization");
+    ui.labelSpecialization = byId("label-specialization");
+    ui.fieldRoute = byId("field-route");
+    ui.selRoute = byId("select-route");
+    ui.labelRoute = byId("label-route");
+    ui.fieldSecondary = byId("field-secondary");
+    ui.selSecondary = byId("select-secondary");
+    ui.specializationDeadline = byId("specialization-deadline");
     ui.fieldIntake = byId("field-intake");
     ui.selPlanSemester = byId("select-plan-semester");
     ui.fieldPlanSemester = byId("field-plan-semester");
@@ -3016,6 +3208,10 @@
           // אחרת "חורף" של מתמטיקה היה נשאר תלוי במסלול שאין לו מועדים
           // בכלל — וחוזר לתוקף בשקט בחזרה אליה.
           s.intake = "";
+          // ‏וכך גם ההתמחות והמסלול: הם אפשרויות של המסלול הקודם.
+          s.specialization = "";
+          s.route = "";
+          s.secondarySpecialization = "";
           // וכך גם מספר הסמסטר שנבחר לפי מועד: המספר שייך לתוכנית שבחרו
           // בה, והסמסטר הקלנדרי שנגזר ממנו אינו תקף למסלול אחר. מסלול
           // רגיל גוזר את שניהם מחדש משנה+סמסטר, כפי שתמיד עשה.
@@ -3051,8 +3247,33 @@
           // כ-``semester`` בכל בקשת קורסים ופתרון. הוא נקרא מהתוכנית של
           // המועד שנבחר — ראו ``planTermFor``.
           s.term = planTermFor(picked);
+          pruneTrackChoices(s);
           s.activeSchedule = 0;
         });
+      });
+    }
+    if (ui.selSpecialization) {
+      ui.selSpecialization.addEventListener("change", function () {
+        setState(function (s) {
+          s.specialization = txt(ui.selSpecialization.value);
+          // מסלול ומשנית תלויים בהתמחות — מה שכבר אינו חל יורד.
+          pruneTrackChoices(s);
+          s.activeSchedule = 0;
+        });
+      });
+    }
+    if (ui.selRoute) {
+      ui.selRoute.addEventListener("change", function () {
+        setState(function (s) {
+          s.route = txt(ui.selRoute.value);
+          pruneTrackChoices(s);
+          s.activeSchedule = 0;
+        });
+      });
+    }
+    if (ui.selSecondary) {
+      ui.selSecondary.addEventListener("change", function () {
+        setState({ secondarySpecialization: txt(ui.selSecondary.value) });
       });
     }
     if (ui.selYear) ui.selYear.addEventListener("change", onYearTermChange);
@@ -3623,11 +3844,13 @@
         ? num(state.studyYear, null)
         : clamp(Math.round(num(rawYear, 1)), 1, 4);
     var t = txt(ui.selTerm ? ui.selTerm.value : state.term) || txt(state.term);
-    setState({
-      studyYear: y,
-      term: t,
-      semester: y === null || !t ? "" : semesterOf(y, t),
-      activeSchedule: 0,
+    setState(function (s) {
+      s.studyYear = y;
+      s.term = t;
+      s.semester = y === null || !t ? "" : semesterOf(y, t);
+      // ‏התמחות שנבחרה בסמסטר 5 אינה חלה בסמסטר 1 — יורדת.
+      pruneTrackChoices(s);
+      s.activeSchedule = 0;
     });
   }
 
@@ -4309,10 +4532,86 @@
 
   var planSemesterOptionsSig = null;
 
+  /** ממלא תיבה באפשרויות, רק כשהן השתנו, ובוחר את הערך או את ה-placeholder. */
+  function fillSelect(sel, placeholder, options, value) {
+    var sig = JSON.stringify([placeholder, options]);
+    if (sel.dataset.sig !== sig) {
+      sel.dataset.sig = sig;
+      clear(sel);
+      sel.appendChild(placeholderOption(placeholder));
+      options.forEach(function (o) {
+        sel.appendChild(el("option", { attrs: { value: o }, text: o }));
+      });
+    }
+    selectOrPlaceholder(sel, value);
+  }
+
+  /**
+   * ‏תיבות ההתמחות והמסלול (DESIGN.md, "Program, year and semester").
+   *
+   * ‏מוצגות רק למסלול שיש לו אותן, ורק מהסמסטר שבקובץ התוכנית: אזרחית
+   * ‏ותעשייה וניהול מ-3, מכונות מ-5, חשמל מ-7. כשהן מוצגות הן חובה
+   * ‏(מסגרת ‎--ink‎), אבל אינן נועלות את שאר השלבים — בלי בחירה הרשימה
+   * ‏בשלב 2 היא זו של היום.
+   */
+  function renderTrackPickers() {
+    if (!ui.trackRow) return;
+    var spec = programSpec();
+    var g = routeGroup();
+    var showSpec = specializationShown();
+    var showSecondary = secondaryShown();
+    setHidden(ui.fieldSpecialization, !showSpec);
+    setHidden(ui.fieldRoute, !g);
+    setHidden(ui.fieldSecondary, !showSecondary);
+    setHidden(ui.trackRow, !showSpec && !g && !showSecondary);
+    var deadline = showSpec && spec ? txt(spec.deadline) : "";
+    setText(ui.specializationDeadline, deadline);
+    setHidden(ui.specializationDeadline, !deadline);
+    if (!spec) return;
+
+    // ‏בחשמל סוג התכן הנדסי קודם להתמחות, כמו ב-DESIGN.md; בשאר — ההתמחות
+    // ‏קודמת, כי המסלול נשאל רק אחריה. סדר ה-DOM הוא גם סדר הטאב.
+    var routeFirst = !!g && !(g.applies_to && (g.applies_to.specialization || []).length);
+    var order = routeFirst
+      ? [ui.fieldRoute, ui.fieldSpecialization, ui.fieldSecondary]
+      : [ui.fieldSpecialization, ui.fieldRoute, ui.fieldSecondary];
+    order.forEach(function (node, i) {
+      if (node && ui.trackRow.children[i] !== node) {
+        ui.trackRow.insertBefore(node, ui.trackRow.children[i] || null);
+      }
+    });
+
+    if (showSpec) {
+      setText(
+        ui.labelSpecialization,
+        spec.secondary ? T("ui.fields.specializationPrimary") : T("ui.fields.specialization")
+      );
+      fillSelect(
+        ui.selSpecialization,
+        T("ui.fields.specializationPlaceholder"),
+        spec.options,
+        chosenSpecialization()
+      );
+    }
+    if (g) {
+      setText(ui.labelRoute, routeLabel(g));
+      fillSelect(ui.selRoute, T("ui.fields.routePlaceholder"), g.options || [], chosenRoute());
+    }
+    if (showSecondary) {
+      fillSelect(
+        ui.selSecondary,
+        T("ui.fields.specializationPlaceholder"),
+        secondaryOptions(),
+        chosenSecondary()
+      );
+    }
+  }
+
   function renderYearStep() {
     renderProgramSelect();
     renderIntakeSelect();
     renderPlanSemesterSelect();
+    renderTrackPickers();
     if (!ui.selYear || !ui.selTerm) return;
     var years = yearOptions();
     var terms = termOptions();
@@ -7951,6 +8250,30 @@
     if (changed) saveState();
   }
 
+  /** שורת הסיכום של שלב 1: הזהות, ואחריה ההתמחות והמסלול — או מה שחסר. */
+  function yearStepText() {
+    var identity = usesPlanSemester()
+      ? !identityChosen()
+        ? T("app.steps.year.emptyIntake")
+        : Tf("app.steps.year.selectedIntake", {
+            intake: intakeLabel(),
+            label: planSemesterLabel(),
+          })
+      : !identityChosen()
+        ? T("app.steps.year.empty")
+        : Tf("app.steps.year.selected", {
+            year: YEAR_LABELS[state.studyYear] || "",
+            term: txt(state.term),
+          });
+    if (!identityChosen()) return identity;
+    var missing = trackMissing();
+    if (missing) return Tf("app.steps.year.trackMissing", { what: missing });
+    var track = [chosenSpecialization(), chosenRoute(), chosenSecondary()]
+      .filter(Boolean)
+      .join(" · ");
+    return track ? Tf("app.steps.year.withTrack", { identity: identity, track: track }) : identity;
+  }
+
   function renderStepStates() {
     var hasCodes = state.codes.length > 0;
     var hasData = runtime.courses.length > 0;
@@ -7969,24 +8292,13 @@
         // בחירת שנה+סמסטר היא שלב שלם גם כשאין לה סמסטר בתוכנית
         // (תוכנית קצרה מ-8 סמסטרים, קיץ, או אין תוכנית כלל).
         locked: false,
-        complete: identityChosen(),
+        // ‏תיבת התמחות/מסלול שמוצגת היא חובה: בלעדיה השלב אינו מושלם.
+        complete: identityChosen() && !trackMissing(),
         // שנה וסמסטר בלבד. התרגום לסמסטר בתוכנית הלימודים יושב בשבב
         // שמתחת, ואמירתו כאן שוב הייתה אותה שורה פעמיים במרחק שורה.
         // ‏מסלול עם מועדי כניסה אומר כאן מועד + תווית הסמסטר, כי שנה
         // אין לו: "חורף · סמסטר 4 · סמסטר א׳ (חורף)".
-        text: usesPlanSemester()
-          ? !identityChosen()
-            ? T("app.steps.year.emptyIntake")
-            : Tf("app.steps.year.selectedIntake", {
-                intake: intakeLabel(),
-                label: planSemesterLabel(),
-              })
-          : !identityChosen()
-            ? T("app.steps.year.empty")
-            : Tf("app.steps.year.selected", {
-                year: YEAR_LABELS[state.studyYear] || "",
-                term: txt(state.term),
-              }),
+        text: yearStepText(),
       },
       {
         key: "courses",
