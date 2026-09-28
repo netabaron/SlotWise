@@ -1657,7 +1657,7 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .elective-chip.is-selected .course-code { color: var(--ev-fg); }
 .elective-chip.is-static { cursor: default; color: var(--muted); border-style: dashed; }
 .elective-chip-name { min-inline-size: 0; }
-/* ‏"אפשר לזכות רק על אחד מ-…": שורה אחת בצבעי פתק הזהב. */
+/* ‏"אפשר לקחת רק אחד מ-…": שורה אחת בצבעי פתק הזהב. */
 .elective-cluster-note {
   margin: 0;
   font-size: 12.5px;

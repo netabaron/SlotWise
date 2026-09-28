@@ -187,22 +187,22 @@ def test_a_minimum_of_two_ticks_at_two(page):
 # ------------------------------------------------------- פתקי "רק אחד מ-"
 def test_only_one_of_notes_sit_under_their_cluster(page):
     choose(page, SW, 4)
-    assert notes_under(page, "מדעים") == ["אפשר לזכות רק על אחד מ-62002 ו-62023"]
-    assert notes_under(page, "אלגוריתמים") == ["אפשר לזכות רק על אחד מ-61959 ו-62019"]
+    assert notes_under(page, "מדעים") == ["אפשר לקחת רק אחד מ-62002 ו-62023"]
+    assert notes_under(page, "אלגוריתמים") == ["אפשר לקחת רק אחד מ-61959 ו-62019"]
     assert notes_under(page, "מעבדות") == []
 
 
 def test_a_rule_across_clusters_shows_under_each_of_them(page):
     # ‏251100 יושב גם ב"עיבוד אותות" וגם ב"הנדסת תוכנה"; ‏251965 רק בשני.
     choose(page, SW, 4)
-    line = "אפשר לזכות רק על אחד מ-251100 ו-251965"
+    line = "אפשר לקחת רק אחד מ-251100 ו-251965"
     assert line in notes_under(page, "הנדסת תוכנה")
     assert line in notes_under(page, "עיבוד אותות ורשתות תקשורת")
 
 
 def test_industrial_251966_and_51515_under_both_clusters(page):
     choose(page, IND, 2, specialization=DS)
-    line = "אפשר לזכות רק על אחד מ-51515 ו-251966"
+    line = "אפשר לקחת רק אחד מ-51515 ו-251966"
     assert line in notes_under(page, f"{DS} · המרכז לחינוך הנדסי וליזמות")
     assert line in notes_under(page, f"{DS} · מערכות מידע ומדע הנתונים")
 
