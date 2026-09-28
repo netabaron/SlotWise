@@ -11,7 +11,7 @@
 * **‏semester_notes** מ-``semester_slots``: מה התוכנית משבצת בסמסטר, ומה
   "בכל סמסטר" (רק כשאינו משובץ בו).
 * **הממשק**: כותרת "מומלצים לסמסטר X", מונה נ"ז, פתק הזהב, תג "חובה
-  בהתמחות", "נבחר יחד עם", "בסמסטר הזה: X" שסופר את הבחירה בלבד, ושבב
+  בהתמחות", "נבחר יחד עם", ‏✓ על הגלולה שסופר את הבחירה בלבד, ושבב
   שלב 1 שסופר רק את המומלצים להתמחות שנבחרה.
 """
 
@@ -275,13 +275,12 @@ def test_specialization_badge_and_step_one_count(page):
     assert f"{recommended} קורסים מומלצים" in text(page, "#semester-summary")
 
 
-def test_this_semester_counts_the_current_selection_only(page):
+def test_the_pill_ticks_on_the_current_selection_only(page):
     choose(page, SW, 4)
-    row = "#electives-rules .elective-rule[data-rule='cluster-0'] .elective-rule-count"
-    assert text(page, row) == "בסמסטר הזה: 0"
+    check = "#electives-groups .elective-cluster[data-key='מדעים'] .elective-pill-check"
+    assert page.locator(check).count() == 0
     page.click("#electives-groups .elective-chip[data-code='61957']")
     page.wait_for_timeout(700)
-    assert text(page, row) == "בסמסטר הזה: 1"
-    assert page.locator("#electives-rules .elective-rule[data-rule='seminars-no-substitute'] "
-                        ".elective-rule-count").count() == 0
+    assert page.locator(check).count() == 1
+    assert page.locator("#electives-rules").count() == 0
     assert "הושלם" not in page.inner_text("#electives")

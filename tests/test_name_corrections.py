@@ -34,7 +34,17 @@ CONFIRMED = {
     "11375": "פרשיות סוערות במשפט ישראלי",
     "81403": "התנסות מעשית בהוראת מתמטיקה והנדסה משלב 1",
     "81404": "התנסות מעשית בהוראת מתמטיקה והנדסה משלב 2",
+    "51170": "נושא אישי 1",
+    "51156": "מבוא להנדסת מערכות שירות",
 }
+
+#: מתי הוחלט כל שם. ‏51170 ו-51156 נוספו מ-industry.pdf (עמ' 13, 14).
+DECIDED = {code: "2026-09-26" for code in CONFIRMED}
+DECIDED.update({"51170": "2026-09-27", "51156": "2026-09-27"})
+
+#: אינם בקטלוג, ולכן חיפוש בקטלוג אינו מחזיר אותם. שמם נבדק על השבבים
+#: והכרטיסים של "רשימת בחירה מחייבת": tests/test_courses_step_notes.py.
+NOT_IN_CATALOG = {"51170", "51156"}
 
 #: שאר הרשימה מ-PROGRAM_FINDINGS §10 — הוחלט להשאיר כפי שהידיעון כותב.
 UNCHANGED = {
@@ -78,7 +88,7 @@ def test_every_row_records_what_it_replaced_and_when():
     raw = json.loads((ROOT / "data" / "name_corrections.json").read_text(encoding="utf-8"))
     for code, row in raw["corrections"].items():
         assert row["was"].strip(), code
-        assert row["decided"] == "2026-09-26", code
+        assert row["decided"] == DECIDED[code], code
 
 
 def test_a_missing_table_corrects_nothing(tmp_path):
@@ -86,7 +96,9 @@ def test_a_missing_table_corrects_nothing(tmp_path):
 
 
 # --- השם המאושר בכל מקום ---------------------------------------------------
-@pytest.mark.parametrize("code, name", sorted(CONFIRMED.items()))
+@pytest.mark.parametrize(
+    "code, name", sorted((c, n) for c, n in CONFIRMED.items() if c not in NOT_IN_CATALOG)
+)
 def test_catalog_search_shows_the_confirmed_name(client, code, name):
     assert searched(client, code) == name
 

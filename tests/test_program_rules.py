@@ -45,6 +45,7 @@ FILES = {
 RULE_TYPES = {
     "min_courses", "min_credits", "max_credits", "exact_courses",
     "min_total_courses", "mutually_exclusive", "only_one_counts", "text",
+    "mandatory_in_specialization",
 }
 SLOT_KINDS = {"electives", "general", "sport", "skills"}
 SLOT_BASES = {"placeholder_row", "list_heading", "prose", "recommendation", "not_placed", "not_stated"}

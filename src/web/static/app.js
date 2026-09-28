@@ -709,7 +709,6 @@
     // ‏false = הנ"ז שחולצה מהשנתון אינה שווה לסה"כ שהשנתון מדפיס.
     // ‏null = אין בדיקה כזאת לתוכנית הזאת.
     semesterReconciles: null,
-    semesterNote: "",
     // הסמסטר שהבחירה השמורה שייכת לו, כפי שנקרא ב-boot. ריק = אין מצב שמור.
     adoptSemester: "",
     // ‏limits.max_codes מהשרת. חורגים ממנו ⇒ כל /api/courses ו-/api/solve
@@ -2334,7 +2333,6 @@
         // ‏false בלבד הוא אזהרה. ‏undefined פירושו "השרת לא אמר", וזה לא
         // אותו דבר — תוכנית שאין בה בדיקת סכום אינה תוכנית חשודה.
         runtime.semesterReconciles = semInfo.reconciles === false ? false : null;
-        runtime.semesterNote = txt(semInfo.semester_note);
         // כאן, ולא ב-onYearTermChange: רק עכשיו רשימת הסמסטר החדש בידינו.
         // הפעלה מוקדמת יותר הייתה מסמנת את קורסי הסמסטר *הקודם*.
         applyRecommendedDefaults(sem);
@@ -3053,7 +3051,8 @@
     ui.fieldTerm = byId("field-term");
     ui.electives = byId("electives");
     ui.electivesNotes = byId("electives-notes");
-    ui.electivesRules = byId("electives-rules");
+    ui.electivesNeedsSpec = byId("electives-needs-spec");
+    ui.electivesHeadNotes = byId("electives-head-notes");
     ui.electivesGroups = byId("electives-groups");
     ui.selYear = byId("select-year");
     ui.selTerm = byId("select-term");
@@ -4925,8 +4924,9 @@
     var placed = live ? notes.placed || [] : [];
     var anywhere = live ? notes.anywhere || [] : [];
 
+    // ‏``slot.note`` נשאר בנתונים ואינו מוצג: הפתק הוא שורה אחת (DESIGN.md,
+    // ‏עיקרון 6).
     var what = [];
-    var extra = [];
     placed.forEach(function (slot) {
       var kind = txt(slot.kind);
       var phrase =
@@ -4934,14 +4934,10 @@
           ? Tf("app.courses.semesterNotes.placedKinds.generalLabel", { label: txt(slot.label) })
           : T("app.courses.semesterNotes.placedKinds." + kind, "");
       if (phrase && what.indexOf(phrase) === -1) what.push(phrase);
-      if (txt(slot.note) && extra.indexOf(txt(slot.note)) === -1) extra.push(txt(slot.note));
     });
     var gold = what.length
       ? Tf("app.courses.semesterNotes.placed", { what: joinHe(what) })
       : "";
-    if (gold && extra.length) {
-      gold = Tf("app.courses.semesterNotes.withNote", { text: gold, note: extra.join("; ") });
-    }
     setText(ui.semesterNote, gold);
     setHidden(ui.semesterNote, !gold);
 
@@ -4950,11 +4946,9 @@
       var name = T("app.courses.semesterNotes.anywhereKinds." + txt(slot.kind), "");
       if (name && kinds.indexOf(name) === -1) kinds.push(name);
     });
+    // ‏הציטוט מהשנתון נשאר בנתונים (``quote``); על המסך — שורה אחת.
     var info = kinds.length
-      ? Tf("app.courses.semesterNotes.anywhere", {
-          what: joinHe(kinds),
-          quote: txt(anywhere[0].quote),
-        })
+      ? Tf("app.courses.semesterNotes.anywhere", { what: joinHe(kinds) })
       : "";
     setText(ui.semesterInfo, info);
     setHidden(ui.semesterInfo, !info);
@@ -4980,11 +4974,11 @@
     setText(ui.recommendedTitle, show ? Tf("app.courses.recommended.heading", { semester: sem }) : "");
 
     // ‏הסתייגות, לא תקלה: מספר הנ"ז שחולץ מהשנתון אינו שווה לסה"כ שהשנתון
-    // עצמו מדפיס לסמסטר הזה. לפעמים המסמך הוא שאינו מסתדר.
+    // עצמו מדפיס לסמסטר הזה. שורה אחת בלבד (DESIGN.md, עיקרון 6): ההסבר
+    // המלא נשאר ב-``note`` של הסמסטר ובקובץ docs/PROGRAM_REVIEW.md.
     var mismatch =
       show && runtime.semesterReconciles === false
-        ? T("app.courses.recommended.creditsMismatch") +
-          (runtime.semesterNote ? " " + runtime.semesterNote : "")
+        ? T("app.courses.recommended.creditsMismatch")
         : "";
     setText(ui.recommendedNote, mismatch);
     setHidden(ui.recommendedNote, !mismatch);
@@ -5206,6 +5200,7 @@
       main.appendChild(el("span", { class: "course-meta course-replaces", text: note }));
       note = "";
     }
+    if (!note) note = ruleCourseNotes()[code] || "";
     if (note && !tied) {
       main.appendChild(el("span", { class: "course-meta", text: note }));
     }
@@ -5258,8 +5253,12 @@
       );
     }
     // ‏חובה רק בהתמחות שנבחרה — ולא קורס של מסלול (סוג תכן, התנסות מעשית).
+    // ‏וקורס שהתוכנית קובעת כחובה בהתמחות בלי לשבץ אותו בסמסטר — גם
+    // ‏כשנוסף מהבחירה או מהחיפוש.
     var mySpec = chosenSpecialization();
-    if (!isExtra && rec.trackChosen && mySpec && txt(rec.track).split(" / ").indexOf(mySpec) !== -1) {
+    var specTrack =
+      !isExtra && rec.trackChosen && txt(rec.track).split(" / ").indexOf(mySpec) !== -1;
+    if (mySpec && (specTrack || specMandatoryCodes()[code])) {
       tags.appendChild(
         el("span", {
           class: "tag tag--spec",
@@ -5462,10 +5461,34 @@
   }
 
   /**
-   * ‏"בסמסטר הזה: X" — כמה מהבחירה הנוכחית נספרים לחוק. רק הבחירה של
-   * ‏עכשיו: האפליקציה אינה יודעת מה נלמד קודם, ולכן אין כאן "הושלם".
-   * ‏``count_one_of``: מתוך כל קבוצה כזו נספר קורס אחד בלבד.
+   * ‏{קוד: true} לקורסים שחובה בהתמחות שנבחרה אף שאינם בשום סמסטר
+   * ‏(``mandatory_in_specialization``; באזרחית, ניהול הבנייה: 500210, 51600).
    */
+  function specMandatoryCodes() {
+    var out = Object.create(null);
+    var data = runtime.electives;
+    ((data && data.available && data.rules) || []).forEach(function (rule) {
+      if (txt(rule.type) !== "mandatory_in_specialization") return;
+      (rule.codes || []).forEach(function (c) {
+        if (txt(c)) out[txt(c)] = true;
+      });
+    });
+    return out;
+  }
+
+  /** ‏{קוד: שורה} — הערת כרטיס מחוק שחל (``course_notes``; ‏51170). */
+  function ruleCourseNotes() {
+    var out = Object.create(null);
+    var data = runtime.electives;
+    ((data && data.available && data.rules) || []).forEach(function (rule) {
+      var notes = rule.course_notes || {};
+      Object.keys(notes).forEach(function (c) {
+        if (txt(notes[c]) && !out[c]) out[c] = txt(notes[c]);
+      });
+    });
+    return out;
+  }
+
   /** ‏{קוד: true} לכל קורס ברשימות הבחירה שמוצגות עכשיו. */
   function electiveCodes() {
     var out = Object.create(null);
@@ -5478,26 +5501,60 @@
     return out;
   }
 
-  function ruleCount(rule, picked) {
-    var rows = rule.rows || {};
-    var hits = Object.keys(rows).filter(function (c) {
-      return picked[c] === true;
+  /**
+   * ‏שורות הזהב שתחת כל אשכול (DESIGN.md, "Which rules are shown"):
+   * ‏שורת הרכב אחת לרשימה, ו"אפשר לזכות רק על אחד מ-A ו-B" לכל חוק
+   * ‏"רק אחד מ-" שחל (``mutually_exclusive``, ``only_one_counts``) — תחת
+   * ‏כל אשכול שמחזיק לפחות אחד מהקורסים של החוק.
+   * ‏מחזירה {מפתח-אשכול: [שורות]}.
+   */
+  function clusterNotes(data) {
+    var out = Object.create(null);
+    // ‏חוקי הרכב: מינימום על חלק מרשימה אחת (``where``). כל החוקים של אותה
+    // ‏רשימה מצטרפים לשורה אחת, בלשון הנתונים: "מתוכם לפחות 3 מתחום החומרה
+    // ‏ולפחות 3 מתחום התוכנה".
+    var composition = Object.create(null);
+    (data.rules || []).forEach(function (rule) {
+      if (txt(rule.type) !== "min_courses" || !rule.partial) return;
+      if ((rule.lists || []).length !== 1 || !txt(rule.text)) return;
+      var key = txt(rule.lists[0]);
+      composition[key] = composition[key] || [];
+      composition[key].push(txt(rule.text));
     });
-    (rule.count_one_of || []).forEach(function (group) {
-      var extra = hits
-        .filter(function (c) {
-          return group.indexOf(c) !== -1;
-        })
-        .slice(1);
-      hits = hits.filter(function (c) {
-        return extra.indexOf(c) === -1;
+    Object.keys(composition).forEach(function (key) {
+      out[key] = [composition[key].join(" ")];
+    });
+    // ‏חוק מילולי שהנתונים מסמנים ``show`` ויש לו רשימה: תחת הרשימה.
+    (data.rules || []).forEach(function (rule) {
+      if (!rule.show || !txt(rule.text)) return;
+      (rule.lists || []).forEach(function (name) {
+        var key = txt(name);
+        out[key] = out[key] || [];
+        if (out[key].indexOf(txt(rule.text)) === -1) out[key].push(txt(rule.text));
       });
     });
-    if (rule.unit !== "credits") return hits.length;
-    return hits.reduce(function (sum, c) {
-      var value = rows[c] === null || rows[c] === undefined ? creditsOf(c) : rows[c];
-      return sum + num(value, 0);
-    }, 0);
+
+    (data.rules || []).forEach(function (rule) {
+      var type = txt(rule.type);
+      if (type !== "mutually_exclusive" && type !== "only_one_counts") return;
+      var codes = Object.keys(rule.rows || {}).sort(function (a, b) {
+        return num(a, 0) - num(b, 0);
+      });
+      if (codes.length < 2) return;
+      var line = Tf("app.electives.onlyOne", {
+        codes: codes.slice(0, -1).join(", ") + " ו-" + codes[codes.length - 1],
+      });
+      (data.clusters || []).forEach(function (cluster) {
+        var holds = (cluster.courses || []).some(function (course) {
+          return codes.indexOf(txt(course.code)) !== -1;
+        });
+        if (!holds) return;
+        var key = txt(cluster.key);
+        out[key] = out[key] || [];
+        if (out[key].indexOf(line) === -1) out[key].push(line);
+      });
+    });
+    return out;
   }
 
   function pillText(pill) {
@@ -5542,48 +5599,21 @@
       setHidden(ui.electivesNotes, notes.length === 0);
     }
 
-    var picked = selectedSet();
+    // ‏רשימת החוקים אינה מוצגת (DESIGN.md, "Elective clusters"); נשאר רק
+    // ‏ההסבר למה אין עדיין רשימות, בתוכנית שבה הן תלויות בהתמחות.
+    setHidden(ui.electivesNeedsSpec, !data.needs_specialization);
 
-    rebuild(ui.electivesRules, function (list) {
-      if (data.needs_specialization) {
-        list.appendChild(
-          el("li", { class: "elective-rule note", text: T("app.electives.needsSpecialization") })
-        );
-      }
+    var picked = selectedSet();
+    var notesByCluster = clusterNotes(data);
+    var mandatory = specMandatoryCodes();
+    var chipSpec = chosenSpecialization();
+
+    // ‏חוקים מילוליים שהנתונים מסמנים ``show`` ואינם על רשימה: שורה אחת
+    // ‏כל אחד, מתחת לכותרת.
+    rebuild(ui.electivesHeadNotes, function (box) {
       (data.rules || []).forEach(function (rule) {
-        var src = rule.source || {};
-        var body = el("div", { class: "elective-rule-body" }, [
-          el("span", { class: "elective-rule-text", text: txt(rule.text) }),
-        ]);
-        (rule.notes || []).forEach(function (n) {
-          body.appendChild(el("span", { class: "elective-rule-note", text: txt(n) }));
-        });
-        if (txt(src.pdf)) {
-          body.appendChild(
-            el("span", {
-              class: "elective-rule-source",
-              attrs: { title: txt(src.quote) },
-              text: Tf("app.electives.source", { pdf: txt(src.pdf), page: txt(src.page) }),
-            })
-          );
-        }
-        var row = el("li", { class: "elective-rule", data: { rule: txt(rule.id) } }, [body]);
-        // ‏חוק מילולי מוצג בלי מספר: אין מה לספור בו.
-        if (rule.countable) {
-          var n = ruleCount(rule, picked);
-          row.appendChild(
-            el("span", {
-              class: "elective-rule-count",
-              text: Tf(
-                rule.unit === "credits"
-                  ? "app.electives.thisSemesterCredits"
-                  : "app.electives.thisSemester",
-                { n: fmtNumber(n) }
-              ),
-            })
-          );
-        }
-        list.appendChild(row);
+        if (!rule.show || (rule.lists || []).length || !txt(rule.text)) return;
+        box.appendChild(el("p", { class: "elective-cluster-note", text: txt(rule.text) }));
       });
     });
 
@@ -5592,9 +5622,42 @@
         var head = el("div", { class: "elective-cluster-head" }, [
           el("h4", { class: "elective-cluster-title", text: txt(cluster.title) }),
         ]);
+        // ‏✓ על "לפחות N קורסים" כשנבחרו N קורסים מהאשכול בסמסטר הזה. זה
+        // ‏"נבחר עכשיו", לא "הושלם": מה שנלמד קודם אינו ידוע.
+        var pickedCodes = (cluster.courses || [])
+          .map(function (course) {
+            return txt(course.code);
+          })
+          .filter(function (c) {
+            return c && picked[c] === true;
+          });
         (cluster.pills || []).forEach(function (pill) {
           var label = pillText(pill);
-          if (label) head.appendChild(el("span", { class: "pill elective-pill", text: label }));
+          if (!label) return;
+          var counts =
+            txt(pill.type) === "min_courses" || txt(pill.type) === "min_total_courses";
+          // ‏``count_one_of``: מכל קבוצה כזו נספר קורס אחד (‏51535/51537).
+          var hits = pickedCodes.slice();
+          (pill.count_one_of || []).forEach(function (group) {
+            var inGroup = hits.filter(function (c) {
+              return group.indexOf(c) !== -1;
+            });
+            hits = hits.filter(function (c) {
+              return inGroup.slice(1).indexOf(c) === -1;
+            });
+          });
+          var node = el("span", { class: "pill elective-pill", text: label });
+          if (counts && num(pill.n, 0) > 0 && hits.length >= num(pill.n, 0)) {
+            node.classList.add("is-picked");
+            node.appendChild(
+              el("span", {
+                class: "elective-pill-check",
+                attrs: { title: T("app.electives.pickedHere"), "aria-label": T("app.electives.pickedHere") },
+                text: "✓",
+              })
+            );
+          }
+          head.appendChild(node);
         });
         var chips = el("div", { class: "elective-chips" });
         (cluster.courses || []).forEach(function (course) {
@@ -5636,11 +5699,19 @@
               [
                 el("span", { class: "course-code", text: code }),
                 el("span", { class: "elective-chip-name", text: txt(course.name) }),
-              ]
+              ].concat(
+                chipSpec && mandatory[code]
+                  ? [el("span", { class: "tag tag--spec", text: Tf("app.courses.tags.specialization", { name: chipSpec }) })]
+                  : []
+              )
             )
           );
         });
-        box.appendChild(el("section", { class: "elective-cluster" }, [head, chips]));
+        var parts = [head, chips];
+        (notesByCluster[txt(cluster.key)] || []).forEach(function (line) {
+          parts.push(el("p", { class: "elective-cluster-note", text: line }));
+        });
+        box.appendChild(el("section", { class: "elective-cluster", data: { key: txt(cluster.key) } }, parts));
       });
     });
   }

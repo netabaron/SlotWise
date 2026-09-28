@@ -226,6 +226,6 @@ def test_the_explanation_is_plain_and_mentions_no_fetching(picked):
     )
     for code in NO_GROUPS:
         assert code in text
-    assert "לא נפתחו קבוצות לקורס זה בסמסטר הנוכחי" in text
+    assert "לא נפתח בסמסטר הזה" in text
     assert "בלי פנייה לידיעון" not in text
     assert picked.errors == []

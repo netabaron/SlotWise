@@ -154,10 +154,10 @@
                                   נ"ז שמורות. לעומת זאת אפס שהוצהר בתוכנית
                                   (‏11063 אנגלית בסיסי ועוד ארבעה) מוצג "0" —
                                   הוא נתון, לא חוסר.
-                  #electives  דרישות הבחירה: #electives-rules (שורה לכל
-                                  חוק, עם מקור ו"בסמסטר הזה: X"),
-                                  #electives-groups (תיבה לכל רשימה, גלולת
-                                  מינימום, קורסים כשבבים ‎.elective-chip‎)
+                  #electives  קורסי הבחירה: #electives-groups (תיבה לכל
+                                  רשימה, גלולת מינימום — עם ✓ כשנבחר ממנה
+                                  קורס בסמסטר הזה — קורסים כשבבים
+                                  ‎.elective-chip‎, ופתק זהב של "רק אחד מ-")
                   מצב קטלוג (אין תוכנית לימודים טעונה):
                   #catalog-browse       העטיפה. hidden כשיש תוכנית.
                   #catalog-browse-note  שורת ההסבר האחת
@@ -450,19 +450,20 @@
         <p class="note" id="catalog-browse-state" role="status" aria-live="polite"></p>
       </div>
 
-      <!-- ‏דרישות הבחירה (DESIGN.md, "Elective requirements"): החוקים של
-           התוכנית עם מקורם, וכל רשימת בחירה כתיבה עם הגלולה שלה. אין מצב
-           "הושלם" — האפליקציה אינה יודעת מה נלמד קודם. מוסתר לגמרי לתוכנית
-           שאין לה חוקים ורשימות. -->
+      <!-- ‏קורסי הבחירה (DESIGN.md, "Elective clusters"): כל רשימת בחירה
+           כתיבה עם הגלולה שלה. רשימת החוקים ומקורותיהם אינה מוצגת; הם
+           נשארים בנתונים. ה-✓ על "לפחות קורס אחד" אומר "נבחר בסמסטר הזה",
+           לא "הושלם" — האפליקציה אינה יודעת מה נלמד קודם. מוסתר לגמרי
+           לתוכנית שאין לה רשימות. -->
       <div class="step-body electives" id="electives" hidden>
         <div class="electives-head">
           <h3 class="electives-title" id="electives-title">{{ S.app.electives.title }}</h3>
-          <span class="electives-sub">{{ S.app.electives.subtitle }}</span>
         </div>
         <!-- הערת השנתון עצמו על רשימת הבחירה, כשיש כזאת (``notes``, לא
              ``warnings``, שהוא יומן החילוץ). -->
         <p class="note" id="electives-notes" hidden></p>
-        <ul class="elective-rules" id="electives-rules"></ul>
+        <div class="electives-head-notes" id="electives-head-notes"></div>
+        <p class="note" id="electives-needs-spec" hidden>{{ S.app.electives.needsSpecialization }}</p>
         <div class="electives-groups" id="electives-groups"></div>
       </div>
     </div>

@@ -1595,35 +1595,15 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .course-item.is-selected .tag--spec { border-color: var(--ev-fg); color: var(--ev-fg); }
 
 /* ==========================================================================
-   8א. שלב 2 — דרישות הבחירה
+   8א. שלב 2 — קורסי הבחירה
    ========================================================================== */
 .electives-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-block-start: 8px; }
 .electives-title { margin: 0; font-size: 15px; font-weight: 800; }
-.electives-sub { font-size: 13px; color: var(--muted); }
-
-.elective-rules {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
-}
-.elective-rules:empty { display: none; }
-.elective-rule {
-  display: flex;
-  gap: 4px 12px;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-block-end: 1px solid var(--ln);
-  font-size: 13.5px;
-}
-.elective-rule:last-child { border-block-end: 0; }
-.elective-rule-body { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
-.elective-rule-note,
-.elective-rule-source { font-size: 12px; color: var(--muted); }
-.elective-rule-count { flex: none; font-size: 13px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#electives-needs-spec[hidden] { display: none; }
+.electives-head-notes { display: grid; gap: 4px; }
+.electives-head-notes:empty { display: none; }
+.elective-chip .tag--spec { font-size: 11px; }
+.elective-chip.is-selected .tag--spec { border-color: var(--ev-fg); color: var(--ev-fg); }
 
 .electives-groups { display: grid; gap: 10px; }
 .elective-cluster {
@@ -1645,6 +1625,12 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   border-radius: 999px;
   color: var(--muted);
   white-space: nowrap;
+}
+/* ‏✓ טורקיז: נבחר קורס מהאשכול בסמסטר הזה (DESIGN.md, "Elective clusters"). */
+.elective-pill-check {
+  margin-inline-start: 5px;
+  color: var(--brand-wise);
+  font-weight: 800;
 }
 .elective-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .elective-chip {
@@ -1671,6 +1657,14 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .elective-chip.is-selected .course-code { color: var(--ev-fg); }
 .elective-chip.is-static { cursor: default; color: var(--muted); border-style: dashed; }
 .elective-chip-name { min-inline-size: 0; }
+/* ‏"אפשר לזכות רק על אחד מ-…": שורה אחת בצבעי פתק הזהב. */
+.elective-cluster-note {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--gold-ink);
+}
+.elective-cluster-note::before { content: "\2726"; margin-inline-end: 6px; }
 
 /* ==========================================================================
    9. שלב 3 — כפתורי ימי הלימוד
@@ -2244,7 +2238,6 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   .header-side { inline-size: 100%; justify-content: space-between; }
   .brand-title { font-size: 23px; }
   .brand-icon { inline-size: 30px; block-size: 30px; }
-  .elective-rule { flex-wrap: wrap; }
 }
 
 @media (max-width: 380px) {

@@ -156,7 +156,7 @@ def test_bootstrap_carries_each_programs_specialization(client):
 def test_the_other_program_is_relabelled(client):
     programs = client.get("/api/bootstrap").get_json()["programs"]
     assert programs[-1]["id"] == "other"
-    assert programs[-1]["label"] == "לא מופיע ברשימה — עבודה מהקטלוג בלבד"
+    assert programs[-1]["label"] == "מסלול אחר"
 
 
 # ==========================================================================

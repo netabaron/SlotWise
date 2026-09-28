@@ -2170,7 +2170,7 @@ def _program_choices(
         {
             "id": OTHER_PROGRAM,
             "label": strings_mod.get(
-                "server.programs.other", "לא מופיע ברשימה — עבודה מהקטלוג בלבד"
+                "server.programs.other", "מסלול אחר"
             ),
             "has_curriculum": False,
             # ‏"לא ברשימה" אינו מסלול, ולכן אין לו סיבה להיעדר תוכנית —
@@ -4935,6 +4935,7 @@ def program_electives():
 
     rules_out: list[dict] = []
     pills: dict[str, list[dict]] = {}
+    rule_clusters: list[tuple[str, dict, dict]] = []
     for rule in applicable:
         kind = str(rule.get("type") or "")
         unit = _COUNTABLE_RULES.get(kind, "")
@@ -4951,6 +4952,18 @@ def program_electives():
                 "unit": unit,
                 "rows": rows,
                 "count_one_of": [[str(c) for c in g] for g in rule.get("count_one_of") or []],
+                # ‏הרשימות שהחוק מדבר עליהן, והאם הוא על חלק מרשימה (``where``):
+                # ‏חוק הרכב ("מתוכם לפחות 3 מתחום החומרה") מוצג תחת הרשימה שלו.
+                "lists": [str(n) for n in rule.get("lists") or []],
+                "partial": bool(rule.get("where")),
+                "codes": [str(c) for c in rule.get("codes") or []],
+                # ‏חוק מילולי מוצג רק כשהנתונים אומרים זאת (DESIGN.md, "Which
+                # rules are shown"): מההרכב וההגבלות, לא סכומי התואר.
+                "show": bool(rule.get("show")),
+                # ‏שורה אחת על כרטיס של קורס מסוים (‏51170: "לאחוזון 80…").
+                "course_notes": {
+                    str(c): str(n) for c, n in (rule.get("course_notes") or {}).items()
+                },
                 "notes": [str(n) for n in rule.get("notes") or []],
                 "source": {
                     "pdf": str(source.get("pdf") or ""),
@@ -4961,8 +4974,14 @@ def program_electives():
         )
         names = rule.get("lists") or []
         pill = _pill(rule)
+        if pill and rule.get("count_one_of"):
+            pill["count_one_of"] = [[str(c) for c in g] for g in rule["count_one_of"]]
         if pill and len(names) == 1 and not rule.get("where") and not rule.get("codes"):
             pills.setdefault(str(names[0]), []).append(pill)
+        # ‏קבוצה שקיימת רק בחוק (רשימת הבחירה המחייבת בתעשייה): ‏``cluster_title``
+        # ‏הופך את רשימת ה-``codes`` שלו לתיבה משלה, עם הגלולה של החוק.
+        if pill and rule.get("cluster_title") and rule.get("codes"):
+            rule_clusters.append((str(rule["cluster_title"]), rule, pill))
 
     # ‏עם התמחות משנית אותה כותרת ("קורסי ליבה בהתמחות") מופיעה פעמיים;
     # ‏המפתח המלא נושא גם את שם ההתמחות.
@@ -5003,6 +5022,22 @@ def program_electives():
                     ],
                 }
             )
+
+    if rule_clusters:
+        known: dict[str, dict] = {}
+        for entry in lists.values():
+            for c in entry.get("courses") or []:
+                known.setdefault(str(c.get("code") or ""), c)
+        catalog, _summary = _catalog_snapshot()
+        for title, rule, pill in rule_clusters:
+            courses = []
+            for code in [str(c) for c in rule["codes"]]:
+                row = known.get(code) or {}
+                name = str(row.get("name") or "") or _restored_name(
+                    code, str((catalog.get(code) or {}).get("name", ""))
+                )
+                courses.append({"code": code, "name": name, "credits": row.get("credits")})
+            clusters.append({"key": title, "title": title, "pills": [pill], "courses": courses})
 
     needs_spec = bool(by_spec) and not choice["specialization"]
     year = curr.get("cohort_year") or chapter.get("year")

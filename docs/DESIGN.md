@@ -9,6 +9,7 @@ This document is the source of truth for the SlotWise redesign. Implement it in 
 3. **Motion explains, it does not decorate.** Motion is used only in response to the user's action: a step or course opening and closing, a rank being assigned, timetable blocks moving between alternatives. No scroll-triggered entrances, no glow, no gradients, no ambient animation.
 4. **The active step is the only loud thing.** Completed steps collapse to one summary line, upcoming steps are muted.
 5. **Nothing to offer is one line.** When a feature has nothing to offer, it says so in one line instead of explaining what it checked. For example, when no single-course drop reaches the study-days target, the "מה יאפשר N ימים" panel is only "אי אפשר להגיע ל-N ימים, גם בוויתור על קורס אחד."
+6. **A note is one line, for the student** (decided 2026-09-27). Every note in the interface (semester notes, cluster notes, course-card notes) is at most one line, written for the student, and carries no internal data: no field names (`track`, `note`, `code`), no raw values, no extraction or reconciliation detail, no source file names or page numbers. That material stays in the data files and, where a person needs it, in `docs/PROGRAM_REVIEW.md`.
 
 ## Tokens
 
@@ -150,22 +151,32 @@ Keep the current controls and behaviour; apply tokens, type and the general step
 - **Specialization picker.** Appears only for programs that have specializations, and only from the semester where the curriculum diverges: Civil and Industrial from semester 3, Mechanical from semester 5, Electrical from semester 7. When shown it is required, and marked with an `--ink` border like the active control. Industrial also shows the line "את ההתמחות בוחרים עד סוף שנה א׳".
 - **Electrical, from semester 7:** two pickers, "סוג תכן הנדסי" (בתעשייה / מחקרי / פרויקט גמר) and "התמחות ראשית". A third, "התמחות משנית", appears only when the design route is מחקרי or פרויקט גמר.
 - **Industrial, תכן ותפעול specialization, from semester 7:** one more picker for the route: "התמחות בתעשייה" or "פרויקט גמר".
-- **"Other program" option** stays, relabelled "לא מופיע ברשימה — עבודה מהקטלוג בלבד".
+- **"Other program" option** stays, labelled "מסלול אחר" (2026-09-27; it was briefly "לא מופיע ברשימה — עבודה מהקטלוג בלבד"). Its behaviour does not change: the student works from the catalog only.
 
 ### Courses
 
 - **Helper line:** "סמנו את הקורסים שתלמדו בסמסטר."
 - **Search and credits:** the search field's placeholder is "הוספת קורס מהידיעון, גם מסמסטר קודם". A live credit counter ("N נ״ז") sits next to it and replaces the "סך נקודות זכות" tile.
 - **Recommended courses:** the paragraph about recommended courses becomes a heading "מומלצים לסמסטר X", with "לפי תכנית הלימודים" as secondary text and a "סמנו הכל" link. The list of unchecked ("בוטלו") courses is removed; the cards already show their state.
+- **Credit-total mismatch:** where the curriculum's printed credit total for the semester does not match its rows, the only line under the heading is "סך הנקודות המומלץ לסמסטר הזה שונה בין השנתון לידיעון" (2026-09-27). The explanation of each mismatch is not shown; it stays in the semester's `note` in the data file, and the full texts are recorded in `docs/PROGRAM_REVIEW.md`.
 - **Course card:** checkbox, name (600) with the code in muted text, credits at the end; one line with the lesson structure and prerequisites; and an optional muted "מחליף את …" line. The "בתוכנית-סמסטר X" tag on each card is removed. A selected card gets its course color as the inline-start stripe and tint: the same color the course will have in the timetable.
 - **Linked courses:** each linked card keeps today's "קורס צמוד" badge in its current color, plus one short line "נבחר יחד עם …". Selecting one still selects all of them. The long per-card sentence and the paragraph below the cards are removed.
 - **Semester notes:** a gold note at the top of the step, shown only in semesters where the curriculum places an elective or general-course slot, e.g. "בסמסטר הזה מומלץ לבחור קורסי בחירה" or "בסמסטר הזה מומלץ לבחור קורס כללי (קורס כללי 2)". Colors: light text and icon `#9a7a32`, background `#faf3e3`, border `#e8d6ab`; dark `#d4b06a`, `#2a2418`, `#4a3f28`. Where the curriculum says "any semester" instead of naming one, show one quiet info line, not a gold note.
 - **Specialization badge:** a recommended course that is mandatory only in the chosen specialization carries a "חובה בהתמחות X" badge, an `--ink` outline pill. It is separate from the "קורס צמוד" badge; a card can carry both.
-- **Elective requirements** (replaces the earlier cluster-progress rule, 2026-09-26). The app does not know which electives the student took in earlier semesters, so there are no "met" states and no checkmarks.
-  - A heading "קורסי בחירה" with "דרישות לתואר, לפי תכנית הלימודים" as secondary text.
-  - A list of the program's own requirements, taken from its data file, with the source. Each row shows "בסמסטר הזה: X", counting the current selection only.
+- **Elective clusters** (decided 2026-09-27; **supersedes** the 2026-09-26 "Elective requirements" decision, under which the program's rules were listed in a box with their source and a "בסמסטר הזה: X" count, with no "met" states).
+  - The requirements list is removed from the interface, and so is the subtitle "דרישות לתואר, לפי תכנית הלימודים". The heading "קורסי בחירה" stays above the clusters. `elective_rules` and `elective_lists` stay in the data unchanged; only the display changes.
   - Each cluster is a box with its name, its minimum as a pill, and its courses as chips.
-  - A program with no rules in its data shows no rules.
+  - **"At least N courses from cluster X"** rules are not written out: the cluster's minimum pill already says it. When N courses of that cluster are selected in the current semester, the pill gets a teal ✓ (`--brand-wise`): "לפחות קורס אחד" at one, "לפחות 2 קורסים" at two (decided 2026-09-27, for every minimum pill). Courses that the rule counts as one (`count_one_of`, e.g. 51535/51537) count once. The app still does not know what was taken in earlier semesters, so the ✓ means "chosen this semester", not "requirement met".
+  - **A group that exists only in a rule** (Industrial, תכן ותפעול: "at least 2 from the special group", per route) is its own cluster box, "רשימת בחירה מחייבת" (renamed 2026-09-28: `industry.pdf` gives the group no name, only "לפחות שניים מקורסי הבחירה חייבים להיות מהקבוצה הבאה"), with its minimum pill ("לפחות 2 קורסים") and the same ✓. The rule's `cluster_title` asks for this.
+  - **A card note from a rule** (`course_notes`): one line on that course's card, not under the cluster — e.g. 51170, "לאחוזון 80 ומעלה, באישור רמ״ח".
+  - **Mandatory in the specialization, outside the semester plan** (`mandatory_in_specialization`; Civil, ניהול הבנייה: 500210, 51600): the "חובה בהתמחות X" badge appears on the course's chip in the cluster box and on its card once added.
+  - **"Only one of" rules** (`mutually_exclusive`, `only_one_counts`, including "whoever took X cannot register for Y") are shown as a one-line gold note under the cluster that contains those courses, e.g. "אפשר לזכות רק על אחד מ-62002 ו-62023". When the courses sit in more than one cluster, the note appears under every cluster that holds at least one of them (decided 2026-09-27 for Industrial 251966/51515 and Software 251100/251965).
+  - **Which rules are shown** (principle, decided 2026-09-27): show the rules that decide which courses to pick or which of them count — composition ("of them, at least 3 hardware"), caps ("up to 4 credits of entrepreneurship"), "only one of". Do not show degree-level totals of credits or of course counts ("at least 20 credits in the main specialization", "at least 7 electives", "28.5 credits"). Each shown rule is one line.
+  - **Composition** rules (a minimum over part of one cluster, e.g. Electrical, Computers: "מתוכם לפחות 3 מתחום החומרה ולפחות 3 מתחום התוכנה"; 1 + 1 for the secondary) are one line under that cluster.
+  - Text rules are shown only when the data marks them `"show": true`. Approved on 2026-09-27: IS "one elective must be an English seminar" and Math "3.0 credits of mathematical electives" as one line under the heading (no list); Mechanical's 4-credit entrepreneurship cap as one line under the enrichment cluster (its list). Not shown: Electrical's and Mechanical's credit totals, Industrial's "at least 7/8 electives" and "a course cannot count in two clusters".
+  - Rules that do not affect choosing courses for a semester (e.g. converting credits for social activity or reserve duty) are not shown.
+  - Source citations (file name and page) are not shown. They stay in the data.
+  - A program with no clusters in its data shows no clusters.
 
 ### Study days
 
