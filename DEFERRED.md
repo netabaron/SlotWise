@@ -653,6 +653,22 @@ for, and it would remove that class of load-sensitive failures.
 **Why not now:** it edits many protected test files, which needs an explicit
 decision per the standing rule, and it was deferred until after the redesign.
 
+### A timing-sensitive lecturers test fails intermittently under 3 workers — **noted 2026-09-27, not fixed**
+**Where:** `tests/test_lecturers_step.py::test_click_ranks_the_next_and_click_again_renumbers`.
+**Seen:** once in four full runs on 2026-09-27 (`-n 3 --dist loadfile`):
+`AssertionError: {'lect': …, 'rank': '1', 'filled': True, 'pop': False, …}`.
+The rank was assigned correctly; only the `pop` check failed. Run alone it passed
+twice, and it passed in the next full run.
+**Why:** the check reads the rank "pop" (250 ms scale to 1.2 and back,
+`docs/DESIGN.md` → Lecturers) after a fixed wait. Under three workers the
+animation can finish, or not yet start, outside that window. The code under test
+was not changed in that session (the courses-step cleanup).
+**What would fix it:** assert the animation was triggered (a class or an
+`animationstart` event) instead of sampling its state at a fixed time, or the
+settled-page signal the entry above proposes.
+**Why not now:** the user asked for it to be recorded, not fixed. It is a
+protected test file.
+
 ## Closed
 
 ### Local `sections.json` shadows the shipped catalog with an older build's stamp — closed 2026-09-20
