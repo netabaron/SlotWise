@@ -41,9 +41,7 @@ Dark:
 
 In dark mode, elements that use `--ink` as a background use `--sf` as their text color (the pair inverts).
 
-Course palette, assigned to courses in selection order and kept stable for the session:
-`#5b5bd6` indigo, `#0e9f8e` teal, `#d98b06` amber, `#e5484d` red, `#8e4ec6` violet, `#2f8fd8` blue, `#c2571a` rust, `#3f8f3f` green.
-A course's tint is `color-mix(in srgb, <course> 13%, var(--sf))`, which works in both modes.
+**Course palette** (decided 2026-09-30; **supersedes** the earlier 8-colour palette and the "tint = `color-mix` 13%" rule). Course colors are the site's existing ten: `--course-0` … `--course-9`, each with `-bd` and `-fg` (light), and `--dark-course-*` (dark), in `style.css`. They are assigned by `buildColorMap()` in `app.js`, unchanged. Wherever this document says a course's "tint" or "course color", it means that course's `--course-N` fill and `--course-N-bd` border. No hex values are listed here: `style.css` is the single source for them (see CLAUDE.md).
 
 The existing light/dark/system toggle stays and drives these tokens.
 
@@ -99,7 +97,7 @@ The layout depends on screen width. Both layouts use the same components.
 │ [icon] SlotWise                          freshness   [theme] │
 ├──────────────────────────────┬───────────────────────────────┤
 │ timetable (sticky)           │ ✓ מסלול   summary      שינוי  │
-│  N מערכות  [sort]  ‹ ›       │ ✓ קורסים  summary      שינוי  │
+│  5 מערכות מובילות [sort] ‹ › │ ✓ קורסים  summary      שינוי  │
 │  [prev][prev][prev][prev]    │ ┌───────────────────────────┐ │
 │  stats pills                 │ │ 3 active step             │ │
 │  ┌────────────────────────┐  │ │   helper, controls        │ │
@@ -201,17 +199,23 @@ Keep the current controls and behaviour; apply tokens, type and the general step
 
 ## Results page
 
-Shown after "בנה מערכת", and kept up to date by the existing live rebuild. Uses the existing solve response, which already returns several ranked alternatives. Request enough alternatives to fill the previews (default 5; the server allows up to 50).
+Shown after "בנה מערכת", and kept up to date by the existing live rebuild. Uses the existing solve response, which already returns several ranked alternatives. **The number of alternatives stays 5**, the current `top_n`; it is not raised (decided 2026-09-30; supersedes "request enough alternatives to fill the previews").
+
+Items 2–5 below were decided 2026-09-30 and **supersede** the earlier text of items 2–5.
 
 1. **Settings pills:** one row of pills summarising every step (program, courses and credits, days, lecturer preferences), with "עריכת ההגדרות" at the end, which returns to the steps.
-2. **Header row:** "נמצאו N מערכות", a sort select, and previous/next buttons.
-   - Sort options: "הכי פחות חלונות", "מסיים הכי מוקדם", "הכי פחות ימים". Sorting runs in the browser over the alternatives already received; it does not call the server.
-3. **Alternative previews:** a row of small cards, one per alternative, each a miniature of the week (5 columns, blocks in course colors, no text) with "N ימים, עד HH:00" under it. The selected card has an `--ink` border. Clicking a card selects that alternative.
-4. **Stats pills** for the selected alternative: days on campus, finish time, total gap hours ("בלי חלונות" when zero).
-5. **Timetable:** days ראשון–חמישי as columns (RTL), hours as rows with `--ln` hairlines. Each lesson is a block with a 3px course-color stripe on the inline-start edge and the course tint as background. **Every block shows all of its information inside the block, as the current site does:** course name (600), lesson type, lecturer, room and time, in `--ink`/`--sec`. The hour-row height is chosen so that a one-hour lesson fits all of these lines on desktop (start from ~48px per hour and adjust to the real content). Nothing is moved out of the block; the lesson-details panel (item 8) is an extra, not a replacement. On narrow screens text may wrap or truncate with an ellipsis, with the full text available on tap. Days with no lessons are simply empty.
+2. **Header row:** "5 מערכות מובילות", a sort select, previous/next buttons with "1 מתוך 5" between them, and a small "הדפסה" button. "נמצאו N מערכות" is **not** shown: `feasible_count` must not be displayed (see DEFERRED.md, "`feasible_count` counts intentional overlaps too").
+   - Sort options: "התאמה להעדפות" (the default: the server's order), "הכי פחות חלונות", "מסיים הכי מוקדם", "הכי פחות ימים". Sorting runs in the browser only, over the 5 alternatives received; it does not call the server. Ties keep the server's order.
+3. **Alternative previews:** one card per alternative (5). Each card is a miniature of the week (5 columns, blocks in course colors, no text), the line "N ימים, עד HH:MM" under it, and under that the existing differentiator label the tabs show today (e.g. "דומה למערכת 1, בהבדל של קבוצת תרגול אחת"). The selected card has an `--ink` border. Clicking a card selects that alternative. The cards **replace** the alternative tabs and the "מה ההבדל?" comparison table, which is removed.
+4. **Stats pills** for the selected alternative, in this order: the existing fit ("ההתאמה הגבוהה ביותר" for the best alternative, otherwise "התאמה N%"), days on campus, finish time, total gap hours ("בלי חלונות" when zero), credits. Under the pills, one line "מה הוריד מההתאמה: …" listing the existing penalties, including the missing preferred lecturers by name (today's "חסר: …"). When nothing lowered the fit, the line is omitted.
+5. **Timetable:** days ראשון–חמישי as columns (RTL), hours as rows with `--ln` hairlines. Each lesson block has three lines: (1) course name, (2) lesson type · time, (3) lecturer · room. Block colors are the existing ones: `--course-N` fill, 1px `--course-N-bd` border, `--course-N-fg` text. **The hour height is set so that every block shows all three lines in full:** no line is dropped and nothing is clipped. `fitBlocks()`'s line dropping is removed (see DEFERRED.md, "Grid blocks ship with lecturer names sliced in half"). The height comes from the content, not from a fixed number. For reference, measured 2026-09-30 on Software Engineering semester 5 (the six recommended courses): 76px per hour at 1440px wide (912px for 08:00–20:00), and 112px per hour at 1200px wide. This supersedes "start from ~48px per hour". Nothing is moved out of the block; the lesson-details panel (item 8) is an extra, not a replacement. Days with no lessons are simply empty.
+   - **No fixed meeting time:** a course with no fixed meeting time gets one line under the legend: "ללא מועד קבוע: <name> (<type>, N נ״ז)".
+   - **Unchanged:** the soft-conflicts panel, the "no possible schedule" state with its relaxations, and the relax-undo line stay where they are today, in place of the timetable.
 6. **Switching alternatives:** blocks are persistent elements keyed by lesson and animate `top`, `right` and `height` to their new position (550ms, `cubic-bezier(.2,.8,.2,1)`), so the student sees exactly what moved.
 7. **Course legend:** color, name, credits. Hovering a course dims all other blocks to 18% opacity.
 8. **Lesson details:** clicking a block outlines it in its course color and shows lecturer, day and time, room and group number in a details panel next to the legend.
+
+Items 6–8 are unchanged by the 2026-09-30 decisions. The sticky bar and the "הצג מערכת" overlay are not changed in Phases 5–6; they are decided with Phases 7–8.
 
 ## Scroll behaviour
 
@@ -250,8 +254,9 @@ Each phase is its own commit, keeps all existing tests green, adds tests where b
 3. **Study days** step as specified.
 4. **Lecturers** step as specified.
    - **Courses step** as specified under Steps → Courses. Now includes specializations (the pickers under Program, year and semester, the specialization badge, the semester notes and the elective requirements). *Research done; to be built after its data work (specialization, elective-rule and semester-slot data in the program files).* Listed after Phase 4 without a number of its own, so that the phase numbers referenced elsewhere (e.g. "Phase 8") stay valid.
-5. **Results page:** settings pills, stats pills and the new timetable styling with course colors and legend.
-6. **Alternatives:** previews, sorting, previous/next, animated transitions between alternatives, lesson details.
+5. **Results page** (updated 2026-09-30): settings pills (item 1, narrow screens only), three-line blocks, content-driven hour height with no dropped lines, the fit pill and the "מה הוריד מההתאמה" line, stats pills, legend, the no-fixed-time line.
+6. **Alternatives** (updated 2026-09-30): 5 preview cards with the differentiator label, the 4 sort options, previous/next, removal of the tabs and the "מה ההבדל?" comparison table, the move animation, lesson details.
 7. **Wide layout:** side-by-side steps and sticky timetable at ≥1200px, hiding the build button, floating bar and settings pills there.
 8. **Scroll behaviour** as specified, per layout.
 9. **Mobile and accessibility pass** across everything above.
+   - Decide how timetable blocks show all three lines at phone width (e.g. horizontal scroll with a minimum column width, or one day at a time with day tabs). Nothing is dropped or clipped. (decided 2026-09-30)
