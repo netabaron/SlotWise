@@ -8565,8 +8565,12 @@
         key: "days",
         locked: !hasCodes,
         complete: hasCodes && !!s,
+        // ‏בלי יעד אין מה להציב ב-"יעד {target} ימים" — השורה הייתה אומרת
+        // ‏"יעד null ימים". אומרים שהיעד עוד לא נבחר.
         text: !hasCodes
           ? T("app.steps.days.waitingForCourses")
+          : num(state.targetDays, null) === null
+          ? T("app.days.pickTarget")
           : s && num(s.min_days, null) !== null
           ? Tf("app.steps.days.targetWithMin", {
               target: state.targetDays,
