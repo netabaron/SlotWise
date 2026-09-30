@@ -585,6 +585,11 @@
       <p class="step-state" id="step-schedule-state" aria-live="polite"></p>
     </div>
     <div class="step-body">
+      <!-- ‏שורת הגדרות: סיכום של כל שלב, אותו טקסט שהשלב עצמו מציג כשהוא
+           מקופל, ו"עריכת ההגדרות" שמחזירה אל השלבים. -->
+      <div class="settings-pills" id="settings-pills" role="group"
+           aria-label="{{ S.app.schedule.settingsLabel }}" hidden></div>
+
       <div class="sched-toolbar">
         <div class="tabs" id="schedule-tabs" role="tablist" aria-label="{{ S.ui.schedule.tabsLabel }}"></div>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-print">{{ S.ui.schedule.btnPrint }}</button>
@@ -602,14 +607,12 @@
         <div class="compare-body" id="compare-body"></div>
       </details>
 
-      <div class="facts" id="schedule-summary"></div>
+      <!-- ‏שבבי הנתונים של המערכת שנבחרה, ומתחתם שורה אחת: מה הוריד
+           מההתאמה. ‏DESIGN.md, "Results page", פריט 4. -->
+      <div class="stats" id="schedule-summary"></div>
       <!-- ‏אחרי החלת ויתור המסך כבר אינו ריק, ולכן הביטול חייב לחיות
            כאן — במקום שרואים כשיש תוצאות, לא במצב הריק שנעלם. -->
       <p class="relax-undo" id="relax-undo" hidden></p>
-
-      <div class="grid-tools">
-        <div class="legend" id="schedule-legend"></div>
-      </div>
 
       <!-- ‏שורת הכותרת של הדף המודפס בלבד. על המסך המידע הזה נמצא
            בלשוניות ובכותרת הסעיף; על הנייר אין לשוניות, ודף בלי שם
@@ -619,6 +622,14 @@
       <div class="grid-scroll" id="grid-scroll" tabindex="0" role="group" aria-label="{{ S.ui.schedule.gridLabel }}">
         <div class="grid" id="schedule-grid"></div>
       </div>
+
+      <!-- ‏המקרא מתחת לרשת (DESIGN.md, "Layout": timetable, legend, details),
+           ומתחתיו קורס שאין לו מועד קבוע — אין לו בלוק ברשת, ולכן זה המקום
+           היחיד שבו הוא מופיע. -->
+      <div class="grid-tools">
+        <div class="legend" id="schedule-legend"></div>
+      </div>
+      <p class="unscheduled" id="schedule-unscheduled" hidden></p>
 
       <!-- ‏פרטי השיעור. מרגע שהבלוקים ברשת מציגים שם וזמן בלבד, זה
            המקום היחיד שבו מופיעים מספר הקבוצה, המרצה והחדר — ולכן הוא

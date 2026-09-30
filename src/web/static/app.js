@@ -3101,8 +3101,10 @@
 
     ui.tabs = byId("schedule-tabs");
     ui.btnPrint = byId("btn-print");
+    ui.settingsPills = byId("settings-pills");
     ui.summary = byId("schedule-summary");
     ui.legend = byId("schedule-legend");
+    ui.unscheduled = byId("schedule-unscheduled");
     ui.gridScroll = byId("grid-scroll");
     ui.grid = byId("schedule-grid");
     ui.empty = byId("schedule-empty");
@@ -3147,6 +3149,7 @@
     ui.overlayFacts = byId("overlay-facts");
     ui.overlayLegend = byId("overlay-legend");
     ui.overlayGrid = byId("overlay-grid");
+    ui.overlayGridScroll = byId("overlay-grid-scroll");
     ui.btnCloseGrid = byId("btn-close-grid");
 
     ui.steps = {
@@ -3758,7 +3761,7 @@
       rebuild(ui.overlayGrid, function (box) {
         buildGrid(box, sch, softConflictInfo(sch));
       });
-      fitBlocks(ui.overlayGrid);
+      requestGridSizing();
     }
   }
 
@@ -7055,198 +7058,29 @@
     var soft = sch ? softConflictInfo(sch) : null;
     renderSoftConflicts(soft);
 
-    // סיכום
+    // ‏שבבי הנתונים, ומתחתם מה הוריד מההתאמה (DESIGN.md, "Results page", 4).
     if (ui.summary) {
       rebuild(ui.summary, function (box) {
-        if (!sch) return;
-        var days = Array.isArray(sch.days)
-          ? sch.days.slice()
-          : uniq(
-              scheduleMeetings(sch).map(function (m) {
-                return m.day;
-              })
-            );
-        days.sort(function (a, b) {
-          return a - b;
-        });
-
-        // ---- ההתאמה, ככותרת אחת ----
-        var fits = fitScores(list);
-        var idx = clamp(state.activeSchedule, 0, Math.max(0, list.length - 1));
-        var fit = fits.length ? fits[idx] : 100;
-        var allTied = fits.length > 1 && fits.every(function (v) {
-          return v === fits[0];
-        });
-        // כשכל המערכות בטווח של כמה נקודות, המספר אינו מה שבוחרים לפיו —
-        // התווית המבדילה היא. אז היא מובילה, והציון נסוג למשני.
-        var spread = fits.length
-          ? Math.max.apply(null, fits) - Math.min.apply(null, fits)
-          : 0;
-        var close = spread <= 5;
-        var myLabel = differentiators(list)[idx] || "";
-
-        // ‏המערכת המדורגת ראשונה מקבלת תווית במקום מספר. הרף נקבע על ידה —
-        // ‏fitScores() נותן 100 לטובה מבין המוצגות — ולכן "100%" שם נשמע
-        // מוחלט הרבה יותר ממה שהוא. "ההתאמה הגבוהה ביותר" אומר בדיוק את
-        // מה שהמספר אמר, בלי להבטיח התאמה מושלמת.
-        //
-        // ‏כשכולן שקולות אין "ראשונה", ואז המספר נשאר וההערה (fitTied)
-        // היא שמסבירה. שימוש חוזר ב-app.compare.bestOverall ולא נוסח שני
-        // זהה: זה אותו משפט, ולשוניות ההשוואה כבר אומרות אותו — שני
-        // מפתחות היו נפרדים בשקט ואז המסך היה אומר אותו דבר פעמיים.
-        var bestFit = fits.length ? Math.max.apply(null, fits) : 0;
-        var isBest = fits.length > 0 && !allTied && fit === bestFit;
-        var bestText = T("app.compare.bestOverall");
-        var headline = close && myLabel && !(isBest && myLabel === bestText)
-          ? myLabel
-          : "";
-        box.appendChild(
-          el("div", { class: "fit" + (close ? " fit--close" : "") }, [
-            headline
-              ? el("strong", { class: "fit-headline", text: headline })
-              : null,
-            // ‏"התאמה" מסביר מה המספר מודד. התווית כבר מכילה את המילה,
-            // ולכן לצדה השורה הייתה נקראת "התאמה · ההתאמה הגבוהה ביותר".
-            isBest
-              ? null
-              : el("span", { class: "fit-label", text: T("app.schedule.fitLabel") }),
-            // ‏בלי class="ltr" בענף התווית: הוא כופה direction: ltr, שנכון
-            // למספר ושגוי למשפט עברי.
-            isBest
-              ? el("strong", { class: "fit-value fit-value--best", text: bestText })
-              : el("strong", { class: "fit-value ltr", text: fmtFit(fit) }),
-            el("span", {
-              class: "fit-note",
-              text: allTied
-                ? T("app.schedule.fitTied")
-                : T("app.schedule.fitTitle"),
-            }),
-            DEBUG
-              ? el("span", {
-                  class: "fit-note ltr",
-                  text: Tf("app.schedule.rawScore", {
-                    score: fmtNumber(sch.score),
-                  }),
-                })
-              : null,
-          ])
-        );
-
-        // ---- עובדות: מה המערכת הזאת, בלי שיפוט ----
-        var factsBox = el("div", { class: "facts facts--plain" });
-        factsBox.appendChild(
-          fact(
-            T("app.schedule.factDays"),
-            num(sch.days_count, days.length) +
-              " (" +
-              days
-                .map(function (d) {
-                  return dayLetter(d);
-                })
-                .join(" ") +
-              ")"
-          )
-        );
-        var finish = lastFinishOf(sch);
-        if (finish !== null) {
-          factsBox.appendChild(fact(T("app.schedule.factFinish"), fmtTime(finish)));
-        }
-        factsBox.appendChild(
-          fact(T("app.schedule.factGaps"), fmtDuration(sch.gap_minutes))
-        );
-        factsBox.appendChild(
-          fact(
-            T("app.schedule.factCredits"),
-            creditsText(scheduleCredits(sch), { short: true })
-          )
-        );
-        if (num(sch.lecturer_total, 0) > 0) {
-          var missing = missingLecturers(sch);
-          // שורה שלמה ולא שבב עם תווית: המשפט כבר מכיל את המילים
-          // "מרצים מועדפים", ותווית מעליו הייתה אומרת אותן פעמיים.
-          factsBox.appendChild(
-            el("span", {
-              class: "fact fact--wide",
-              attrs: { title: T("app.score.explain.lecturer") },
-              text: missing.length
-                ? Tf("app.schedule.lecturersMissing", {
-                    hits: num(sch.lecturer_hits, 0),
-                    total: num(sch.lecturer_total, 0),
-                    names: missing.join(", "),
-                  })
-                : Tf("app.schedule.lecturersHits", {
-                    hits: num(sch.lecturer_hits, 0),
-                    total: num(sch.lecturer_total, 0),
-                  }),
-            })
-          );
-        }
-        box.appendChild(
-          el("section", { class: "panel-block" }, [
-            el("h4", {
-              class: "panel-block-title",
-              text: T("app.schedule.factsTitle"),
-            }),
-            factsBox,
-          ])
-        );
-
-        // ---- מה הוריד מההתאמה: פסים, לא מספרים שליליים ----
-        var penalties = penaltyList(sch).filter(function (row) {
-          return !breakdownAlwaysZero(list, row.key);
-        });
-        var penBox = el("div", { class: "penalties" });
-        if (!penalties.length) {
-          penBox.appendChild(
-            el("p", { class: "note", text: T("app.schedule.penaltiesNone") })
-          );
-        } else {
-          var top = penalties[0].size || 1;
-          penalties.forEach(function (row, i) {
-            var label = T("app.score.breakdown." + row.key, row.key);
-            var explain = T("app.score.explain." + row.key, "");
-            var pct = Math.max(4, Math.round((row.size / top) * 100));
-            penBox.appendChild(
-              el(
-                "div",
-                { class: "penalty", attrs: { title: explain } },
-                [
-                  el("span", {
-                    class: "penalty-label",
-                    // ‏הגורם המשפיע ביותר נאמר במילים, לא רק באורך הפס:
-                    // אורך לבדו אינו נגיש למי שלא רואה אותו.
-                    text: i === 0
-                      ? Tf("app.schedule.topPenalty", { label: label })
-                      : label,
-                  }),
-                  el("span", { class: "penalty-track" }, [
-                    el("span", {
-                      class: "penalty-fill",
-                      style: { "inline-size": pct + "%" },
-                    }),
-                  ]),
-                ]
-              )
-            );
-          });
-        }
-        box.appendChild(
-          el("section", { class: "panel-block" }, [
-            el("h4", {
-              class: "panel-block-title",
-              text: T("app.schedule.penaltiesTitle"),
-            }),
-            penBox,
-          ])
-        );
+        if (sch) buildStats(box, sch, list);
       });
     }
 
-    // מקרא הצבעים
+    // ‏המקרא, ומתחתיו קורס שאין לו מועד קבוע. לקורס כזה אין בלוק ברשת,
+    // ולכן אין לו מקום במקרא — שבב בצבע שאינו צובע דבר — והוא נאמר בשורה
+    // משלו מתחת (DESIGN.md, "Results page", 5).
+    var unscheduled = sch ? unscheduledCourses(sch) : [];
     if (ui.legend) {
       rebuild(ui.legend, function (box) {
-        buildLegend(box, sch);
+        buildLegend(box, sch, {
+          skip: unscheduled.map(function (u) {
+            return u.code;
+          }),
+        });
       });
+    }
+    if (ui.unscheduled) {
+      setText(ui.unscheduled, unscheduled.length ? unscheduledLine(unscheduled) : "");
+      setHidden(ui.unscheduled, !unscheduled.length);
     }
 
     // הרשת
@@ -7255,10 +7089,10 @@
         if (!sch) return;
         buildGrid(box, sch, soft);
       });
-      // אחרי הפריסה, לא לפניה: רק עכשיו ידוע אם הטקסט באמת נכנס.
-      fitBlocks(ui.grid);
     }
     setHidden(ui.gridScroll, !sch);
+    // ‏גובה השעה נמדד אחרי הפריסה, לא כאן. ראו sizeGrid().
+    requestGridSizing();
 
     // שורת הכותרת של הדף המודפס. מוסתרת על המסך, ולכן היא נבנית תמיד
     // ואינה תלויה במצב כלשהו — הדפסה יכולה להתחיל בכל רגע.
@@ -7398,17 +7232,276 @@
   }
 
   /**
-   * ‏"ניקוד: -68.2". המחלקה ltr קיימת ב-style.css בדיוק בשביל זה: בלעדיה
-   * המינוס של מספר שלילי מודבק בסוף ("68.2-") בגלל כיוון הכתיבה.
+   * שבבי הנתונים של המערכת שנבחרה, ומתחתם שורה אחת: מה הוריד מההתאמה.
+   *
+   * ‏DESIGN.md, "Results page", פריט 4 (2026-09-30). הם מחליפים שלושה
+   * דברים — כותרת ההתאמה, פאנל העובדות ופסי הקנסות — וכל מה שהשלושה אמרו
+   * נשאר: ההתאמה, הימים ואותיותיהם, שעת הסיום, זמן ההמתנה, הנ"ז (כולל
+   * קורסים בלי נתון), כל קנס ומה שהוא מודד, מי מהמרצים המועדפים חסר, וכמה
+   * מהם נכנסו. רק משפט ההסבר שליד ההתאמה ("ביחס לחמש המוצגות", "כולן
+   * שקולות") עובר לתווית ההצפה של השבב.
+   *
+   * ‏הסדר קבוע: התאמה, ימים, סיום, חלונות, נ"ז — ואחריהם, כשיש העדפות
+   * מרצים, כמה מהם נכנסו.
    */
-  function fact(label, value, opts) {
-    opts = opts || {};
-    var node = el("span", { class: "fact", attrs: { title: txt(opts.title) } }, [
-      el("span", { class: "fact-label", text: label }),
-      el("strong", { class: "fact-value ltr", text: txt(value) }),
+  function buildStats(box, sch, list) {
+    var fits = fitScores(list);
+    var idx = clamp(state.activeSchedule, 0, Math.max(0, list.length - 1));
+    var fit = fits.length ? fits[idx] : 100;
+    var allTied = fits.length > 1 && fits.every(function (v) {
+      return v === fits[0];
+    });
+    var bestFit = fits.length ? Math.max.apply(null, fits) : 0;
+    // ‏המערכת המדורגת ראשונה מקבלת תווית במקום "100%". הרף נקבע על ידה —
+    // ‏fitScores() נותן 100 לטובה מבין המוצגות — ולכן המספר שם נשמע מוחלט
+    // הרבה יותר ממה שהוא. כשכולן שקולות אין "ראשונה", והמספר נשאר.
+    var isBest = fits.length > 0 && !allTied && fit === bestFit;
+    var missing = num(sch.lecturer_total, 0) > 0 ? missingLecturers(sch) : [];
+    var hits = Tf("app.schedule.lecturersHits", {
+      hits: num(sch.lecturer_hits, 0),
+      total: num(sch.lecturer_total, 0),
+    });
+
+    var pills = el("div", {
+      class: "stat-pills",
+      attrs: { role: "list", "aria-label": T("app.schedule.statsLabel") },
+    });
+    var add = function (key, kids, title) {
+      pills.appendChild(
+        el(
+          "span",
+          {
+            class: "stat-pill" + (key === "fit" ? " fit" : ""),
+            attrs: { role: "listitem", title: title },
+            data: { stat: key },
+          },
+          kids
+        )
+      );
+    };
+
+    // ‏1. ההתאמה. ‏"התאמה" אומר מה המספר מודד; ליד התווית של המובילה הוא
+    // היה נקרא "התאמה · ההתאמה הגבוהה ביותר", ולכן הוא יורד שם. ‏class="ltr"
+    // רק על המספר — על משפט עברי הוא היה כופה כיוון שגוי.
+    var fitTitle = allTied ? T("app.schedule.fitTied") : T("app.schedule.fitTitle");
+    add(
+      "fit",
+      isBest
+        ? [el("strong", { class: "fit-value fit-value--best", text: T("app.compare.bestOverall") })]
+        : [
+            el("span", { class: "fit-label", text: T("app.schedule.fitLabel") }),
+            el("strong", { class: "fit-value ltr", text: fmtFit(fit) }),
+            DEBUG
+              ? el("span", {
+                  class: "fit-note ltr",
+                  text: Tf("app.schedule.rawScore", { score: fmtNumber(sch.score) }),
+                })
+              : null,
+          ],
+      fitTitle
+    );
+
+    // ‏2. ימים, עם האותיות — "4 ימים" לבד אינו אומר אם יום ו׳ פנוי.
+    var days = Array.isArray(sch.days)
+      ? sch.days.slice()
+      : uniq(
+          scheduleMeetings(sch).map(function (m) {
+            return m.day;
+          })
+        );
+    days.sort(function (a, b) {
+      return a - b;
+    });
+    var dayCount = num(sch.days_count, days.length);
+    if (dayCount > 0) {
+      var letters = days.map(dayLetter).join(" ");
+      add("days", [
+        el("span", {
+          text: dayCount === 1
+            ? Tf("app.schedule.pillDaysOne", { letters: letters })
+            : Tf("app.schedule.pillDays", { n: dayCount, letters: letters }),
+        }),
+      ]);
+    }
+
+    // 3. שעת הסיום.
+    var finish = lastFinishOf(sch);
+    if (finish !== null) {
+      add("finish", [
+        el("span", { text: Tf("app.schedule.pillFinish", { time: fmtTime(finish) }) }),
+      ]);
+    }
+
+    // 4. החלונות — ובלי חלונות, זה מה שנאמר, ולא "0:00 שעות".
+    var gaps = Math.round(num(sch.gap_minutes, 0));
+    add("gaps", [
+      el("span", {
+        text: gaps > 0
+          ? Tf("app.schedule.pillGaps", { duration: fmtDuration(gaps) })
+          : T("app.schedule.pillNoGaps"),
+      }),
     ]);
-    if (opts.hint) node.appendChild(el("span", { class: "fact-hint", text: opts.hint }));
-    return node;
+
+    // ‏5. נ"ז — כולל כמה קורסים בלי נתון, כמו בכל סכום אחר באתר.
+    add("credits", [
+      el("span", { text: creditsText(scheduleCredits(sch), { unit: true, short: true }) }),
+    ]);
+    // ‏6. כמה מהמרצים המועדפים נכנסו — רק כשיש העדפות, ותמיד גלוי: בטלפון
+    // אין תווית הצפה, ו-"3 מתוך 3" הוא מידע גם כששום דבר לא חסר.
+    if (num(sch.lecturer_total, 0) > 0) add("lecturers", [el("span", { text: hits })]);
+    box.appendChild(pills);
+
+    // ---- מה הוריד מההתאמה: שורה אחת, מהמשפיע ביותר ומטה ----
+    // ‏רכיב שמוצג כאפס בכל החלופות אינו אומר דבר, ולכן הוא לא נמנה. הסדר
+    // הוא סדר ההשפעה; מה שכל רכיב מודד, ומי מהם הגדול, בתווית ההצפה.
+    var items = penaltyList(sch)
+      .filter(function (row) {
+        return !breakdownAlwaysZero(list, row.key);
+      })
+      .map(function (row, i) {
+        var label = T("app.score.breakdown." + row.key, row.key);
+        var explain = T("app.score.explain." + row.key, "");
+        return {
+          key: row.key,
+          text: label,
+          title: i === 0
+            ? Tf("app.schedule.topPenalty", { label: label }) + (explain ? "\n" + explain : "")
+            : explain,
+        };
+      });
+    // ‏המרצים המועדפים שלא נכנסו, בשמם: לפי השם מחליטים אם לוותר.
+    if (missing.length) {
+      items.push({
+        key: "lecturer",
+        text: Tf("app.schedule.missingLecturers", { names: missing.join(", ") }),
+        title: T("app.score.explain.lecturer", ""),
+      });
+    }
+    if (!items.length) return;
+
+    // ‏הנוסח נשמר שלם ב-JSON, ו-{list} מוחלף כאן ברשימה שכל פריט בה נושא
+    // את ההסבר שלו — אותה טכניקה כמו {author} בשורת התחתית.
+    var parts = String(T("app.schedule.penaltiesLine")).split("{list}");
+    var line = el("p", { class: "fit-lost" });
+    line.appendChild(document.createTextNode(parts[0] || ""));
+    items.forEach(function (item, i) {
+      if (i) line.appendChild(document.createTextNode(", "));
+      line.appendChild(
+        el("span", {
+          class: "fit-lost-item",
+          attrs: { title: item.title },
+          data: { penalty: item.key },
+          text: item.text,
+        })
+      );
+    });
+    line.appendChild(document.createTextNode(parts[1] || ""));
+    box.appendChild(line);
+  }
+
+  /**
+   * שורת ההגדרות מעל התוצאה (DESIGN.md, "Results page", פריט 1): שבב לכל
+   * שלב, באותו טקסט שהשלב מציג כשהוא מקופל — מקור אחד, ולא ניסוח שני —
+   * ובסופה "עריכת ההגדרות", שמחזירה אל השלבים.
+   *
+   * ‏בפריסה הרחבה השורה תוסתר (שלב 7): שם השלבים עצמם על המסך.
+   */
+  function renderSettingsPills(steps, show) {
+    if (!ui.settingsPills) return;
+    setHidden(ui.settingsPills, !show);
+    rebuild(ui.settingsPills, function (box) {
+      if (!show) return;
+      steps.forEach(function (step) {
+        if (step.key === "schedule" || !step.text) return;
+        // ‏סיכום שלב 1 הוא שנה וסמסטר בלבד — המסלול כתוב בתיבה שמעליו. כאן
+        // אין תיבה, ולכן המסלול נכנס לשבב (DESIGN.md: "program, courses…").
+        var text = step.key === "year" && identityChosen() && txt(state.program)
+          ? Tf("app.schedule.settingsProgram", { program: txt(state.program), summary: step.text })
+          : step.text;
+        box.appendChild(
+          el("span", { class: "settings-pill", data: { step: step.key }, text: text })
+        );
+      });
+      box.appendChild(
+        el("button", {
+          class: "settings-edit",
+          attrs: { type: "button" },
+          data: { fk: "settings-edit" },
+          text: T("app.schedule.settingsEdit"),
+          on: { click: returnToSteps },
+        })
+      );
+    });
+  }
+
+  /** "עריכת ההגדרות": חזרה אל השלב הראשון, כמו שכפתור הבנייה לוקח אל התוצאה. */
+  function returnToSteps() {
+    var first = ui.steps && ui.steps.year;
+    if (!first) return;
+    if (first.scrollIntoView) first.scrollIntoView({ block: "start" });
+    var toggle = ui.stepToggles && ui.stepToggles.year;
+    if (toggle && toggle.focus) {
+      try {
+        toggle.focus({ preventScroll: true });
+      } catch (e) {
+        toggle.focus();
+      }
+    }
+  }
+
+  /**
+   * קורסים שאין להם אף מפגש במערכת הזו — פרויקט גמר, סמינר בתיאום, שו"ת
+   * בלי מועד. לכל אחד: שם, סוגי השיעור ונ"ז.
+   *
+   * ‏קורס שחלק מרכיביו משובצים אינו כאן: יש לו בלוקים, ולכן גם מקום במקרא.
+   */
+  function unscheduledCourses(sch) {
+    var byCode = Object.create(null);
+    var order = [];
+    pickList(sch, ["picks"], null).forEach(function (p) {
+      var code = txt(p.code);
+      if (!code) return;
+      if (!byCode[code]) {
+        byCode[code] = {
+          code: code,
+          name: txt(p.name) || nameOf(code),
+          kinds: [],
+          credits: null,
+          timed: false,
+        };
+        order.push(code);
+      }
+      var rec = byCode[code];
+      if (Array.isArray(p.meetings) && p.meetings.length) rec.timed = true;
+      var kind = txt(p.kind);
+      if (kind && rec.kinds.indexOf(kind) === -1) rec.kinds.push(kind);
+      if (rec.credits === null) rec.credits = creditsNumber(p.credits);
+    });
+    return order
+      .map(function (code) {
+        return byCode[code];
+      })
+      .filter(function (rec) {
+        return !rec.timed;
+      });
+  }
+
+  /** ‏"ללא מועד קבוע: <שם> (<סוג>, N נ"ז)", פריט לכל קורס כזה. */
+  function unscheduledLine(list) {
+    return Tf("app.grid.unscheduled", {
+      list: list
+        .map(function (rec) {
+          var kind = rec.kinds.join(", ");
+          return rec.credits === null
+            ? Tf("app.grid.unscheduledItemNoCredits", { name: rec.name, kind: kind })
+            : Tf("app.grid.unscheduledItem", {
+                name: rec.name,
+                kind: kind,
+                credits: Tf("app.credits.withUnit", { value: fmtNumber(rec.credits) }),
+              });
+        })
+        .join(", "),
+    });
   }
 
   /**
@@ -7707,8 +7800,9 @@
    * מקרא הצבעים. משותף לשלב 5 ולשכבה — אותה פונקציית ``colorOf``, ולכן
    * אותו גוון לאותו קוד קורס בשני המקומות ובקובץ שנוצר במסוף.
    */
-  function buildLegend(root, sch) {
+  function buildLegend(root, sch, opts) {
     if (!sch) return;
+    var skip = (opts && opts.skip) || [];
     // הסימון החזותי של חפיפה מכוונת מוסבר כאן. מסגרת מקווקוות בלי מקרא
     // היא קישוט, לא מידע.
     var info = softConflictInfo(sch);
@@ -7723,12 +7817,22 @@
     var seen = Object.create(null);
     pickList(sch, ["picks"], null).forEach(function (p) {
       var code = txt(p.code);
-      if (seen[code]) return;
+      if (seen[code] || skip.indexOf(code) !== -1) return;
       seen[code] = true;
+      // ‏DESIGN.md, "Results page", פריט 7: צבע, שם ונ"ז.
+      var credits = creditsNumber(p.credits);
+      var name = txt(p.name) || nameOf(code);
       root.appendChild(
         el("span", {
           class: "legend-chip c" + colorOf(code),
-          text: code + " " + (txt(p.name) || nameOf(code)),
+          data: { code: code },
+          text: credits === null
+            ? Tf("app.grid.legendChipNoCredits", { code: code, name: name })
+            : Tf("app.grid.legendChip", {
+                code: code,
+                name: name,
+                credits: Tf("app.credits.withUnit", { value: fmtNumber(credits) }),
+              }),
         })
       );
     });
@@ -7807,6 +7911,28 @@
   /** הערך להצגה. */
   function roomOf(m) {
     return formatRoom(rawRoomOf(m));
+  }
+
+  /**
+   * החדר כפי שהוא מוצג בבלוק: הקוד ("L 706") כיחידה אחת שאינה נשברת, ומה
+   * שאחריו ("מע' רשתות") כטקסט רגיל שרשאי להישבר. קוד שנשבר באמצע נקרא
+   * כשני דברים — "L" בשורה אחת ו-"706" בשורה הבאה.
+   *
+   * ‏מחרוזת שאינה בתבנית "מספר אות" מוצגת כמות שהיא, בלי איסור שבירה: אין
+   * בה קוד להגן עליו, ושם חדר ארוך בלי שבירה היה גולש מהבלוק.
+   */
+  function roomNode(m) {
+    var text = roomOf(m);
+    var parts = ROOM_RE.exec(txt(rawRoomOf(m)).trim());
+    if (!parts) return el("span", { class: "ev-room" }, [ltrCode(text)]);
+    var code = ltrCode(parts[2] + " " + parts[1]);
+    setClass(code, "code--id", true);
+    var rest = txt(parts[3]).trim();
+    return el("span", { class: "ev-room" }, [
+      code,
+      rest ? document.createTextNode(" ") : null,
+      rest ? el("span", { class: "ev-room-note", text: rest }) : null,
+    ]);
   }
 
   /**
@@ -7942,15 +8068,32 @@
           });
       }
 
-      // ‏<button> ולא <div>: מספר הקבוצה והמרצה נמצאים רק בפאנל, ולכן
-      // חייבת להיות אליו דרך במקלדת.
+      // ‏שלוש שורות, ואף אחת אינה יורדת (DESIGN.md, "Results page", 5):
+      // ‏(1) שם הקורס, (2) סוג · שעה, (3) מרצה · חדר. גובה השעה נמדד כך
+      // שכל בלוק מציג את שלושתן במלואן — ראו sizeGrid().
+      var sep = function (a, b) {
+        return a && b ? document.createTextNode(" · ") : null;
+      };
+      var kindEl = txt(m.kind) ? el("span", { class: "ev-kind", text: txt(m.kind) }) : null;
+      var timeEl = el("span", {
+        class: "cell-time",
+        text: fmtTime(from) + "–" + fmtTime(to),
+      });
+      // השם המלא, ונשבר לשתי שורות אם צריך. קיצור ל"ד״ר סוקולובסקי"
+      // חוסך שורה אבל מוחק בדיוק את מה שמבדיל בין שני מרצים באותו שם
+      // משפחה — וזה מה שבוחרים לפיו.
+      var lectEl = lecturer ? el("span", { class: "ev-lect", text: lecturer }) : null;
+      var roomEl = room ? roomNode(m) : null;
+
+      // ‏<button> ולא <div>: מספר הקבוצה נמצא רק בפאנל, ולכן חייבת להיות
+      // אליו דרך במקלדת.
       var block = el(
         "button",
         {
           class: "ev c" + colorOf(m.code) + (clash ? " is-soft" : ""),
           style: style,
           attrs: { type: "button", "aria-label": label, title: label },
-          data: { fk: "ev-" + key },
+          data: { fk: "ev-" + key, rows: endSlot - startSlot },
           on: {
             click: function () {
               // החפיפה נפתחת עם שני הצדדים, גם כשלוחצים על אחד מהם.
@@ -7959,28 +8102,18 @@
           },
         },
         [
-          // סדר הירידה קבוע, מהמוותר ביותר: מרצה, חדר, שעה. שם הקורס
-          // וסוג השיעור לעולם אינם יורדים — הם מה שמזהה את הבלוק.
-          el("b", { text: name }),
-          el("span", { class: "ev-kind", text: txt(m.kind) }),
-          el("span", {
-            class: "cell-time ev-drop-2",
-            text: fmtTime(from) + "–" + fmtTime(to),
-          }),
-          room
-            ? el("span", { class: "ev-room ev-drop-1" }, [ltrCode(room)])
-            : null,
-          // השם המלא, ונשבר לשתי שורות אם צריך. קיצור ל"ד״ר סוקולובסקי"
-          // חוסך שורה אבל מוחק בדיוק את מה שמבדיל בין שני מרצים באותו
-          // שם משפחה — וזה מה שבוחרים לפיו.
-          lecturer
-            ? el("span", { class: "ev-lect ev-drop-3", text: lecturer })
-            : null,
-          clash
-            ? el("span", {
-                class: "ev-badge ev-drop-1",
-                text: T("app.grid.clashBadge"),
-              })
+          el("b", { class: "ev-line ev-name", text: name }),
+          el("span", { class: "ev-line ev-when" }, [
+            kindEl,
+            sep(kindEl, timeEl),
+            timeEl,
+            // תג החפיפה בסוף השורה, ולא שורה רביעית משלו.
+            clash
+              ? el("span", { class: "ev-badge", text: T("app.grid.clashBadge") })
+              : null,
+          ]),
+          lectEl || roomEl
+            ? el("span", { class: "ev-line ev-who" }, [lectEl, sep(lectEl, roomEl), roomEl])
             : null,
         ]
       );
@@ -8017,89 +8150,136 @@
   }
 
   /**
-   * דרגות הירידה, לפי הסדר שבו הן יורדות: חדר, שעה, מרצה.
+   * גובה השעה נגזר מהתוכן: הגובה הקטן ביותר שבו **כל** בלוק ברשת מציג את
+   * שלוש השורות שלו במלואן. שום שורה אינה יורדת ושום דבר אינו נחתך
+   * (DESIGN.md, "Results page", פריט 5, 2026-09-30).
    *
-   * המרצה יורד אחרון מבין השלושה. החדר הוא קוד קצר שאפשר לשלוף מהפאנל
-   * או פשוט לחפש בבניין; המרצה הוא מה שבוחרים לפיו, ולכן הוא שווה יותר
-   * מהשניים האחרים גם כשהמקום נגמר.
-   */
-  var DROP_ORDER = ["ev-drop-1", "ev-drop-2", "ev-drop-3"];
-
-  function setDropped(block, cls, dropped) {
-    var parts = block.querySelectorAll("." + cls);
-    for (var j = 0; j < parts.length; j++) parts[j].hidden = dropped;
-  }
-
-  /**
-   * מוריד שורות מבלוק שאין בו מקום — ורק אחרי שהפריסה כבר קרתה, כי רק
-   * אז ידוע אם הטקסט באמת נכנס. שם ארוך בעמודה בחצי רוחב נשבר לשתי
-   * שורות, ואי אפשר לדעת זאת מראש מתוך משך השיעור בלבד.
+   * ‏החליף את fitBlocks(), שהוריד שורות מבלוק שלא נכנס. הוא רץ בתוך
+   * renderScheduleStep, מיד אחרי הבנייה — ולכן מדד פריסה שעוד לא הייתה
+   * הסופית: הגופן Heebo נטען אחריו ורחב מגופן הגיבוי, והרשת עוד לא הייתה
+   * ברוחבה. הוא מצא "נכנס", לא רץ שוב, והבלוק הציג חצי שורה חתוכה
+   * (DEFERRED.md, "Grid blocks ship with lecturer names sliced in half").
+   * כאן המדידה רצה אחרי הפריסה — ב-requestAnimationFrame — ושוב בכל פעם
+   * שהיא יכולה להשתנות: שינוי רוחב (ResizeObserver), סיום טעינת גופן,
+   * ומעבר להדפסה. ראו wireRefit().
    *
-   * הסדר קבוע: קודם החדר, אחר כך השעה. שם הקורס וסוג השיעור נשארים תמיד
-   * — בלעדיהם הבלוק אינו מזהה את עצמו, וזו כל מטרתו.
+   * ‏איך: לרגע אחד כל בלוק מקבל את גובהו הטבעי (‎.is-measuring‎ ב-CSS), והגובה
+   * הזה מחולק במספר משבצות ה-15 דקות שהבלוק תופס. המקסימום הוא ‎--slot-h‎
+   * של הרשת הזו. הרוחב אינו תלוי בגובה, ולכן מדידה אחת מספיקה — ובכל זאת
+   * התוצאה נבדקת, ומשבצת מתווספת פיקסל אם בלוק כלשהו עדיין גולש.
    */
-  function fitBlocks(root) {
+  //: רצפה בלבד, לא גובה קבוע: רשת שכל שיעוריה ארוכים לא נדחסת עד שתוויות
+  //: השעה נוגעות זו בזו.
+  var SLOT_H_FLOOR = 12;
+
+  function sizeGrid(root) {
     if (!root) return;
     var blocks = root.querySelectorAll(".ev");
+    // ‏רשת ריקה או מוסתרת: אין מה למדוד, ומדידה של אפס הייתה קובעת גובה
+    // אפס. כשהיא תופיע, ה-ResizeObserver יקרא לכאן שוב.
+    if (!blocks.length || !root.getClientRects().length) {
+      root.style.removeProperty("--slot-h");
+      return;
+    }
+    setClass(root, "is-measuring", true);
+    var need = SLOT_H_FLOOR;
     for (var i = 0; i < blocks.length; i++) {
-      var block = blocks[i];
-      // איפוס לפני מדידה. אחרת שורה שירדה בחלון צר לא הייתה חוזרת
-      // כשהוא מתרחב, והמצב הקודם היה נמדד כאילו הוא הטבעי.
-      for (var r = 0; r < DROP_ORDER.length; r++) {
-        setDropped(block, DROP_ORDER[r], false);
-      }
-      for (var t = 0; t < DROP_ORDER.length; t++) {
-        if (block.scrollHeight <= block.clientHeight) break;
-        setDropped(block, DROP_ORDER[t], true);
-      }
+      var b = blocks[i];
+      var rows = Math.max(1, num(b.dataset.rows, 1));
+      var cs = getComputedStyle(b);
+      var outer =
+        b.getBoundingClientRect().height +
+        num(parseFloat(cs.marginTop), 0) +
+        num(parseFloat(cs.marginBottom), 0);
+      need = Math.max(need, outer / rows);
+    }
+    setClass(root, "is-measuring", false);
+
+    var slot = Math.ceil(need - 0.01);
+    root.style.setProperty("--slot-h", slot + "px");
+    // ‏scrollHeight ו-clientHeight מעוגלים לפיקסל שלם, ולכן בלוק שנכנס
+    // בדיוק יכול להיראות גולש בחצי פיקסל. לא מנחשים: בודקים ומוסיפים.
+    for (var guard = 0; guard < 4 && anyBlockOverflows(blocks); guard++) {
+      slot += 1;
+      root.style.setProperty("--slot-h", slot + "px");
     }
   }
 
-  //: ‏A4 לרוחב: הצד הקצר הוא 210 מ"מ, וזה גובה העמוד המודפס. ‏@page
-  //: מכריז בדיוק על הגודל הזה, ולכן זה לא ניחוש. נייר Letter גבוה מעט
-  //: יותר, כך שההנחה שמרנית.
-  var PRINT_PAGE_PX = (210 * 96) / 25.4;
-  var SLOT_H_PRINT = 17;
-  var SLOT_H_PRINT_MIN = 12;
+  function anyBlockOverflows(blocks) {
+    for (var i = 0; i < blocks.length; i++) {
+      if (blocks[i].scrollHeight > blocks[i].clientHeight) return true;
+    }
+    return false;
+  }
+
+  /** שתי הרשתות: שלב 5 והשכבה — ובהדפסה, עמוד אחד כשאפשר. */
+  function sizeGrids() {
+    if (gridSizingFrame && window.cancelAnimationFrame) {
+      window.cancelAnimationFrame(gridSizingFrame);
+    }
+    gridSizingFrame = 0;
+    sizeGrid(ui.grid);
+    sizeGrid(ui.overlayGrid);
+    fitGridToPage();
+  }
+
+  //: ‏A4 לאורך: הצד הארוך הוא 297 מ"מ, וזה גובה העמוד המודפס. ‏@page
+  //: מכריז בדיוק על הגודל הזה (style.css), ולכן זה לא ניחוש.
+  var PRINT_PAGE_PX = (297 * 96) / 25.4;
+  var PRINT_FONT_MAX = 13;
+  var PRINT_FONT_MIN = 10;
+  var PRINT_FONT_STEP = 0.5;
 
   /**
-   * מקטין את גובה המשבצת עד שהמערכת נכנסת לעמוד אחד.
+   * עמוד אחד כשאפשר — על ידי גופן, לא על ידי השמטה.
    *
    * רשת שנשפכת לעמוד שני נשברת באמצע שעה, ושורת כותרות הימים נשארת
-   * מאחור — כלומר ההמשך מודפס בלי לומר איזו עמודה היא איזה יום. אין
-   * דרך ב-CSS לחזור על שורת כותרות ברשת grid: ‏thead עושה זאת בטבלה,
-   * ‏position: fixed אינו חוזר בעמודים נוספים ב-Chrome. לכן הפתרון אינו
-   * לנהל את השבירה אלא לא להגיע אליה.
+   * מאחור: אין דרך ב-CSS לחזור על שורת כותרות ברשת grid (‏thead עושה זאת
+   * בטבלה, ‏position: fixed אינו חוזר בעמודים נוספים ב-Chrome). לכן הפתרון
+   * אינו לנהל את השבירה אלא לא להגיע אליה.
    *
-   * עד 12px בלבד. מתחת לזה הבלוקים מפסידים גם את השעה, ועמוד אחד שקשה
-   * לקרוא אינו שיפור על שני עמודים קריאים — ואז עדיף לוותר על ההקטנה
-   * מאשר לשלם בקריאות בלי לקבל את העמוד בתמורה.
+   * ‏עד 2026-09-30 הפונקציה הקטינה את גובה המשבצת עד 12px, ו-fitBlocks()
+   * הוריד את השורות שלא נכנסו. עכשיו גובה השעה נגזר מהתוכן (sizeGrid), ולכן
+   * מה שמוקטן הוא גופן הבלוקים — בצעדים של 0.5px, מ-13px ועד 10px — ואחרי כל
+   * צעד גובה השעה נמדד מחדש, ושלוש השורות נשארות בכל בלוק. זה החריג היחיד
+   * לרצפת ה-13px, והוא חל על הנייר בלבד (DESIGN.md, "Results page", Print).
+   *
+   * ‏כשגם 10px אינו מספיק, הגופן חוזר ל-13px והדף מתחלק לשני עמודים: עמוד
+   * אחד שקשה לקרוא אינו שיפור על שני עמודים קריאים — ואם העמוד האחד אינו
+   * מתקבל בתמורה, אין סיבה לשלם בקריאות.
    */
   function fitGridToPage() {
-    var root = document.documentElement;
-    root.style.removeProperty("--slot-h");
-    if (!ui.grid || !ui.grid.firstChild) return;
+    var grid = ui.grid;
+    if (!grid) return;
+    grid.style.removeProperty("--ev-font-print");
     if (!window.matchMedia || !window.matchMedia("print").matches) return;
-    for (var h = SLOT_H_PRINT; h >= SLOT_H_PRINT_MIN; h--) {
-      root.style.setProperty("--slot-h", h + "px");
+    if (!grid.querySelector(".ev")) return;
+    for (var f = PRINT_FONT_MAX; f >= PRINT_FONT_MIN; f -= PRINT_FONT_STEP) {
+      grid.style.setProperty("--ev-font-print", f + "px");
+      sizeGrid(grid);
       if (document.body.scrollHeight <= PRINT_PAGE_PX) return;
     }
-    // לא נכנס גם במינימום — מחזירים את הגובה המלא ונותנים לו להתחלק.
-    root.style.removeProperty("--slot-h");
+    grid.style.removeProperty("--ev-font-print");
+    sizeGrid(grid);
   }
 
   /**
-   * מודד מחדש את שתי הרשתות.
-   *
-   * הרוחב קובע כמה שורות נכנסות בבלוק, וההדפסה מקטינה את גובה המשבצת
-   * מ-22px ל-17px — שתי הסיבות שבגללן שורה שנכנסת על המסך אינה נכנסת על
-   * הנייר. בלי המדידה החוזרת החישוב היה קופא ברוחב שבו נטען הדף.
+   * מדידה בפריים הבא, אחרי שהפריסה של הציור הנוכחי קרתה — ולפני שהוא
+   * נצבע, כך שהגובה הזמני לעולם אינו נראה. כמה בקשות באותו פריים הן מדידה
+   * אחת.
    */
-  function refitBlocks() {
-    // סדר: קודם גובה המשבצת (משנה את גובה כל בלוק), ורק אז מה נכנס בו.
-    fitGridToPage();
-    fitBlocks(ui.grid);
-    fitBlocks(ui.overlayGrid);
+  var gridSizingFrame = 0;
+
+  function requestGridSizing() {
+    if (gridSizingFrame) return;
+    if (!window.requestAnimationFrame) {
+      sizeGrids();
+      return;
+    }
+    gridSizingFrame = window.requestAnimationFrame(function () {
+      gridSizingFrame = 0;
+      sizeGrids();
+    });
   }
 
 
@@ -8660,6 +8840,8 @@
       var last = ui.steps.schedule;
       if (last) setClass(last, "is-active", true);
     }
+    // ‏מאותם טקסטים בדיוק: שבב ההגדרות אינו ניסוח שני של סיכום השלב.
+    renderSettingsPills(steps, hasCodes && !!s);
   }
 
   /**
@@ -8695,19 +8877,37 @@
    * 11. הפעלה
    * ===================================================================== */
 
-  /** מדידה חוזרת בשינוי רוחב ובמעבר להדפסה. */
+  /**
+   * מדידה חוזרת של גובה השעה בכל פעם שהפריסה יכולה להשתנות: רוחב, גופן
+   * והדפסה. ראו sizeGrid().
+   */
   function wireRefit() {
-    var timer = 0;
-    window.addEventListener("resize", function () {
-      clearTimeout(timer);
-      timer = setTimeout(refitBlocks, 120);
-    });
+    window.addEventListener("resize", requestGridSizing);
+    // ‏הרוחב של מיכל הרשת משתנה גם בלי שינוי חלון — כשהשכבה נפתחת, או
+    // כשהמיכל יוצא ממצב מוסתר. ‏ResizeObserver רואה את זה; resize לא.
+    // ‏המדידה נדחית לפריים הבא ולא רצה בתוך ה-callback, כדי שהשינוי שהיא
+    // עושה בגובה לא ייצור לולאת ResizeObserver.
+    if (window.ResizeObserver) {
+      var ro = new ResizeObserver(requestGridSizing);
+      [ui.gridScroll, ui.overlayGridScroll].forEach(function (node) {
+        if (node) ro.observe(node);
+      });
+    }
+    // ‏Heebo רחב מגופן הגיבוי. מדידה שקדמה לטעינתו קבעה גובה לטקסט צר
+    // מזה שבסוף צויר — זו אחת משתי הסיבות לחיתוך שב-DEFERRED.
+    if (document.fonts) {
+      if (document.fonts.ready) document.fonts.ready.then(requestGridSizing);
+      if (document.fonts.addEventListener) {
+        document.fonts.addEventListener("loadingdone", requestGridSizing);
+      }
+    }
     // ‏matchMedia ולא beforeprint: כשהאירוע הזה נורה גיליון ההדפסה כבר
     // חל, ולכן המדידה היא של הנייר. ב-beforeprint היא עדיין של המסך.
+    // ‏כאן בלי השהיה — ההדפסה יכולה להיצלם לפני הפריים הבא.
     if (!window.matchMedia) return;
     var mq = window.matchMedia("print");
-    if (mq.addEventListener) mq.addEventListener("change", refitBlocks);
-    else if (mq.addListener) mq.addListener(refitBlocks);
+    if (mq.addEventListener) mq.addEventListener("change", sizeGrids);
+    else if (mq.addListener) mq.addListener(sizeGrids);
   }
 
   function boot() {

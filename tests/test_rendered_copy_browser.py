@@ -251,10 +251,13 @@ def test_missing_string_registry_is_empty(fresh):
 # ==========================================================================
 LABEL_SELECTORS = [
     ".btn",
-    ".fact-label",
-    ".panel-block-title",
+    # ‏שלב 5 של העיצוב (2026-09-30): שבבי ההגדרות והנתונים, ושורת "מה הוריד"
+    # החליפו את אריחי העובדות, את כותרות הפאנל ואת תוויות הקנסות.
+    ".settings-pill",
+    ".settings-edit",
+    ".stat-pill",
     ".fit-label",
-    ".penalty-label",
+    ".fit-lost-item",
     ".step-name",
     ".step-hint",
     ".tab",
@@ -814,23 +817,21 @@ def _overlap_on(page):
 
 
 def _assert_lines_intact(rows, where):
-    """שם וסוג קיימים בכל בלוק, שום שורה אינה נחתכת, והסדר נשמר.
+    """שם וסוג קיימים בכל בלוק, שום שורה אינה נחתכת — ושום שורה אינה יורדת.
 
-    סדר הירידה, מהמוותר ביותר: חדר, שעה, מרצה. שם הקורס וסוג השיעור
-    אינם יורדים לעולם. המרצה יורד אחרון — הוא מה שבוחרים לפיו.
+    ‏עד 2026-09-30 היה כאן סולם ירידה (חדר, שעה, מרצה) והבדיקה וידאה את
+    סדרו. מאז שלב 5 של העיצוב גובה השעה נגזר מהתוכן, ולכן כל חלק שיש לו
+    נתון מוצג: שם, סוג, שעה, חדר ומרצה (DESIGN.md, "Results page", 5).
     """
     assert rows, f"אין בלוקים ב{where}"
     cut = [r["name"] + ": " + ", ".join(r["cut"]) for r in rows if r["cut"]]
     assert not cut, f"שורות נחתכות ב{where}: " + " | ".join(cut)
     assert all(r["name"] for r in rows), f"בלוק בלי שם קורס ב{where}"
     assert all(r["kind"] for r in rows), f"בלוק בלי סוג שיעור ב{where}"
-    # השעה יורדת רק אחרי החדר, והמרצה רק אחרי השעה.
-    flipped = [r["name"] for r in rows
-               if r["hasTime"] and not r["time"] and r["hasRoom"] and r["room"]]
-    assert not flipped, f"השעה ירדה לפני החדר ב{where}: " + "; ".join(flipped)
-    flipped = [r["name"] for r in rows
-               if r["hasLect"] and not r["lect"] and r["hasTime"] and r["time"]]
-    assert not flipped, f"המרצה ירד לפני השעה ב{where}: " + "; ".join(flipped)
+    dropped = [r["name"] + ": " + part for r in rows
+               for part, has in (("time", "hasTime"), ("room", "hasRoom"), ("lect", "hasLect"))
+               if r[has] and not r[part]]
+    assert not dropped, f"שורה ירדה ב{where}: " + "; ".join(dropped)
 
 
 def test_no_line_in_a_block_is_ever_cut(fresh):
@@ -844,8 +845,12 @@ def test_no_line_in_a_block_is_ever_cut(fresh):
     _assert_lines_intact(fresh.evaluate(LINES, "#schedule-grid"), "רוחב רגיל")
 
 
-def test_narrow_window_drops_room_before_time(fresh):
-    """בחלון צר יורד קודם החדר, אחר כך השעה — והשם והסוג נשארים."""
+def test_narrow_window_keeps_every_line(fresh):
+    """גם בחלון צר שום שורה אינה יורדת: השעה גדלה, לא הבלוק מתרוקן.
+
+    ‏עד 2026-09-30: "בחלון צר יורד קודם החדר, אחר כך השעה". הרוחב משתנה
+    כאן אחרי הציור, ולכן זו גם הבדיקה שהמדידה חוזרת בשינוי רוחב.
+    """
     _with_schedule(fresh)
     fresh.set_viewport_size({"width": 760, "height": 900})
     fresh.wait_for_timeout(1200)  # ‏refit רץ אחרי השהיה קצרה
@@ -853,11 +858,10 @@ def test_narrow_window_drops_room_before_time(fresh):
 
 
 def test_print_keeps_name_and_kind_on_every_block(fresh):
-    """בהדפסה משבצת נמוכה ב-5px, והשורות יורדות בהתאם — לא נחתכות.
+    """בהדפסה גופן הבלוקים יכול לרדת, אבל שום שורה אינה יורדת ואינה נחתכת.
 
-    ‏‎--slot-h יורד מ-22px ל-17px, ולכן בלוק שנכנס על המסך אינו נכנס על
-    הנייר. הבדיקה רצה אחרי המעבר למדיית הדפסה, כי זה בדיוק הרגע שבו
-    ‏fitBlocks נדרש למדוד מחדש.
+    הבדיקה רצה אחרי המעבר למדיית הדפסה, כי זה בדיוק הרגע שבו גובה השעה
+    נמדד מחדש — ‏sizeGrid ו-fitGridToPage ב-app.js.
     """
     _with_schedule(fresh)
     fresh.emulate_media(media="print")
@@ -914,9 +918,12 @@ def test_print_fits_one_page(fresh):
     ‏grid. לכן הגובה מוקטן עד שהיא נכנסת, במקום לנהל את השבירה.
     """
     _with_schedule(fresh)
+    # ‏A4 לאורך מאז 2026-09-30: 210 מ"מ רוחב ו-297 גובה. הרוחב נקבע כאן כי
+    # ‏emulate_media אינו משנה אותו, והוא קובע כמה טקסט נשבר בבלוק.
+    fresh.set_viewport_size({"width": round(210 * 96 / 25.4), "height": 900})
     fresh.emulate_media(media="print")
     fresh.wait_for_timeout(900)
-    page_px = round(210 * 96 / 25.4)  # ‏A4 לרוחב: 210 מ"מ גובה
+    page_px = round(297 * 96 / 25.4)
     body = fresh.evaluate("Math.round(document.body.scrollHeight)")
     assert body <= page_px, f"הדף המודפס גולש: {body}px מול עמוד {page_px}px"
     _assert_lines_intact(fresh.evaluate(LINES, "#schedule-grid"), "הדפסה בעמוד אחד")
@@ -946,8 +953,9 @@ def test_overlap_halves_stay_readable_at_half_width(fresh):
     זו הסיבה שהחצאים נפסלו בפעם הקודמת: הטקסט נקטע. הוא נקטע מפני
     שהבלוק נשא גם מרצה וגם מספר קבוצה; מספר הקבוצה עבר לפאנל.
 
-    החדר **כן** רשאי לרדת כאן — הוא הראשון בסולם, והוא קוד קצר שאפשר
-    לשלוף מהפאנל. מה שאסור לרדת הוא השם, הסוג והמרצה: לפי המרצה בוחרים.
+    ‏עד 2026-09-30 החדר היה רשאי לרדת כאן. מאז שלב 5 של העיצוב שום שורה
+    אינה יורדת; ‏fitBlocks() שהוריד ארבע שורות מבלוק עם 86px פנויים הוסר
+    (DEFERRED.md, "Grid blocks ship with lecturer names sliced in half").
     """
     _with_schedule(fresh)
     _overlap_on(fresh)

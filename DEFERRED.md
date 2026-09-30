@@ -10,8 +10,20 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
-### Grid blocks ship with lecturer names sliced in half — **next up after the palette**
-**Where:** `fitBlocks()` in `src/web/static/app.js:6855`, called from `app.js:6071`.
+### Grid blocks ship with lecturer names sliced in half — **closed 2026-09-30 (redesign Phase 5)**
+**Closed by:** removing the cause rather than re-timing it. `fitBlocks()` and its
+drop ladder are gone. Every block shows all three lines (name; type · time;
+lecturer · room), and the hour height is derived from the content by
+`sizeGrid()`, which runs **after** layout: in a `requestAnimationFrame` after each
+render, from a `ResizeObserver` on both grid containers, when web fonts finish
+loading (Heebo is wider than the fallback — the second half of the race below),
+and synchronously on the print media change. Measured on the semester-5 default:
+64px per hour at 1440 and at 1200, 0 blocks overflowing, 0 lines hidden, 0 lines
+clipped; at 390px, 112px per hour where the old code sliced 4 lines in 2 blocks.
+`test_overlap_halves_stay_readable_at_half_width` passes, and
+`tests/test_results_page_browser.py` pins the rest. The history below is kept.
+
+**Where (historical):** `fitBlocks()` in `src/web/static/app.js:6855`, called from `app.js:6071`.
 **Owner:** the first thing to fix once Phase 10's palette lands. Agreed 2026-09-08.
 **What it looks like:** not an ellipsis — the glyphs are cut horizontally by the
 block's own bottom edge, so the lecturer's name shows its top half and nothing
@@ -71,8 +83,18 @@ when earlier tests had warmed the page. Two green runs were luck.
 free, and should check it rather than only the clipping. Until then the browser
 suite is 62/63, with this the only failure.
 
-### The printed sheet is now at the bottom of its ladder
-**Where:** `fitGridToPage()` in `src/web/static/app.js:6892`, `SLOT_H_PRINT_MIN = 12`.
+### The printed sheet is now at the bottom of its ladder — **superseded 2026-09-30 (redesign Phase 5)**
+**Superseded by:** the print fit is driven by font size, not slot height and dropped
+lines. The sheet is portrait A4; `fitGridToPage()` steps the print-only block font
+down from 13px in 0.5px steps to a 10px floor, re-measuring the hour height from
+the content at each step, and prints at 13px on two pages if even 10px does not
+fit (DESIGN.md, "Results page", Print). Semester-5 default: one page at 10.5px.
+**Still true, and worth knowing:** a denser semester than the default may reach the
+10px floor or the two-page fallback; that has been measured on one schedule only.
+Below a 13px slot the hour labels in the time column are clipped by the next cell's
+background (seen in a landscape trial at 10px); portrait semester 5 prints at 17px.
+
+**Where (historical):** `fitGridToPage()` in `src/web/static/app.js:6892`, `SLOT_H_PRINT_MIN = 12`.
 **Owner:** informational — no action pending, but read this before adding to a block.
 **What:** the 13px type floor pushed the print fit down one rung. Measured on the
 semester-5 default, 13 blocks:

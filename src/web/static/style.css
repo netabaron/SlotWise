@@ -1331,35 +1331,6 @@ html.is-modal-open body { overflow: hidden; }
 
 .resolved:empty { display: none; }
 
-.facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 10px;
-}
-
-.facts:empty { display: none; }
-
-.fact {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 7px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--panel-2);
-  min-inline-size: 6.5rem;
-}
-
-.fact-label { font-size: 13px; color: var(--muted); }
-.fact-value { font-size: 16px; font-variant-numeric: tabular-nums; }
-
-/* כיוון הקריאה של המדד. מספר בלי הכיוון הזה — ובעיקר מספר שלילי —
-   אינו אומר לסטודנט/ית אם הוא טוב או רע. */
-.fact-hint { font-size: 13px; color: var(--muted); }
-.fact[title] { cursor: help; }
-.fact--warn { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
-.fact--ok   { border-color: var(--ok-line);   background: var(--ok-bg);   color: var(--ok-ink); }
-
 .inline-warn {
   font-size: 13px;
   font-weight: 600;
@@ -2143,8 +2114,8 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   display: flex;
   flex-direction: column;
   gap: 1px;
-  /* ‏13px היא רצפת הגופן בבלוק. בלוק שאין בו מקום מוותר על שורה שלמה,
-     לפי הסדר שב-fitBlocks — ולא מקטין את הטקסט מתחת לרצפה הזאת. */
+  /* ‏13px היא רצפת הגופן בבלוק. בלוק לא מקטין את הטקסט ולא מוותר על
+     שורה: גובה השעה גדל עד שכל שלוש השורות נכנסות (sizeGrid ב-app.js). */
   font-size: 13px;
   line-height: 1.25;
   background: var(--ev-bg, var(--chip));
@@ -2155,9 +2126,17 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .ev b { font-size: 13px; font-weight: 700; }
 
 /* ‏שורות הבלוק אינן מתכווצות. בלי זה בלוק נמוך דוחס את הילדים שלו במקום
-   לגלוש, ‏scrollHeight נשאר שווה ל-clientHeight, ‏fitBlocks אינו רואה
-   דבר — והשם והסוג נחתכים לרוחב השורה במקום שהחדר והשעה ירדו לפי הסדר. */
+   לגלוש, ו-‏scrollHeight נשאר שווה ל-clientHeight — כלומר גלישה הייתה
+   נחתכת בשקט במקום להימדד. */
 .ev > * { flex-shrink: 0; }
+
+/* ‏שלוש השורות (DESIGN.md, "Results page", 5): שם; סוג · שעה; מרצה · חדר.
+   כל אחת נשברת לשורה נוספת אם צריך, ואינה נחתכת. */
+.ev .ev-line { display: block; white-space: normal; overflow-wrap: anywhere; }
+
+/* ‏מדידה: לרגע אחד כל בלוק בגובהו הטבעי, כדי ש-sizeGrid() יידע כמה מקום
+   הוא צריך. המחלקה יורדת באותה משימה, לפני שהדף נצבע. */
+.grid.is-measuring .ev { align-self: start; block-size: auto; }
 .ev-room { font-weight: 600; }
 .ev span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -2268,9 +2247,14 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
    מצייר בתוכם כותרת עליונה ותחתונה משלו — תאריך, כתובת הדף ומספור. אין
    ‏CSS שמכבה אותן, אבל בלי שוליים אין להן מקום להיכתב בו. הריפוד מחזיר
    את המרווח הוויזואלי, ובו־בזמן הוא זה שנבלע בשוליים שהמדפסת לא יכולה
-   להדפיס — במקום שהמערכת עצמה תיחתך. */
+   להדפיס — במקום שהמערכת עצמה תיחתך.
+
+   ‏לאורך, לא לרוחב (DESIGN.md, "Results page", Print — 2026-09-30): שבוע
+   שלם עם שלוש שורות בכל בלוק נכנס לעמוד לאורך בגופן גדול יותר מאשר לרוחב.
+   נמדד על הנדסת תוכנה סמסטר 5: ‎10.5px לאורך, ו-10px לרוחב רק בקיצוץ
+   כותרת היום הריק. */
 @page {
-  size: A4 landscape;
+  size: A4 portrait;
   margin: 0;
 }
 
@@ -2354,8 +2338,6 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   #step-schedule > .step-body { display: flex !important; }
   .step-caret { display: none !important; }
   .step-head { margin-block-end: 8px; }
-  .facts { gap: 6px; }
-  .fact { padding: 4px 10px; }
 
   .grid-scroll {
     overflow: visible;
@@ -2371,8 +2353,7 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   .ev,
   .hd,
   .tl,
-  .legend-chip,
-  .fact {
+  .legend-chip {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
@@ -2430,109 +2411,115 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 }
 
 /* ==========================================================================
-   17. שלב 2 של השכתוב — ההתאמה, והפרדת עובדות מקנסות
+   17. התוצאה — שורת ההגדרות, שבבי הנתונים, ומה הוריד מההתאמה
+   ‏DESIGN.md, "Results page", פריטים 1 ו-4 (2026-09-30). מחליף את כותרת
+   ההתאמה, את אריחי העובדות ואת פסי הקנסות.
    ========================================================================== */
 
-/* ההתאמה היא הכותרת של הפאנל, לא עוד שבב בשורה. */
-.fit {
+/* ---- שורת ההגדרות: שבב לכל שלב, ו"עריכת ההגדרות" בסופה ---- */
+.settings-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
-  align-items: baseline;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-inline-start: 4px solid var(--accent);
-  border-radius: var(--radius-sm);
-  background: var(--panel-2);
+  gap: 6px;
+  align-items: center;
 }
 
-.fit-label { font-size: 13px; color: var(--muted); font-weight: 600; }
-.fit-value { font-size: 22px; font-variant-numeric: tabular-nums; }
+.settings-pill {
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 3px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--ink);
+}
 
-/* ‏המערכת המדורגת ראשונה נושאת משפט במקום מספר, ולכן היא זקוקה לגודל
-   משלה: ‎22px‎ נבחר לשני תווים ומחצה, ו"ההתאמה הגבוהה ביותר" באותו גודל
-   היה בולע את השורה. ‏700 ולא 600 — ‎Noto Sans Hebrew‎ מגיע ב-400 וב-700
-   בלבד, ומשקל ביניים על עברית נצמד ל-700 בעוד לטינית לצדו מקבלת 600
-   אמיתי. הצירוף עם ‎.fit--close‎ נחוץ כי הכלל שם הוא (0,2,0) ומנצח. */
-.fit-value--best,
-.fit--close .fit-value--best {
-  font-size: 17px;
+/* קישור טקסט, כמו "איפוס" בכותרת שלב המרצים — לא כפתור נוסף בשורה. */
+.settings-edit {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.settings-edit:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ---- שבבי הנתונים ---- */
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stats:empty { display: none; }
+
+.stat-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.stat-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-pill[title] { cursor: help; }
+
+/* ‏ההתאמה ראשונה, ובקו ‎--ink‎: היא מה שהמערכות מדורגות לפיו. */
+.stat-pill.fit { border-color: var(--ink); }
+
+.fit-label { font-size: 13px; color: var(--muted); font-weight: 600; }
+.fit-value { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ‏המערכת המדורגת ראשונה נושאת משפט במקום מספר. ‏700 ולא 600 — Heebo
+   מגיע במשקלים האלה, אבל עברית ולטינית באותו שבב צריכות אותו משקל. */
+.fit-value--best {
   font-weight: 700;
   color: var(--ink);
   font-variant-numeric: normal;
 }
-.fit-note { font-size: 13px; color: var(--muted); flex: 1 1 14rem; min-inline-size: 0; }
 
-/* שני חצאי הפאנל, כל אחד עם כותרת משלו. */
-.panel-block { display: flex; flex-direction: column; gap: 8px; }
+.fit-note { font-size: 13px; color: var(--muted); }
 
-.panel-block-title {
+/* ---- מה הוריד מההתאמה: שורה אחת ---- */
+.fit-lost {
+  margin: 0;
   font-size: 13px;
-  font-weight: 700;
+  line-height: 1.5;
   color: var(--muted);
-  letter-spacing: .01em;
 }
 
-/* עובדות — ניטרליות. אין כאן שיפוט, ולכן אין גם צבע מצב. */
-.facts--plain .fact { background: var(--panel); }
-
-/* קנסות — פס באורך יחסי, ולעולם לא מספר שלילי חשוף. */
-.penalties { display: flex; flex-direction: column; gap: 7px; }
-
-.penalty {
-  display: grid;
-  grid-template-columns: minmax(8rem, 14rem) 1fr;
-  gap: 4px 12px;
-  align-items: center;
+/* ‏מה כל רכיב מודד יושב בתווית ההצפה; קו תחתון מנוקד אומר שיש שם משהו. */
+.fit-lost-item[title] {
+  color: var(--ink);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
   cursor: help;
 }
 
-.penalty-label { font-size: 13px; }
-
-.penalty-track {
-  block-size: 8px;
-  border-radius: 999px;
-  background: var(--chip);
-  overflow: hidden;
-}
-
-.penalty-fill {
-  display: block;
-  block-size: 100%;
-  border-radius: 999px;
-  background: var(--warn-line);
-}
-
-/* ‏הפס הראשון הוא המשפיע ביותר — גם בצבע, וגם במילים שבתווית. */
-.penalty:first-child .penalty-fill { background: var(--dead-line); }
-.penalty:first-child .penalty-label { font-weight: 600; }
-
-@media (max-width: 640px) {
-  .penalty { grid-template-columns: 1fr; }
-}
-
-/* שורת המרצים נושאת משפט שלם, ולכן היא רחבה ובלי תווית נפרדת. */
-.fact--wide {
-  flex: 1 1 100%;
+/* ---- קורס בלי מועד קבוע, מתחת למקרא ---- */
+.unscheduled {
+  margin: 0;
   font-size: 13px;
-  padding: 7px 14px;
-  cursor: help;
-}
-
-/* ‏#schedule-summary נושא class="facts" מהמקור, כלומר שורת שבבים גמישה.
-   מרגע שיש בו שני גושים — עובדות וקנסות — הוא חייב לערום אותם, אחרת
-   שניהם נדחסים לחצי רוחב והפסים נעלמים לגמרי. */
-#schedule-summary {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 14px;
-}
-
-#schedule-summary .facts--plain {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 10px;
+  line-height: 1.5;
+  color: var(--muted);
 }
 
 /* ==========================================================================
@@ -2556,19 +2543,6 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 /* ==========================================================================
    19. שלב 3 — מה מבדיל בין המערכות
    ========================================================================== */
-
-/* התווית המבדילה, כשהמערכות קרובות מדי בציון כדי שהציון יעזור. */
-.fit--close .fit-value { font-size: 15px; color: var(--muted); font-weight: 600; }
-.fit--close .fit-label { order: 2; }
-.fit--close .fit-value { order: 3; }
-.fit--close .fit-note  { order: 4; }
-
-.fit-headline {
-  order: 1;
-  flex: 1 1 100%;
-  font-size: 16px;
-  color: var(--ink);
-}
 
 /* בסרגל המצוף ובשכבה — מה מייחד, במקום סטטיסטיקה שחוזרת מתחת. */
 .sticky-label { font-size: 13px; font-weight: 600; }
@@ -2656,15 +2630,16 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 }
 
 /* ‏"אם זה לא נכנס, זה לא שייך לבלוק": אין חיתוך בשלוש נקודות. שורה
-   שאין לה מקום יורדת כולה, לפי הסדר שב-fitBlocks — ולא נחתכת באמצע.
+   שאין לה מקום נשברת לשורה נוספת, והשעה גדלה בהתאם — שום דבר אינו נחתך.
    שעה שנקטעה ל-"10:30–12:2" נראית שלמה, וזה בדיוק מה שהופך אותה למסוכנת:
-   חדר "F 506" הוא חדר קיים אחר. לכן ארבע השורות נשברות ולא נחתכות. */
+   חדר "F 506" הוא חדר קיים אחר. לכן כל חלקי השורות נשברים ולא נחתכים. */
 .ev span { overflow: hidden; text-overflow: clip; white-space: nowrap; }
 .ev b,
 .ev .ev-kind,
 .ev .cell-time,
 .ev .ev-lect,
-.ev .ev-room { white-space: normal; overflow-wrap: anywhere; }
+.ev .ev-room,
+.ev .ev-room-note { white-space: normal; overflow-wrap: anywhere; }
 
 .ev:hover { filter: brightness(1.06); }
 .ev:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
@@ -2672,7 +2647,11 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 /* תג החפיפה. הוא יושב על כל אחד משני הבלוקים בחצי הרוחב — לא על
    בלוק ממוזג, שכבר אינו קיים. */
 .ev-badge {
-  align-self: flex-start;
+  /* ‏בסוף השורה השנייה, לא שורה רביעית משלו. */
+  display: inline-block;
+  vertical-align: middle;
+  margin-inline-start: 4px;
+  line-height: 1.2;
   font-size: 13px;
   font-weight: 700;
   padding: 1px 6px;
@@ -2828,7 +2807,7 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
    22. תיקוני שלב 4 — סוג השיעור בבלוק, וחפיפה כשני חצאים
    ========================================================================== */
 
-/* סוג השיעור: שורה קצרה משלו. הוא מהדברים הראשונים שמחפשים על הרשת,
+/* סוג השיעור, בראש השורה השנייה. הוא מהדברים הראשונים שמחפשים על הרשת,
    והוא גם מה שמבדיל הרצאה מתרגול כשהצבע מציין את הקורס בלבד.
 
    ‏.ev .ev-kind ולא .ev-kind: הכלל ‎.ev span‎ הוא (0,1,1) ומנצח מחלקה
@@ -2839,16 +2818,10 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   font-weight: 600;
 }
 
-/* שם המרצה, מלא. ‏13px כמו החדר והשעה ולא קטן מהם: מבין שלוש השורות
-   שיכולות לרדת הוא האחרון שיורד, ולכן אין סיבה שיהיה הקשה ביותר לקריאה.
-   שם ארוך נשבר לשתי שורות — עדיף מקוצר. */
+/* שם המרצה, מלא. ‏13px כמו החדר והשעה ולא קטן מהם: לפי המרצה בוחרים,
+   ולכן אין סיבה שיהיה הקשה ביותר לקריאה. שם ארוך נשבר לשתי שורות — עדיף
+   מקוצר. */
 .ev .ev-lect { font-size: 13px; }
-
-/* ‏fitBlocks מסתיר שורות שאינן נכנסות, לפי הסדר: חדר, שעה, מרצה.
-   ‏[hidden] כבר display:none גלובלית — הכלל כאן רק מתעד את הסדר. */
-.ev .ev-drop-1[hidden],
-.ev .ev-drop-2[hidden],
-.ev .ev-drop-3[hidden] { display: none !important; }
 
 /* חפיפה מכוונת: שני בלוקים זה לצד זה, כל אחד בחצי רוחב, ולכל אחד
    המסגרת המקווקוות שלו. מיזוג לבלוק אחד הסתיר אילו קורסים מתנגשים. */
@@ -2857,14 +2830,22 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   outline-offset: -3px;
 }
 
-/* בהדפסה סוג השיעור נשאר — הוא לא קישוט מסך.
+/* ‏כאן עמד עד 2026-09-30 ‎.ev .ev-kind { display: block }‎ בהדפסה, כדי
+   שסוג השיעור לא יירד מהנייר. שום שורה אינה יורדת עוד, והסוג יושב בתוך
+   השורה השנייה לצד השעה — ‎display: block‎ היה שובר אותה לשתיים. */
 
-   ‏עד 2026-09-08 עמד כאן גם ‎opacity: 1 !important‎ על שלוש שורות הבלוק,
-   כדי לבטל החוורה שנעשתה למסך. ההחוורה עצמה נמחקה — היא הורידה את שורת
-   המרצה אל 5.4:1 מול רף 7:1 שהפרויקט מצהיר עליו — ולכן גם הביטול שלה
-   מיותר. כלל שכל תפקידו לבטל כלל אחר נמחק יחד איתו. */
+/* ‏קוד חדר אינו נשבר באמצע: "L 706" נשאר בשורה אחת. מה שאחרי הקוד — "מע'
+   רשתות" — עדיין רשאי להישבר, ולכן הוא אלמנט נפרד (ראו roomNode ב-app.js). */
+.ev .ev-room .code--id { white-space: nowrap; overflow-wrap: normal; }
+
+/* ‏החריג היחיד לרצפת ה-13px: גופן הבלוקים **בהדפסה בלבד** יורד בצעדים של
+   ‎0.5px, עד 10px, עד שהשבוע נכנס לעמוד אחד. ‎fitGridToPage()‎ ב-app.js
+   קובע את ‎--ev-font-print‎ על הרשת; בלעדיו הגופן נשאר 13px. על המסך
+   הכלל הזה אינו חל. ‎.grid .ev *‎ ולא ‎.ev *‎: ‎.ev .ev-kind‎ ו-‎.ev .ev-lect‎
+   הם (0,2,0), והכלל הזה צריך לגבור עליהם. */
 @media print {
-  .ev .ev-kind { display: block !important; }
+  .grid .ev,
+  .grid .ev * { font-size: var(--ev-font-print, 13px); }
 }
 
 
