@@ -10,6 +10,46 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
+### Tests that start a server read the real `data/db` — four fail on a store written by `webapp.py`
+**Where:** `tests/test_hosted_missing_groups.py` (4 of its 7 tests); more generally,
+any test that calls `create_app()` without pointing `SLOTWISE_DB_ROOT` elsewhere.
+**Owner:** unassigned. The file is protected (`SPEC_WEB.md:230`: do not modify existing
+tests), so this is recorded, not changed.
+**What:** `create_app()` reads `data/db` when it exists. `conftest.py` freezes the
+catalog (`SLOTWISE_CATALOG_DIR` = `tests/fixtures/catalog`) but not the store, so a
+local store silently becomes part of the test's input. Running `python webapp.py`
+in local mode writes that store: it copies the shipped catalog into
+`data/db/sections.json` and `details.json`.
+**What fails:** with such a store, `/api/courses` returns groups for 201009 and
+201015 in semester א, so `not_offered` comes back empty and these four fail:
+`test_the_blanket_skip_reason_does_not_erase_the_real_one`,
+`test_a_course_that_does_have_groups_is_untouched`,
+`test_step_four_is_not_locked_on_courses_that_will_never_have_groups`,
+`test_the_explanation_is_plain_and_mentions_no_fetching`.
+**Measured 2026-09-30:**
+
+| store | result |
+|---|---|
+| untouched HEAD (`116c365`), store written by `webapp.py` | 4 failed, 3 passed |
+| untouched HEAD, no `data/db` | 7 passed |
+| fixture store (`scripts/seed_dev_data.py --fixture`, what CI runs) | all 7 pass in the full suite |
+
+The store here was written by a throwaway `webapp.py` run during the Phase 5 work
+(`updated_at` 2026-09-30T18:35Z). Any local run of the app does the same, so a
+developer who has used the app locally can see these four fail on unchanged code.
+**Same trap, caught in Phase 5:** two of the new tests in
+`tests/test_results_page_browser.py` first passed locally only because the test
+server read the real store. One assumed schedule 1 is always labelled "ההתאמה הגבוהה
+ביותר"; with the frozen catalog all five schedules tie. The other assumed 11069 lands
+in a group without meetings; in the frozen catalog every semester-א group of 11069
+has a meeting. Both now derive their expectations from what the server returned, and
+the whole file passes with the fixture store and with no `data/db` at all.
+**How to run the suite as CI does, locally:** move `data/db` aside,
+`python scripts/seed_dev_data.py --fixture`, run the suite, then put the store back.
+**A fix, when someone owns this:** have `conftest.py` point `SLOTWISE_DB_ROOT` at a
+seeded temporary store, as it already does for the catalog. Some tests copy
+`data/db` by path (`test_multifaculty.py::_copy_db`), so they would need the same.
+
 ### Grid blocks ship with lecturer names sliced in half — **closed 2026-09-30 (redesign Phase 5)**
 **Closed by:** removing the cause rather than re-timing it. `fitBlocks()` and its
 drop ladder are gone. Every block shows all three lines (name; type · time;
