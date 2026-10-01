@@ -212,10 +212,10 @@ Items 2–5 below were decided 2026-09-30 and **supersede** the earlier text of 
    - **No fixed meeting time:** a course with no fixed meeting time gets one line under the legend: "ללא מועד קבוע: <name> (<type>, N נ״ז)".
    - **Unchanged:** the soft-conflicts panel, the "no possible schedule" state with its relaxations, and the relax-undo line stay where they are today, in place of the timetable.
 6. **Switching alternatives:** blocks are persistent elements keyed by lesson and animate `top`, `right` and `height` to their new position (550ms, `cubic-bezier(.2,.8,.2,1)`), so the student sees exactly what moved.
-7. **Course legend:** color, name, credits. Hovering a course dims all other blocks to 18% opacity.
+7. **Course legend:** color, name, credits. Hovering a legend chip greys out every other course's blocks with colour, not opacity: fill and border in neutral tokens, text in `--mut` — the same treatment as the dimmed group rows in the lecturers step. On touch screens, tapping a chip toggles the same state, and tapping again clears it. (Decided 2026-10-01; supersedes "dims all other blocks to 18% opacity", since opacity on text is banned by `tests/test_no_opacity_on_text.py`.)
 8. **Lesson details:** clicking a block outlines it in its course color and shows lecturer, day and time, room and group number in a details panel next to the legend.
 
-Items 6–8 are unchanged by the 2026-09-30 decisions. The sticky bar and the "הצג מערכת" overlay are not changed in Phases 5–6; they are decided with Phases 7–8.
+Items 6 and 8 are unchanged by the 2026-09-30 decisions; item 7 was revised on 2026-10-01. The sticky bar and the "הצג מערכת" overlay are not changed in Phases 5–6; they are decided with Phases 7–8.
 
 **Print** (decided 2026-09-30). The printed sheet is the timetable on portrait A4, and every block keeps all three lines: nothing is dropped or clipped on paper either. To fit the week on one page, the block font on paper scales down in 0.5px steps from 13px, with a floor of 10px, and the hour height is re-measured from the content at each step. This is the one exception to the 13px block-text floor, and it applies to print only; the screen stays at 13px. If the week does not fit even at 10px, the sheet prints at 13px on two pages. The empty-day header stays as it is. Room codes never wrap mid-code ("L 706" stays on one line). Measured on Software Engineering semester 5: one page at 10.5px.
 
