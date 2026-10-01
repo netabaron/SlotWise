@@ -2654,7 +2654,8 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
 .ev .cell-time,
 .ev .ev-lect,
 .ev .ev-room,
-.ev .ev-room-note { white-space: normal; overflow-wrap: anywhere; }
+.ev .ev-room-note,
+.ev .ev-full { white-space: normal; overflow-wrap: anywhere; }
 
 .ev:hover { filter: brightness(1.06); }
 
@@ -2861,6 +2862,10 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
    ולכן אין סיבה שיהיה הקשה ביותר לקריאה. שם ארוך נשבר לשתי שורות — עדיף
    מקוצר. */
 .ev .ev-lect { font-size: 13px; }
+
+/* ‏קבוצה מלאה, בסוף השורה השלישית (DESIGN.md, "Results page", 5): משקל,
+   לא צבע — הצבע של הבלוק שייך לקורס. */
+.ev .ev-full { font-weight: 700; }
 
 /* חפיפה מכוונת: שני בלוקים זה לצד זה, כל אחד בחצי רוחב, ולכל אחד
    המסגרת המקווקוות שלו. מיזוג לבלוק אחד הסתיר אילו קורסים מתנגשים. */

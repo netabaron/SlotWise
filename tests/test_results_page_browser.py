@@ -7,7 +7,8 @@
   הוריד שורות ומדד לפני שהפריסה התייצבה, והבלוקים הגיעו עם שם מרצה חתוך
   לרוחבו (DEFERRED.md, "Grid blocks ship with lecturer names sliced in half").
 * **הגובה בא מהתוכן, לא ממספר קבוע:** פיקסל אחד פחות, ובלוק גולש.
-* **שבבי הנתונים בסדר של DESIGN,** והשורה "מה הוריד מההתאמה".
+* **שבבי הנתונים בסדר של DESIGN,** ומשפט "מה פחות טוב במערכת הזו" (עד
+  2026-10-01: "מה הוריד מההתאמה").
 * **קורס בלי מועד קבוע** (61998, פרויקט מסכם שלב א') נאמר בשורה מתחת
   למקרא, ואינו שבב במקרא.
 
@@ -271,7 +272,7 @@ def test_room_codes_do_not_break_mid_code_at_phone_width(browser, server):
 
 
 # ==========================================================================
-# 2. שבבי הנתונים, ומה הוריד מההתאמה
+# 2. שבבי הנתונים, ומה פחות טוב במערכת הזו
 # ==========================================================================
 def test_stat_pills_are_in_design_order(page):
     order = page.evaluate(
@@ -344,7 +345,7 @@ def test_what_lowered_the_fit_is_one_line_in_order(page):
     if not negative:
         assert line is None, line
         return
-    assert line, "אין שורת 'מה הוריד מההתאמה' למרות שיש קנסות"
+    assert line, "אין משפט 'מה פחות טוב במערכת הזו' למרות שיש קנסות"
     assert line["text"].startswith(SCHED["penaltiesLine"].split("{")[0]), line
     assert line["keys"][: len(negative)] == [k for k, _ in negative], (line, negative)
     # הפאנל הישן — פסים, אריחים וכותרת — אינו קיים עוד.
@@ -435,15 +436,18 @@ NO_TIME_CODE = "61998"
 
 #: הקורסים שאין להם אף מפגש במערכת הפעילה, בסדר ה-picks — אותו כלל כמו
 #: unscheduledCourses() ב-app.js — וכל מה שצריך כדי לבנות את השורה.
-UNSCHEDULED = """() => {
+UNSCHEDULED = """(full) => {
   const rt = window.slotwise.getRuntime();
   const sch = rt.solve.schedules[window.slotwise.getState().activeSchedule];
   const by = {}, order = [];
   sch.picks.forEach(p => {
-    if (!by[p.code]) { by[p.code] = {code: p.code, name: p.name, kinds: [], credits: null, timed: false};
+    if (!by[p.code]) { by[p.code] = {code: p.code, name: p.name, kinds: [], credits: null, timed: false,
+                                     full: false};
                        order.push(p.code); }
     const r = by[p.code];
     if ((p.meetings || []).length) r.timed = true;
+    // ‏מאז 2026-10-01 קבוצה מלאה נאמרת גם בשורה הזו ("· קבוצה מלאה").
+    if (p.status_note === full) r.full = true;
     if (p.kind && r.kinds.indexOf(p.kind) === -1) r.kinds.push(p.kind);
     if (r.credits === null && p.credits !== null && p.credits !== undefined && p.credits !== ''
         && Number(p.credits) >= 0) r.credits = Number(p.credits);
@@ -458,6 +462,11 @@ UNSCHEDULED = """() => {
           afterLegend: !!(document.getElementById('schedule-legend').compareDocumentPosition(line)
                           & Node.DOCUMENT_POSITION_FOLLOWING)};
 }"""
+
+
+#: ‏הערך שהידיעון כותב לקבוצה מלאה — כפי שהוא מוגדר ב-app.js.
+FULL = re.search(r'var FULL_STATUS = "([^"]+)";',
+                 (ROOT / "src" / "web" / "static" / "app.js").read_text(encoding="utf-8")).group(1)
 
 
 def _fmt_number(value):
@@ -475,6 +484,8 @@ def _unscheduled_line(items):
         else:
             credits = fill(STRINGS["app"]["credits"]["withUnit"], value=_fmt_number(r["credits"]))
             parts.append(fill(GRID["unscheduledItem"], name=r["name"], kind=kind, credits=credits))
+        if r.get("full"):
+            parts[-1] = fill(GRID["unscheduledFull"], item=parts[-1], status=GRID["groupFull"])
     return fill(GRID["unscheduled"], list=", ".join(parts))
 
 
@@ -492,7 +503,7 @@ def test_a_course_with_no_fixed_time_gets_its_own_line(browser, server):
         pg.reload()
         pg.wait_for_selector("#schedule-grid .ev", timeout=20000)
         _settle(pg)
-        got = pg.evaluate(UNSCHEDULED)
+        got = pg.evaluate(UNSCHEDULED, FULL)
         codes = [r["code"] for r in got["list"]]
         assert NO_TIME_CODE in codes, f"{NO_TIME_CODE} אמור להיות בלי מועד קבוע: {got['list']}"
         assert not got["hidden"], "השורה מוסתרת למרות שיש קורס בלי מועד קבוע"
@@ -506,7 +517,7 @@ def test_a_course_with_no_fixed_time_gets_its_own_line(browser, server):
 def test_the_no_fixed_time_line_matches_the_schedule(page):
     """בלי קורס כזה השורה מוסתרת; עם קורס כזה — היא בדיוק שלו. נגזר מהמערכת
     שהשרת החזיר, כך שהבדיקה אינה תלויה בקטלוג או במאגר המקומי."""
-    got = page.evaluate(UNSCHEDULED)
+    got = page.evaluate(UNSCHEDULED, FULL)
     if not got["list"]:
         assert got["hidden"] and got["text"] == "", got
     else:

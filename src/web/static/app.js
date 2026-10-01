@@ -175,6 +175,25 @@
    */
   var KIND_ORDER = ["הרצאה", "תרגול", "מעבדה", "פרויקט", 'שו"ת', "אחר"];
 
+  /**
+   * ‏המצב "קבוצה מלאה", כפי שהידיעון כותב אותו ב-``status_note``. אותו נימוק
+   * כמו KIND_ORDER: זה ערך שמגיע מהשרת ומשמש להשוואה, ולכן הוא כאן ולא ב-
+   * strings.json — הנוסח המוצג ("קבוצה מלאה") הוא שם. ‏``status_note`` הוא
+   * הטקסט של ה-span האדום של הידיעון, שהפרסר מפריד מהשם (CLAUDE.md,
+   * ‏_visible_text); ההשוואה היא על השדה הנקי כולו, לא חיפוש ביטויים בטקסט.
+   *
+   * ‏רק "מלאה" מסומן על הבלוק ובשורת "ללא מועד קבוע" (DESIGN.md, "Results
+   * page", 5, 2026-10-02). שני המצבים האחרים — "מיועד לחוזרים" ו"בקורס זה קיימת
+   * רשימת המתנה" — הם מידע ולא סיבה שקבוצה אינה זמינה: הם מופיעים רק בפאנל
+   * הפרטים, במילים של הידיעון, בלי נוסח קצר ובלי סימון.
+   * ‏tests/test_results_status_browser.py בודק שהערך עדיין מופיע בקטלוג.
+   */
+  var FULL_STATUS = "הקורס מלא";
+
+  function isFullGroup(rec) {
+    return txt(rec && rec.status_note) === FULL_STATUS;
+  }
+
   var TERMS_FALLBACK = [
     { value: "א", label: T("app.terms.fallbackTerms.winter", "") },
     { value: "ב", label: T("app.terms.fallbackTerms.spring", "") },
@@ -6805,6 +6824,9 @@
           false,
         ],
         [T("app.detail.room"), roomOf(m) || T("app.detail.noRoom"), "", true],
+        // ‏המצב שהידיעון סימן לקבוצה, כפי שהוא — "הקורס מלא", "מיועד לחוזרים",
+        // "בקורס זה קיימת רשימת המתנה". שורה רק כשיש מצב.
+        txt(m.status_note) ? [T("app.detail.status"), txt(m.status_note), "", false] : null,
         [
           T("app.detail.when"),
           Tf("app.detail.whenValue", {
@@ -6817,6 +6839,7 @@
       ];
       var dl = el("dl", { class: "detail-list" });
       rows.forEach(function (row) {
+        if (!row) return;
         dl.appendChild(el("dt", { text: row[0] }));
         // ‏<bdi> סביב כל מזהה לטיני בתוך עברית — "L 706", "EF 506 מע׳",
         // "271060310/1". בלי בידוד הם מסתדרים מחדש בצורה בלתי צפויה.
@@ -7305,7 +7328,7 @@
     var soft = sch ? softConflictInfo(sch) : null;
     renderSoftConflicts(soft);
 
-    // ‏שבבי הנתונים, ומתחתם מה הוריד מההתאמה (DESIGN.md, "Results page", 4).
+    // ‏שבבי הנתונים, ומתחתם מה פחות טוב במערכת (DESIGN.md, "Results page", 4).
     if (ui.summary) {
       rebuild(ui.summary, function (box) {
         if (sch) buildStats(box, sch, list);
@@ -7451,10 +7474,9 @@
         note = T("app.schedule.noteSolving");
       } else if (runtime.solveError) {
         note = Tf("app.schedule.noteFailed", { error: runtime.solveError });
-      } else if (s && !infeasible) {
-        // כמה מערכות נמצאו בסך הכול וכמה זמן לקח החישוב הם פירוט טכני.
-        note = Tf("app.schedule.noteShown", { shown: list.length });
       }
+      // ‏"מוצגות 5 המערכות המובילות" הוסר (2026-10-01): שורת הכותרת של
+      // החלופות כבר אומרת "5 מערכות מובילות".
       // חישוב שרץ מקבל כפתור עצירה לידו. מסך שאי אפשר לצאת ממנו הוא
       // מסך נעול, גם אם ההמתנה קצרה ברוב המקרים.
       rebuild(ui.scheduleNote, function (box) {
@@ -7494,7 +7516,7 @@
   }
 
   /**
-   * שבבי הנתונים של המערכת שנבחרה, ומתחתם שורה אחת: מה הוריד מההתאמה.
+   * שבבי הנתונים של המערכת שנבחרה, ומתחתם משפט אחד: מה פחות טוב במערכת הזו.
    *
    * ‏DESIGN.md, "Results page", פריט 4 (2026-09-30). הם מחליפים שלושה
    * דברים — כותרת ההתאמה, פאנל העובדות ופסי הקנסות — וכל מה שהשלושה אמרו
@@ -7613,15 +7635,16 @@
     if (num(sch.lecturer_total, 0) > 0) add("lecturers", [el("span", { text: hits })]);
     box.appendChild(pills);
 
-    // ---- מה הוריד מההתאמה: שורה אחת, מהמשפיע ביותר ומטה ----
-    // ‏רכיב שמוצג כאפס בכל החלופות אינו אומר דבר, ולכן הוא לא נמנה. הסדר
-    // הוא סדר ההשפעה; מה שכל רכיב מודד, ומי מהם הגדול, בתווית ההצפה.
+    // ---- מה פחות טוב במערכת הזו: משפט אחד, מהמשפיע ביותר ומטה ----
+    // ‏במילים של הסטודנט/ית ולא במונחי הניקוד (DESIGN.md, פריט 4, 2026-10-01):
+    // ‏"מסתיימת מאוחר" ולא "סיום מאוחר". רכיב שמוצג כאפס בכל החלופות אינו
+    // אומר דבר, ולכן הוא לא נמנה. מה שכל רכיב מודד, ומי מהם הגדול, בתווית ההצפה.
     var items = penaltyList(sch)
       .filter(function (row) {
         return !breakdownAlwaysZero(list, row.key);
       })
       .map(function (row, i) {
-        var label = T("app.score.breakdown." + row.key, row.key);
+        var label = T("app.schedule.lost." + row.key, T("app.score.breakdown." + row.key, row.key));
         var explain = T("app.score.explain." + row.key, "");
         return {
           key: row.key,
@@ -7635,7 +7658,9 @@
     if (missing.length) {
       items.push({
         key: "lecturer",
-        text: Tf("app.schedule.missingLecturers", { names: missing.join(", ") }),
+        text: Tf(missing.length === 1 ? "app.schedule.lost.lecturer" : "app.schedule.lost.lecturers", {
+          names: missing.join(", "),
+        }),
         title: T("app.score.explain.lecturer", ""),
       });
     }
@@ -7730,11 +7755,13 @@
           kinds: [],
           credits: null,
           timed: false,
+          full: false,
         };
         order.push(code);
       }
       var rec = byCode[code];
       if (Array.isArray(p.meetings) && p.meetings.length) rec.timed = true;
+      if (isFullGroup(p)) rec.full = true;
       var kind = txt(p.kind);
       if (kind && rec.kinds.indexOf(kind) === -1) rec.kinds.push(kind);
       if (rec.credits === null) rec.credits = creditsNumber(p.credits);
@@ -7754,13 +7781,17 @@
       list: list
         .map(function (rec) {
           var kind = rec.kinds.join(", ");
-          return rec.credits === null
+          var item = rec.credits === null
             ? Tf("app.grid.unscheduledItemNoCredits", { name: rec.name, kind: kind })
             : Tf("app.grid.unscheduledItem", {
                 name: rec.name,
                 kind: kind,
                 credits: Tf("app.credits.withUnit", { value: fmtNumber(rec.credits) }),
               });
+          // ‏קבוצה מלאה נאמרת גם כאן — לקורס בלי מועד אין בלוק שיישא אותה.
+          return rec.full
+            ? Tf("app.grid.unscheduledFull", { item: item, status: T("app.grid.groupFull") })
+            : item;
         })
         .join(", "),
     });
@@ -7828,6 +7859,7 @@
           kind: txt(pick.kind),
           group_id: txt(pick.group_id),
           lecturer: txt(pick.lecturer),
+          status_note: txt(pick.status_note),
           day: m.day,
           start: m.start,
           end: m.end,
@@ -8349,6 +8381,7 @@
         to: fmtTime(to),
         room: room || T("app.detail.noRoom"),
       });
+      if (isFullGroup(m)) label += " · " + T("app.grid.groupFull");
       if (clash) {
         var others = overlapPartners(m, meetings, marks)
           .slice(1)
@@ -8380,6 +8413,10 @@
       // משפחה — וזה מה שבוחרים לפיו.
       var lectEl = lecturer ? el("span", { class: "ev-lect", text: lecturer }) : null;
       var roomEl = room ? roomNode(m) : null;
+      // ‏קבוצה מלאה — בסוף השורה השלישית (DESIGN.md, "Results page", 5).
+      var fullEl = isFullGroup(m)
+        ? el("span", { class: "ev-full", text: T("app.grid.groupFull") })
+        : null;
 
       // ‏<button> ולא <div>: מספר הקבוצה נמצא רק בפאנל, ולכן חייבת להיות
       // אליו דרך במקלדת.
@@ -8409,8 +8446,14 @@
               ? el("span", { class: "ev-badge", text: T("app.grid.clashBadge") })
               : null,
           ]),
-          lectEl || roomEl
-            ? el("span", { class: "ev-line ev-who" }, [lectEl, sep(lectEl, roomEl), roomEl])
+          lectEl || roomEl || fullEl
+            ? el("span", { class: "ev-line ev-who" }, [
+                lectEl,
+                sep(lectEl, roomEl),
+                roomEl,
+                sep(lectEl || roomEl, fullEl),
+                fullEl,
+              ])
             : null,
         ]
       );

@@ -694,6 +694,10 @@ def schedule_to_json(
                 "lecturer": group.lecturer,
                 "credits": _course_credits(course)[0],
                 "note": group.note,
+                # ‏המצב שהידיעון סימן לקבוצה ("הקורס מלא" ודומיו), בשדה משלו —
+                # כמו ב-``group_to_json``. דף התוצאה מציג קבוצה מלאה על הבלוק;
+                # ‏``note`` אינו המקום, כי ``attendance_info`` סורק אותו (CLAUDE.md).
+                "status_note": group.status_note,
                 "linked_to": list(group.linked_to),
                 "meetings": [
                     meeting_to_json(m)
