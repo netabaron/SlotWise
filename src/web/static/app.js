@@ -7283,27 +7283,81 @@
   }
 
   /**
-   * מרצים שדורגו ולא נכנסו למערכת הזו.
-   * ‏lecturer_hits/total מגיעים מהשרת ואומרים כמה — לא מי. השם הוא מה
-   * שמאפשר להחליט אם כדאי לוותר, ולכן הוא נגזר כאן מהבחירה בפועל.
+   * המרצים המועדפים שלא נכנסו למערכת הזו — **אותו כלל בדיוק** שבו השרת סופר
+   * את ``lecturer_hits`` (scheduler._lecturer_component), כדי ששבב "N מתוך M
+   * מרצים מועדפים" והמשפט "בלי המרצה שבחרת" לא יוכלו לסתור זה את זה:
+   *
+   *   * קורס נספר רק אם יש לו דירוג (אחרי ניקוי) והוא במערכת הזו.
+   *   * "מועדף" = השם **הראשון** בדירוג — פגיעה אצל השרת היא דירוג 0.
+   *   * כל קבוצה שנבחרה בקורס נבדקת, **כולל קבוצה בלי מפגשים**. עד 2026-10-02
+   *     הרשימה נבנתה מ-scheduleMeetings(), שאין בה קבוצה בלי מועד — ולכן
+   *     מרצה של שו"ת בלי מועד נאמר "חסר" כשהשרת ספר אותו כפגיעה (11069).
+   *   * השמות מושווים אחרי אותו ניקוי: ‏strip של _clean_ranked, ואז הנרמול
+   *     של _norm_name — רווחים מצטמצמים לאחד, ובלי הבדל בין אותיות גדולות
+   *     לקטנות.
+   *
+   * מחזיר רשומה לכל קורס שבו המועדף חסר: ‏{code, name}.
    */
-  function missingLecturers(sch) {
+  function lecturerMisses(sch) {
     if (!sch) return [];
+    var present = Object.create(null);
     var chosen = Object.create(null);
-    scheduleMeetings(sch).forEach(function (m) {
-      var name = txt(m.lecturer);
-      if (name) chosen[txt(m.code) + "|" + name] = true;
+    pickList(sch, ["picks"], null).forEach(function (p) {
+      var code = txt(p.code);
+      present[code] = true;
+      var key = normLecturer(p.lecturer);
+      if (key) (chosen[code] = chosen[code] || Object.create(null))[key] = true;
     });
-    var missing = [];
-    Object.keys(state.ranked || {}).forEach(function (code) {
-      var names = state.ranked[code] || [];
-      if (!names.length) return;
-      var got = names.some(function (name) {
-        return chosen[code + "|" + txt(name)];
+    var misses = [];
+    var ranked = pickedFor(state.ranked);
+    Object.keys(ranked).forEach(function (code) {
+      var names = rankingNames(ranked[code]);
+      if (!names.length || !present[code]) return;
+      var first = names[0];
+      if (!(chosen[code] && chosen[code][normLecturer(first)])) {
+        misses.push({ code: code, name: first });
+      }
+    });
+    return misses;
+  }
+
+  /** השמות להצגה: המועדף של כל קורס שחסר בו, בלי כפילויות. */
+  function missingLecturers(sch) {
+    return uniq(
+      lecturerMisses(sch).map(function (m) {
+        return m.name;
+      })
+    );
+  }
+
+  /** ‏scheduler._norm_name: רווחים מצטמצמים לאחד, ובלי הבדל רישיות. */
+  function normLecturer(name) {
+    return txt(name).split(/\s+/).filter(Boolean).join(" ").toLowerCase();
+  }
+
+  /**
+   * ‏הדירוג של קורס כפי שהשרת קורא אותו: _clean_ranked מנקה רווחים בקצוות
+   * ומשמיט שמות ריקים, ו-_ranking_for מקבל גם מילון לפי סוג רכיב (ומאחד אותו
+   * לפי הסדר). הדף שולח היום רשימה; המילון נתמך כדי שהכלל לא יתפצל אם זה ישתנה.
+   */
+  function rankingNames(ranking) {
+    var list = [];
+    if (Array.isArray(ranking)) {
+      list = ranking.slice();
+    } else if (ranking && typeof ranking === "object") {
+      Object.keys(ranking).forEach(function (kind) {
+        (ranking[kind] || []).forEach(function (name) {
+          if (list.indexOf(name) === -1) list.push(name);
+        });
       });
-      if (!got) missing.push(txt(names[0]));
-    });
-    return uniq(missing.filter(Boolean));
+    } else if (ranking) {
+      list = [ranking];
+    }
+    return list
+      .map(function (name) {
+        return txt(name).trim();
+      })
+      .filter(Boolean);
   }
 
   /* --- שלב 5: המערכת ------------------------------------------------- */
