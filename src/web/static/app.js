@@ -666,6 +666,17 @@
 
   /** מה שלא נשמר בין רענונים: תשובות שרת, סטטוס, שגיאות. */
   var runtime = {
+    // ‏שלב 6 של העיצוב: מיון החלופות ("fit" = סדר השרת), הקורס שמודגש
+    // מהמקרא בלחיצה (טלפון), והשיעור שפרטיו פתוחים — לפי מפתח שיעור, כדי
+    // שהבחירה תעבור עם השיעור כשמחליפים חלופה. כולם בזיכרון בלבד.
+    altSort: "fit",
+    legendPinned: "",
+    legendHover: "",
+    detailEl: null,
+    detailSig: "",
+    // ‏איזו חלופה הרשת מציגה, ומאיזו תשובה של השרת — כדי לדעת אם הציור
+    // הבא הוא החלפת חלופה (שזזה) או חישוב חדש (שמצויר במקום).
+    gridShown: { solve: null, idx: -1 },
     // שלב 4: הקורס הפתוח באקורדיון (null = ברירת מחדל, "" = הכול סגור),
     // אילו ⓘ פתוחים, האם גלולת "ללא חובת נוכחות" פתוחה, והדירוג האחרון.
     openCourse: null,
@@ -745,7 +756,6 @@
     // שכבת המערכת: פתוחה, ולאן להחזיר את הפוקוס בסגירה.
     overlayOpen: false,
     overlayReturnTo: null,
-    detailReturnTo: null,
     // אילו שלבים כבר נשקלו לקיפול אוטומטי — שיקול אחד לכל שלב, לכל טעינה.
     autoCollapsed: Object.create(null),
     // איזה ‏<details> בתוך באנר פתוח כרגע, לפי מפתח הבאנר.
@@ -3099,7 +3109,13 @@
     ui.lectNote = byId("lecturers-note");
     ui.btnClearRanking = byId("btn-clear-ranking");
 
-    ui.tabs = byId("schedule-tabs");
+    ui.altHead = byId("alt-head");
+    ui.altTitle = byId("alt-title");
+    ui.altSort = byId("alt-sort");
+    ui.altPrev = byId("alt-prev");
+    ui.altNext = byId("alt-next");
+    ui.altPos = byId("alt-pos");
+    ui.altCards = byId("alt-cards");
     ui.btnPrint = byId("btn-print");
     ui.settingsPills = byId("settings-pills");
     ui.summary = byId("schedule-summary");
@@ -3133,8 +3149,6 @@
     ui.detail = byId("meeting-detail");
     ui.detailBody = byId("meeting-detail-body");
     ui.btnDetailClose = byId("btn-detail-close");
-    ui.compare = byId("compare");
-    ui.compareBody = byId("compare-body");
     ui.techDetails = byId("tech-details");
     ui.techFacts = byId("tech-facts");
     ui.attendanceOff = byId("attendance-off");
@@ -3359,6 +3373,25 @@
       });
     }
 
+    // ‏המיון אינו נשמר: ‏runtime ולא state, ובלי setState — אין מה לחשב מחדש
+    // ואין מה לשמור. אותה חלופה נשארת בחורה; רק הסדר משתנה.
+    if (ui.altSort) {
+      ui.altSort.addEventListener("change", function () {
+        runtime.altSort = ui.altSort.value;
+        render();
+      });
+    }
+    if (ui.altPrev) {
+      ui.altPrev.addEventListener("click", function () {
+        stepAlternative(-1);
+      });
+    }
+    if (ui.altNext) {
+      ui.altNext.addEventListener("click", function () {
+        stepAlternative(1);
+      });
+    }
+
     COLLAPSIBLE_STEPS.forEach(function (key) {
       watchFold(ui.steps[key]);
       var btn = ui.stepToggles[key];
@@ -3391,6 +3424,15 @@
     if (ui.detail) {
       ui.detail.addEventListener("keydown", function (ev) {
         if (ev.key === "Escape") {
+          ev.preventDefault();
+          closeMeetingDetail();
+        }
+      });
+    }
+    // ‏הפוקוס נשאר על הבלוק כשהפרטים נפתחים, ולכן Esc נשמע גם על הרשת.
+    if (ui.grid) {
+      ui.grid.addEventListener("keydown", function (ev) {
+        if (ev.key === "Escape" && runtime.detailEl) {
           ev.preventDefault();
           closeMeetingDetail();
         }
@@ -4232,7 +4274,6 @@
     renderScheduleStep();
     renderStepStates();
     renderStickyBar();
-    renderCompare();
     renderTechDetails();
     renderFooter();
     markMissingStrings();
@@ -6550,236 +6591,468 @@
     return tr;
   }
 
+  /* --- שלב 6 של העיצוב: החלופות ------------------------------------ */
+
+  //: אפשרויות המיון (DESIGN.md, "Results page", 2). ‏"fit" הוא סדר השרת.
+  //: המיון חי בזיכרון בלבד — ‏runtime ולא state — ולכן אינו נשמר ומתאפס
+  //: בטעינה, והוא רץ על חמש החלופות שכבר התקבלו בלי לפנות לשרת.
+  var ALT_SORTS = ["fit", "gaps", "finish", "days"];
+
+  function altSortKey() {
+    return ALT_SORTS.indexOf(runtime.altSort) === -1 ? "fit" : runtime.altSort;
+  }
+
   /**
-   * טבלת "מה ההבדל?" — חמש המערכות מול העובדות שמשוות ביניהן.
-   *
-   * שני כללים שבלעדיהם הטבלה חסרת ערך:
-   *   1. **לכל תא יש ערך.** צביעה בלבד אומרת "כאן שונה" בלי לומר במה,
-   *      וטבלה של גוונים אינה עוזרת לבחור.
-   *   2. שורה שכל ערכיה זהים מעומעמת, ושורה שנבדלת מודגשת — כדי שהעין
-   *      תלך ישר למקום היחיד שבו ההחלטה נמצאת.
-   * וכשאין שום הבדל, נאמר זאת במפורש במקום להציג חמש שורות זהות.
+   * סדר ההצגה: אינדקסים לרשימת השרת. שוויון שומר על סדר השרת — האינדקס
+   * עצמו שובר את השוויון, ולכן המיון יציב בכל דפדפן.
    */
-  function renderCompare() {
-    if (!ui.compareBody) return;
-    var list = schedules();
-    setHidden(ui.compare, list.length < 2);
-    if (list.length < 2) return;
-
-    var facts = list.map(scheduleFacts);
-    var fits = fitScores(list);
-    var labels = differentiators(list);
-
-    var rows = [
-      {
-        key: "label",
-        title: T("app.compare.rowLabel"),
-        cell: function (i) {
-          return labels[i];
-        },
-      },
-      {
-        key: "fit",
-        title: T("app.compare.rowFit"),
-        cell: function (i) {
-          return fmtFit(fits[i]);
-        },
-      },
-      {
-        key: "days",
-        title: T("app.compare.rowDays"),
-        cell: function (i) {
-          return String(facts[i].days);
-        },
-      },
-      {
-        key: "finish",
-        title: T("app.compare.rowFinish"),
-        cell: function (i) {
-          return facts[i].finish ? fmtTime(facts[i].finish) : "—";
-        },
-      },
-      {
-        key: "gaps",
-        title: T("app.compare.rowGaps"),
-        cell: function (i) {
-          return fmtDuration(facts[i].gaps);
-        },
-      },
-      {
-        key: "credits",
-        title: T("app.compare.rowCredits"),
-        cell: function (i) {
-          return fmtNumber(facts[i].credits);
-        },
-      },
-      {
-        key: "lecturers",
-        title: T("app.compare.rowLecturers"),
-        cell: function (i) {
-          return facts[i].lecturerTotal
-            ? Tf("app.compare.lecturersCell", {
-                hits: facts[i].lecturers,
-                total: facts[i].lecturerTotal,
-              })
-            : "—";
-        },
-      },
-    ];
-
-    rows.forEach(function (row) {
-      var values = list.map(function (_, i) {
-        return row.cell(i);
-      });
-      row.values = values;
-      row.varies = uniq(values).length > 1;
+  function altOrder(list, key) {
+    var order = list.map(function (_, i) {
+      return i;
     });
-
-    var anyVaries = rows.some(function (row) {
-      return row.key !== "label" && row.varies;
-    });
-
-    rebuild(ui.compareBody, function (box) {
-      if (!anyVaries) {
-        box.appendChild(
-          el("p", { class: "note", text: T("app.compare.allSame") })
-        );
-      }
-      var table = el("table", {
-        class: "compare-table",
-        attrs: { "aria-label": T("app.compare.tableLabel") },
-      });
-      var head = el("tr", {}, [
-        el("th", { attrs: { scope: "col" }, text: T("app.compare.rowSchedule") }),
-      ]);
-      list.forEach(function (_, i) {
-        head.appendChild(
-          el("th", {
-            class: i === state.activeSchedule ? "is-active" : "",
-            attrs: { scope: "col" },
-            text: String(i + 1),
-          })
-        );
-      });
-      table.appendChild(el("thead", {}, [head]));
-
-      var body = el("tbody");
-      rows.forEach(function (row) {
-        var tr = el("tr", { class: row.varies ? "varies" : "same" }, [
-          el("th", {
-            attrs: {
-              scope: "row",
-              title: row.varies
-                ? T("app.compare.differs")
-                : T("app.compare.same"),
-            },
-            text: row.title,
-          }),
-        ]);
-        row.values.forEach(function (value, i) {
-          tr.appendChild(
-            el("td", {
-              class:
-                (i === state.activeSchedule ? "is-active " : "") +
-                (row.varies ? "is-diff" : "is-same"),
-              text: value,
-            })
-          );
-        });
-        body.appendChild(tr);
-      });
-      table.appendChild(body);
-      box.appendChild(el("div", { class: "compare-scroll" }, [table]));
+    if (key === "fit") return order;
+    var value = function (i) {
+      var sch = list[i];
+      if (key === "gaps") return num(sch && sch.gap_minutes, 0);
+      if (key === "days") return num(sch && sch.days_count, 0);
+      var finish = lastFinishOf(sch);
+      return finish === null ? Infinity : finish;
+    };
+    return order.sort(function (a, b) {
+      // ‏Infinity - Infinity הוא NaN, ו-NaN || (a - b) נופל לסדר השרת.
+      return value(a) - value(b) || a - b;
     });
   }
 
-  /* --- שלב 4: פרטי שיעור ------------------------------------------- */
+  /**
+   * בחירת חלופה לפי האינדקס שלה ברשימת השרת. ‏{ solve: false }: הבחירה
+   * אינה מחשבת מחדש — חמש החלופות כבר כאן.
+   */
+  function selectAlternative(idx) {
+    setState({ activeSchedule: idx }, { solve: false });
+  }
+
+  /** הקודמת/הבאה — לפי הסדר הממוין, לא לפי סדר השרת. */
+  function stepAlternative(delta) {
+    var list = schedules();
+    if (!list.length) return;
+    var order = altOrder(list, altSortKey());
+    var pos = order.indexOf(clamp(state.activeSchedule, 0, list.length - 1));
+    var next = order[pos + delta];
+    if (next !== undefined) selectAlternative(next);
+  }
 
   /**
-   * פותח את פאנל הפרטים של שיעור (או של שני צדדיה של חפיפה מכוונת).
+   * שורת הכותרת והכרטיסים (פריטים 2–3).
    *
-   * מרגע שהבלוק ברשת מציג שם, שעה וסוג בלבד, זה המקום **היחיד** שבו
-   * מופיעים מספר הקבוצה, המרצה והחדר. לכן:
-   *   * הבלוקים הם ``<button>`` — יש אליהם דרך במקלדת, לא רק בעכבר.
-   *   * הפוקוס עובר לפאנל בפתיחה. קורא מסך מכריז אז את שם הדיאלוג
-   *     ותוכנו; בלי זה הפאנל היה נפתח בשקט ומי שאינו רואה אותו לא היה
-   *     יודע שקרה משהו.
-   *   * ‏Esc סוגר, והפוקוס חוזר לבלוק שממנו נפתח.
+   * ‏הכרטיס נושא את **המספר הקבוע** של החלופה — הדירוג שלה בשרת, 1 עד 5 —
+   * ולא את מקומו בסדר הממוין. התווית המבדילה אומרת "דומה למערכת 1", ו-1
+   * זה חייב להישאר אותה מערכת גם אחרי מיון.
    */
-  function openMeetingDetail(group, isOverlap) {
-    if (!ui.detail || !ui.detailBody) return;
-    runtime.detailReturnTo = document.activeElement;
-    rebuild(ui.detailBody, function (box) {
-      if (isOverlap) {
-        box.appendChild(
-          el("p", { class: "detail-overlap" }, [
-            el("strong", { text: T("app.detail.overlapTitle") }),
-            el("span", { text: " " + T("app.detail.overlapNote") }),
-          ])
-        );
-      }
-      group.forEach(function (m) {
-        var rows = [
-          [T("app.detail.course"), txt(m.name) || nameOf(m.code), m.code, false],
-          [T("app.detail.kind"), txt(m.kind), "", false],
-          [T("app.detail.group"), txt(m.group_id), "", true],
-          [
-            T("app.detail.lecturer"),
-            txt(m.lecturer) || T("app.detail.unknownLecturer"),
-            "",
-            false,
-          ],
-          [T("app.detail.room"), roomOf(m) || T("app.detail.noRoom"), "", true],
-          [
-            T("app.detail.when"),
-            Tf("app.detail.whenValue", {
-              day: dayLetter(m.day),
-              from: fmtTime(m.start),
-              to: fmtTime(m.end),
-            }),
-            "",
-          ],
-        ];
-        var dl = el("dl", { class: "detail-list" });
-        rows.forEach(function (row) {
-          dl.appendChild(el("dt", { text: row[0] }));
-          // ‏<bdi> סביב כל מזהה לטיני בתוך עברית — "L 706", "EF 506 מע׳",
-          // "271060310/1". בלי בידוד הם מסתדרים מחדש בצורה בלתי צפויה.
-          var dd = el("dd", {}, [
-            row[3] ? ltrCode(row[1]) : el("span", { text: row[1] }),
-          ]);
-          if (row[2]) {
-            var code = ltrCode(row[2]);
-            setClass(code, "detail-code", true);
-            dd.appendChild(code);
-          }
-          dl.appendChild(dd);
-        });
-        box.appendChild(
-          el("section", { class: "detail-item c" + colorOf(m.code) }, [dl])
-        );
+  function renderAlternatives(list, labels) {
+    var show = list.length > 0;
+    setHidden(ui.altHead, !show);
+    setHidden(ui.altCards, !show);
+    if (!show) {
+      if (ui.altCards) clear(ui.altCards);
+      return;
+    }
+    var active = clamp(state.activeSchedule, 0, list.length - 1);
+    var order = altOrder(list, altSortKey());
+    var pos = order.indexOf(active);
+    setText(
+      ui.altTitle,
+      list.length === 1 ? T("app.alts.titleOne") : Tf("app.alts.title", { n: list.length })
+    );
+    if (ui.altSort) ui.altSort.value = altSortKey();
+    setText(ui.altPos, Tf("app.alts.position", { pos: pos + 1, total: list.length }));
+    if (ui.altPrev) ui.altPrev.disabled = pos <= 0;
+    if (ui.altNext) ui.altNext.disabled = pos >= order.length - 1;
+
+    // סקאלת זמן אחת לכל הכרטיסים, כדי שאפשר יהיה להשוות ביניהם במבט.
+    var all = [];
+    list.forEach(function (sch) {
+      all = all.concat(scheduleMeetings(sch));
+    });
+    var bounds = gridBounds(all);
+    // ‏אותן עמודות בכל הכרטיסים: יום ו׳ מופיע בכולם אם הוא בשימוש באחד מהם,
+    // אחרת העמודות לא היו מתיישרות בין כרטיס לכרטיס.
+    var days = [1, 2, 3, 4, 5];
+    if (
+      all.some(function (m) {
+        return m.day === 6;
+      })
+    ) {
+      days.push(6);
+    }
+    rebuild(ui.altCards, function (box) {
+      order.forEach(function (i) {
+        box.appendChild(altCard(list[i], i, labels[i] || "", i === active, bounds, days));
       });
     });
-    setHidden(ui.detail, false);
-    try {
-      ui.detail.focus();
-    } catch (e) {
-      /* פוקוס נכשל — הפאנל עדיין פתוח */
+  }
+
+  function altCard(sch, idx, label, selected, bounds, days) {
+    var dayCount = num(sch.days_count, 0);
+    var finish = lastFinishOf(sch);
+    var facts = Tf(dayCount === 1 ? "app.alts.cardFactsOneDay" : "app.alts.cardFacts", {
+      days: dayCount,
+      time: finish === null ? "—" : fmtTime(finish),
+    });
+    return el(
+      "button",
+      {
+        class: "alt-card" + (selected ? " is-selected" : ""),
+        attrs: {
+          type: "button",
+          "aria-pressed": selected ? "true" : "false",
+          "aria-label": Tf("app.alts.cardLabel", { n: idx + 1, facts: facts, label: label }),
+        },
+        data: { fk: "alt-" + idx, rank: idx + 1 },
+        on: {
+          click: function () {
+            selectAlternative(idx);
+          },
+        },
+      },
+      [
+        el("span", { class: "alt-card-name", text: Tf("app.alts.cardName", { n: idx + 1 }) }),
+        miniWeek(sch, bounds, days),
+        el("span", { class: "alt-card-facts", text: facts }),
+        el("span", { class: "alt-card-label", text: label }),
+      ]
+    );
+  }
+
+  /**
+   * השבוע בקטן: עמודה ליום (א–ה, ו רק כשיש בו שיעור באחת החלופות), בלוקים
+   * בצבעי הקורסים, בלי טקסט. ‏aria-hidden — מה שהוא מראה נאמר בתווית הכרטיס.
+   */
+  function miniWeek(sch, bounds, days) {
+    var meetings = scheduleMeetings(sch);
+    var span = Math.max(1, bounds.end - bounds.start);
+    var pct = function (v) {
+      return (Math.max(0, Math.min(1, v)) * 100).toFixed(2) + "%";
+    };
+    var lanes = assignLanes(meetings);
+    var wrap = el("span", { class: "mini", attrs: { "aria-hidden": "true" } });
+    days.forEach(function (d) {
+      var col = el("span", { class: "mini-day" });
+      meetings.forEach(function (m) {
+        if (m.day !== d) return;
+        var lane = lanes[meetingKey(m)] || { lane: 0, lanes: 1 };
+        col.appendChild(
+          el("span", {
+            class: "mini-ev c" + colorOf(m.code),
+            style: {
+              top: pct((m.start - bounds.start) / span),
+              height: pct((m.end - m.start) / span),
+              "inset-inline-start": pct(lane.lane / lane.lanes),
+              width: pct(1 / lane.lanes),
+            },
+          })
+        );
+      });
+      wrap.appendChild(col);
+    });
+    return wrap;
+  }
+
+  /* --- פרטי שיעור (DESIGN.md, "Results page", 8) --------------------- */
+
+  /**
+   * ממלא את פאנל הפרטים שליד המקרא בשיעור (או בשני צדדיה של חפיפה מכוונת),
+   * ומסמן את הבלוק בצבע הקורס.
+   *
+   * מרגע שהבלוק ברשת מציג שם, סוג, שעה, מרצה וחדר, הפאנל הוא המקום שבו
+   * מופיע **מספר הקבוצה**, ולכן:
+   *   * הבלוקים הם ``<button>`` — יש אליהם דרך במקלדת, לא רק בעכבר.
+   *   * התוכן מוכרז (‏aria-live בגוף הפאנל). ‏עד שלב 6 הפאנל היה דיאלוג
+   *     והפוקוס עבר אליו; עכשיו הוא חלק מהדף ליד המקרא, והפוקוס נשאר על
+   *     הבלוק — כך אפשר לעבור במקלדת מבלוק לבלוק ולשמוע כל אחד.
+   *   * ‏Esc (על הרשת או בפאנל) ו"סגירה" מנקים.
+   *
+   * ‏block הוא האלמנט עצמו. הבלוקים נשמרים בין חלופות, ולכן הבחירה עוברת
+   * עם השיעור כשמחליפים חלופה: syncMeetingDetail() פותח אותו שוב.
+   */
+  function openMeetingDetail(group, isOverlap, block) {
+    if (!ui.detail || !ui.detailBody) return;
+    var sig = (isOverlap ? "!" : "") + group.map(meetingKey).join(";");
+    runtime.detailEl = block || null;
+    markSelectedBlock();
+    // ‏ציור חוזר של אותו מפגש (כל setState מצייר) אינו בונה את הגוף מחדש —
+    // אחרת aria-live היה מכריז את אותו תוכן שוב ושוב.
+    if (!ui.detail.hidden && sig === runtime.detailSig) return;
+    runtime.detailSig = sig;
+    var content = document.createDocumentFragment();
+    if (isOverlap) {
+      content.appendChild(
+        el("p", { class: "detail-overlap" }, [
+          el("strong", { text: T("app.detail.overlapTitle") }),
+          el("span", { text: " " + T("app.detail.overlapNote") }),
+        ])
+      );
+    }
+    group.forEach(function (m) {
+      var rows = [
+        [T("app.detail.course"), txt(m.name) || nameOf(m.code), m.code, false],
+        [T("app.detail.kind"), txt(m.kind), "", false],
+        [T("app.detail.group"), txt(m.group_id), "", true],
+        [
+          T("app.detail.lecturer"),
+          txt(m.lecturer) || T("app.detail.unknownLecturer"),
+          "",
+          false,
+        ],
+        [T("app.detail.room"), roomOf(m) || T("app.detail.noRoom"), "", true],
+        [
+          T("app.detail.when"),
+          Tf("app.detail.whenValue", {
+            day: dayLetter(m.day),
+            from: fmtTime(m.start),
+            to: fmtTime(m.end),
+          }),
+          "",
+        ],
+      ];
+      var dl = el("dl", { class: "detail-list" });
+      rows.forEach(function (row) {
+        dl.appendChild(el("dt", { text: row[0] }));
+        // ‏<bdi> סביב כל מזהה לטיני בתוך עברית — "L 706", "EF 506 מע׳",
+        // "271060310/1". בלי בידוד הם מסתדרים מחדש בצורה בלתי צפויה.
+        var dd = el("dd", {}, [
+          row[3] ? ltrCode(row[1]) : el("span", { text: row[1] }),
+        ]);
+        if (row[2]) {
+          var code = ltrCode(row[2]);
+          setClass(code, "detail-code", true);
+          dd.appendChild(code);
+        }
+        dl.appendChild(dd);
+      });
+      content.appendChild(el("section", { class: "detail-item c" + colorOf(m.code) }, [dl]));
+    });
+    var fill = function () {
+      if (runtime.detailSig !== sig) return; // נבחר משהו אחר בינתיים
+      clear(ui.detailBody);
+      ui.detailBody.appendChild(content);
+    };
+    if (ui.detail.hidden) {
+      // ‏אזור חי מכריז **שינוי** בתוכן שכבר גלוי. פאנל שנפתח כשהוא כבר מלא
+      // אינו מוכרז בחלק מקוראי המסך — ולכן קודם הוא נפתח ריק, ורק אז מתמלא.
+      clear(ui.detailBody);
+      setHidden(ui.detail, false);
+      setTimeout(fill, 50);
+    } else {
+      fill();
     }
   }
 
   function closeMeetingDetail() {
     if (!ui.detail) return;
+    var block = runtime.detailEl;
+    var focusInPanel = ui.detail.contains(document.activeElement);
     setHidden(ui.detail, true);
-    var back = runtime.detailReturnTo;
-    runtime.detailReturnTo = null;
-    if (back && back.isConnected && back.offsetParent !== null) {
+    runtime.detailEl = null;
+    runtime.detailSig = "";
+    markSelectedBlock();
+    // ‏"סגירה" בפאנל מחזירה את הפוקוס לבלוק שהפאנל תיאר.
+    if (focusInPanel && block && block.isConnected) {
       try {
-        back.focus();
+        block.focus();
       } catch (e) {
         /* לא נורא */
       }
     }
+  }
+
+  /**
+   * קו מתאר בצבע הקורס סביב הבלוק שפרטיו פתוחים — ורק סביבו — ו-aria-current
+   * עליו, כדי שגם מי שאינו רואה את הקו יידע איזה בלוק הפאנל מתאר.
+   */
+  function markSelectedBlock() {
+    if (!ui.grid) return;
+    var blocks = ui.grid.querySelectorAll(".ev");
+    for (var i = 0; i < blocks.length; i++) {
+      var on = blocks[i] === runtime.detailEl;
+      setClass(blocks[i], "is-selected", on);
+      if (on) blocks[i].setAttribute("aria-current", "true");
+      else blocks[i].removeAttribute("aria-current");
+    }
+  }
+
+  /** אחרי כל ציור: השיעור שנבחר נפתח שוב בחלופה הנוכחית, או נסגר. */
+  function syncMeetingDetail() {
+    var block = runtime.detailEl;
+    if (!block) return;
+    if (block.isConnected && ui.grid && ui.grid.contains(block) && block._open) block._open();
+    else closeMeetingDetail();
+  }
+
+  /* --- תנועה בין חלופות (DESIGN.md, "Results page", 6) ---------------- */
+
+  //: ‏550ms, ‏cubic-bezier(.2,.8,.2,1) — DESIGN.md, פריט 6.
+  var MOVE_MS = 550;
+  var MOVE_EASING = "cubic-bezier(.2,.8,.2,1)";
+  //: מזהה האנימציות של התנועה, כדי לא לבלבל אותן עם מעברי הצבע של הבלוק.
+  var MOVE_ID = "ev-move";
+
+  /** מיקום כל בלוק ביחס לרשת, לפי האלמנט עצמו. */
+  function blockRects(root) {
+    var out = new Map();
+    if (!root) return out;
+    var base = root.getBoundingClientRect();
+    var blocks = root.querySelectorAll(".ev");
+    for (var i = 0; i < blocks.length; i++) {
+      var r = blocks[i].getBoundingClientRect();
+      out.set(blocks[i], {
+        left: r.left - base.left,
+        right: r.right - base.left,
+        top: r.top - base.top,
+        width: r.width,
+        height: r.height,
+      });
+    }
+    return out;
+  }
+
+  /** התנועות שרצות עכשיו ברשת. */
+  function moveAnimations(root) {
+    var out = [];
+    if (!root) return out;
+    var blocks = root.querySelectorAll(".ev");
+    for (var i = 0; i < blocks.length; i++) {
+      if (typeof blocks[i].getAnimations !== "function") continue;
+      blocks[i].getAnimations().forEach(function (a) {
+        if (a.id === MOVE_ID) out.push(a);
+      });
+    }
+    return out;
+  }
+
+  /**
+   * עוצר תנועה שעוד רצה. נקרא **אחרי** שהמיקומים נמדדו — אז "לפני" הוא המקום
+   * שבו הבלוק נראה באמצע הדרך — ולפני שהפריסה החדשה נמדדת, כדי שהיא תימדד
+   * בלי הגובה והרוחב שהתנועה הקודמת עוד מחזיקה. בלי זה החלפה שנייה בתוך
+   * ‏550ms קפצה בהתחלה ונצמדה בסוף.
+   */
+  function cancelMoves(root) {
+    moveAnimations(root).forEach(function (a) {
+      a.cancel();
+    });
+  }
+
+  /**
+   * ‏FLIP: כל בלוק כבר במקומו החדש, ומונפש מהמקום הקודם אליו. מיקום ברשת
+   * ‏grid אינו מונפש בעצמו, ולכן התנועה היא translate, והגובה והרוחב מונפשים
+   * במפורש — לא scale, שהיה מעוות את הטקסט באמצע התנועה.
+   *
+   * ‏בלוק עם רוחב מפורש נצמד לצד ההתחלה של התא — ימין ב-RTL — ולכן ההיסט
+   * האופקי נמדד מהקצה הימני: ברגע 0 הבלוק ברוחבו הקודם, וקצהו הימני חייב
+   * לשבת בדיוק היכן שהיה.
+   *
+   * ‏בזמן התנועה הגובה של הבלוקים מוחזק, ולכן sizeGrid() אינו מודד אז — הוא
+   * מחכה שהתנועה תנחת (ראו שם).
+   *
+   * ‏prefers-reduced-motion: בלי תנועה בכלל — הבלוקים פשוט במקומם החדש.
+   */
+  function playMoves(root, before) {
+    if (!root || !before) return;
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    var rtl = getComputedStyle(root).direction === "rtl";
+    var now = blockRects(root);
+    now.forEach(function (to, b) {
+      var from = before.get(b);
+      if (!from || typeof b.animate !== "function") return;
+      var dx = rtl ? from.right - to.right : from.left - to.left;
+      var dy = from.top - to.top;
+      if (
+        Math.abs(dx) < 0.5 &&
+        Math.abs(dy) < 0.5 &&
+        Math.abs(from.width - to.width) < 0.5 &&
+        Math.abs(from.height - to.height) < 0.5
+      ) {
+        return;
+      }
+      var anim = b.animate(
+        [
+          {
+            transform: "translate(" + dx + "px, " + dy + "px)",
+            width: from.width + "px",
+            height: from.height + "px",
+          },
+          { transform: "none", width: to.width + "px", height: to.height + "px" },
+        ],
+        { duration: MOVE_MS, easing: MOVE_EASING }
+      );
+      anim.id = MOVE_ID;
+    });
+  }
+
+  /* --- המקרא: הדגשת קורס (DESIGN.md, "Results page", 7) ---------------- */
+
+  /**
+   * ריחוף מעל שבב (או פוקוס עליו) מאפיר את הבלוקים של כל שאר הקורסים —
+   * בצבע, לא ב-opacity: מילוי ומסגרת בטוקנים ניטרליים וטקסט ב-‎--mut‎,
+   * כמו קבוצה מעומעמת בשלב המרצים. לחיצה — ובטלפון, הקשה — קובעת את אותו
+   * מצב, ולחיצה נוספת מנקה (aria-pressed על השבב).
+   */
+  function applyLegendFocus() {
+    var list = schedules();
+    var sch = activeSchedule();
+    var codes = Object.create(null);
+    if (sch) {
+      pickList(sch, ["picks"], null).forEach(function (p) {
+        codes[txt(p.code)] = true;
+      });
+    }
+    // קורס שאינו במערכת הזו אינו יכול להישאר מודגש.
+    if (runtime.legendPinned && (!list.length || !codes[runtime.legendPinned])) {
+      runtime.legendPinned = "";
+    }
+    var focus = runtime.legendHover || runtime.legendPinned;
+    if (ui.grid) {
+      var blocks = ui.grid.querySelectorAll(".ev");
+      for (var i = 0; i < blocks.length; i++) {
+        setClass(blocks[i], "is-muted", !!focus && blocks[i].dataset.code !== focus);
+      }
+    }
+    if (ui.legend) {
+      var chips = ui.legend.querySelectorAll(".legend-chip[data-code]");
+      for (var j = 0; j < chips.length; j++) {
+        chips[j].setAttribute(
+          "aria-pressed",
+          runtime.legendPinned === chips[j].dataset.code ? "true" : "false"
+        );
+      }
+    }
+  }
+
+  function legendHandlers(code) {
+    var pointer = "";
+    var hover = function (on) {
+      return function () {
+        runtime.legendHover = on ? code : runtime.legendHover === code ? "" : runtime.legendHover;
+        applyLegendFocus();
+      };
+    };
+    return {
+      pointerdown: function (ev) {
+        pointer = ev.pointerType || "";
+      },
+      mouseenter: hover(true),
+      mouseleave: hover(false),
+      focus: hover(true),
+      blur: hover(false),
+      click: function () {
+        runtime.legendPinned = runtime.legendPinned === code ? "" : code;
+        // ‏בהקשה אין mouseleave שינקה את הריחוף, ולכן אחרי הקשה הריחוף מתאפס
+        // וההקשה לבדה קובעת. עם עכבר המצביע עדיין מעל השבב, והריחוף נשאר.
+        if (pointer !== "mouse") runtime.legendHover = "";
+        pointer = "";
+        applyLegendFocus();
+      },
+    };
   }
 
   /* --- שלב 3: מה מבדיל בין המערכות ---------------------------------- */
@@ -7018,39 +7291,13 @@
     var feasible = s ? num(s.feasible_count, list.length) : null;
     var infeasible = !!s && list.length === 0;
 
-    // אותן תוויות משמשות את הלשוניות ואת שורת הכותרת של ההדפסה:
+    // אותן תוויות משמשות את כרטיסי החלופות ואת שורת הכותרת של ההדפסה:
     // הנייר צריך לומר איזו מערכת זו באותן מילים שבהן היא נבחרה.
     var tabLabels = differentiators(list);
 
-    // לשוניות
-    if (ui.tabs) {
-      rebuild(ui.tabs, function (box) {
-        list.forEach(function (sch, idx) {
-          box.appendChild(
-            el("button", {
-              class: "tab",
-              attrs: {
-                type: "button",
-                role: "tab",
-                "aria-selected": idx === state.activeSchedule ? "true" : "false",
-              },
-              data: { fk: "tab-" + idx },
-              // מה שמבדיל אותה, ולא "5 ימים · זמן המתנה 3:00" שחוזר זהה
-              // בכל לשונית ולכן אינו עוזר לבחור.
-              text: Tf("app.schedule.tabLabel", {
-                n: idx + 1,
-                label: tabLabels[idx],
-              }),
-              on: {
-                click: function () {
-                  setState({ activeSchedule: idx }, { solve: false });
-                },
-              },
-            })
-          );
-        });
-      });
-    }
+    // ‏החלופות: שורת כותרת וכרטיסים (DESIGN.md, "Results page", 2–3). הן
+    // מחליפות את הלשוניות ואת טבלת "מה ההבדל?" (שלב 6, 2026-10-01).
+    renderAlternatives(list, tabLabels);
 
     var sch = activeSchedule();
     // ‏SPEC_V2 §2: חפיפה מכוונת אף פעם לא עוברת בשקט. היא מדווחת מעל הרשת,
@@ -7072,6 +7319,7 @@
     if (ui.legend) {
       rebuild(ui.legend, function (box) {
         buildLegend(box, sch, {
+          interactive: true,
           skip: unscheduled.map(function (u) {
             return u.code;
           }),
@@ -7083,14 +7331,28 @@
       setHidden(ui.unscheduled, !unscheduled.length);
     }
 
-    // הרשת
+    // ‏הרשת. הבלוקים נשמרים בין ציורים לפי מפתח שיעור, וכשמחליפים חלופה
+    // הם זזים מהמקום הקודם אל החדש (DESIGN.md, "Results page", 6). רק החלפת
+    // חלופה מאותה תשובה של השרת זזה; חישוב חדש מצייר במקום.
+    var shownIdx = clamp(state.activeSchedule, 0, Math.max(0, list.length - 1));
+    var switching =
+      !!sch && runtime.gridShown.solve === s && runtime.gridShown.idx !== shownIdx;
+    var before = switching ? blockRects(ui.grid) : null;
+    if (switching) cancelMoves(ui.grid);
     if (ui.grid) {
-      rebuild(ui.grid, function (box) {
-        if (!sch) return;
-        buildGrid(box, sch, soft);
-      });
+      if (sch) buildGrid(ui.grid, sch, soft, { persist: true });
+      else clear(ui.grid);
     }
+    runtime.gridShown = { solve: s, idx: sch ? shownIdx : -1 };
     setHidden(ui.gridScroll, !sch);
+    applyLegendFocus();
+    syncMeetingDetail();
+    if (before) {
+      // ‏הגובה נמדד כאן ולא בפריים הבא: התנועה צריכה לנחות על המקום הסופי,
+      // והגובה שנגזר מהתוכן יכול להשתנות בין חלופות.
+      sizeGrids();
+      playMoves(ui.grid, before);
+    }
     // ‏גובה השעה נמדד אחרי הפריסה, לא כאן. ראו sizeGrid().
     requestGridSizing();
 
@@ -7822,10 +8084,15 @@
       // ‏DESIGN.md, "Results page", פריט 7: צבע, שם ונ"ז.
       var credits = creditsNumber(p.credits);
       var name = txt(p.name) || nameOf(code);
+      // ‏במקרא של שלב 5 השבב הוא כפתור שמדגיש את הקורס ברשת (פריט 7);
+      // בשכבה הוא נשאר תווית — השכבה אינה משתנה עד שלבים 7–8.
+      var interactive = !!(opts && opts.interactive);
       root.appendChild(
-        el("span", {
+        el(interactive ? "button" : "span", {
           class: "legend-chip c" + colorOf(code),
-          data: { code: code },
+          attrs: interactive ? { type: "button", "aria-pressed": "false" } : null,
+          data: interactive ? { code: code, fk: "legend-" + code } : { code: code },
+          on: interactive ? legendHandlers(code) : null,
           text: credits === null
             ? Tf("app.grid.legendChipNoCredits", { code: code, name: name })
             : Tf("app.grid.legendChip", {
@@ -7947,8 +8214,25 @@
     return el("bdi", { class: "code", attrs: { dir: "ltr" }, text: txt(text) });
   }
 
-  function buildGrid(root, sch, soft) {
+  /**
+   * ‏opts.persist: הבלוקים הקיימים נשמרים לפי מפתח שיעור ומתעדכנים במקומם,
+   * במקום להיבנות מחדש (DESIGN.md, "Results page", 6). כך אותו אלמנט עובר
+   * מהמקום שלו בחלופה אחת למקום שלו בחלופה הבאה, והתנועה שלו מראה מה זז —
+   * ראו playMoves(). הרקע (כותרות, שעות ומשבצות) נבנה מחדש תמיד.
+   */
+  function buildGrid(root, sch, soft, opts) {
+    opts = opts || {};
     var meetings = scheduleMeetings(sch);
+    var focused = document.activeElement;
+    var oldBlocks = [];
+    [].slice.call(root.children).forEach(function (node) {
+      if (opts.persist && node.classList.contains("ev") && node.dataset.base) {
+        oldBlocks.push(node);
+      } else {
+        root.removeChild(node);
+      }
+    });
+    var bg = document.createDocumentFragment();
     var bounds = gridBounds(meetings);
     var gridStart = bounds.start;
     var gridEnd = bounds.end;
@@ -7971,9 +8255,9 @@
         }).join(" ")
     );
 
-    root.appendChild(el("div", { class: "hd", text: T("app.grid.hourHeader") }));
+    bg.appendChild(el("div", { class: "hd", text: T("app.grid.hourHeader") }));
     DAYS.forEach(function (d) {
-      root.appendChild(
+      bg.appendChild(
         el(
           "div",
           {
@@ -7993,7 +8277,7 @@
     for (var i = 0; i < slots; i++) {
       var minute = gridStart + i * SLOT_MINUTES;
       var onHour = minute % 60 === 0;
-      root.appendChild(
+      bg.appendChild(
         el("div", {
           class: "tl" + (onHour ? " hour" : ""),
           style: { "grid-row": String(i + 2), "grid-column": "1" },
@@ -8001,7 +8285,7 @@
         })
       );
       for (var d = 0; d < DAYS.length; d++) {
-        root.appendChild(
+        bg.appendChild(
           el("div", {
             class:
               "slot" +
@@ -8016,14 +8300,26 @@
       }
     }
 
+    root.insertBefore(bg, root.firstChild);
+
     // ‏בלוק לכל מפגש. חפיפה מכוונת חוזרת להיות שתי עמודות בחצי רוחב:
     // מיזוג לבלוק אחד הסתיר **אילו** שני קורסים מתנגשים, וזו בדיוק
     // השאלה שעומדת להכרעה. מה שהפך את החצאים לבלתי קריאים היה עומס
     // הטקסט, והוא ירד — לא הרוחב.
     var lanes = assignLanes(meetings);
     var marks = (soft && soft.marks) || {};
-    meetings.forEach(function (m) {
+    var ordinals = Object.create(null);
+    var plan = meetings.map(function (m) {
+      return {
+        lesson: lessonKey(m, ordinals),
+        base: m.code + "|" + m.kind,
+        slot: m.day + "|" + m.start + "|" + m.end,
+      };
+    });
+    var reuse = matchBlocks(plan, oldBlocks);
+    meetings.forEach(function (m, mi) {
       var key = meetingKey(m);
+      var lesson = plan[mi].lesson;
       var from = num(m.start, 0);
       var to = num(m.end, 0);
       var startSlot = Math.floor((from - gridStart) / SLOT_MINUTES);
@@ -8093,12 +8389,13 @@
           class: "ev c" + colorOf(m.code) + (clash ? " is-soft" : ""),
           style: style,
           attrs: { type: "button", "aria-label": label, title: label },
-          data: { fk: "ev-" + key, rows: endSlot - startSlot },
-          on: {
-            click: function () {
-              // החפיפה נפתחת עם שני הצדדים, גם כשלוחצים על אחד מהם.
-              openMeetingDetail(overlapPartners(m, meetings, marks), !!clash);
-            },
+          data: {
+            fk: "ev-" + lesson,
+            lesson: lesson,
+            base: plan[mi].base,
+            slot: plan[mi].slot,
+            code: m.code,
+            rows: endSlot - startSlot,
           },
         },
         [
@@ -8117,8 +8414,99 @@
             : null,
         ]
       );
-      root.appendChild(block);
+      var target = reuse.assign[mi];
+      if (target) {
+        morphInto(target, block);
+      } else {
+        target = block;
+        target.addEventListener("click", function () {
+          if (target._open) target._open();
+        });
+      }
+      // ‏המטפל מתחלף בכל ציור: אלמנט שנשמר פותח את המפגש של החלופה הנוכחית.
+      // החפיפה נפתחת עם שני הצדדים, גם כשלוחצים על אחד מהם.
+      target._open = function () {
+        openMeetingDetail(overlapPartners(m, meetings, marks), !!clash, target);
+      };
+      root.appendChild(target);
     });
+    reuse.leftover.forEach(function (node) {
+      root.removeChild(node);
+    });
+    // ‏הזזת אלמנט ב-DOM מורידה ממנו את הפוקוס. בלוק שנשמר מחזיר אותו.
+    if (focused && focused.isConnected && document.activeElement !== focused) {
+      try {
+        focused.focus({ preventScroll: true });
+      } catch (e) {
+        focused.focus();
+      }
+    }
+  }
+
+  /**
+   * מפתח שיעור: קורס, סוג השיעור, ומספרו בתוך הרכיב (הרצאה פעמיים בשבוע היא
+   * שני שיעורים). בניגוד ל-meetingKey אין בו קבוצה, יום או שעה — הם בדיוק
+   * מה שמשתנה בין חלופות, והמפתח הוא מה שנשאר.
+   */
+  function lessonKey(m, ordinals) {
+    var base = m.code + "|" + m.kind;
+    ordinals[base] = (ordinals[base] || 0) + 1;
+    return base + "|" + ordinals[base];
+  }
+
+  /**
+   * איזה בלוק קיים ממשיך כל מפגש חדש. קודם מפגש של אותו שיעור (קורס וסוג)
+   * **באותו יום ושעה** — הוא לא זז, ואסור שיזוז; רק אחר כך השאר, לפי הסדר.
+   * בלי המעבר הראשון הרצאה שנפגשת פעמיים בשבוע, ושרק אחד ממפגשיה עבר,
+   * הייתה מזיזה את שני הבלוקים — בניגוד ל-"so the student sees exactly
+   * what moved".
+   */
+  function matchBlocks(plan, olds) {
+    var byBase = Object.create(null);
+    olds.forEach(function (node) {
+      var base = node.dataset.base;
+      (byBase[base] = byBase[base] || []).push(node);
+    });
+    var assign = plan.map(function () {
+      return null;
+    });
+    var take = function (sameSlot) {
+      plan.forEach(function (p, i) {
+        if (assign[i]) return;
+        var pool = byBase[p.base] || [];
+        for (var j = 0; j < pool.length; j++) {
+          if (pool[j] && (!sameSlot || pool[j].dataset.slot === p.slot)) {
+            assign[i] = pool[j];
+            pool[j] = null;
+            return;
+          }
+        }
+      });
+    };
+    take(true);
+    take(false);
+    var leftover = [];
+    Object.keys(byBase).forEach(function (base) {
+      byBase[base].forEach(function (node) {
+        if (node) leftover.push(node);
+      });
+    });
+    return { assign: assign, leftover: leftover };
+  }
+
+  /** מעביר אל target את התכונות והילדים של fresh, בלי להחליף את האלמנט. */
+  function morphInto(target, fresh) {
+    var i;
+    for (i = target.attributes.length - 1; i >= 0; i--) {
+      var name = target.attributes[i].name;
+      if (!fresh.hasAttribute(name)) target.removeAttribute(name);
+    }
+    for (i = 0; i < fresh.attributes.length; i++) {
+      var a = fresh.attributes[i];
+      if (target.getAttribute(a.name) !== a.value) target.setAttribute(a.name, a.value);
+    }
+    while (target.firstChild) target.removeChild(target.firstChild);
+    while (fresh.firstChild) target.appendChild(fresh.firstChild);
   }
 
   /** גיל בימים של חותמת ISO, או null אם אי אפשר לקרוא אותה. */
@@ -8180,6 +8568,33 @@
     if (!blocks.length || !root.getClientRects().length) {
       root.style.removeProperty("--slot-h");
       return;
+    }
+    // ‏בזמן תנועה בין חלופות הגובה והרוחב של הבלוקים הם של התנועה, לא של
+    // התוכן — ערכי אנימציה גוברים גם על ‎.is-measuring‎. מדידה עכשיו הייתה
+    // מחזירה את גובה החלופה הקודמת. לכן מחכים שהתנועה תנחת ומודדים אז;
+    // ובהדפסה, שאין לה זמן לחכות, התנועה מסתיימת מיד.
+    var moving = moveAnimations(root);
+    if (moving.length) {
+      if (window.matchMedia && window.matchMedia("print").matches) {
+        moving.forEach(function (a) {
+          a.finish();
+        });
+      } else {
+        if (!root._sizeAfterMove) {
+          root._sizeAfterMove = true;
+          Promise.all(
+            moving.map(function (a) {
+              return a.finished.catch(function () {
+                return null; // בוטלה בהחלפה הבאה — שגם היא תמדוד
+              });
+            })
+          ).then(function () {
+            root._sizeAfterMove = false;
+            requestGridSizing();
+          });
+        }
+        return;
+      }
     }
     setClass(root, "is-measuring", true);
     var need = SLOT_H_FLOOR;

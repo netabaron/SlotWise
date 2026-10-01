@@ -453,7 +453,9 @@ UNSCHEDULED = """() => {
           hidden: line.hidden, text: line.textContent.trim(),
           chips: [...document.querySelectorAll('#schedule-legend .legend-chip')]
                    .map(c => c.dataset.code).filter(Boolean),
-          afterLegend: !!(document.querySelector('.grid-tools').compareDocumentPosition(line)
+          // ‏מול המקרא עצמו, לא מול ‎.grid-tools‎: מאז שלב 6 השורה יושבת בתוכו,
+          // וצאצא תמיד "אחרי" ההורה שלו — הבדיקה הייתה עוברת תמיד.
+          afterLegend: !!(document.getElementById('schedule-legend').compareDocumentPosition(line)
                           & Node.DOCUMENT_POSITION_FOLLOWING)};
 }"""
 

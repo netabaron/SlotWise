@@ -10,6 +10,22 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
+### On a tall grid the lesson details open out of view
+**Where:** `#meeting-detail` in `src/web/templates/index.html` (inside `.grid-tools`,
+under the timetable) and `openMeetingDetail()` in `src/web/static/app.js`.
+**Owner:** Phase 7 (wide layout).
+**What:** since Phase 6 (2026-10-01) the details panel sits next to the legend, under
+the timetable (DESIGN.md, "Results page", 8). In today's single-column layout the
+grid can be taller than the viewport, so clicking a block near the top fills a panel
+that is below the fold. The block gets its course-colour outline and the panel's
+content is announced (`aria-live`), but nothing on screen shows where the details went.
+**Why not now:** Phase 7 puts the timetable in a sticky column, at most one viewport
+tall, with the legend and the details inside it (DESIGN.md, "Layout"). That keeps the
+panel in view on wide screens without any scrolling logic. Scrolling the page to the
+panel on every click was considered and not done: it moves the page away from the
+block the student just clicked, and the sticky column makes it unnecessary. On phones
+the panel is already a bottom sheet over the page, so this applies to the wide range.
+
 ### Tests that start a server read the real `data/db` — four fail on a store written by `webapp.py`
 **Where:** `tests/test_hosted_missing_groups.py` (4 of its 7 tests); more generally,
 any test that calls `create_app()` without pointing `SLOTWISE_DB_ROOT` elsewhere.

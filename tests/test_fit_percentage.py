@@ -65,7 +65,9 @@ def test_there_is_exactly_one_formatter():
     assert len(direct) == 1, (
         "‏app.schedule.fitValue נקרא ישירות מחוץ ל-fmtFit — "
         f"{len(direct)} קריאות, ציפינו לאחת (זו שבתוך fmtFit)")
-    assert APP_JS.count("fmtFit(") >= 3  # ההגדרה ושני אתרי התצוגה
+    # ‏ההגדרה ושבב ההתאמה. טבלת "מה ההבדל?", אתר התצוגה השני, הוסרה בשלב 6
+    # של העיצוב (2026-10-01); ההבטחה עצמה — אין קריאה ישירה — נבדקת למעלה.
+    assert APP_JS.count("fmtFit(") >= 2
 
 
 # --------------------------------------------------------------------------
@@ -122,23 +124,11 @@ def page(server):
         # לגמרי, אבל אז אין כאן מה לבדוק.
         pg.click('.day-btn[data-days="4"]')
         pg.wait_for_timeout(6000)
-        pg.evaluate("() => { const d = document.getElementById('compare');"
-                    " if (d) d.open = true; }")
-        pg.wait_for_timeout(400)
         try:
             yield pg
         finally:
             browser.close()
 
-
-#: מאתר את תא ההתאמה בטבלת ההשוואה — ‎<td>‎ ללא class="ltr", כלומר
-#: האלמנט שבו ההיפוך באמת קרה.
-COMPARE_FIT_CELL = """() => {
-  const rows = [...document.querySelectorAll('.compare-table tbody tr')];
-  const row = rows.find(r => (r.querySelector('th')?.textContent || '').trim() === 'התאמה');
-  if (!row) return null;
-  return row.querySelector('td.is-active') || row.querySelector('td');
-}"""
 
 #: מלבן התו הראשון ומלבן התו האחרון בתוך אלמנט, לפי הציור בפועל.
 FIRST_LAST = """(sel) => {
@@ -163,11 +153,13 @@ FIRST_LAST = """(sel) => {
 
 BEST_LABEL = STRINGS["app"]["compare"]["bestOverall"]
 
-#: בורר מערכת לפי אינדקס, ומחזיר כמה לשוניות יש.
+#: בורר מערכת לפי אינדקס בשרת, ומחזיר כמה חלופות יש. ‏מאז שלב 6 (2026-10-01)
+#: אלה הכרטיסים, וכל כרטיס נושא את מספרו הקבוע — הדירוג בשרת — ב-data-rank.
 SELECT = """(i) => {
-  const tabs = [...document.querySelectorAll('#schedule-tabs .tab')];
-  if (tabs[i]) tabs[i].click();
-  return tabs.length;
+  const cards = [...document.querySelectorAll('#alt-cards .alt-card')]
+    .sort((a, b) => a.dataset.rank - b.dataset.rank);
+  if (cards[i]) cards[i].click();
+  return cards.length;
 }"""
 
 FIT_STATE = """() => {
@@ -177,18 +169,6 @@ FIT_STATE = """() => {
           ltr: v.classList.contains('ltr'),
           hasLabel: !!document.querySelector('.fit .fit-label')};
 }"""
-
-
-def _fit_row_cells(page):
-    return page.evaluate(
-        """() => {
-          const rows = [...document.querySelectorAll('.compare-table tbody tr')];
-          const row = rows.find(r => (r.querySelector('th')?.textContent || '')
-                                       .trim() === 'התאמה');
-          return row ? [...row.querySelectorAll('td')].map(td => td.textContent.trim())
-                     : null;
-        }"""
-    )
 
 
 def test_the_top_ranked_schedule_is_labelled_not_scored(page):
@@ -240,16 +220,6 @@ def test_a_lower_ranked_schedule_still_shows_a_percentage(page):
     assert found["hasLabel"], "מספר בלי 'התאמה' לצדו אינו אומר מה הוא מודד"
 
 
-def test_the_comparison_table_shows_percentages(page):
-    """בטבלה המספר הוא כן הדבר הנכון: חמש עמודות זו לצד זו הן ההקשר
-    שהופך אותו ליחסי, ומשפט באורך מלא בכל עמודה היה הורס את הטבלה."""
-    cells = _fit_row_cells(page)
-    assert cells, "לא נמצאה שורת ההתאמה בטבלת ההשוואה"
-    for c in cells:
-        assert re.fullmatch(r"\d{1,3}%", c), c
-        assert "/" not in c
-
-
 def _select_a_numeric_schedule(page) -> bool:
     """בורר מערכת שאינה המובילה, כי רק שם ההתאמה היא מספר."""
     total = page.evaluate(SELECT, 0)
@@ -265,9 +235,9 @@ def _select_a_numeric_schedule(page) -> bool:
 @pytest.mark.parametrize(
     "where,selector",
     [
-        # ‏זה האתר שנשבר. אין עליו class="ltr", ולכן הוא יורש את כיוון הדף.
-        ("טבלת ההשוואה", "@compare"),
-        # ‏זה האתר שלא נשבר — ‎.ltr‎ הגן עליו. נבדק כדי שההגנה לא תוסר בשקט.
+        # ‏עד שלב 6 נבדקה כאן גם טבלת "מה ההבדל?" — האתר שבו ההיפוך קרה. הטבלה
+        # הוסרה (2026-10-01). זה האתר שנשאר: ‎.ltr‎ מגן עליו, ונבדק כדי שההגנה
+        # לא תוסר בשקט.
         ("פאנל הניקוד", ".fit-value"),
     ],
 )

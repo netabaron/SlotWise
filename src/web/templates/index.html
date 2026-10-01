@@ -72,8 +72,9 @@
                          הפוקוס לכוד בתוכו, ו-Esc/סגירה/לחיצה על הרקע מחזירים
                          אותו ל-#btn-show-grid.
     #overlay-tabs #overlay-facts #overlay-legend #overlay-grid
-                         אותן לשוניות ואותה רשת בדיוק כמו בשלב 5 — אותה
-                         ‏buildGrid ואותן מחלקות צבע ‎.c0..c9‎. מיכל אחר, לא ציור אחר.
+                         לשוניות מוקטנות משלה (בשלב 5 הן הוחלפו בכרטיסים בשלב 6
+                         של העיצוב; השכבה משתנה רק בשלבים 7–8), ואותה רשת בדיוק
+                         כמו בשלב 5 — אותה ‏buildGrid ואותן מחלקות צבע ‎.c0..c9‎.
     ‏html.is-modal-open   נועל את גלילת העמוד מאחורי השכבה.
 
   הודעות / messages
@@ -186,9 +187,12 @@
                   "is-dead" (aria-disabled="true", ‏title עם הסיבה המלאה,
                   ושורה "לא משאיר מערכת אפשרית" מתחת לשם המרצה).
                   כפתור הנעיצה: class "pin-btn".
-  5 המערכת        #soft-conflicts (hidden) > #soft-conflicts-sub #soft-conflicts-list
-                  #schedule-tabs #schedule-summary #schedule-legend
+  5 המערכת        #settings-pills, #alt-head > #alt-title #alt-sort #alt-prev #alt-pos
+                  #alt-next #btn-print, #alt-cards (כרטיס לכל חלופה)
+                  #soft-conflicts (hidden) > #soft-conflicts-sub #soft-conflicts-list
+                  #schedule-summary
                   #grid-scroll > #schedule-grid
+                  .grid-tools > #schedule-legend #schedule-unscheduled #meeting-detail
                   #schedule-empty (hidden) > #infeasible-reasons #infeasible-suggestions
                   #relax (hidden) > #relax-title #relax-intro #relax-list #relax-checked
                   #relax-undo (hidden)  — הודעת הביטול, מוצגת כשיש תוצאות
@@ -590,10 +594,34 @@
       <div class="settings-pills" id="settings-pills" role="group"
            aria-label="{{ S.app.schedule.settingsLabel }}" hidden></div>
 
-      <div class="sched-toolbar">
-        <div class="tabs" id="schedule-tabs" role="tablist" aria-label="{{ S.ui.schedule.tabsLabel }}"></div>
+      <!-- ‏שורת הכותרת של החלופות (DESIGN.md, "Results page", 2): "5 מערכות
+           מובילות", מיון, הקודמת/הבאה לפי הסדר הממוין, והדפסה. -->
+      <div class="alt-head" id="alt-head" hidden>
+        <h3 class="alt-title" id="alt-title"></h3>
+        <label class="alt-sort">
+          <span class="alt-sort-label">{{ S.app.alts.sortLabel }}</span>
+          <select class="input alt-sort-select" id="alt-sort">
+            <option value="fit">{{ S.app.alts.sort.fit }}</option>
+            <option value="gaps">{{ S.app.alts.sort.gaps }}</option>
+            <option value="finish">{{ S.app.alts.sort.finish }}</option>
+            <option value="days">{{ S.app.alts.sort.days }}</option>
+          </select>
+        </label>
+        <div class="alt-nav">
+          <button type="button" class="alt-step" id="alt-prev"
+                  aria-label="{{ S.app.alts.prevLabel }}" title="{{ S.app.alts.prevLabel }}">{{ S.app.alts.prev }}</button>
+          <span class="alt-pos" id="alt-pos" aria-live="polite"></span>
+          <button type="button" class="alt-step" id="alt-next"
+                  aria-label="{{ S.app.alts.nextLabel }}" title="{{ S.app.alts.nextLabel }}">{{ S.app.alts.next }}</button>
+        </div>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-print">{{ S.ui.schedule.btnPrint }}</button>
       </div>
+
+      <!-- ‏כרטיס לכל חלופה (פריט 3): מערכת שבועית מוקטנת, "N ימים, עד HH:MM",
+           התווית המבדילה, והמספר הקבוע שלה — הדירוג של השרת — כדי ש"דומה
+           למערכת 1" יישאר נכון גם אחרי מיון. בטלפון השורה נגללת בתוך עצמה. -->
+      <div class="alt-cards" id="alt-cards" role="group"
+           aria-label="{{ S.app.alts.cardsLabel }}" hidden></div>
 
       <section class="empty" id="soft-conflicts" hidden role="status" aria-live="polite"
                aria-labelledby="soft-conflicts-title">
@@ -601,11 +629,6 @@
         <p class="empty-sub" id="soft-conflicts-sub"></p>
         <ul class="reasons" id="soft-conflicts-list"></ul>
       </section>
-
-      <details class="compare" id="compare">
-        <summary class="compare-summary">{{ S.app.compare.title }}</summary>
-        <div class="compare-body" id="compare-body"></div>
-      </details>
 
       <!-- ‏שבבי הנתונים של המערכת שנבחרה, ומתחתם שורה אחת: מה הוריד
            מההתאמה. ‏DESIGN.md, "Results page", פריט 4. -->
@@ -615,7 +638,7 @@
       <p class="relax-undo" id="relax-undo" hidden></p>
 
       <!-- ‏שורת הכותרת של הדף המודפס בלבד. על המסך המידע הזה נמצא
-           בלשוניות ובכותרת הסעיף; על הנייר אין לשוניות, ודף בלי שם
+           בכרטיסי החלופות ובכותרת הסעיף; על הנייר אין כרטיסים, ודף בלי שם
            ותאריך אינו אומר איזו מערכת הוא ומתי נבנתה. -->
       <p class="print-head" id="print-head"></p>
 
@@ -627,20 +650,24 @@
            ומתחתיו קורס שאין לו מועד קבוע — אין לו בלוק ברשת, ולכן זה המקום
            היחיד שבו הוא מופיע. -->
       <div class="grid-tools">
-        <div class="legend" id="schedule-legend"></div>
-      </div>
-      <p class="unscheduled" id="schedule-unscheduled" hidden></p>
-
-      <!-- ‏פרטי השיעור. מרגע שהבלוקים ברשת מציגים שם וזמן בלבד, זה
-           המקום היחיד שבו מופיעים מספר הקבוצה, המרצה והחדר — ולכן הוא
-           חייב להיות נגיש במקלדת ולהיות מוכרז בפתיחה, לא רק בלחיצה. -->
-      <div class="detail" id="meeting-detail" hidden role="dialog"
-           aria-labelledby="meeting-detail-title" tabindex="-1">
-        <div class="detail-head">
-          <h3 class="detail-title" id="meeting-detail-title">{{ S.app.detail.title }}</h3>
-          <button type="button" class="btn btn-ghost btn-sm" id="btn-detail-close">{{ S.app.detail.close }}</button>
+        <div class="grid-tools-main">
+          <div class="legend" id="schedule-legend"></div>
+          <p class="unscheduled" id="schedule-unscheduled" hidden></p>
         </div>
-        <div class="detail-body" id="meeting-detail-body"></div>
+
+        <!-- ‏פרטי השיעור, ליד המקרא (DESIGN.md, "Results page", 8): מרצה,
+             יום ושעה, חדר ומספר קבוצה. לחיצה על בלוק — או Enter עליו — ממלאת
+             את הפאנל, מסמנת את הבלוק בצבע הקורס, ומכריזה את התוכן (aria-live).
+             הפוקוס נשאר על הבלוק, כדי שאפשר יהיה לעבור לבלוק הבא במקלדת.
+             ‏Esc או "סגירה" מנקים. בטלפון הפאנל הוא גיליון תחתון. -->
+        <section class="detail" id="meeting-detail" hidden
+                 aria-labelledby="meeting-detail-title">
+          <div class="detail-head">
+            <h3 class="detail-title" id="meeting-detail-title">{{ S.app.detail.title }}</h3>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-detail-close">{{ S.app.detail.close }}</button>
+          </div>
+          <div class="detail-body" id="meeting-detail-body" aria-live="polite"></div>
+        </section>
       </div>
 
       <div class="empty" id="schedule-empty" hidden>

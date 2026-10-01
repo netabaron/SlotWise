@@ -260,7 +260,10 @@ LABEL_SELECTORS = [
     ".fit-lost-item",
     ".step-name",
     ".step-hint",
-    ".tab",
+    # ‏שלב 6 (2026-10-01): הכרטיסים, כפתורי הקודמת/הבאה ושבבי המקרא החליפו את הלשוניות.
+    ".alt-card",
+    ".alt-step",
+    "button.legend-chip",
     # ‏.theme-btn ירד מכאן ב-2026-09-08: הכפתורים הם אייקונים ואין בהם
     # טקסט נראה. השם שלהם נבדק ב-test_theme_buttons_have_accessible_names,
     # שבודק aria-label — שם ריק שם הוא התקלה המקבילה.
@@ -352,7 +355,9 @@ def test_key_screens_carry_hebrew(fresh):
         "שלב 1": "#step-year .step-head",
         "שלב 2": "#step-courses .step-head",
         "פאנל הניקוד": "#schedule-summary",
-        "לשוניות": "#schedule-tabs",
+        # ‏שלב 6 (2026-10-01): הכרטיסים ושורת הכותרת החליפו את הלשוניות.
+        "כרטיסי החלופות": "#alt-cards",
+        "שורת החלופות": "#alt-head",
         "כותרות הרשת": "#schedule-grid",
         "תחתית": ".app-footer",
     }
@@ -412,7 +417,12 @@ def test_grid_blocks_are_buttons_and_reachable(fresh):
 
 
 def test_detail_panel_opens_by_keyboard_and_announces(fresh):
-    """‏Enter פותח, הפוקוס עובר לדיאלוג, ‏Esc סוגר ומחזיר."""
+    """‏Enter ממלא את הפאנל שליד המקרא ומכריז אותו; ‏Esc מנקה.
+
+    ‏עד שלב 6 (2026-10-01) הפאנל היה דיאלוג והפוקוס עבר אליו. עכשיו הוא חלק
+    מהדף ליד המקרא (DESIGN.md, "Results page", 8): ההכרזה היא ‎aria-live‎
+    בגוף הפאנל, והפוקוס נשאר על הבלוק — כך אפשר לעבור לבלוק הבא במקלדת.
+    """
     _with_schedule(fresh)
     fresh.focus("#schedule-grid .ev")
     fresh.keyboard.press("Enter")
@@ -421,16 +431,19 @@ def test_detail_panel_opens_by_keyboard_and_announces(fresh):
     assert fresh.evaluate("!document.getElementById('meeting-detail').hidden"), (
         "הפאנל לא נפתח ב-Enter"
     )
-    # הכרזה = הפוקוס עובר לדיאלוג עם שם נגיש, ולא רק שינוי ויזואלי
-    assert fresh.evaluate("document.activeElement.id === 'meeting-detail'"), (
-        "הפוקוס לא עבר לפאנל — קורא מסך לא יכריז שנפתח משהו"
-    )
+    # הכרזה = אזור חי עם שם נגיש, ולא רק שינוי ויזואלי
     assert fresh.evaluate(
-        "document.getElementById('meeting-detail').getAttribute('role')"
-    ) == "dialog"
+        "document.getElementById('meeting-detail-body').getAttribute('aria-live')"
+    ) == "polite"
     assert fresh.evaluate(
         "!!document.getElementById('meeting-detail').getAttribute('aria-labelledby')"
     )
+    assert fresh.evaluate("document.activeElement.classList.contains('ev')"), (
+        "הפוקוס עזב את הבלוק — אי אפשר להמשיך לבלוק הבא במקלדת"
+    )
+    assert fresh.evaluate(
+        "document.activeElement.classList.contains('is-selected')"
+    ), "הבלוק שפרטיו פתוחים אינו מסומן"
 
     body = fresh.evaluate(
         "document.getElementById('meeting-detail-body').textContent"
@@ -801,14 +814,15 @@ def _overlap_on(page):
             "הבדיקה אינה בודקת דבר, ויש למצוא הגדרה שמייצרת אחת"
         )
 
-    if rank >= page.locator("#schedule-tabs .tab").count():
+    if rank >= page.locator("#alt-cards .alt-card").count():
         page.evaluate(RAISE_TOP_N, {"key": STORAGE_KEY, "n": SOFT_PROBE_TOP_N})
         page.reload()
         page.wait_for_timeout(4000)
         page.wait_for_selector("#schedule-grid .ev", timeout=15000)
 
-    tab = page.locator(f'#schedule-tabs [data-fk="tab-{rank}"]')
-    assert tab.count(), f"אין לשונית למערכת מספר {rank + 1}"
+    # ‏שלב 6: כרטיס לכל חלופה, עם המספר הקבוע שלה (הדירוג בשרת).
+    tab = page.locator(f'#alt-cards [data-rank="{rank + 1}"]')
+    assert tab.count(), f"אין כרטיס למערכת מספר {rank + 1}"
     tab.click()
     page.wait_for_timeout(1200)
     assert page.locator("#schedule-grid .ev.is-soft").count(), (
@@ -868,7 +882,8 @@ def test_print_keeps_name_and_kind_on_every_block(fresh):
     fresh.wait_for_timeout(800)
     _assert_lines_intact(fresh.evaluate(LINES, "#schedule-grid"), "הדפסה")
     hidden = fresh.evaluate(
-        """() => ['#tech-details', '#steps-progress', '#build-row', '#compare']
+        """() => ['#tech-details', '#steps-progress', '#build-row', '#alt-head', '#alt-cards',
+                  '#settings-pills']
              .filter(s => { const e = document.querySelector(s);
                             return e && getComputedStyle(e).display !== 'none'; })"""
     )

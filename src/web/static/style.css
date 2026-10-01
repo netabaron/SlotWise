@@ -1999,23 +1999,31 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .pin-btn:disabled { cursor: not-allowed; color: var(--bd); }
 
 /* ==========================================================================
-   11. שלב 5 — לשוניות, מקרא, והרשת השבועית
+   11. שלב 5 — החלופות, המקרא, והרשת השבועית
+   ‏החלופות (DESIGN.md, "Results page", 2–3; שלב 6, 2026-10-01): שורת כותרת
+   וכרטיס לכל חלופה. הן החליפו את הלשוניות ואת טבלת "מה ההבדל?".
    ========================================================================== */
-.sched-toolbar {
+.alt-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px var(--gap);
+  gap: 8px var(--gap);
   align-items: center;
-  justify-content: space-between;
 }
 
-.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.alt-title { margin: 0; font-size: 18px; font-weight: 800; flex: 1 1 auto; }
 
-.tab {
+.alt-sort { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.alt-sort-select { min-inline-size: 0; padding: 5px 8px; font-size: 13px; }
+
+.alt-nav { display: inline-flex; align-items: center; gap: 6px; }
+.alt-pos { font-size: 13px; color: var(--ink); min-inline-size: 4.5em; text-align: center; font-variant-numeric: tabular-nums; }
+
+.alt-step {
   font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 6px 14px;
+  font-size: 16px;
+  line-height: 1;
+  inline-size: 2rem;
+  block-size: 2rem;
   border-radius: 999px;
   border: 1px solid var(--line-strong);
   background: var(--panel);
@@ -2023,12 +2031,64 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   cursor: pointer;
 }
 
-.tab:hover { border-color: var(--accent); }
+.alt-step:hover:not(:disabled) { border-color: var(--ink); }
+.alt-step:disabled { color: var(--mut); border-color: var(--bd); cursor: default; }
+.alt-step:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-.tab[aria-selected="true"] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
+/* ‏חמישה כרטיסים בשורה; בטלפון השורה נגללת בתוך עצמה ולא העמוד. */
+.alt-cards {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-block-end: 2px;
+}
+
+.alt-card {
+  flex: 1 0 9.5rem;
+  min-inline-size: 9.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  font: inherit;
+  text-align: start;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.alt-card:hover { border-color: var(--line-strong); }
+
+/* ‏הנבחר: מסגרת ‎--ink‎ (DESIGN.md, פריט 3), בעובי 2px — ופיקסל אחד פחות
+   ריפוד, כדי שהבחירה לא תזיז את התוכן. בלי צל: DESIGN אוסר צללים. */
+.alt-card.is-selected { border: 2px solid var(--ink); padding: 7px; }
+.alt-card:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.alt-card-name { font-size: 13px; font-weight: 700; }
+.alt-card-facts { font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.alt-card-label { font-size: 13px; color: var(--muted); line-height: 1.35; }
+
+/* השבוע בקטן: עמודה ליום, בלוקים בצבעי הקורסים, בלי טקסט. */
+.mini {
+  display: flex;
+  gap: 2px;
+  block-size: 3.5rem;
+  padding: 2px;
+  border-radius: 4px;
+  background: var(--panel-2);
+}
+
+.mini-day { position: relative; flex: 1 1 0; }
+
+.mini-ev {
+  position: absolute;
+  border-radius: 2px;
+  background: var(--ev-bg);
+  border: 1px solid var(--ev-bd);
+  box-sizing: border-box;
 }
 
 .legend { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -2151,6 +2211,14 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .c7 { --ev-bg: var(--course-7); --ev-bd: var(--course-7-bd); --ev-fg: var(--course-7-fg); }
 .c8 { --ev-bg: var(--course-8); --ev-bd: var(--course-8-bd); --ev-fg: var(--course-8-fg); }
 .c9 { --ev-bg: var(--course-9); --ev-bd: var(--course-9-bd); --ev-fg: var(--course-9-fg); }
+
+/* ‏שבב מקרא שהוא כפתור (במקרא של שלב 5): מדגיש את הקורס ברשת. ‏aria-pressed
+   הוא המצב שנקבע בלחיצה או בהקשה; הריחוף אינו משנה את השבב עצמו. */
+/* ‎‏font: inherit‎ מאפס גם את line-height — ולכן הוא מוחזר כאן ל-1.7 של השבב. */
+button.legend-chip { font: inherit; font-size: 13px; line-height: 1.7; cursor: pointer; }
+button.legend-chip[aria-pressed="true"] { outline: 2px solid var(--ev-bd, var(--ink)); outline-offset: 1px; }
+/* ‏אחרי aria-pressed: שבב נעוץ שבפוקוס מקלדת מראה את טבעת הפוקוס. */
+button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* שבב מקרא צבוע באותם טוקנים */
 .legend-chip.c0, .legend-chip.c1, .legend-chip.c2, .legend-chip.c3, .legend-chip.c4,
@@ -2294,8 +2362,8 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   html.is-modal-open body { overflow: visible !important; }
 
   /* ‏על הנייר: הרשת, ושורת כותרת אחת מעליה. שום דבר אחר.
-     ניקוד, לשוניות, אזהרת חפיפה, אריחי העובדות, פירוק הקנסות, שבבי
-     הקורסים והמקרא הם כולם עזרי **החלטה**. אחרי שההחלטה התקבלה,
+     ההגדרות, החלופות והמיון, אזהרת חפיפה, שבבי הנתונים, פאנל הפרטים
+     והמקרא הם כולם עזרי **החלטה**. אחרי שההחלטה התקבלה,
      מדפיסים את המערכת שנבחרה — לא את הדרך אליה.
 
      היתר, לא איסור. הגרסה הקודמת מנתה מזהים להסתרה, וכך כל אלמנט חדש
@@ -2547,59 +2615,6 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 /* בסרגל המצוף ובשכבה — מה מייחד, במקום סטטיסטיקה שחוזרת מתחת. */
 .sticky-label { font-size: 13px; font-weight: 600; }
 
-/* ---- טבלת ההשוואה ---- */
-.compare {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--panel-2);
-  padding: 4px 12px;
-}
-
-.compare-summary { cursor: pointer; font-size: 13px; font-weight: 600; padding: 7px 2px; }
-.compare-body { padding-block: 8px 12px; }
-.compare-scroll { overflow-x: auto; }
-
-.compare-table {
-  inline-size: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.compare-table th,
-.compare-table td {
-  padding: 6px 10px;
-  text-align: start;
-  border-block-end: 1px solid var(--line);
-  white-space: nowrap;
-}
-
-.compare-table thead th {
-  font-size: 13px;
-  color: var(--muted);
-  background: var(--chip);
-}
-
-.compare-table tbody th {
-  font-weight: 600;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-/* ‏שורה שנבדלת בין המערכות היא המקום היחיד שבו ההחלטה נמצאת — ולכן
-   היא מודגשת, ושורה שזהה בכולן נסוגה. לכל תא יש ערך בשני המקרים:
-   צביעה לבדה אומרת "כאן שונה" בלי לומר במה. */
-.compare-table tr.same td,
-.compare-table tr.same th { color: var(--muted); }
-
-.compare-table td.is-diff {
-  font-weight: 700;
-  color: var(--ink);
-  background: var(--accent-soft);
-}
-
-/* המערכת שמוצגת כרגע — עמודה מסומנת, כדי לדעת על מה מסתכלים. */
-.compare-table .is-active { outline: 1px solid var(--accent); outline-offset: -1px; }
-.compare-table thead th.is-active { color: var(--accent); font-weight: 700; }
 
 /* ‏"מערכת:" לפני העיגולים — בלעדיה חמישה מספרים בשורה אינם אומרים דבר. */
 .sticky-selector-label {
@@ -2642,7 +2657,26 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .ev .ev-room-note { white-space: normal; overflow-wrap: anywhere; }
 
 .ev:hover { filter: brightness(1.06); }
+
+/* ‏הבלוק שפרטיו פתוחים: קו מתאר בצבע הקורס (DESIGN.md, פריט 8). לפני
+   ‎:focus-visible‎, כדי שטבעת הפוקוס תגבר כשהבלוק גם בפוקוס. */
+.ev.is-selected { outline: 2px solid var(--ev-bd); outline-offset: 1px; }
+
 .ev:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* ‏הדגשה מהמקרא (פריט 7): הבלוקים של שאר הקורסים מאפירים — בצבע, לא
+   ב-opacity. מילוי ומסגרת בטוקנים ניטרליים וטקסט ב-‎--mut‎, כמו קבוצה
+   מעומעמת בשלב המרצים (‎.lect-table tr.is-dead‎). */
+.ev.is-muted {
+  background: var(--chip);
+  border-color: var(--bd);
+  color: var(--mut);
+  filter: none;
+}
+
+.ev.is-muted .ev-badge { background: var(--chip); border-color: var(--bd); color: var(--mut); }
+
+.ev { transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
 
 /* תג החפיפה. הוא יושב על כל אחד משני הבלוקים בחצי הרוחב — לא על
    בלוק ממוזג, שכבר אינו קיים. */
@@ -2662,7 +2696,7 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 }
 
 /* שורת הכותרת של הדף המודפס — קיימת רק על הנייר. על המסך אותו מידע
-   כבר נמצא בלשוניות ובכותרת הסעיף. */
+   כבר נמצא בכרטיסי החלופות ובכותרת הסעיף. */
 .print-head { display: none; }
 
 /* ---- יום ריק ---- */
@@ -2675,10 +2709,14 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .grid-tools {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px var(--gap);
-  align-items: center;
-  justify-content: space-between;
+  gap: 10px var(--gap);
+  align-items: flex-start;
 }
+
+/* ‏המקרא ושורת "ללא מועד קבוע" מימין, ופאנל הפרטים לצדם (DESIGN.md,
+   "Layout": legend | lesson details). במסך צר הם נערמים. */
+.grid-tools-main { flex: 1 1 22rem; display: flex; flex-direction: column; gap: 8px; min-inline-size: 0; }
+.grid-tools > .detail { flex: 0 1 22rem; min-inline-size: 16rem; }
 
 .grid-toggle {
   display: inline-flex;
@@ -2702,7 +2740,6 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   border: 1px solid var(--accent);
   border-radius: var(--radius);
   background: var(--panel);
-  box-shadow: var(--shadow);
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -2750,6 +2787,8 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
     border-radius: var(--radius) var(--radius) 0 0;
     max-block-size: 70vh;
     overflow: auto;
+    /* ‏כאן הפאנל צף מעל הדף, והצל הוא מה שמפריד ביניהם. ליד המקרא אין צל. */
+    box-shadow: var(--shadow);
   }
 }
 
@@ -2830,6 +2869,13 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   outline-offset: -3px;
 }
 
+/* ‏בלוק חופף שפרטיו פתוחים מקבל את קו הבחירה בצבע הקורס, וכשהוא בפוקוס —
+   את טבעת הפוקוס. בלי שני הכללים האלה הקו המקווקו גבר על שניהם (הוא בא
+   מאוחר יותר בקובץ), והבחירה והפוקוס על בלוק חופף לא נראו. הקו המקווקו
+   חוזר כשהבחירה מתבטלת. */
+.ev.is-soft.is-selected { outline: 2px solid var(--ev-bd); outline-offset: 1px; }
+.ev.is-soft:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
 /* ‏כאן עמד עד 2026-09-30 ‎.ev .ev-kind { display: block }‎ בהדפסה, כדי
    שסוג השיעור לא יירד מהנייר. שום שורה אינה יורדת עוד, והסוג יושב בתוך
    השורה השנייה לצד השעה — ‎display: block‎ היה שובר אותה לשתיים. */
@@ -2846,6 +2892,19 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 @media print {
   .grid .ev,
   .grid .ev * { font-size: var(--ev-font-print, 13px); }
+
+  /* ‏הדגשה מהמקרא וקו הבחירה הם עזרי מסך. על הנייר כל קורס בצבעו (המקרא
+     שהיה מסביר את האפור אינו מודפס), ואין בלוק "נבחר". הקו המקווקו של
+     חפיפה מכוונת נשאר — הוא מידע. */
+  .ev.is-muted {
+    background: var(--ev-bg);
+    border-color: var(--ev-bd);
+    color: var(--ev-fg);
+  }
+
+  .ev.is-selected { outline: none; }
+  .ev.is-soft,
+  .ev.is-soft.is-selected { outline: 2px dashed var(--warn-line); outline-offset: -3px; }
 }
 
 

@@ -721,21 +721,28 @@
       "sameAs": "דומה למערכת {n}, בהבדל של קבוצת {kind} אחת",
       "sameAsMany": "דומה למערכת {n}, בהבדל של {count} קבוצות",
       "identical": "זהה למערכת {n} בכל הנתונים",
-      "title": "מה ההבדל?",
-      "tableLabel": "השוואה בין המערכות המוצעות",
-      "rowSchedule": "מערכת",
-      "rowLabel": "מה מייחד",
-      "rowFit": "התאמה",
-      "rowDays": "ימים",
-      "rowFinish": "שעת סיום",
-      "rowGaps": "זמן המתנה",
-      "rowCredits": "נ\"ז",
-      "rowLecturers": "מרצים מועדפים",
-      "differs": "שורה זו נבדלת בין המערכות",
-      "same": "זהה בכל המערכות",
-      "allSame": "כל המערכות המוצגות זהות בכל הנתונים שמושווים כאן.",
-      "lecturersCell": "{hits}/{total}",
-      "pick": "בחירת מערכת {n}"
+      "rowSchedule": "מערכת"
+    },
+    "alts": {
+      "title": "{n} מערכות מובילות",
+      "titleOne": "מערכת אחת",
+      "sortLabel": "מיון",
+      "sort": {
+        "fit": "התאמה להעדפות",
+        "gaps": "הכי פחות חלונות",
+        "finish": "מסיים הכי מוקדם",
+        "days": "הכי פחות ימים"
+      },
+      "prev": "›",
+      "next": "‹",
+      "prevLabel": "המערכת הקודמת",
+      "nextLabel": "המערכת הבאה",
+      "position": "{pos} מתוך {total}",
+      "cardsLabel": "המערכות המובילות",
+      "cardFacts": "{days} ימים, עד {time}",
+      "cardFactsOneDay": "יום אחד, עד {time}",
+      "cardName": "מערכת {n}",
+      "cardLabel": "מערכת {n}: {facts}. {label}"
     },
     "detail": {
       "title": "פרטי השיעור",
