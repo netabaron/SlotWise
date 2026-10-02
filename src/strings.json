@@ -362,6 +362,7 @@
       "pillGaps": "חלונות: {duration}",
       "pillNoGaps": "בלי חלונות",
       "penaltiesLine": "מה פחות טוב במערכת הזו: {list}",
+      "fullGroupsLine": "חלק מהקבוצות במערכת הזו מלאות, ואי אפשר להירשם אליהן.",
       "lost": {
         "late_finish": "מסתיימת מאוחר",
         "compactness": "ימי לימוד ארוכים",

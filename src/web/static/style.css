@@ -2582,6 +2582,15 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
   cursor: help;
 }
 
+/* ---- קבוצות מלאות בחלופה הנבחרת: שורה אחת מתחת לנתונים ----
+   ‏--warn-ink, כמו מצב הקבוצה בשלב המרצים (.group-status): זו אותה עובדה. */
+.fit-full {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--warn-ink);
+}
+
 /* ---- קורס בלי מועד קבוע, מתחת למקרא ---- */
 .unscheduled {
   margin: 0;

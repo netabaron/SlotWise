@@ -7718,7 +7718,10 @@
         title: T("app.score.explain.lecturer", ""),
       });
     }
-    if (!items.length) return;
+    if (!items.length) {
+      appendFullGroupsLine(box, sch);
+      return;
+    }
 
     // ‏הנוסח נשמר שלם ב-JSON, ו-{list} מוחלף כאן ברשימה שכל פריט בה נושא
     // את ההסבר שלו — אותה טכניקה כמו {author} בשורת התחתית.
@@ -7738,6 +7741,19 @@
     });
     line.appendChild(document.createTextNode(parts[1] || ""));
     box.appendChild(line);
+    appendFullGroupsLine(box, sch);
+  }
+
+  /**
+   * ‏"חלק מהקבוצות במערכת הזו מלאות…" — שורה אחת מתחת לנתונים, כשבחלופה
+   * הנבחרת יש לפחות קבוצה מלאה אחת (DESIGN.md, פריט 4, 2026-10-02). הבלוק כבר
+   * אומר "קבוצה מלאה"; השורה אומרת מה זה אומר לרישום. הקבוצות המלאות נשארות
+   * אפשריות — ההחרגה נמדדה ונדחתה (docs/PROPOSAL_FULL_GROUPS.md). נספרות כל
+   * הבחירות, גם קבוצה בלי מועד קבוע, באותה השוואה מדויקת של isFullGroup.
+   */
+  function appendFullGroupsLine(box, sch) {
+    if (!pickList(sch, ["picks"], null).some(isFullGroup)) return;
+    box.appendChild(el("p", { class: "fit-full", text: T("app.schedule.fullGroupsLine") }));
   }
 
   /**
