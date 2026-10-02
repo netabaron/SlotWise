@@ -45,6 +45,53 @@ already says "קבוצה מלאה". Doing it would also take:
 * edits to protected browser tests, most of which open Software Engineering
   semester 5 in a fresh browser.
 
+### A group id shared by two kinds hides groups from `linked_to` — **found 2026-10-02, not fixed**
+**Where:** `src/scheduler.py`, `_kind_index` (593-599) and `_link_allows` (602-627).
+**Owner:** unassigned. The scheduler is out of scope unless asked, so this is
+recorded only.
+**What:** `_kind_index` maps (course, group id) to a single kind. The yedion reuses
+one group id across the kinds of a course: `/1` can be a lecture, a tutorial and
+a lab at once. When that happens the last kind written wins, and in catalog order
+מעבדה overwrites תרגול, which overwrites הרצאה. A `linked_to` entry naming such an
+id is then read as pointing at the lab, and `_link_allows` restricts the lab kind
+to the listed ids. Some groups are therefore never chosen, **today**, whether or
+not they are full.
+**Example: Electrical Engineering year 2, 11232 (פיזיקה 2 מ'), semester א.**
+* Both lectures link to `271030210/1`, `/2` and `/3`. Those ids exist as tutorials
+  and also as labs.
+* The tutorials link to `/1`, `/2`, `/3`, `/4`, `/6` and `/8`, which are exactly
+  the lab ids.
+* So the intended reading is lecture → tutorial → lab. The index instead reads the
+  lecture's list as labs, and a lecture may only pair with labs /1–/3.
+* Lab `271030210/4` is open but appears in no schedule. Today every schedule uses
+  one of the labs /1–/3, and all three are full.
+
+**Scale** (semester-א catalog, nightly build 2026-09-30):
+* 130 of 439 courses share a group id across kinds.
+* **60 groups in 26 courses** are never chosen today, but become choosable when
+  ids that name more than one kind are ignored. 34 of the 60 are open, for
+  example 61741 (מבוא למדעי המחשב, מל"מ) lab /2 and 61752 (מערכות הפעלה) lab /2.
+
+That last figure is a measurement of what the collision hides, not a claim about
+what the yedion means. The right fix needs the yedion's semantics, for example a
+kind on each `linked_to` entry.
+**How to reproduce** (shipped catalog only; the empty `SLOTWISE_DB_ROOT` keeps a
+local store out of it):
+```
+SLOTWISE_DB_ROOT="$(mktemp -d)" python - <<'EOF'
+import sys
+sys.path[:0] = ["src", "."]
+from src.web import api
+S = api.scheduler_mod
+with api.create_app({"allow_network": False}).app_context():
+    courses, _, _ = api._build_courses(["11232"], semester="א")
+labs = {sel.group_for("11232", "מעבדה").group_id
+        for sel in S.enumerate_selections(courses, S.Preferences())}
+print(sorted(labs))                                      # only /1, /2, /3 — /4 never appears
+print(S._kind_index(courses)[("11232", "271030210/1")])  # מעבדה, though /1 is also a tutorial
+EOF
+```
+
 ### On a tall grid the lesson details open out of view
 **Where:** `#meeting-detail` in `src/web/templates/index.html` (inside `.grid-tools`,
 under the timetable) and `openMeetingDetail()` in `src/web/static/app.js`.
