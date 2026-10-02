@@ -10,6 +10,41 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
+### Excluding full groups from schedules — **deferred 2026-10-02**
+**Where:** proposed, not built. The full record, with every measurement, is
+`docs/PROPOSAL_FULL_GROUPS.md`.
+**Owner:** unassigned; a future decision.
+**What:** a group whose `status_note` is exactly "הקורס מלא" cannot be registered
+for. Today it stays selectable, and the page only marks it:
+* "קבוצה מלאה" on its block (DESIGN.md, "Results page", 5);
+* one line under the stats when the selected schedule contains one (item 4, added
+  2026-10-02).
+
+The proposal was to exclude full groups, except those in the schedule the student
+last selected, which the browser would remember.
+**Main finding:** for a new student (nothing remembered), excluding full groups
+leaves **4 of the 16 measured selections with no schedule**, Software
+Engineering semester 5 among them. All four have schedules today. Biotechnology
+year 2, a fifth, has none even today.
+* In Software Engineering semester 5, the only open 11069 שו"ת group (Sunday
+  12:50–14:50) overlaps the only open 61832 lecture (Sunday 12:50–15:50). Today
+  that selection has 742 combinations; with the exclusion it has none.
+* "Leave the course out when all its groups are full" brings none of the four
+  back. Only Mechanical Engineering year 2 has such a course (22310), and it
+  still has two other clashes.
+* One of the four, Electrical Engineering year 2, is caused by the engine bug in
+  the next entry rather than by fullness alone. There, 11232's open lab /4 is
+  never allowed.
+* With the student's earlier schedule remembered, none of the 16 loses its
+  schedule.
+
+**Why not now:** decided 2026-10-02. Full groups stay selectable, and the block
+already says "קבוצה מלאה". Doing it would also take:
+* an engine change, a candidate filter in `Preferences`, and the scheduler is out
+  of scope unless asked;
+* edits to protected browser tests, most of which open Software Engineering
+  semester 5 in a fresh browser.
+
 ### On a tall grid the lesson details open out of view
 **Where:** `#meeting-detail` in `src/web/templates/index.html` (inside `.grid-tools`,
 under the timetable) and `openMeetingDetail()` in `src/web/static/app.js`.
