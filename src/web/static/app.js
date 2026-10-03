@@ -6470,7 +6470,12 @@
     var kind = group.kind;
     var isPinned = pinnedGroup(code, kind) === gid;
     var via = viabilityOf(code, kind, gid);
-    var dead = via.ok === false && !isPinned;
+    // ‏קבוצה בלי מועד ברכיב שיש בו קבוצה עם מועד אינה נבחרת לעולם (DESIGN.md,
+    // שלב המרצים, 2026-10-03; ‏scheduler.CONSTRAINT_NO_TIME). נקבע כאן מנתוני
+    // הקורס עצמם, כדי שהשורה תיחסם גם כשה-viability דולג או ריק.
+    var noTime = noTimeExcluded(course, group);
+    var dead = (via.ok === false || noTime) && !isPinned;
+    var deadReason = noTime ? T("app.lecturers.row.noTimeLine") : txt(via.reason);
     var rank = rankOf(code, group.lecturer);
 
     var cls = "";
@@ -6483,7 +6488,7 @@
     var title = [
       Tf("app.lecturers.row.groupTitle", { gid: gid }),
       dead
-        ? txt(via.reason)
+        ? deadReason
         : isPinned
         ? T("app.lecturers.row.pinnedTitle")
         : txt(group.lecturer)
@@ -6549,7 +6554,12 @@
       lectCell.appendChild(el("div", { class: "row-sub group-status", text: group.status_note }));
     }
     if (dead) {
-      lectCell.appendChild(el("div", { class: "row-sub row-dead", text: T("app.lecturers.row.deadLine") }));
+      lectCell.appendChild(
+        el("div", {
+          class: "row-sub row-dead",
+          text: noTime ? T("app.lecturers.row.noTimeLine") : T("app.lecturers.row.deadLine"),
+        })
+      );
     }
     tr.appendChild(lectCell);
 
@@ -6584,7 +6594,7 @@
     // נעיצה — כפתור נפרד; הלחיצה עליו לא מדרגת מרצה. ‏aria-label נושא את
     // המשמעות המלאה, כולל מספר הקבוצה.
     var pinLabel = dead
-      ? Tf("app.lecturers.row.pinDead", { gid: gid, reason: txt(via.reason) })
+      ? Tf("app.lecturers.row.pinDead", { gid: gid, reason: deadReason })
       : Tf(isPinned ? "app.lecturers.row.pinRelease" : "app.lecturers.row.pinAdd", { gid: gid });
     var pinBtn = el("button", {
       class: "pin-btn",
@@ -6608,6 +6618,18 @@
     tr.appendChild(el("td", { class: "cell-pin" }, [pinBtn]));
 
     return tr;
+  }
+
+  /**
+   * ‏האם הקבוצה נחסמת בכלל "בלי מועד קבוע": אין לה מפגשים, ולקבוצה אחרת
+   * מאותו קורס ומאותו סוג יש. רכיב שאין בו אף קבוצה עם מועד — קבוצותיו
+   * נשארות, והקורס מופיע בשורה "ללא מועד קבוע" כמו קודם.
+   */
+  function noTimeExcluded(course, group) {
+    if ((group.meetings || []).length) return false;
+    return (course.groups || []).some(function (g) {
+      return g.kind === group.kind && (g.meetings || []).length > 0;
+    });
   }
 
   /* --- שלב 6 של העיצוב: החלופות ------------------------------------ */
