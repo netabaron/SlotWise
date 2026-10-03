@@ -7829,10 +7829,16 @@
   }
 
   /**
-   * קורסים שאין להם אף מפגש במערכת הזו — פרויקט גמר, סמינר בתיאום, שו"ת
-   * בלי מועד. לכל אחד: שם, סוגי השיעור ונ"ז.
+   * כל רכיב בלי מועד במערכת הזו — פרויקט גמר, סמינר בתיאום, שו"ת בלי מועד —
+   * פריט לכל קורס (DESIGN.md, "Results page", 5; ‏2026-10-03).
    *
-   * ‏קורס שחלק מרכיביו משובצים אינו כאן: יש לו בלוקים, ולכן גם מקום במקרא.
+   * * קורס שאין לו אף מפגש: שם, סוגי השיעור ונ"ז, כמו קודם.
+   * * קורס שחלק מרכיביו משובצים: שם וסוגי הרכיבים *בלי* מועד בלבד, ובלי נ"ז —
+   *   הנ"ז שייכות לקורס כולו, והחלקים שיש להם מועד כבר על הרשת. עד 2026-10-03
+   *   קורס כזה לא נמנה כאן כלל, והרכיב בלי המועד לא הופיע בשום מקום בדף.
+   *
+   * ‏"קבוצה מלאה" נאמרת לפי הרכיבים בלי המועד בלבד: לקבוצה עם מועד יש בלוק
+   * שנושא אותה.
    */
   function unscheduledCourses(sch) {
     var byCode = Object.create(null);
@@ -7852,18 +7858,24 @@
         order.push(code);
       }
       var rec = byCode[code];
-      if (Array.isArray(p.meetings) && p.meetings.length) rec.timed = true;
+      if (rec.credits === null) rec.credits = creditsNumber(p.credits);
+      if (Array.isArray(p.meetings) && p.meetings.length) {
+        rec.timed = true;
+        return;
+      }
       if (isFullGroup(p)) rec.full = true;
       var kind = txt(p.kind);
       if (kind && rec.kinds.indexOf(kind) === -1) rec.kinds.push(kind);
-      if (rec.credits === null) rec.credits = creditsNumber(p.credits);
     });
     return order
       .map(function (code) {
-        return byCode[code];
+        var rec = byCode[code];
+        // ‏בלי נ"ז לקורס שחלקו משובץ — ‏unscheduledLine בוחר אז בנוסח בלי נ"ז.
+        if (rec.timed) rec.credits = null;
+        return rec;
       })
       .filter(function (rec) {
-        return !rec.timed;
+        return rec.kinds.length > 0;
       });
   }
 
