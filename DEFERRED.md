@@ -10,6 +10,83 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
+### Groups with no meeting time — **decided 2026-10-03, not built yet**
+**Where:** the solver's candidate groups (`src/scheduler.py`; the exact place is
+for the task to settle), and the existing "ללא מועד קבוע" line (`app.js`;
+DESIGN.md, "Results page", 5).
+**Owner:** the next task, to be implemented with before/after measurements.
+**Decision (2026-10-03):** a group with no meetings is never chosen when another
+group of the same course and kind has meetings. When every group of that
+component has no meetings, the course stays and shows the existing "ללא מועד
+קבוע" line.
+**Why:** a group with no meetings never clashes and adds nothing to days, gaps or
+finish time. So it costs nothing in the score, and it wins whenever it is allowed,
+whatever its status says.
+**Examples** (semester-א catalog, build 2026-09-30). Each has timed groups beside
+it in the same component:
+* **11232 lab 271030210/8** ("מיועד לחוזרים"): #1 in Electrical Engineering year 2
+  since the 2026-10-03 `linked_to` fix. Its component has 5 timed labs.
+* **421208 lab 271420110/7** ("מיועד לחוזרים"): #1 in Civil Engineering year 1
+  since the same fix. 5 timed labs.
+* **11212 lab 271020210/1** ("מיועד לחוזרים"): in all five of Mechanical
+  Engineering year 2's top schedules, before and after that fix. 3 timed labs.
+* **11069 שו"ת 271060310/2** ("הקורס מלא"): in Software Engineering semester 5's
+  top schedule. 2 timed groups.
+
+**Scale:** 60 semester-א groups have no meetings.
+* The rule applies in the 20 components that also have a timed group.
+* The 36 components with no timed group at all keep their groups, and show the
+  "ללא מועד קבוע" line.
+
+### The pinned no-solution diagnosis reads links on a trimmed copy — **found 2026-10-03, not fixed**
+**Where:** `api._pin_filtered` (`src/web/api.py:2507-2524`). Its copy feeds
+`diagnose_infeasibility`, `relax_suggestions` and `_relaxations_json` when a
+request with pins has no schedule (api.py:5310-5335; also :2637 and :5359).
+**Owner:** unassigned.
+**What:** to diagnose, `_pin_filtered` deletes the other groups of each pinned
+kind. The `linked_to` rule reads which kind an id names from the groups that are
+present (`scheduler._kind_index`). So deleting groups changes how a link is read,
+and the copy's schedules differ from what the real solve allows with that pin.
+* **Before the 2026-10-03 `linked_to` fix**, deleted ids became unknown and were
+  not enforced, so the copy was too loose.
+* **Since the fix**, deleting groups can also change which kind an id names, so
+  the copy can be too strict as well.
+
+`_relaxations_json` counts schedules on this copy, and those counts reach the page.
+The `_pin_filtered` docstring says the copy is never used for counting.
+**Measured:** every single pin of every linked semester-א course, 919 pins, real
+solve compared with the copy.
+* **Before the fix:** 90 pins in 36 courses differ, all of them looser.
+* **Now:** 62 pins in 27 courses differ. In 29 the copy misses real schedules; in
+  33 it adds schedules the real solve forbids.
+
+**Example:** 11232 with tutorial 271030210/1 pinned.
+* The real solve allows labs /1, /2, /3, /4, /6 and /8.
+* The copy allows only /1–/3. With tutorials /2 and /3 deleted, ids /2 and /3 look
+  like labs only, and the lecture's list reads as labs again.
+
+**Fix direction:** either build the copy's kind index from the untrimmed courses,
+or narrow by filtering selections, as the real solve does, instead of deleting
+groups.
+**How to reproduce** (shipped catalog only):
+```
+SLOTWISE_DB_ROOT="$(mktemp -d)" python - <<'EOF'
+import sys
+sys.path[:0] = ["src", "."]
+from src.web import api
+S = api.scheduler_mod
+with api.create_app({"allow_network": False}).app_context():
+    courses, _, _ = api._build_courses(["11232"], semester="א")
+pins = {"11232": {"תרגול": "271030210/1"}}
+real = {sel.group_for("11232", "מעבדה").group_id
+        for sel in S.enumerate_selections(courses, S.Preferences()) if api.pins_satisfied(sel, pins)}
+copy = {sel.group_for("11232", "מעבדה").group_id
+        for sel in S.enumerate_selections(api._pin_filtered(courses, pins), S.Preferences())}
+print("real solve:", sorted(real))      # /1 /2 /3 /4 /6 /8
+print("diagnosis copy:", sorted(copy))  # /1 /2 /3 only
+EOF
+```
+
 ### Excluding full groups from schedules — **deferred 2026-10-02**
 **Where:** proposed, not built. The full record, with every measurement, is
 `docs/PROPOSAL_FULL_GROUPS.md`.
@@ -24,17 +101,20 @@ The proposal was to exclude full groups, except those in the schedule the studen
 last selected, which the browser would remember.
 **Main finding:** for a new student (nothing remembered), excluding full groups
 leaves **4 of the 16 measured selections with no schedule**, Software
-Engineering semester 5 among them. All four have schedules today. Biotechnology
-year 2, a fifth, has none even today.
+Engineering semester 5 among them. Since the engine fix of 2026-10-03 (see below),
+it is 3. All four have schedules today. Biotechnology year 2, a fifth, has none
+even today.
 * In Software Engineering semester 5, the only open 11069 שו"ת group (Sunday
   12:50–14:50) overlaps the only open 61832 lecture (Sunday 12:50–15:50). Today
   that selection has 742 combinations; with the exclusion it has none.
 * "Leave the course out when all its groups are full" brings none of the four
   back. Only Mechanical Engineering year 2 has such a course (22310), and it
   still has two other clashes.
-* One of the four, Electrical Engineering year 2, is caused by the engine bug in
-  the next entry rather than by fullness alone. There, 11232's open lab /4 is
-  never allowed.
+* One of the four, Electrical Engineering year 2, was caused by an engine bug
+  rather than by fullness alone: 11232's open lab /4 was never allowed. The bug was
+  fixed 2026-10-03 (Closed: "A group id shared by two kinds hid groups from
+  `linked_to`"). With the fix, that selection has 120 combinations under the
+  exclusion.
 * With the student's earlier schedule remembered, none of the 16 loses its
   schedule.
 
@@ -44,53 +124,6 @@ already says "קבוצה מלאה". Doing it would also take:
   of scope unless asked;
 * edits to protected browser tests, most of which open Software Engineering
   semester 5 in a fresh browser.
-
-### A group id shared by two kinds hides groups from `linked_to` — **found 2026-10-02, not fixed**
-**Where:** `src/scheduler.py`, `_kind_index` (593-599) and `_link_allows` (602-627).
-**Owner:** unassigned. The scheduler is out of scope unless asked, so this is
-recorded only.
-**What:** `_kind_index` maps (course, group id) to a single kind. The yedion reuses
-one group id across the kinds of a course: `/1` can be a lecture, a tutorial and
-a lab at once. When that happens the last kind written wins, and in catalog order
-מעבדה overwrites תרגול, which overwrites הרצאה. A `linked_to` entry naming such an
-id is then read as pointing at the lab, and `_link_allows` restricts the lab kind
-to the listed ids. Some groups are therefore never chosen, **today**, whether or
-not they are full.
-**Example: Electrical Engineering year 2, 11232 (פיזיקה 2 מ'), semester א.**
-* Both lectures link to `271030210/1`, `/2` and `/3`. Those ids exist as tutorials
-  and also as labs.
-* The tutorials link to `/1`, `/2`, `/3`, `/4`, `/6` and `/8`, which are exactly
-  the lab ids.
-* So the intended reading is lecture → tutorial → lab. The index instead reads the
-  lecture's list as labs, and a lecture may only pair with labs /1–/3.
-* Lab `271030210/4` is open but appears in no schedule. Today every schedule uses
-  one of the labs /1–/3, and all three are full.
-
-**Scale** (semester-א catalog, nightly build 2026-09-30):
-* 130 of 439 courses share a group id across kinds.
-* **60 groups in 26 courses** are never chosen today, but become choosable when
-  ids that name more than one kind are ignored. 34 of the 60 are open, for
-  example 61741 (מבוא למדעי המחשב, מל"מ) lab /2 and 61752 (מערכות הפעלה) lab /2.
-
-That last figure is a measurement of what the collision hides, not a claim about
-what the yedion means. The right fix needs the yedion's semantics, for example a
-kind on each `linked_to` entry.
-**How to reproduce** (shipped catalog only; the empty `SLOTWISE_DB_ROOT` keeps a
-local store out of it):
-```
-SLOTWISE_DB_ROOT="$(mktemp -d)" python - <<'EOF'
-import sys
-sys.path[:0] = ["src", "."]
-from src.web import api
-S = api.scheduler_mod
-with api.create_app({"allow_network": False}).app_context():
-    courses, _, _ = api._build_courses(["11232"], semester="א")
-labs = {sel.group_for("11232", "מעבדה").group_id
-        for sel in S.enumerate_selections(courses, S.Preferences())}
-print(sorted(labs))                                      # only /1, /2, /3 — /4 never appears
-print(S._kind_index(courses)[("11232", "271030210/1")])  # מעבדה, though /1 is also a tutorial
-EOF
-```
 
 ### On a tall grid the lesson details open out of view
 **Where:** `#meeting-detail` in `src/web/templates/index.html` (inside `.grid-tools`,
@@ -830,6 +863,119 @@ settled-page signal the entry above proposes.
 protected test file.
 
 ## Closed
+
+### A group id shared by two kinds hid groups from `linked_to` — closed 2026-10-03
+**Where:** `src/scheduler.py`, `_kind_index` (593-599) and `_link_allows` (602-627).
+**Owner:** unassigned. The scheduler is out of scope unless asked, so this is
+recorded only.
+**What:** `_kind_index` maps (course, group id) to a single kind. The yedion reuses
+one group id across the kinds of a course: `/1` can be a lecture, a tutorial and
+a lab at once. When that happens the last kind written wins, and in catalog order
+מעבדה overwrites תרגול, which overwrites הרצאה. A `linked_to` entry naming such an
+id is then read as pointing at the lab, and `_link_allows` restricts the lab kind
+to the listed ids. Some groups are therefore never chosen, **today**, whether or
+not they are full.
+**Example: Electrical Engineering year 2, 11232 (פיזיקה 2 מ'), semester א.**
+* Both lectures link to `271030210/1`, `/2` and `/3`. Those ids exist as tutorials
+  and also as labs.
+* The tutorials link to `/1`, `/2`, `/3`, `/4`, `/6` and `/8`, which are exactly
+  the lab ids.
+* So the intended reading is lecture → tutorial → lab. The index instead reads the
+  lecture's list as labs, and a lecture may only pair with labs /1–/3.
+* Lab `271030210/4` is open but appears in no schedule. Today every schedule uses
+  one of the labs /1–/3, and all three are full.
+
+**Scale** (semester-א catalog, nightly build 2026-09-30):
+* 130 of 439 courses share a group id across kinds.
+* **60 groups in 26 courses** are never chosen today, but become choosable when
+  ids that name more than one kind are ignored. 34 of the 60 are open, for
+  example 61741 (מבוא למדעי המחשב, מל"מ) lab /2 and 61752 (מערכות הפעלה) lab /2.
+
+That last figure is a measurement of what the collision hides, not a claim about
+what the yedion means. The right fix needs the yedion's semantics, for example a
+kind on each `linked_to` entry.
+**How to reproduce** (shipped catalog only; the empty `SLOTWISE_DB_ROOT` keeps a
+local store out of it):
+```
+SLOTWISE_DB_ROOT="$(mktemp -d)" python - <<'EOF'
+import sys
+sys.path[:0] = ["src", "."]
+from src.web import api
+S = api.scheduler_mod
+with api.create_app({"allow_network": False}).app_context():
+    courses, _, _ = api._build_courses(["11232"], semester="א")
+labs = {sel.group_for("11232", "מעבדה").group_id
+        for sel in S.enumerate_selections(courses, S.Preferences())}
+print(sorted(labs))                                      # only /1, /2, /3 — /4 never appears
+print(S._kind_index(courses)[("11232", "271030210/1")])  # מעבדה, though /1 is also a tutorial
+EOF
+```
+**Closed 2026-10-03, in the scheduler, for this bug only** (asked for explicitly;
+nothing else in scoring or solving changed).
+* `_kind_index` now keeps every kind that carries an id.
+* `_linked_kinds` decides which kinds an owner's list names:
+  * an id of one kind, other than the owner's own, names that kind;
+  * an id of several kinds takes the kind the rest of the list names
+    unambiguously (11026: `/4` exists only as a lab, so `/1` means the lab);
+  * with no such hint, it takes the kind nearest after the owner's own in
+    `KIND_ORDER`: lecture → tutorial → lab (11232: the lectures' `/1`–`/3` are
+    the tutorials).
+
+`_link_allows` keeps its id shortcut. A list with no ambiguous id resolves as
+before, with one exception: a link "upward" to an id shared with an earlier kind
+is now enforced. That is a lab linking to an id that is also a tutorial (labs of
+11026, 11027 and 41525). The old code read that id as the owner's own kind and
+enforced nothing. No schedule changes, because each of those courses has one
+tutorial.
+
+**Measured** on the same catalog (shipped, semester א, build 2026-09-30), every
+course solved alone:
+* **57 of the 60 groups are now chosen in some schedule**, 32 of the 34 open ones
+  among them.
+  * The other three, 21127 lab /2, 21214 lab /2 and 51030 tutorial /1, are ruled
+    out by their own links, not by the collision. Each course's only tutorial or
+    lecture links to its own id, which by the self-link convention means the
+    other-kind group with that id.
+  * The count of 60 included them because it was measured by ignoring every
+    ambiguous id. The collision hid 57.
+* **Nothing became stricter.** 23 courses gained 132 valid combinations, none lost
+  any, and no group became unchoosable.
+* **Links are still enforced.** Every lecture whose list names tutorials is paired
+  only with one of them: 0 exceptions out of 606 pairs before and 738 after. The
+  same holds for tutorial → lab: 0 out of 114, then 0 out of 246.
+* **11232:** 18 → 36 combinations; labs /4 and /8 enter its top 5.
+* **61741:** 4 → 8 combinations; labs /2 and /3 enter its top 5.
+* **61752:** 4 → 6 combinations; lab /2 enters its top 5.
+* **The 16 selections of `docs/PROPOSAL_FULL_GROUPS.md`:**
+  * The top 5 changes in Software Engineering year 1, Information Systems year 1,
+    Civil Engineering year 1 and Electrical Engineering year 2. Industrial
+    Engineering year 1 keeps its top 5, and its min days drop from 5 to 4.
+  * Under today's rules no selection without a schedule gains one; Biotechnology
+    year 2 still has none, because of a lab clash.
+  * Under the deferred exclusion, Electrical Engineering year 2 goes from no
+    schedule to 120 combinations.
+* **Speed is unchanged:** 6,500–36,700 selections enumerate in 0.15–0.25 s, before
+  and after.
+
+**Side effect:** two of the freed labs have no meeting time, and they now win in
+their selections. This was decided 2026-10-03: see Open, "Groups with no meeting
+time".
+
+**Not fixed here:** the diagnosis for a pinned request with no solution still reads
+links on a trimmed copy. See Open, "The pinned no-solution diagnosis reads links on
+a trimmed copy".
+
+**Test:** `tests/test_linked_kind_collision.py` (10). Six of them fail on the old
+code:
+* the open lab is reached;
+* the index keeps every kind;
+* a lecture pulls only its own tutorials;
+* a tutorial pulls only its own labs;
+* a back-link with no kind after its owner takes the nearest one before;
+* the fixture's 11232 reaches lab /4.
+
+The other four guard the resolution rules, including the fixture's 31476 (each
+lecture takes only its own tutorial).
 
 ### Local `sections.json` shadows the shipped catalog with an older build's stamp — closed 2026-09-20
 **Where:** `Store._load_sections_db` in `src/store.py` (`merged.update(courses)`), the
