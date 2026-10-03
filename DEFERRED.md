@@ -10,33 +10,28 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
-### Groups with no meeting time — **decided 2026-10-03, not built yet**
-**Where:** the solver's candidate groups (`src/scheduler.py`; the exact place is
-for the task to settle), and the existing "ללא מועד קבוע" line (`app.js`;
-DESIGN.md, "Results page", 5).
-**Owner:** the next task, to be implemented with before/after measurements.
-**Decision (2026-10-03):** a group with no meetings is never chosen when another
-group of the same course and kind has meetings. When every group of that
-component has no meetings, the course stays and shows the existing "ללא מועד
-קבוע" line.
-**Why:** a group with no meetings never clashes and adds nothing to days, gaps or
-finish time. So it costs nothing in the score, and it wins whenever it is allowed,
-whatever its status says.
-**Examples** (semester-א catalog, build 2026-09-30). Each has timed groups beside
-it in the same component:
-* **11232 lab 271030210/8** ("מיועד לחוזרים"): #1 in Electrical Engineering year 2
-  since the 2026-10-03 `linked_to` fix. Its component has 5 timed labs.
-* **421208 lab 271420110/7** ("מיועד לחוזרים"): #1 in Civil Engineering year 1
-  since the same fix. 5 timed labs.
-* **11212 lab 271020210/1** ("מיועד לחוזרים"): in all five of Mechanical
-  Engineering year 2's top schedules, before and after that fix. 3 timed labs.
-* **11069 שו"ת 271060310/2** ("הקורס מלא"): in Software Engineering semester 5's
-  top schedule. 2 timed groups.
+### A protected test will break at the next fixture refresh — **found 2026-10-03, needs permission then**
+**Where:** `tests/test_attendance.py` (protected; `SPEC_WEB.md:230`, CLAUDE.md).
+* Its brute-force check `legal_combinations` is at :142-158.
+* The assertions that require the engine to match it are at :318, :372 and :680.
 
-**Scale:** 60 semester-א groups have no meetings.
-* The rule applies in the 20 components that also have a timed group.
-* The 36 components with no timed group at all keep their groups, and show the
-  "ללא מועד קבוע" line.
+**Owner:** whoever next runs `scripts/update_test_fixture.py`. **That run needs the
+user's permission to change the test.**
+**What:**
+* `legal_combinations` counts every group as allowed. It does not know the
+  2026-10-03 rule that a group with no meetings is never chosen when its
+  component has a timed group.
+* Today it still matches the engine, only because the frozen fixture (built
+  2026-09-09) gives 11069 שו"ת 271060310/2 a meeting.
+* In the shipped catalog (build 2026-09-30, `59a8cfc`), that group has none. For
+  the test's six student codes there, the engine finds 121 combinations and the
+  brute force 220.
+
+So the next fixture refresh will fail the three assertions, with the engine
+correct.
+**Fix, when permitted:** teach `legal_combinations` the same rule. Skip a group
+with no meetings when its (course, kind) has a timed group, so the brute force
+stays independent of the engine but agrees with it.
 
 ### The pinned no-solution diagnosis reads links on a trimmed copy — **found 2026-10-03, not fixed**
 **Where:** `api._pin_filtered` (`src/web/api.py:2507-2524`). Its copy feeds
@@ -65,9 +60,29 @@ solve compared with the copy.
 * The copy allows only /1–/3. With tutorials /2 and /3 deleted, ids /2 and /3 look
   like labs only, and the lecture's list reads as labs again.
 
+**Same cause, second rule (2026-10-03):** the copy also decides "groups with no
+meeting time" from the trimmed component.
+* A pin on a no-time group that the rule excludes leaves that group alone in its
+  copy, so the copy allows it while the real solve does not.
+* `/api/solve` then has no schedule and blames "combinatorial exhaustion". Its
+  first suggestion, to release a pin, is the right action.
+* With personal constraints set, the relaxation counts are false too. With 11232
+  lab /8 pinned, `forbid_friday` and an earliest hour, it reports "earliest → 5
+  schedules" when nothing opens.
+* Viability puts the stale pin into every trial, so every other group shows as
+  dead.
+* The pinned row itself stays live (`isPinned`), so it can be unpinned.
+* The simplest fix is for `resolve_pins` to drop such a pin through
+  `dropped_pins`, which the page already clears and reports.
+* Only a pin saved before 2026-10-03 could do this, because the lecturers step no
+  longer lets anyone pin such a group (11232 lab /8, for example).
+* **Since 2026-10-03, `resolve_pins` drops such a pin before solving**, so the
+  copy is never built for it. What remains open here is the `linked_to` reading on
+  the copy.
+
 **Fix direction:** either build the copy's kind index from the untrimmed courses,
 or narrow by filtering selections, as the real solve does, instead of deleting
-groups.
+groups. Either one also covers the no-time rule.
 **How to reproduce** (shipped catalog only):
 ```
 SLOTWISE_DB_ROOT="$(mktemp -d)" python - <<'EOF'
@@ -864,6 +879,117 @@ protected test file.
 
 ## Closed
 
+### Groups with no meeting time — closed 2026-10-03
+**Where:** the solver's candidate groups (`src/scheduler.py`; the exact place is
+for the task to settle), and the existing "ללא מועד קבוע" line (`app.js`;
+DESIGN.md, "Results page", 5).
+**Owner:** the next task, to be implemented with before/after measurements.
+**Decision (2026-10-03):** a group with no meetings is never chosen when another
+group of the same course and kind has meetings. When every group of that
+component has no meetings, the course stays and shows the existing "ללא מועד
+קבוע" line.
+**Why:** a group with no meetings never clashes and adds nothing to days, gaps or
+finish time. So it costs nothing in the score, and it wins whenever it is allowed,
+whatever its status says.
+**Examples** (semester-א catalog, build 2026-09-30). Each has timed groups beside
+it in the same component:
+* **11232 lab 271030210/8** ("מיועד לחוזרים"): #1 in Electrical Engineering year 2
+  since the 2026-10-03 `linked_to` fix. Its component has 5 timed labs.
+* **421208 lab 271420110/7** ("מיועד לחוזרים"): #1 in Civil Engineering year 1
+  since the same fix. 5 timed labs.
+* **11212 lab 271020210/1** ("מיועד לחוזרים"): in all five of Mechanical
+  Engineering year 2's top schedules, before and after that fix. 3 timed labs.
+* **11069 שו"ת 271060310/2** ("הקורס מלא"): in Software Engineering semester 5's
+  top schedule. 2 timed groups.
+
+**Scale:** 60 semester-א groups have no meetings.
+* The rule applies in the 20 components that also have a timed group.
+* The 36 components with no timed group at all keep their groups, and show the
+  "ללא מועד קבוע" line.
+**Closed 2026-10-03: implemented as decided.**
+* **Engine:** `scheduler._filter_groups` applies the rule (`CONSTRAINT_NO_TIME`,
+  "אין לקבוצה מועד קבוע").
+  * The rule is decided from the whole component as it is in the data, before any
+    personal constraint.
+  * Every solver path goes through it: the solve, viability, the relaxation
+    re-solves, and diagnosis stage 1. Stage 1 can name the rule when it empties
+    a component, but it lists at most three groups, so in a large component the
+    rule may not appear by name.
+  * Because the rule is decided before personal constraints, a student whose
+    hour limits or blocked windows remove every timed group of a component now
+    gets no schedule, where the no-time group used to save it. **Accepted
+    2026-10-03:** that follows the rule as decided.
+  * Groups stay in `course.groups`, so `linked_to` stays enforced.
+* **Lecturers step:** the row is shown like a group that leaves no possible
+  schedule, with the line "אין לקבוצה מועד קבוע" (DESIGN.md, Lecturers step).
+  * The page decides it from the course's own groups, so it holds even when
+    viability is skipped or empty.
+* **Pins:** a pin on a group the rule excludes can only come from a saved state
+  older than the rule. `api.resolve_pins` now drops it through `dropped_pins`,
+  with `server.pins.noTime`, so the page deletes it and shows its existing toast.
+  Without this, the request had no schedule, and its relaxation counts on the
+  trimmed diagnosis copy were false.
+* **The "ללא מועד קבוע" line** now lists every component of the selected
+  alternative that has no time, not only courses with no timed pick at all
+  (DESIGN.md, "Results page", 5).
+  * A partly timed course reads "<name> (<type>)", without credits.
+  * "קבוצה מלאה" follows only the components without a time.
+
+**Measured** (shipped catalog, semester א, build 2026-09-30, `59a8cfc`):
+* **The 20 mixed components:** 17 no-time groups that used to be chosen no longer
+  are:
+  * 11023 lab /3, 11026 lab /4, 11027 lab /3;
+  * 11069 שו"ת /2;
+  * 11209 lab /2, 11212 lab /1, 11213 lab 271020410/3;
+  * 11231 lab /6, 11232 lab /8, 11233 lab /7;
+  * 22511 lab /4, 31375 lab 271020230;
+  * 421208 lab /7, 421210 lab /7;
+  * 51021 lab 271050232, 51215 lab /3;
+  * 53110 lecture 273550200.
+
+  15 of the 17 are "מיועד לחוזרים" and one (11069 /2) is "הקורס מלא". 53110's
+  lecture has no status: an ordinary group, excluded because its component has one
+  timed lecture. That timed lecture (273550100) is "הקורס מלא", so 53110 is the one
+  component where the rule leaves only a full group. **Accepted 2026-10-03.** The
+  other 3 (421209 lab /4, 421315 lab /7, 51030 tutorial /1) were never chosen
+  before either; their links already ruled them out.
+* **The 36 no-time-only components (34 courses):** every course still solves alone
+  exactly as before.
+  * All 34 appear in the "ללא מועד קבוע" line.
+  * 30 of them have no timed component, and were already listed.
+  * The other 4 also have timed components, and the line fix brought them in:
+    * 11179: "מבוא לפיזיקה אקדמית (שו"ת)";
+    * 11360 and 11361: "עברית למטרות אקדמיות א'/ב' … (שו"ת)";
+    * 51432: "תכן וניהול של מערכות ארגוניות (אחר)".
+  * Before the fix, Biotechnology year 1 and Industrial Engineering year 1 picked
+    11179's no-time שו"ת and showed it neither on the grid nor in the line. Now
+    they show it in the line.
+* **Single courses:** no course loses its schedules. 32 combinations disappear and
+  none appear. No group other than the 17 stops being chosen.
+* **Links:** lecture → tutorial pairs outside the lecture's list: 0 of 711 (before:
+  0 of 738). Tutorial → lab: 0 of 218 (before: 0 of 246).
+* **The 16 selections:** the top 5 changes in 5 of them, and no selection loses its
+  schedule.
+
+  | Selection | Combinations | What #1 changes |
+  | --- | --- | --- |
+  | Software Engineering semester 5 | 742 → 394 | −65.00 → −70.83; 11069 /2 → /1 |
+  | Information Systems year 3 | 60 → 40 | min days 4 → 5 |
+  | Civil Engineering year 1 | 5,484 → 4,100 | −53.33 → −55.00; 421208 lab /7 → /5 |
+  | Mechanical Engineering year 2 | 208 → 156 | −106.33 → −113.33; 11212 lab /1 → /4 |
+  | Electrical Engineering year 2 | 2,568 → 2,060 | −34.33 → −43.67; 11232 lab /8 → /3 |
+
+**Tests:**
+* `tests/test_no_time_groups.py` (8). Seven of them fail on the old code,
+  including the fixture's 11232, the API's viability for lab /8, and a lecture
+  whose only link is the excluded group.
+* `tests/test_no_time_lecturers_browser.py` (6).
+* `tests/test_no_time_pin_release.py` (4).
+* `tests/test_unscheduled_line_browser.py` (3). All three fail on the old line.
+
+**Will break later:** a protected test, `test_attendance.py`. See Open, "A
+protected test will break at the next fixture refresh".
+
 ### A group id shared by two kinds hid groups from `linked_to` — closed 2026-10-03
 **Where:** `src/scheduler.py`, `_kind_index` (593-599) and `_link_allows` (602-627).
 **Owner:** unassigned. The scheduler is out of scope unless asked, so this is
@@ -957,9 +1083,9 @@ course solved alone:
 * **Speed is unchanged:** 6,500–36,700 selections enumerate in 0.15–0.25 s, before
   and after.
 
-**Side effect:** two of the freed labs have no meeting time, and they now win in
-their selections. This was decided 2026-10-03: see Open, "Groups with no meeting
-time".
+**Side effect:** two of the freed labs have no meeting time, and they won in
+their selections. This was decided and fixed on 2026-10-03: see Closed, "Groups
+with no meeting time".
 
 **Not fixed here:** the diagnosis for a pinned request with no solution still reads
 links on a trimmed copy. See Open, "The pinned no-solution diagnosis reads links on
