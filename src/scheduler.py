@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 import sys
@@ -586,17 +587,72 @@ def _filter_groups(
     return survivors, eliminated
 
 
-#: מיפוי (קוד קורס, מזהה קבוצה) -> סוג הרכיב. משמש את כלל ה-linked_to.
-_KindIndex = dict[tuple[str, str], str]
+#: מיפוי (קוד קורס, מזהה קבוצה) -> **כל** סוגי הרכיב שנושאים את המזהה הזה.
+#: משמש את כלל ה-linked_to.
+_KindIndex = dict[tuple[str, str], frozenset[str]]
 
 
 def _kind_index(courses: "list[Course] | tuple[Course, ...]") -> _KindIndex:
-    """בונה מיפוי (course_code, group_id) -> kind עבור כל הקבוצות שהתקבלו."""
-    index: _KindIndex = {}
+    """בונה מיפוי (course_code, group_id) -> כל ה-kinds שיש להם המזהה הזה.
+
+    ‏**סט, לא סוג אחד.** בידיעון אותו מזהה נושא לא פעם כמה רכיבים בקורס אחד
+    (‏11232: ‏/1–/3 הם גם תרגולים וגם מעבדות). עד 2026-10-03 המיפוי שמר סוג
+    אחד, והאחרון שנכתב ניצח — מעבדה דרסה תרגול, שדרס הרצאה — ולכן קישור של
+    הרצאה לתרגולים שלה נקרא כקישור למעבדות: מעבדה פתוחה (‏/4) לא נבחרה אף
+    פעם, והתרגולים לא הוגבלו כלל. איזה מהסוגים קישור מסוים מתכוון אליו
+    מכריעה ``_linked_kinds``.
+    """
+    index: dict[tuple[str, str], set[str]] = {}
     for course in courses:
         for g in course.groups:
-            index[(g.course_code, g.group_id)] = g.kind
-    return index
+            index.setdefault((g.course_code, g.group_id), set()).add(g.kind)
+    return {key: frozenset(kinds) for key, kinds in index.items()}
+
+
+@functools.lru_cache(maxsize=4096)
+def _resolve_linked_kinds(
+    owner_kind: str, named: tuple[frozenset[str], ...]
+) -> frozenset[str]:
+    """אילו סוגים רשימת קישורים מזכירה, כשכל מזהה בה עשוי לשאת כמה סוגים.
+
+    ‏``named`` — לכל מזהה ברשימה, הסוגים שנושאים אותו **מלבד סוג הבעלים**
+    (קבוצה אינה מקושרת לסלוט שלה עצמה; הקישור העצמי — הרצאה ‏/1 → ‏/1 —
+    פירושו "הרכיב האחר עם המזהה שלי", DEVELOPMENT_LOG.md).
+
+    * מזהה של סוג אחד — זה הסוג.
+    * מזהה של כמה סוגים מקבל את הסוג ששאר הרשימה מזכירה בלי ספק
+      (‏11026: הרצאה → ‏/1 [תרגול+מעבדה], ‏/4 [מעבדה בלבד] — ‏/1 היא המעבדה).
+    * בלי רמז כזה — הסוג הקרוב ביותר **אחרי** סוג הבעלים ב-KIND_ORDER:
+      הרצאה → תרגול → מעבדה, השרשרת של הידיעון (‏11232: הרצאה → ‏/1–/3 הם
+      התרגולים; התרגולים → ‏/1–/8 הם המעבדות). אין סוג אחריו — הקרוב לפניו.
+
+    הבדל אחד גם ברשימה בלי מזהה כפול: קישור "למעלה" למזהה שסוג מוקדם יותר חולק
+    עם הבעלים (מעבדה → מזהה שהוא גם תרגול) נאכף עכשיו כתרגול. הקוד הישן קרא
+    אותו כסוג של הבעלים עצמם ולא אכף דבר.
+    """
+    sure = frozenset(next(iter(k)) for k in named if len(k) == 1)
+    out = set(sure)
+    here = _kind_rank(owner_kind)
+    for kinds in named:
+        if len(kinds) < 2:
+            continue
+        hint = kinds & sure
+        if hint:
+            out |= hint
+            continue
+        after = [k for k in kinds if _kind_rank(k) > here]
+        pick = min(after, key=_kind_rank) if after else max(kinds, key=_kind_rank)
+        out.add(pick)
+    return frozenset(out)
+
+
+def _linked_kinds(owner: Group, kind_of: _KindIndex) -> frozenset[str]:
+    """הסוגים שה-linked_to של ``owner`` מגביל. מזהה שאינו בנתונים — לא נספר."""
+    named = tuple(
+        kind_of.get((owner.course_code, gid), frozenset()) - {owner.kind}
+        for gid in owner.linked_to
+    )
+    return _resolve_linked_kinds(owner.kind, named)
 
 
 def _link_allows(owner: Group, other: Group, kind_of: _KindIndex | None) -> bool:
@@ -620,11 +676,9 @@ def _link_allows(owner: Group, other: Group, kind_of: _KindIndex | None) -> bool
         return True  # זו בדיוק אחת הקבוצות הנדרשות
     if not kind_of:
         return True  # אין לנו מפת סוגים — לא מגבילים באופן שרירותי
-    for gid in owner.linked_to:
-        if kind_of.get((owner.course_code, gid)) == other.kind:
-            # הרשימה דורשת קבוצה *אחרת* מאותו סוג בדיוק — זו כן פסילה.
-            return False
-    return True
+    # הרשימה מזכירה את הסוג הזה (ראי _linked_kinds) ודורשת קבוצה *אחרת* ממנו
+    # — זו כן פסילה.
+    return other.kind not in _linked_kinds(owner, kind_of)
 
 
 def _linked_ok(a: Group, b: Group, kind_of: _KindIndex | None = None) -> bool:
@@ -803,7 +857,7 @@ def enumerate_selections(
     """
     slots = _build_slots(courses, prefs)
     n_slots = len(slots)
-    kind_of = _kind_index(courses)  # (קורס, קבוצה) -> סוג, עבור כלל linked_to
+    kind_of = _kind_index(courses)  # (קורס, קבוצה) -> הסוגים, עבור כלל linked_to
 
     chosen: list[Group] = []  # המצב החלקי הנוכחי
     visited = 0  # מונה צמתים — כל ניסיון השמה הוא צומת
