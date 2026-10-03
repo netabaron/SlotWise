@@ -171,6 +171,12 @@ CONSTRAINT_LATEST = "latest"
 CONSTRAINT_BLOCKED = "blocked"
 CONSTRAINT_FRIDAY = "friday"
 
+#: כלל של רכיב, לא של קבוצה בודדת (DEFERRED.md, "Groups with no meeting time",
+#: הוחלט 2026-10-03): קבוצה בלי מפגשים אינה נבחרת כשלקבוצה אחרת מאותו קורס
+#: ומאותו סוג יש מפגשים. כשאין לאף קבוצה ברכיב מפגשים — הן נשארות.
+CONSTRAINT_NO_TIME = "no_time"
+NO_TIME_TEXT = "אין לקבוצה מועד קבוע"
+
 
 # ==========================================================================
 # חריגות (exceptions)
@@ -575,11 +581,22 @@ def _filter_groups(
     """
     מחלקת רשימת קבוצות ל: (ששרדו, [(שנפסלה, סיבות), ...]).
     משמשת גם את החיפוש (לוקח רק את מי ששרד) וגם את האבחון (מסביר את מי שנפסל).
+
+    מלבד האילוצים היחידניים חל כאן כלל אחד של **רכיב** (‏CONSTRAINT_NO_TIME):
+    קבוצה בלי מפגשים נפסלת כשלקבוצה אחרת מאותו קורס ומאותו סוג יש מפגשים.
+    קבוצה כזו אינה מתנגשת בדבר ואינה מוסיפה יום, חלון או שעת סיום — ולכן בלי
+    הכלל היא "עולה" אפס בניקוד ומנצחת תמיד, מה שלא יהיה המצב שלה. הכלל נקבע
+    מהרכיב כולו כפי שהוא בנתונים, לפני כל אילוץ אישי. כל הקוראים מעבירים
+    רכיב אחד (‏course.groups_of(kind)), אבל הקבוצות ממוינות לפי (קורס, סוג)
+    בכל מקרה. הקבוצה נשארת ב-course.groups, ולכן כלל ה-linked_to נשאר נאכף.
     """
     survivors: list[Group] = []
     eliminated: list[tuple[Group, list[tuple[str, str]]]] = []
+    timed = {(g.course_code, g.kind) for g in groups if g.meetings}
     for g in sorted(groups, key=_group_sort_key):
         problems = _unary_violations(g, prefs)
+        if not g.meetings and (g.course_code, g.kind) in timed:
+            problems = [(CONSTRAINT_NO_TIME, NO_TIME_TEXT), *problems]
         if problems:
             eliminated.append((g, problems))
         else:
