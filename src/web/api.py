@@ -2487,6 +2487,27 @@ def resolve_pins(
                     }
                 )
                 continue
+            # ‏קבוצה בלי מועד ברכיב שיש בו קבוצה עם מועד אינה נבחרת לעולם
+            # ‏(scheduler.CONSTRAINT_NO_TIME, 2026-10-03), ושלב המרצים אינו נותן
+            # לנעוץ אותה. נעיצה כזו יכולה להגיע רק מ-localStorage שנשמר לפני כן —
+            # ונשארת, היא הייתה מחזירה "אין מערכת" עם אבחון של העתק המקוצץ
+            # ‏(DEFERRED.md). משחררים אותה כאן, והלקוח מוחק אותה ומודיע.
+            pinned_group = next(g for g in candidates if g.group_id == group_id)
+            if not pinned_group.meetings and any(g.meetings for g in candidates):
+                dropped.append(
+                    {
+                        "code": code,
+                        "kind": kind,
+                        "group_id": group_id,
+                        "reason": strings_mod.fmt(
+                            "server.pins.noTime",
+                            group=group_id,
+                            kind=kind,
+                            code=code,
+                        ),
+                    }
+                )
+                continue
             applied.setdefault(code, {})[kind] = group_id
 
     return applied, dropped
