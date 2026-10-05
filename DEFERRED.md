@@ -299,7 +299,7 @@ be there; this was measured on one schedule, not on the worst one.
 
 ### Phase 7's 14px body half is not done — only the 13px floor
 **Where:** `src/web/static/style.css`, everywhere.
-**Owner:** Phase 7.
+**Owner:** unassigned — re-owned 2026-10-05: "Phase 7" here was an earlier plan's numbering, not DESIGN.md's Phase 7 (wide layout).
 **What:** the brief asks for "minimum font size 14px for body, 13px for
 secondary". This commit raised all 76 sub-13px screen rules to 13px, which closes
 the secondary half. It did **not** promote sentence-level text — `.step-hint`,
@@ -315,7 +315,7 @@ scale that restores it arrives with whichever palette direction is chosen.
 
 ### `.pin-btn` sits at 45% opacity as its resting state
 **Where:** `src/web/static/style.css`, `.pin-btn`.
-**Owner:** Phase 7 (item 3 replaces the control outright).
+**Owner:** unassigned — re-owned 2026-10-05: "Phase 7" here was an earlier plan's numbering, not DESIGN.md's Phase 7 (wide layout).
 **Why it survived the opacity sweep:** the sweep removed multipliers from *text*.
 `.pin-btn` is a control, and its `:disabled` state at `.2` is covered by WCAG
 1.4.3's exemption for inactive components — but `.45` is its **enabled** resting
@@ -390,8 +390,9 @@ is still there, and still relative — see the entry above.
 
 ### Colour-blind distinguishability of the ten course colours — **measured 2026-09-08, and it is worse than this entry used to say**
 **Where:** `--course-0..9` in `src/web/static/style.css`.
-**Owner:** Phase 7 (accessibility) — and now Phase 10, because a new ramp is the
-cheapest time to fix it.
+**Owner:** DESIGN.md Phase 9 (mobile and accessibility pass). Re-owned 2026-10-05: "Phase 7" here was an earlier plan's numbering, not DESIGN.md's Phase 7 (wide layout).
+It used to read "Phase 7 (accessibility) — and now Phase 10, because a new ramp is the
+cheapest time to fix it."
 **What this entry used to say:** that separability "is a palette question" to be
 looked at later. That was true but it left the impression the current ramp was
 merely untested. It was tested on 2026-09-08 and it fails badly.
