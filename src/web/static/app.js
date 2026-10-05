@@ -164,6 +164,7 @@
   var DAY_LETTERS = T("app.terms.dayLetters", {});
   var DAY_NAMES = T("app.terms.dayNames", {});
   var DAYS = [1, 2, 3, 4, 5, 6];
+  var FRIDAY = 6;
 
   /**
    * סדר תצוגה של סוגי רכיב — זהה ל-models.KIND_ORDER.
@@ -3130,6 +3131,7 @@
 
     ui.altHead = byId("alt-head");
     ui.altTitle = byId("alt-title");
+    ui.altUpdating = byId("alt-updating");
     ui.altSort = byId("alt-sort");
     ui.altPrev = byId("alt-prev");
     ui.altNext = byId("alt-next");
@@ -3143,6 +3145,8 @@
     ui.gridScroll = byId("grid-scroll");
     ui.grid = byId("schedule-grid");
     ui.empty = byId("schedule-empty");
+    ui.placeholder = byId("schedule-placeholder");
+    ui.placeholderDays = byId("schedule-placeholder-days");
     ui.reasons = byId("infeasible-reasons");
     ui.suggestions = byId("infeasible-suggestions");
     ui.relax = byId("relax");
@@ -6706,6 +6710,9 @@
       list.length === 1 ? T("app.alts.titleOne") : Tf("app.alts.title", { n: list.length })
     );
     if (ui.altSort) ui.altSort.value = altSortKey();
+    // ‏"מעדכן…" ליד הכותרת בזמן חישוב. במסך צר הוא מוסתר ב-CSS: שם כפתור
+    // הבנייה הוא מה שמראה שהמערכת מתעדכנת (DESIGN.md, "Layout").
+    setHidden(ui.altUpdating, !runtime.solveBusy);
     setText(ui.altPos, Tf("app.alts.position", { pos: pos + 1, total: list.length }));
     if (ui.altPrev) ui.altPrev.disabled = pos <= 0;
     if (ui.altNext) ui.altNext.disabled = pos >= order.length - 1;
@@ -7444,6 +7451,7 @@
     }
     runtime.gridShown = { solve: s, idx: sch ? shownIdx : -1 };
     setHidden(ui.gridScroll, !sch);
+    renderPlaceholderWeek();
     applyLegendFocus();
     syncMeetingDetail();
     if (before) {
@@ -8383,11 +8391,15 @@
     // יום ריק מצטמצם לרצועה צרה במקום לתפוס עמודה מלאה של כלום. הוא לא
     // נעלם: המערכת השבועית חייבת להיראות כשבוע, וגם "אין שיעורים ביום ו׳"
     // הוא מידע.
+    // ‏יום ו׳ ריק מקבל משתנה משלו: במסך רחב אין לו עמודה בכלל (DESIGN.md,
+    // ‏"Layout", צעד 1), ו-‎.is-fri‎ מסתיר את התאים שלו שם. ברירת המחדל של
+    // המשתנה היא ‎--day-empty‎, ולכן בטלפון ועל הנייר שום דבר אינו משתנה.
     root.style.setProperty(
       "grid-template-columns",
       "var(--time-col) " +
         DAYS.map(function (d) {
-          return blankSet[d] ? "var(--day-empty)" : "minmax(var(--day-min), 1fr)";
+          if (!blankSet[d]) return "minmax(var(--day-min), 1fr)";
+          return d === FRIDAY ? "var(--day-empty-fri)" : "var(--day-empty)";
         }).join(" ")
     );
 
@@ -8397,7 +8409,7 @@
         el(
           "div",
           {
-            class: "hd" + (blankSet[d] ? " is-empty" : ""),
+            class: "hd" + (blankSet[d] ? " is-empty" + (d === FRIDAY ? " is-fri" : "") : ""),
             attrs: { title: blankSet[d] ? T("app.grid.emptyDay") : dayName(d) },
           },
           [
@@ -8426,7 +8438,7 @@
             class:
               "slot" +
               (onHour ? " hour" : "") +
-              (blankSet[DAYS[d]] ? " is-empty" : ""),
+              (blankSet[DAYS[d]] ? " is-empty" + (DAYS[d] === FRIDAY ? " is-fri" : "") : ""),
             style: {
               "grid-row": String(i + 2),
               "grid-column": String(DAYS[d] + 1),
@@ -8783,6 +8795,75 @@
     sizeGrid(ui.grid);
     sizeGrid(ui.overlayGrid);
     fitGridToPage();
+    scrollGridToFirstLesson();
+  }
+
+  /* --- הפריסה הרחבה (DESIGN.md, "Layout", ‏≥1200px) -------------------- */
+
+  //: אותו תנאי בדיוק כמו בלוק הפריסה הרחבה ב-style.css. ‏"screen" ולא רק
+  //: רוחב: הדפסה מחלון רחב אינה פריסה רחבה, והנייר אינו משתנה.
+  var WIDE_QUERY = "screen and (min-width: 1200px)";
+
+  function isWide() {
+    return !!(window.matchMedia && window.matchMedia(WIDE_QUERY).matches);
+  }
+
+  /**
+   * רשת שגבוהה מהתיבה שלה נגללת בתוכה (צעד 4 של סדר ההתאמה), ונפתחת
+   * גלולה אל השיעור הראשון. "נפתחת": פעם אחת לכל מערכת שמוצגת — גלילה של
+   * הסטודנט/ית אינה נדרסת בכל מדידה חוזרת.
+   */
+  function scrollGridToFirstLesson() {
+    var box = ui.gridScroll;
+    var grid = ui.grid;
+    if (!box || !grid || !isWide()) return;
+    var shown = runtime.gridShown || {};
+    if (shown.idx === undefined || shown.idx < 0) return;
+    if (box.scrollHeight <= box.clientHeight + 1) return;
+    if (runtime.gridScrolledFor &&
+        runtime.gridScrolledFor.solve === shown.solve &&
+        runtime.gridScrolledFor.idx === shown.idx) return;
+    var blocks = grid.querySelectorAll(".ev");
+    if (!blocks.length) return;
+    // ‏מהשורה של הבלוק ולא ממיקומו על המסך: בזמן תנועה בין חלופות המיקום
+    // הוא של התנועה. שורה 1 היא כותרות הימים, וכל שורה אחריה 15 דקות.
+    var first = Infinity;
+    for (var i = 0; i < blocks.length; i++) {
+      first = Math.min(first, parseInt(blocks[i].style.gridRowStart, 10) || 2);
+    }
+    // ‏הרשת כבר מתחילה חצי שעה (שתי משבצות) לפני השיעור הראשון — gridBounds —
+    // ולכן ברוב המקרים זה 0. וזה בדיוק העניין: מערכת קודמת שנגללה למטה אינה
+    // משאירה את הבאה גלולה.
+    var slot = parseFloat(grid.style.getPropertyValue("--slot-h")) || 0;
+    box.scrollTop = Math.max(0, (first - 2 - 2) * slot);
+    runtime.gridScrolledFor = { solve: shown.solve, idx: shown.idx };
+  }
+
+  /**
+   * ‏השכבה "הצג מערכת" אינה נגישה במסך רחב — הכפתור שלה בסרגל המצוף, שאינו
+   * מוצג שם. אם היא פתוחה כשהחלון מתרחב, היא נסגרת, והפוקוס עובר לרשת
+   * עצמה ולא נופל ל-body.
+   */
+  function onWideChange() {
+    if (isWide() && runtime.overlayOpen) {
+      runtime.overlayReturnTo = ui.gridScroll;
+      closeGridOverlay();
+    }
+    requestGridSizing();
+  }
+
+  /** השבוע הריק שלפני הבחירה: א׳–ה׳, בלי שעות. נבנה פעם אחת. */
+  function renderPlaceholderWeek() {
+    if (!ui.placeholder) return;
+    setHidden(ui.placeholder, state.codes.length > 0);
+    if (!ui.placeholderDays || ui.placeholderDays.childNodes.length) return;
+    [1, 2, 3, 4, 5].forEach(function (d) {
+      ui.placeholderDays.appendChild(
+        el("div", { class: "week-empty-day" }, [
+          el("span", { class: "week-empty-hd", text: Tf("app.grid.dayHeader", { day: dayLetter(d) }) }),
+        ])
+      );
+    });
   }
 
   //: ‏A4 לאורך: הצד הארוך הוא 297 מ"מ, וזה גובה העמוד המודפס. ‏@page
@@ -9470,6 +9551,9 @@
     var mq = window.matchMedia("print");
     if (mq.addEventListener) mq.addEventListener("change", sizeGrids);
     else if (mq.addListener) mq.addListener(sizeGrids);
+    var wide = window.matchMedia(WIDE_QUERY);
+    if (wide.addEventListener) wide.addEventListener("change", onWideChange);
+    else if (wide.addListener) wide.addListener(onWideChange);
   }
 
   function boot() {

@@ -187,8 +187,15 @@
                   "is-dead" (aria-disabled="true", ‏title עם הסיבה המלאה,
                   ושורה "לא משאיר מערכת אפשרית" מתחת לשם המרצה).
                   כפתור הנעיצה: class "pin-btn".
-  5 המערכת        #settings-pills, #alt-head > #alt-title #alt-sort #alt-prev #alt-pos
-                  #alt-next #btn-print, #alt-cards (כרטיס לכל חלופה)
+  5 המערכת        #settings-pills, #alt-head > #alt-title #alt-updating #alt-sort #alt-prev
+                  #alt-pos #alt-next #btn-print, #alt-cards (כרטיס לכל חלופה)
+                  #alt-updating  "מעדכן…" בזמן חישוב. ‏hidden כשאין חישוב, ובמסך
+                                 צר מוסתר תמיד (שם יש את כפתור הבנייה).
+                  #schedule-placeholder  שבוע ריק (א׳–ה׳) ושורה אחת, כשעוד לא
+                                 נבחר אף קורס. ‏hidden אחרת; במסך צר מוסתר תמיד.
+                  פריסה רחבה (‏≥1200px, ‏@media screen בלבד ב-style.css): השלבים
+                  בעמודה ימנית, ו-#step-schedule עמודה דביקה בגובה המסך.
+                  ‏#build-row ‏#sticky-bar ‏#settings-pills אינם מוצגים שם.
                   #soft-conflicts (hidden) > #soft-conflicts-sub #soft-conflicts-list
                   #schedule-summary
                   #grid-scroll > #schedule-grid
@@ -598,6 +605,9 @@
            מובילות", מיון, הקודמת/הבאה לפי הסדר הממוין, והדפסה. -->
       <div class="alt-head" id="alt-head" hidden>
         <h3 class="alt-title" id="alt-title"></h3>
+        <!-- ‏"מעדכן…" בזמן שחישוב רץ, במקום כפתור הבנייה שאינו מוצג במסך
+             רחב (DESIGN.md, "Layout"). שקט: ‎--mut‎, בלי אנימציה. -->
+        <span class="alt-updating" id="alt-updating" hidden>{{ S.app.alts.updating }}</span>
         <label class="alt-sort">
           <span class="alt-sort-label">{{ S.app.alts.sortLabel }}</span>
           <select class="input alt-sort-select" id="alt-sort">
@@ -668,6 +678,13 @@
           </div>
           <div class="detail-body" id="meeting-detail-body" aria-live="polite"></div>
         </section>
+      </div>
+
+      <!-- ‏לפני שנבחר קורס: שבוע ריק ושורה אחת (DESIGN.md, "Layout"). במסך
+           רחב בלבד; בטלפון ההערה שמתחת אומרת את זה כמו קודם. -->
+      <div class="week-empty" id="schedule-placeholder" hidden>
+        <div class="week-empty-days" id="schedule-placeholder-days" aria-hidden="true"></div>
+        <p class="week-empty-line">{{ S.app.schedule.emptyWeek }}</p>
       </div>
 
       <div class="empty" id="schedule-empty" hidden>

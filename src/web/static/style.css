@@ -3043,3 +3043,206 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
   flex-wrap: wrap;
 }
 #schedule-note:empty { display: none; }
+
+/* ==========================================================================
+   22. הפריסה הרחבה — DESIGN.md, "Layout" ו-Phase 7 (‏≥1200px), חלק א׳
+   השלבים בעמודה של כ-400px בצד ההתחלה (ימין), והמערכת בשאר הרוחב:
+   עמודה דביקה בגובה המסך בדיוק — כותרת, כרטיסים, שבבים, הרשת, מקרא.
+
+   ‏‎@media screen‎ ולא רוחב בלבד: הדפסה מחלון רחב אינה פריסה רחבה. כך שום
+   כלל כאן אינו מגיע לנייר, וההדפסה נשארת בדיוק כפי שהייתה (DESIGN.md,
+   ‏"Print"). ‏app.js שואל את אותו תנאי בדיוק (WIDE_QUERY).
+   ========================================================================== */
+
+/* ‏יום ו׳ ריק: במסך צר ועל הנייר — העמודה הצרה של תמיד. */
+:root { --day-empty-fri: var(--day-empty); }
+
+/* ‏"מעדכן…" והשבוע הריק קיימים רק בפריסה הרחבה. */
+.alt-updating { display: none; }
+.week-empty { display: none; }
+
+@media screen and (min-width: 1200px) {
+  :root {
+    /* צעד 1 של סדר ההתאמה: ליום ו׳ ריק אין עמודה. */
+    --day-empty-fri: 0px;
+    --wide-steps: 400px;
+  }
+
+  /* ‏הכותרת נגללת עם העמוד; העמודה של המערכת היא שנדבקת. */
+  .app-header { position: static; }
+
+  /* ‏השלבים על המסך והמערכת תמיד עדכנית: אין כפתור בנייה, אין סרגל מצוף
+     ‏(וממילא אין דרך לשכבה), ואין שורת הגדרות. */
+  .build-row,
+  .sticky-bar,
+  .settings-pills { display: none !important; }
+
+  /* ‏שתי עמודות. השורה האחרונה, ‎1fr‎, היא שסופגת את גובה המסך של עמודת
+     המערכת — בלעדיה הגובה הזה היה מתחלק בין שורות השלבים ופותח רווחים
+     ביניהם. ארבע שורות: ‎#build-row‎ מוסתר ואינו פריט ברשת. */
+  .steps {
+    display: grid;
+    grid-template-columns: var(--wide-steps) minmax(0, 1fr);
+    grid-template-rows: repeat(4, auto) 1fr;
+    align-items: start;
+    gap: 8px 20px;
+    max-inline-size: none;
+  }
+
+  .steps > .step--stepper { grid-column: 1; min-inline-size: 0; }
+
+  #step-schedule {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    position: sticky;
+    inset-block-start: 0;
+    block-size: 100vh;
+    min-inline-size: 0;
+    display: flex;
+    flex-direction: column;
+    padding-block: 12px;
+  }
+
+  /* ‏כותרת השלב אינה מוצגת, אבל נשארת לקורא מסך: ה-h2 הוא שם הסעיף
+     ‏(aria-labelledby), ו-‎#step-schedule-state‎ הוא אזור חי. */
+  #step-schedule > .step-head {
+    position: absolute !important;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    margin: 0;
+  }
+
+  /* כל חלק שומר על הגובה שלו; הרשת לוקחת את מה שנשאר. */
+  #step-schedule > .step-body {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    gap: 10px;
+  }
+
+  #step-schedule > .step-body > * { flex: none; }
+
+  /* ‏צעד 4: כשהשבוע גבוה מהתיבה, הרשת נגללת בתוכה. ‏.hd כבר sticky ביחס
+     למיכל הזה, ולכן שורת הימים נשארת נעוצה. ‏scrollbar-gutter: גלילה
+     שמופיעה לא מצרה את העמודות, ולכן גם לא משנה את גובה השעה. */
+  #step-schedule > .step-body > #grid-scroll {
+    flex: 0 1 auto;
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  /* ‏אין פתרון, חפיפות וביטול ויתור יושבים במקום הרשת; כשהם ארוכים
+     מהתיבה, הם נגללים בתוכה ולא דוחפים את המקרא מהמסך. */
+  #step-schedule > .step-body > #schedule-empty,
+  #step-schedule > .step-body > #soft-conflicts {
+    flex: 0 1 auto;
+    min-block-size: 0;
+    overflow-y: auto;
+  }
+
+  /* ‏צעד 1: יום ו׳ ריק אינו מוצג, וכותרת הימים היא שורה אחת. ‏"אין
+     שיעורים" נשאר ב-DOM וב-title; העמודה המוצללת אומרת אותו דבר. */
+  #schedule-grid > .is-fri { display: none; }
+  #schedule-grid .hd-empty { display: none; }
+  #schedule-grid .hd { white-space: nowrap; }
+
+  /* ‏שורת הכותרת: "5 מערכות מובילות", ולידה "מעדכן…" בזמן חישוב. */
+  .alt-title { flex: none; }
+  .alt-updating:not([hidden]) { display: inline; font-size: 13px; color: var(--mut); }
+  .alt-sort { margin-inline-start: auto; }
+
+  /* ‏פרטי השיעור במקום המקרא, בגובה שלו, והשדות זה לצד זה (פריט 8). הפאנל
+     מונח מעל ‎.grid-tools‎ ואינו תופס מקום משלו — לכן פתיחתו אינה משנה את
+     גובה הרשת, את ‎--slot-h‎ או מיקום של בלוק. הגובה המזערי הוא מה שהפאנל
+     צריך, כדי שמקרא של שורה אחת לא יחתוך אותו. */
+  .grid-tools {
+    position: relative;
+    flex-wrap: nowrap;
+    min-block-size: 4.75rem;
+  }
+
+  .grid-tools:has(> .detail:not([hidden])) > .grid-tools-main { visibility: hidden; }
+
+  .grid-tools > .detail {
+    position: absolute;
+    inset: 0;
+    min-inline-size: 0;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--gap);
+    padding: 8px 12px;
+    overflow: auto;
+  }
+
+  .grid-tools > .detail .detail-head {
+    flex: none;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .grid-tools > .detail .detail-title { flex: none; }
+
+  .grid-tools > .detail .detail-body {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  /* ‏כל שדה הוא עמודה: התווית מעל הערך, והשדות זה לצד זה. */
+  .grid-tools > .detail .detail-list {
+    grid-template-columns: none;
+    grid-template-rows: auto auto;
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    gap: 0 18px;
+  }
+
+  /* ‏לפני שנבחר קורס: שבוע ריק, א׳–ה׳, ושורה אחת. במקום הרשת, ולכן במקום
+     ההערה "יש לסמן לפחות קורס אחד" שאומרת את אותו דבר. */
+  #step-schedule .week-empty:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-block-size: 8rem;
+  }
+
+  .week-empty-days {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--panel);
+    overflow: hidden;
+  }
+
+  .week-empty-day { border-inline-start: 1px solid var(--line); }
+  .week-empty-day:first-child { border-inline-start: 0; }
+
+  .week-empty-hd {
+    display: block;
+    padding: 7px 4px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 13px;
+    background: var(--chip);
+    border-block-end: 1px solid var(--line-strong);
+  }
+
+  .week-empty-line {
+    margin: 0;
+    text-align: center;
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  #step-schedule .week-empty:not([hidden]) ~ #schedule-note { display: none; }
+}

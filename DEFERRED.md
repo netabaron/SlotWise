@@ -140,21 +140,19 @@ already says "קבוצה מלאה". Doing it would also take:
 * edits to protected browser tests, most of which open Software Engineering
   semester 5 in a fresh browser.
 
-### On a tall grid the lesson details open out of view
-**Where:** `#meeting-detail` in `src/web/templates/index.html` (inside `.grid-tools`,
-under the timetable) and `openMeetingDetail()` in `src/web/static/app.js`.
-**Owner:** Phase 7 (wide layout).
-**What:** since Phase 6 (2026-10-01) the details panel sits next to the legend, under
-the timetable (DESIGN.md, "Results page", 8). In today's single-column layout the
-grid can be taller than the viewport, so clicking a block near the top fills a panel
-that is below the fold. The block gets its course-colour outline and the panel's
-content is announced (`aria-live`), but nothing on screen shows where the details went.
-**Why not now:** Phase 7 puts the timetable in a sticky column, at most one viewport
-tall, with the legend and the details inside it (DESIGN.md, "Layout"). That keeps the
-panel in view on wide screens without any scrolling logic. Scrolling the page to the
-panel on every click was considered and not done: it moves the page away from the
-block the student just clicked, and the sticky column makes it unnecessary. On phones
-the panel is already a bottom sheet over the page, so this applies to the wide range.
+### The course code runs into the course name in the lesson details — **found 2026-10-05**
+**Where:** `.detail-code` in `src/web/static/style.css`, and the "קורס" row that
+`openMeetingDetail()` in `src/web/static/app.js` builds.
+**Owner:** unassigned.
+**What:** the details panel shows the name and code with no space between them:
+"מבוא לבדיקות תוכנה61757". Measured gap: 0px at 1000px and at 1440px wide, so
+narrow screens have it too; it is not a Phase 7 regression. The code is an
+`ltrCode()` `<bdi dir="ltr">`, so its `margin-inline-start: .5em` resolves to its
+**left** edge. In the RTL row that is the side away from the name, and nothing
+separates the two. The legend chips are unaffected: their text is one string with
+a real space ("11069 אנגלית טכנית…").
+**Why not now:** found during the Phase 7 wide-layout work and kept out of it on
+purpose (decided 2026-10-05).
 
 ### Tests that start a server read the real `data/db` — four fail on a store written by `webapp.py`
 **Where:** `tests/test_hosted_missing_groups.py` (4 of its 7 tests); more generally,
@@ -879,6 +877,32 @@ settled-page signal the entry above proposes.
 protected test file.
 
 ## Closed
+
+### On a tall grid the lesson details open out of view — closed 2026-10-05
+**Where:** `#meeting-detail` in `src/web/templates/index.html` (inside `.grid-tools`,
+under the timetable) and `openMeetingDetail()` in `src/web/static/app.js`.
+**Owner:** Phase 7 (wide layout).
+**What:** since Phase 6 (2026-10-01) the details panel sits next to the legend, under
+the timetable (DESIGN.md, "Results page", 8). In today's single-column layout the
+grid can be taller than the viewport, so clicking a block near the top fills a panel
+that is below the fold. The block gets its course-colour outline and the panel's
+content is announced (`aria-live`), but nothing on screen shows where the details went.
+**Why not now:** Phase 7 puts the timetable in a sticky column, at most one viewport
+tall, with the legend and the details inside it (DESIGN.md, "Layout"). That keeps the
+panel in view on wide screens without any scrolling logic. Scrolling the page to the
+panel on every click was considered and not done: it moves the page away from the
+block the student just clicked, and the sticky column makes it unnecessary. On phones
+the panel is already a bottom sheet over the page, so this applies to the wide range.
+**Closed 2026-10-05 by DESIGN.md Phase 7, part A (wide layout).** At ≥1200px the
+timetable column is sticky and exactly one viewport tall. The legend and the
+details sit at its bottom, so they are on screen whenever the timetable is. On wide
+screens `#meeting-detail` now takes the legend's place, in the legend's height,
+with its fields side by side. It is laid over `.grid-tools` and takes no space of
+its own, so opening it changes neither `--slot-h` nor any block's position.
+Nothing scrolls the page to the panel. `tests/test_wide_layout_browser.py`,
+`test_opening_the_details_moves_nothing`, pins this. Below 1200px the panel is
+where it was. On phones it is still a bottom sheet, so the case this entry described
+no longer exists in either range.
 
 ### Groups with no meeting time — closed 2026-10-03
 **Where:** the solver's candidate groups (`src/scheduler.py`; the exact place is

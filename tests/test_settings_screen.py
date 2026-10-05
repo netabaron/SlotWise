@@ -130,7 +130,11 @@ OVERLAP = """() => {
     for (const b of fields) {
       if (a === b) continue;
       const sr = b.sel.getBoundingClientRect();
-      if (Math.abs(lr.top - sr.top) > 60) continue;   // שורות שונות
+      // ‏חפיפה אמיתית, לגובה ולרוחב. עד 2026-10-05 "אותה שורה" הייתה כל
+      // ‏תווית שראשה בטווח 60px מראש התיבה — ובעמודת השלבים הצרה (DESIGN.md,
+      // ‏Phase 7) השורה השנייה יושבת 14px מתחת לתיבה ונספרה כחופפת.
+      const ovY = Math.min(lr.bottom, sr.bottom) - Math.max(lr.top, sr.top);
+      if (ovY <= 1) continue;   // זו מעל זו, לא זו על זו
       const ov = Math.min(lr.right, sr.right) - Math.max(lr.left, sr.left);
       if (ov > 1) bad.push(`${a.label.textContent.trim()} מכסה #${b.sel.id} ב-${Math.round(ov)}px`);
     }

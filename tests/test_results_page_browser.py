@@ -414,7 +414,9 @@ def test_settings_pills_repeat_the_step_summaries(page):
 
 
 def test_the_edit_link_returns_to_the_first_step(browser, server):
-    ctx, pg = _open_semester_5(browser, server)
+    # ‏מתחת ל-1200: שורת ההגדרות קיימת במסך צר בלבד (DESIGN.md, "Layout",
+    # ‏Phase 7). שונה באישור 2026-10-05; הבדיקה עצמה לא השתנתה.
+    ctx, pg = _open_semester_5(browser, server, width=1000)
     try:
         pg.click("#settings-pills .settings-edit")
         pg.wait_for_timeout(500)

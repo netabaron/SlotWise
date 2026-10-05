@@ -347,6 +347,7 @@
       "unpinAll": "שחרור כל הנעיצות",
       "unpinAllToast": "כל הנעיצות שוחררו.",
       "noteNoCourses": "יש לסמן לפחות קורס אחד בשלב 2.",
+      "emptyWeek": "בחרו קורסים, והמערכת תופיע כאן",
       "noteSolving": "מחשב…",
       "noteFailed": "החישוב נכשל: {error}",
       "fitLabel": "התאמה",
@@ -754,7 +755,8 @@
       "cardFacts": "{days} ימים, עד {time}",
       "cardFactsOneDay": "יום אחד, עד {time}",
       "cardName": "מערכת {n}",
-      "cardLabel": "מערכת {n}: {facts}. {label}"
+      "cardLabel": "מערכת {n}: {facts}. {label}",
+      "updating": "מעדכן…"
     },
     "detail": {
       "title": "פרטי השיעור",
