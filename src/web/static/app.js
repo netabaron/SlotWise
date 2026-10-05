@@ -3132,6 +3132,7 @@
     ui.altHead = byId("alt-head");
     ui.altTitle = byId("alt-title");
     ui.altUpdating = byId("alt-updating");
+    ui.altLabel = byId("alt-label");
     ui.altSort = byId("alt-sort");
     ui.altPrev = byId("alt-prev");
     ui.altNext = byId("alt-next");
@@ -6713,6 +6714,14 @@
     // ‏"מעדכן…" ליד הכותרת בזמן חישוב. במסך צר הוא מוסתר ב-CSS: שם כפתור
     // הבנייה הוא מה שמראה שהמערכת מתעדכנת (DESIGN.md, "Layout").
     setHidden(ui.altUpdating, !runtime.solveBusy);
+    // ‏התווית המבדילה של הנבחרת, פעם אחת בשורת הכותרת. מוצגת רק כשהכרטיסים
+    // הם רצועה דקה ואין בהם תוויות (צעד 2 של סדר ההתאמה, fitScreenGrid).
+    if (ui.altLabel) {
+      var shownLabel = txt(labels[active]);
+      setText(ui.altLabel, shownLabel);
+      if (shownLabel) ui.altLabel.setAttribute("title", shownLabel);
+      else ui.altLabel.removeAttribute("title");
+    }
     setText(ui.altPos, Tf("app.alts.position", { pos: pos + 1, total: list.length }));
     if (ui.altPrev) ui.altPrev.disabled = pos <= 0;
     if (ui.altNext) ui.altNext.disabled = pos >= order.length - 1;
@@ -8490,13 +8499,18 @@
       var name = txt(m.name) || nameOf(m.code);
       var room = roomOf(m);
       var lecturer = txt(m.lecturer);
-      var label = Tf("app.grid.openDetail", {
+      // ‏השם הנגיש נושא את כל מה שבבלוק — גם את הסוג ואת המרצה. במסך רחב
+      // בלוק קצר מוותר על שורות (fitScreenGrid), והשם הזה, ה-title והפאנל
+      // הם מה שנשאר מהן.
+      var label = Tf(txt(m.kind) ? "app.grid.openDetailKind" : "app.grid.openDetail", {
         name: name,
+        kind: txt(m.kind),
         day: dayLetter(m.day),
         from: fmtTime(from),
         to: fmtTime(to),
         room: room || T("app.detail.noRoom"),
       });
+      if (lecturer) label += " · " + Tf("app.grid.labelLecturer", { lecturer: lecturer });
       if (isFullGroup(m)) label += " · " + T("app.grid.groupFull");
       if (clash) {
         var others = overlapPartners(m, meetings, marks)
@@ -8726,7 +8740,7 @@
     // אפס. כשהיא תופיע, ה-ResizeObserver יקרא לכאן שוב.
     if (!blocks.length || !root.getClientRects().length) {
       root.style.removeProperty("--slot-h");
-      return;
+      return false;
     }
     // ‏בזמן תנועה בין חלופות הגובה והרוחב של הבלוקים הם של התנועה, לא של
     // התוכן — ערכי אנימציה גוברים גם על ‎.is-measuring‎. מדידה עכשיו הייתה
@@ -8752,7 +8766,7 @@
             requestGridSizing();
           });
         }
-        return;
+        return false;
       }
     }
     setClass(root, "is-measuring", true);
@@ -8777,6 +8791,7 @@
       slot += 1;
       root.style.setProperty("--slot-h", slot + "px");
     }
+    return true;
   }
 
   function anyBlockOverflows(blocks) {
@@ -8792,10 +8807,143 @@
       window.cancelAnimationFrame(gridSizingFrame);
     }
     gridSizingFrame = 0;
-    sizeGrid(ui.grid);
+    fitScreenGrid();
     sizeGrid(ui.overlayGrid);
     fitGridToPage();
     scrollGridToFirstLesson();
+  }
+
+  /**
+   * השבוע כולו על המסך (DESIGN.md, "Layout", סדר ההתאמה; ‏≥1200px, מסך בלבד).
+   *
+   * כל מדידה מתחילה מאפס: גובה שעה מהתוכן, שלוש שורות בכל בלוק, כרטיסים
+   * מלאים. משם, כל צעד רק אם הקודם לא הספיק:
+   *   1. תמיד (CSS): אין עמודה ליום ו׳ ריק, כותרת הימים בשורה אחת.
+   *   2. הכרטיסים הופכים לרצועה דקה (‎.is-strip‎), ומודדים שוב.
+   *   3. גובה השעה הוא מה שנכנס, ובלוק נמוך מוותר על שורה 3 ואז על שורה 2 —
+   *      שורה שלמה או כלום. שם הקורס נשאר תמיד, במלואו.
+   *   4. כשגם שם קורס כלשהו אינו נכנס: חזרה לגובה מהתוכן ולשלוש שורות,
+   *      והרשת נגללת בתוכה. הרצועה נשארת.
+   * הצעד שחל נרשם ב-data-fit של ‎#step-schedule‎.
+   *
+   * ‏מה שהפיל את fitBlocks() (DEFERRED.md, "Grid blocks ship with lecturer
+   * names sliced in half") היה מדידה לפני שהפריסה התייצבה. כאן כל המדידות
+   * רצות מתוך sizeGrids — אחרי הפריסה, ושוב בכל שינוי רוחב, גופן ומעבר
+   * להדפסה — ובסוף נבדק שאף בלוק אינו גולש. בלוק שגולש מוותר על שורה נוספת,
+   * ואם גם שורת השם לבדה גולשת, חוזרים לצעד 4. אין חיתוך באמצע שורה.
+   *
+   * ‏הכל קורה בתוך אותו פריים, לפני הציור, ולכן ההחזרה לאפס אינה נראית.
+   * והתוצאה דטרמיניסטית: מדידה חוזרת מאותו מצב מגיעה לאותו צעד, כך
+   * שה-ResizeObserver אינו נכנס ללולאה בין שני צעדים.
+   */
+  function fitScreenGrid() {
+    var grid = ui.grid;
+    var box = ui.gridScroll;
+    var col = ui.steps && ui.steps.schedule;
+    if (!grid) return;
+    var printing = !!(window.matchMedia && window.matchMedia("print").matches);
+    // ‏בזמן תנועה בין חלופות לא מודדים ולא מאפסים — sizeGrid מחכה לנחיתה
+    // ומבקש מדידה חוזרת אחריה.
+    if (!printing && moveAnimations(grid).length) {
+      sizeGrid(grid);
+      return;
+    }
+    clearShortLines(grid);
+    if (col) setClass(col, "is-strip", false);
+    var measured = sizeGrid(grid);
+    if (!col) return;
+    if (!isWide() || !measured || !box || box.hidden) {
+      col.removeAttribute("data-fit");
+      return;
+    }
+    if (gridFits(box)) return col.setAttribute("data-fit", "1");
+    setClass(col, "is-strip", true);
+    if (gridFits(box)) return col.setAttribute("data-fit", "2");
+    if (shortenBlocks(grid, box)) return col.setAttribute("data-fit", "3");
+    clearShortLines(grid);
+    sizeGrid(grid);
+    col.setAttribute("data-fit", "4");
+  }
+
+  function gridFits(box) {
+    return box.scrollHeight <= box.clientHeight + 1;
+  }
+
+  function clearShortLines(grid) {
+    var blocks = grid.querySelectorAll(".ev[data-lines]");
+    for (var i = 0; i < blocks.length; i++) blocks[i].removeAttribute("data-lines");
+    setClass(grid, "fit-m1", false);
+    setClass(grid, "fit-m2", false);
+  }
+
+  //: שעה = ארבע משבצות של 15 דקות.
+  var SLOTS_PER_HOUR = 60 / SLOT_MINUTES;
+
+  /**
+   * צעד 3. מחזיר false כשאין לו פתרון — אז fitScreenGrid עובר לצעד 4.
+   *
+   * לכל בלוק נמדד הגובה הטבעי שלו בשלוש שורות, בשתיים ובאחת, וההחלטה לכל
+   * בלוק היא כמה שורות נכנסות בשטח שלו בגובה השעה החדש.
+   */
+  function shortenBlocks(grid, box) {
+    var blocks = grid.querySelectorAll(".ev");
+    var slots = grid.querySelectorAll(".tl").length;
+    var head = grid.querySelector(".hd");
+    if (!blocks.length || !slots || !head) return false;
+    var avail = box.clientHeight - head.getBoundingClientRect().height;
+    // ‏רבע פיקסל מטה: עיגול כלפי מעלה היה משאיר את הרשת גבוהה מהתיבה בשבריר.
+    var slot = Math.floor((avail / slots) * 4) / 4;
+    if (!(slot > 0)) return false;
+
+    // ‏תוויות השעה: השעה כולה (ארבע משבצות) חייבת להכיל את התווית.
+    var hour = grid.querySelector(".tl.hour");
+    if (hour) {
+      var range = document.createRange();
+      range.selectNodeContents(hour);
+      var labelH = range.getBoundingClientRect().height + 2;
+      if (slot * SLOTS_PER_HOUR < labelH) return false;
+    }
+
+    var heights = [[], [], []]; // ‏[שורה אחת, שתיים, שלוש]
+    setClass(grid, "is-measuring", true);
+    [["", 2], ["fit-m2", 1], ["fit-m1", 0]].forEach(function (pass) {
+      if (pass[0]) setClass(grid, pass[0], true);
+      for (var j = 0; j < blocks.length; j++) {
+        var cs = getComputedStyle(blocks[j]);
+        heights[pass[1]][j] =
+          blocks[j].getBoundingClientRect().height +
+          num(parseFloat(cs.marginTop), 0) +
+          num(parseFloat(cs.marginBottom), 0);
+      }
+    });
+    setClass(grid, "is-measuring", false);
+    setClass(grid, "fit-m1", false);
+    setClass(grid, "fit-m2", false);
+
+    var lines = [];
+    var i;
+    for (i = 0; i < blocks.length; i++) {
+      var room = Math.max(1, num(blocks[i].dataset.rows, 1)) * slot;
+      if (heights[0][i] > room) return false; // ‏גם שם הקורס לבדו אינו נכנס
+      lines[i] = heights[2][i] <= room ? 3 : heights[1][i] <= room ? 2 : 1;
+    }
+    grid.style.setProperty("--slot-h", slot + "px");
+    for (i = 0; i < blocks.length; i++) {
+      if (lines[i] < 3) blocks[i].setAttribute("data-lines", String(lines[i]));
+    }
+    // ‏הבדיקה, לא ההנחה: בלוק שעדיין גולש (עיגול) מוותר על שורה נוספת.
+    for (var pass = 0; pass < 2; pass++) {
+      var over = false;
+      for (i = 0; i < blocks.length; i++) {
+        if (blocks[i].scrollHeight <= blocks[i].clientHeight) continue;
+        over = true;
+        if (lines[i] === 1) return false;
+        lines[i] -= 1;
+        blocks[i].setAttribute("data-lines", String(lines[i]));
+      }
+      if (!over) break;
+    }
+    return !anyBlockOverflows(blocks) && gridFits(box);
   }
 
   /* --- הפריסה הרחבה (DESIGN.md, "Layout", ‏≥1200px) -------------------- */

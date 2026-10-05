@@ -191,6 +191,10 @@
                   #alt-pos #alt-next #btn-print, #alt-cards (כרטיס לכל חלופה)
                   #alt-updating  "מעדכן…" בזמן חישוב. ‏hidden כשאין חישוב, ובמסך
                                  צר מוסתר תמיד (שם יש את כפתור הבנייה).
+                  #alt-label     התווית המבדילה של הנבחרת. מוצגת רק ב-is-strip.
+                  ‏#step-schedule[data-fit="1".."4"]  איזה צעד של סדר ההתאמה חל
+                                 (מסך רחב בלבד); ‏.is-strip = כרטיסים כרצועה דקה.
+                                 ‏.ev[data-lines="2"|"1"] = בלוק שוויתר על שורה 3 / 2-3.
                   #schedule-placeholder  שבוע ריק (א׳–ה׳) ושורה אחת, כשעוד לא
                                  נבחר אף קורס. ‏hidden אחרת; במסך צר מוסתר תמיד.
                   פריסה רחבה (‏≥1200px, ‏@media screen בלבד ב-style.css): השלבים
@@ -608,6 +612,9 @@
         <!-- ‏"מעדכן…" בזמן שחישוב רץ, במקום כפתור הבנייה שאינו מוצג במסך
              רחב (DESIGN.md, "Layout"). שקט: ‎--mut‎, בלי אנימציה. -->
         <span class="alt-updating" id="alt-updating" hidden>{{ S.app.alts.updating }}</span>
+        <!-- ‏התווית המבדילה של המערכת שנבחרה, בשורה אחת. מוצגת רק כשהכרטיסים
+             הם רצועה דקה בלי תוויות (DESIGN.md, "Layout", צעד 2 של ההתאמה). -->
+        <span class="alt-head-label" id="alt-label"></span>
         <label class="alt-sort">
           <span class="alt-sort-label">{{ S.app.alts.sortLabel }}</span>
           <select class="input alt-sort-select" id="alt-sort">

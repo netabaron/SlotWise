@@ -394,6 +394,8 @@
       "clashBadge": "חפיפה",
       "emptyDay": "אין שיעורים",
       "openDetail": "פרטי השיעור: {name}, {day}׳ {from}–{to}, חדר {room}",
+      "openDetailKind": "פרטי השיעור: {name}, {kind}, {day}׳ {from}–{to}, חדר {room}",
+      "labelLecturer": "מרצה: {lecturer}",
       "legendOverlap": "מסגרת מקווקוות — חפיפה מכוונת",
       "legendHint": "לחיצה על שיעור פותחת את פרטיו",
       "legendChip": "{code} {name} · {credits}",

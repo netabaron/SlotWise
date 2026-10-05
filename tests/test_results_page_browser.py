@@ -177,8 +177,18 @@ def _assert_three_full_lines(blocks, where):
 # ==========================================================================
 # 1. הבלוקים: שלוש שורות, שום גלישה
 # ==========================================================================
-def test_every_block_shows_three_full_lines_at_1440(page):
-    _assert_three_full_lines(page.evaluate(BLOCKS), "1440")
+#: ‏הגובה הקטן ביותר שבו סמסטר 5 אינו מתקצר במסך רחב, לכל רוחב. נמדד 2026-10-05.
+STEP1_HEIGHT = {1440: 1426, 1200: 1832}
+
+
+def test_every_block_shows_three_full_lines_at_1440(browser, server):
+    # ‏גובה החלון בלבד (באישור, 2026-10-05): במסך רחב השבוע נכנס לתיבה, וזה
+    # ‏הגובה הקטן ביותר שבו אינו מתקצר (צעד 1, DESIGN.md "Layout"). נמדד.
+    ctx, page = _open_semester_5(browser, server, width=1440, height=STEP1_HEIGHT[1440])
+    try:
+        _assert_three_full_lines(page.evaluate(BLOCKS), "1440")
+    finally:
+        ctx.close()
 
 
 def test_the_three_lines_are_name_kind_time_and_lecturer_room(page):
@@ -201,7 +211,9 @@ def test_the_three_lines_are_name_kind_time_and_lecturer_room(page):
 
 @pytest.mark.parametrize("width", [1440, 1200])
 def test_no_block_overflows(browser, server, width):
-    ctx, pg = _open_semester_5(browser, server, width=width)
+    # ‏גובה החלון בלבד (באישור, 2026-10-05): במסך רחב השבוע נכנס לתיבה, וזה
+    # ‏הגובה הקטן ביותר שבו אינו מתקצר (צעד 1, DESIGN.md "Layout"). נמדד.
+    ctx, pg = _open_semester_5(browser, server, width=width, height=STEP1_HEIGHT[width])
     try:
         blocks = pg.evaluate(BLOCKS)
         over = [(b["name"], b["overflow"]) for b in blocks if b["overflow"] > 0]
@@ -211,26 +223,32 @@ def test_no_block_overflows(browser, server, width):
         ctx.close()
 
 
-def test_the_hour_height_comes_from_the_content(page):
+def test_the_hour_height_comes_from_the_content(browser, server):
     """פיקסל אחד פחות למשבצת, ולפחות בלוק אחד גולש. כלומר הגובה הוא הקטן
     ביותר שמכיל את התוכן — ולא מספר קבוע שבמקרה גדול מספיק."""
-    got = page.evaluate(
-        """() => {
-          const g = document.getElementById('schedule-grid');
-          const slot = parseFloat(g.style.getPropertyValue('--slot-h'));
-          const evs = [...g.querySelectorAll('.ev')];
-          const over = () => evs.filter(e => e.scrollHeight > e.clientHeight).length;
-          const atSlot = over();
-          g.style.setProperty('--slot-h', (slot - 1) + 'px');
-          const below = over();
-          g.style.setProperty('--slot-h', slot + 'px');
-          return {slot, atSlot, below};
-        }"""
-    )
-    assert got["atSlot"] == 0, got
-    assert got["below"] > 0 or got["slot"] <= 12, (
-        f"גם ב-{got['slot'] - 1}px שום בלוק אינו גולש — הגובה אינו נגזר מהתוכן: {got}"
-    )
+    # ‏גובה החלון בלבד (באישור, 2026-10-05): במסך רחב השבוע נכנס לתיבה, וזה
+    # ‏הגובה הקטן ביותר שבו אינו מתקצר (צעד 1, DESIGN.md "Layout"). נמדד.
+    ctx, page = _open_semester_5(browser, server, width=1440, height=STEP1_HEIGHT[1440])
+    try:
+        got = page.evaluate(
+            """() => {
+              const g = document.getElementById('schedule-grid');
+              const slot = parseFloat(g.style.getPropertyValue('--slot-h'));
+              const evs = [...g.querySelectorAll('.ev')];
+              const over = () => evs.filter(e => e.scrollHeight > e.clientHeight).length;
+              const atSlot = over();
+              g.style.setProperty('--slot-h', (slot - 1) + 'px');
+              const below = over();
+              g.style.setProperty('--slot-h', slot + 'px');
+              return {slot, atSlot, below};
+            }"""
+        )
+        assert got["atSlot"] == 0, got
+        assert got["below"] > 0 or got["slot"] <= 12, (
+            f"גם ב-{got['slot'] - 1}px שום בלוק אינו גולש — הגובה אינו נגזר מהתוכן: {got}"
+        )
+    finally:
+        ctx.close()
 
 
 def test_screen_blocks_keep_the_13px_floor(page):

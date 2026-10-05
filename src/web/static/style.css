@@ -3246,3 +3246,61 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
 
   #step-schedule .week-empty:not([hidden]) ~ #schedule-note { display: none; }
 }
+
+/* ==========================================================================
+   23. הפריסה הרחבה, חלק ב׳ — צעדים 2 ו-3 של סדר ההתאמה (DESIGN.md, "Layout")
+   ‏app.js (fitScreenGrid) מחליט איזה צעד חל ורושם אותו ב-data-fit; כאן רק
+   המראה של כל צעד. גם כאן הכל ב-‎@media screen‎: שום כלל אינו מגיע לנייר,
+   גם אם מחלקה נשארה על אלמנט כשההדפסה התחילה.
+   ========================================================================== */
+
+/* ‏התווית המבדילה בשורת הכותרת קיימת רק ברצועה הדקה. */
+.alt-head-label { display: none; }
+
+@media screen and (min-width: 1200px) {
+  /* ‏צעד 2: כל כרטיס הוא שמו והשבוע המוקטן שלו בשורה אחת. "N ימים, עד
+     HH:MM" יורד (שבבי הנתונים אומרים אותו), והתווית עוברת לשורת הכותרת. */
+  #step-schedule.is-strip .alt-card {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+  }
+
+  #step-schedule.is-strip .alt-card.is-selected { padding: 3px 7px; }
+  #step-schedule.is-strip .alt-card-name { flex: none; white-space: nowrap; }
+  #step-schedule.is-strip .alt-card .mini { flex: 1 1 auto; block-size: 1.6rem; }
+
+  #step-schedule.is-strip .alt-card-facts,
+  #step-schedule.is-strip .alt-card-label { display: none; }
+
+  /* ‏שורה אחת, תמיד: בסיס 0 כדי שתווית ארוכה לא תשבור את שורת הכותרת.
+     המלאה ב-title, ובשם הנגיש של הכרטיס הנבחר. */
+  #step-schedule.is-strip .alt-head-label:not(:empty) {
+    display: block;
+    flex: 1 1 0;
+    min-inline-size: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  /* ‏צעד 3: בלוק נמוך מוותר על שורה שלמה — שורה 3 (מרצה · חדר) ואחריה
+     שורה 2 (סוג · שעה). שם הקורס לעולם אינו יורד. ‏fit-m2/fit-m1 הן מצבי
+     המדידה של אותן שתי ירידות, על כל הרשת לרגע אחד. */
+  #schedule-grid .ev[data-lines="2"] > .ev-who,
+  #schedule-grid .ev[data-lines="1"] > .ev-who,
+  #schedule-grid .ev[data-lines="1"] > .ev-when,
+  #schedule-grid.fit-m2 .ev > .ev-who,
+  #schedule-grid.fit-m1 .ev > .ev-who,
+  #schedule-grid.fit-m1 .ev > .ev-when { display: none; }
+
+  /* ‏בגובה שעה נמוך תווית השעה גבוהה מהמשבצת שלה. המשבצות שמתחתיה ריקות,
+     ולכן היא נצבעת מעליהן במקום להיחתך ברקע שלהן. */
+  #step-schedule[data-fit="3"] #schedule-grid .tl.hour {
+    overflow: visible;
+    z-index: 3;
+  }
+}

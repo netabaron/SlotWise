@@ -158,8 +158,8 @@ def _statuses(by_code):
     return mutate
 
 
-def _open(browser, server, mutate=None, extra_codes=(), ranked=None, width=1440):
-    ctx = browser.new_context(viewport={"width": width, "height": 1000}, color_scheme="light")
+def _open(browser, server, mutate=None, extra_codes=(), ranked=None, width=1440, height=1000):
+    ctx = browser.new_context(viewport={"width": width, "height": height}, color_scheme="light")
     page = ctx.new_page()
     page.errors = []  # type: ignore[attr-defined]
     page.on("pageerror", lambda e: page.errors.append(str(e)))  # type: ignore[attr-defined]
@@ -216,7 +216,9 @@ def test_only_a_full_group_is_marked_and_the_lines_still_fit(browser, server):
     מלאה". "מיועד לחוזרים" ו"רשימת המתנה" אינם מסמנים את הבלוק בשום צורה —
     לא בנוסח קצר, לא בטקסט של הידיעון. שלוש השורות עדיין נכנסות."""
     by_code = {"61756": VALUE["full"], "61759": VALUE["repeaters"], "62027": VALUE["waitlist"]}
-    ctx, pg = _open(browser, server, mutate=_statuses(by_code))
+    # ‏גובה החלון בלבד (באישור, 2026-10-05): במסך רחב השבוע נכנס לתיבה, וזה
+    # ‏הגובה הקטן ביותר שבו אינו מתקצר (צעד 1, DESIGN.md "Layout"). נמדד.
+    ctx, pg = _open(browser, server, mutate=_statuses(by_code), height=1426)
     try:
         rows = pg.evaluate(BLOCKS)
         status = " · " + GRID["groupFull"]

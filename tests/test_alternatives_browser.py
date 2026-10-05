@@ -462,7 +462,9 @@ def _first_differing_rank(page):
 
 
 def test_switching_moves_the_same_blocks_and_keeps_the_hour_height(browser, server):
-    ctx, pg = _open(browser, server)
+    # ‏גובה החלון בלבד (באישור, 2026-10-05): במסך רחב השבוע נכנס לתיבה, וזה
+    # ‏הגובה הקטן ביותר שבו אינו מתקצר (צעד 1, DESIGN.md "Layout"). נמדד.
+    ctx, pg = _open(browser, server, height=1426)
     try:
         rank = _first_differing_rank(pg)
         assert rank, "כל החלופות זהות — אין מה להזיז"
@@ -498,7 +500,9 @@ def test_the_hour_height_follows_the_alternative_after_the_move_lands(browser, s
     ‏זו הבדיקה שהייתה תופסת את הבאג שבדיקת ההחלפה הרגילה פספסה: עם הנתונים
     האמיתיים לכל החלופות אותו גובה, ולכן מדידה באמצע התנועה (מהגובה הישן)
     נראתה נכונה במקרה."""
-    ctx, pg = _open(browser, server, craft=_craft_taller_second)
+    # ‏גובה החלון בלבד (באישור, 2026-10-05): במסך רחב השבוע נכנס לתיבה, וזה
+    # ‏הגובה הקטן ביותר שבו אינו מתקצר (צעד 1, DESIGN.md "Layout"). נמדד.
+    ctx, pg = _open(browser, server, craft=_craft_taller_second, height=2187)
     try:
         first = pg.evaluate(SETTLED)["slot"]
         pg.click('#alt-cards [data-rank="2"]')
@@ -520,7 +524,9 @@ def test_the_hour_height_follows_the_alternative_after_the_move_lands(browser, s
 
 def test_a_second_switch_mid_move_lands_cleanly(browser, server):
     """שתי החלפות בתוך 550ms: התנועה הראשונה נעצרת, והכול נוחת במקום ובגובה."""
-    ctx, pg = _open(browser, server, craft=_craft_taller_second)
+    # ‏גובה החלון בלבד (באישור, 2026-10-05): במסך רחב השבוע נכנס לתיבה, וזה
+    # ‏הגובה הקטן ביותר שבו אינו מתקצר (צעד 1, DESIGN.md "Layout"). נמדד.
+    ctx, pg = _open(browser, server, craft=_craft_taller_second, height=2187)
     try:
         pg.click('#alt-cards [data-rank="2"]')
         pg.wait_for_timeout(120)
