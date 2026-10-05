@@ -279,6 +279,7 @@ def test_the_pill_ticks_on_the_current_selection_only(page):
     choose(page, SW, 4)
     check = "#electives-groups .elective-cluster[data-key='מדעים'] .elective-pill-check"
     assert page.locator(check).count() == 0
+    page.click("#electives-groups .elective-cluster[data-key='מדעים']" + " .elective-cluster-head")  # פתיחת האשכול לפני שימוש בשבב (באישור, 2026-10-05)
     page.click("#electives-groups .elective-chip[data-code='61957']")
     page.wait_for_timeout(700)
     assert page.locator(check).count() == 1

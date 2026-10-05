@@ -1576,18 +1576,90 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .elective-chip .tag--spec { font-size: 11px; }
 .elective-chip.is-selected .tag--spec { border-color: var(--ev-fg); color: var(--ev-fg); }
 
-.electives-groups { display: grid; gap: 10px; }
+.electives-groups { display: grid; gap: 6px; }
+/* ‏כל אשכול הוא שורה אחת שנפתחת בלחיצה (DESIGN.md, "Elective clusters",
+   2026-10-05). השורה היא ה-<button>; השבבים וההערות מתקפלים מתחתיה. */
 .elective-cluster {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
 }
-.elective-cluster-head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
-.elective-cluster-title { margin: 0; font-size: 14px; font-weight: 700; }
+.elective-cluster.is-open { border-color: var(--line-strong); }
+.elective-cluster-heading { margin: 0; font-size: inherit; font-weight: inherit; }
+/* ‏שורה אחת תמיד: שם ארוך נשבר בתוך המקום שלו (‎min-inline-size: 0‎),
+   ולא דוחף את הספירה לשורה שנייה. שום דבר אינו נחתך. */
+.elective-cluster-head {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px 8px;
+  align-items: center;
+  inline-size: 100%;
+  padding: 8px 12px;
+  font: inherit;
+  color: var(--ink);
+  text-align: start;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.elective-cluster-head:hover { background: var(--panel-2); }
+.elective-cluster-head:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.elective-cluster-title { margin: 0; font-size: 14px; font-weight: 700; flex: 0 1 auto; min-inline-size: 0; }
+.elective-cluster-head .elective-pill { flex: none; }
+/* ‏"נבחרו N" / "N קורסים" בסוף השורה, ואחריו החץ. */
+.elective-cluster-count {
+  flex: none;
+  margin-inline-start: auto;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.elective-cluster-count.is-picked { color: var(--ink); font-weight: 600; }
+/* ‏צדדים פיזיים בכוונה: ימין ותחתית מסובבים ב-45° הם חץ למטה בכל כיוון
+   כתיבה. ב-‎inline-end‎ החץ פנה הצידה בעמוד RTL. */
+.elective-caret {
+  inline-size: 8px;
+  block-size: 8px;
+  flex: none;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 350ms cubic-bezier(.2, .8, .2, 1);
+}
+.elective-cluster.is-open .elective-caret { transform: rotate(-135deg) translateY(-2px); }
+/* ‏הקיפול: אותה תנועה ואותו תזמון כמו השלבים (‎.step-fold‎). סגור = נחתך
+   לגובה אפס, ו-app.js שם על הגוף ‎hidden="until-found"‎ (הוחלט 2026-10-05):
+   לא מצויר, מחוץ לסדר ה-Tab ולעץ הנגישות, ו-Ctrl+F עדיין מוצא אותו ופותח את
+   האשכול (beforematch). בזמן תנועת הסגירה, ובדפדפן בלי until-found, העטיפה
+   ‏‎inert‎ במקום זה. */
+.elective-fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 350ms cubic-bezier(.2, .8, .2, 1);
+}
+.elective-cluster.is-open > .elective-fold { grid-template-rows: 1fr; }
+.elective-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-block-size: 0;
+  overflow: hidden;
+  padding-inline: 12px;
+  transition: padding-block 350ms cubic-bezier(.2, .8, .2, 1);
+}
+.elective-cluster.is-open .elective-body { padding-block: 2px 12px; }
+/* ‏‎hidden="until-found"‎ חייב להישאר מוצג: הדפדפן מסתיר אותו ב-‎content-visibility‎
+   ‏ומחפש בו ב-Ctrl+F. הכלל הכללי ‎[hidden] { display: none !important }‎ היה
+   ‏מוציא אותו גם מהחיפוש. */
+.elective-body[hidden="until-found"] { display: flex !important; }
+@media (prefers-reduced-motion: reduce) {
+  .elective-fold,
+  .elective-body,
+  .elective-caret { transition: none; }
+}
 .elective-pill {
   font-size: 12px;
   font-weight: 600;

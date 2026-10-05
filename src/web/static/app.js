@@ -5685,11 +5685,32 @@
       });
     });
 
+    // ‏כל האשכולות סגורים אחרי החלפת מסלול, שנה או סמסטר (DESIGN.md,
+    // ‏"Elective clusters", 2026-10-05). הבחירה של מי פתוח חיה ב-runtime ולא
+    // ב-state: היא אינה העדפה שנשמרת, רק מקום על המסך.
+    var sig = clusterIdentity();
+    if (sig !== runtime.clusterIdentity) {
+      runtime.clusterIdentity = sig;
+      runtime.openCluster = null;
+    }
+
     rebuild(ui.electivesGroups, function (box) {
-      (data.clusters || []).forEach(function (cluster) {
-        var head = el("div", { class: "elective-cluster-head" }, [
-          el("h4", { class: "elective-cluster-title", text: txt(cluster.title) }),
-        ]);
+      (data.clusters || []).forEach(function (cluster, clusterIdx) {
+        var key = txt(cluster.key);
+        var bodyId = "elective-body-" + clusterIdx;
+        // ‏שורה אחת שנפתחת בלחיצה: שם, גלולת המינימום (עם ה-✓ כמו קודם),
+        // ‏ובסוף "נבחרו N" או "N קורסים". ‏<button> בתוך ה-h4, כמו בכותרות
+        // ‏השלבים: הכותרת נשארת כותרת, והשורה כולה היא הפקד.
+        var head = el("button", {
+          class: "elective-cluster-head",
+          attrs: { type: "button", "aria-expanded": "false", "aria-controls": bodyId },
+          data: { key: key },
+          on: {
+            click: function () {
+              toggleCluster(key);
+            },
+          },
+        }, [el("span", { class: "elective-cluster-title", text: txt(cluster.title) })]);
         // ‏✓ על "לפחות N קורסים" כשנבחרו N קורסים מהאשכול בסמסטר הזה. זה
         // ‏"נבחר עכשיו", לא "הושלם": מה שנלמד קודם אינו ידוע.
         var pickedCodes = (cluster.courses || [])
@@ -5727,6 +5748,20 @@
           }
           head.appendChild(node);
         });
+        var selectable = (cluster.courses || []).filter(function (course) {
+          return !!txt(course.code);
+        }).length;
+        head.appendChild(
+          el("span", {
+            class: "elective-cluster-count" + (pickedCodes.length ? " is-picked" : ""),
+            text: pickedCodes.length
+              ? Tf("app.electives.countPicked", { n: pickedCodes.length })
+              : selectable === 1
+              ? T("app.electives.countCoursesOne")
+              : Tf("app.electives.countCourses", { n: selectable }),
+          })
+        );
+        head.appendChild(el("span", { class: "elective-caret", attrs: { "aria-hidden": "true" } }));
         var chips = el("div", { class: "elective-chips" });
         (cluster.courses || []).forEach(function (course) {
           var code = txt(course.code);
@@ -5775,13 +5810,116 @@
             )
           );
         });
-        var parts = [head, chips];
-        (notesByCluster[txt(cluster.key)] || []).forEach(function (line) {
+        var parts = [chips];
+        (notesByCluster[key] || []).forEach(function (line) {
           parts.push(el("p", { class: "elective-cluster-note", text: line }));
         });
-        box.appendChild(el("section", { class: "elective-cluster", data: { key: txt(cluster.key) } }, parts));
+        box.appendChild(
+          el("section", { class: "elective-cluster", data: { key: key } }, [
+            el("h4", { class: "elective-cluster-heading" }, [head]),
+            // ‏אותה תנועה כמו השלבים: ‎grid-template-rows 0fr ↔ 1fr‎ על העטיפה,
+            // ‏והגוף בתוכה. סגור = ‎hidden="until-found"‎ — לא מצויר, מחוץ לסדר
+            // ‏ה-Tab ולעץ הנגישות, ו-Ctrl+F עדיין מוצא אותו. ‏beforematch פותח את
+            // ‏האשכול באותה דרך כמו לחיצה (applyClusterOpen).
+            el("div", { class: "elective-fold", attrs: { id: bodyId } }, [
+              el("div", {
+                class: "elective-body",
+                on: {
+                  beforematch: function () {
+                    if (runtime.openCluster !== key) toggleCluster(key);
+                  },
+                },
+              }, parts),
+            ]),
+          ])
+        );
       });
     });
+    // ‏אלמנטים חדשים: מצב סגור מיד, בלי לחכות לתנועה שלא קרתה.
+    applyClusterOpen(true);
+  }
+
+  /** מסלול, מועד, שנה וסמסטר — מה שמחליף אותם סוגר את כל האשכולות. */
+  function clusterIdentity() {
+    return [state.program, state.intake, state.studyYear, state.term, state.semester]
+      .map(function (v) {
+        return v === null || v === undefined ? "" : String(v);
+      })
+      .join("|");
+  }
+
+  /** אשכול אחד פתוח לכל היותר: פתיחה של אחד סוגרת את האחר. */
+  function toggleCluster(key) {
+    runtime.openCluster = runtime.openCluster === key ? null : key;
+    applyClusterOpen();
+  }
+
+  //: ‏‎hidden="until-found"‎ נתמך? (‏Chrome 102+.) בלעדיו — ‎inert‎ כמו קודם.
+  var UNTIL_FOUND = "onbeforematch" in document.documentElement;
+  //: אורך התנועה של הקיפול (style.css, ‎.elective-fold‎).
+  var CLUSTER_FOLD_MS = 350;
+
+  function reducedMotion() {
+    return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+
+  /**
+   * ‏מסמן את האשכול הפתוח בלי לבנות מחדש — כך הגובה מונפש (DESIGN.md, 350ms),
+   * והפוקוס נשאר על השורה שנלחצה.
+   *
+   * ‏סגור (2026-10-05): ‎hidden="until-found"‎ על הגוף. הוא אינו מצויר, ולכן גם
+   * מחוץ לסדר ה-Tab ולעץ הנגישות — אבל Ctrl+F מוצא את הטקסט, והדפדפן יורה
+   * ‏beforematch, שפותח את האשכול דרך toggleCluster (כלל "אחד פתוח" נשמר).
+   * ‏בזמן תנועת הסגירה הגוף עדיין מצויר, ולכן עד שהיא נגמרת העטיפה ‎inert‎.
+   * ‏בדפדפן בלי until-found הסגור פשוט נשאר ‎inert‎ — ההתנהגות שלפני.
+   */
+  function applyClusterOpen(instant) {
+    if (!ui.electivesGroups) return;
+    var sections = ui.electivesGroups.querySelectorAll(".elective-cluster");
+    for (var i = 0; i < sections.length; i++) {
+      var section = sections[i];
+      var open = !!runtime.openCluster && section.dataset.key === runtime.openCluster;
+      setClass(section, "is-open", open);
+      var btn = section.querySelector(".elective-cluster-head");
+      if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+      var fold = section.querySelector(".elective-fold");
+      var body = section.querySelector(".elective-body");
+      if (!fold || !body) continue;
+      if (open) {
+        clearTimeout(body._foldTimer);
+        body._foldTimer = 0;
+        if (body.hasAttribute("hidden")) body.removeAttribute("hidden");
+        fold.inert = false;
+        continue;
+      }
+      if (!UNTIL_FOUND) {
+        fold.inert = true;
+        continue;
+      }
+      if (body.getAttribute("hidden") === "until-found") {
+        fold.inert = false;
+        continue;
+      }
+      fold.inert = true;
+      if (instant || reducedMotion()) {
+        hideUntilFound(fold, body);
+      } else if (!body._foldTimer) {
+        body._foldTimer = setTimeout(
+          (function (s, f, b) {
+            return function () {
+              b._foldTimer = 0;
+              if (!s.classList.contains("is-open")) hideUntilFound(f, b);
+            };
+          })(section, fold, body),
+          CLUSTER_FOLD_MS
+        );
+      }
+    }
+  }
+
+  function hideUntilFound(fold, body) {
+    body.setAttribute("hidden", "until-found");
+    fold.inert = false; // ‏until-found כבר מחוץ ל-Tab ולעץ הנגישות; inert היה מסתיר אותו גם מ-Ctrl+F
   }
 
   function renderCatalogBrowse() {
@@ -9622,6 +9760,16 @@
       );
       setClass(node, "is-active", isActive);
       setClass(node, "is-collapsed", collapsed);
+      if (step.key === "courses") {
+        // ‏השלב נפתח (ממקופל או מנעול): כל האשכולות סגורים (DESIGN.md,
+        // ‏"Elective clusters", 2026-10-05).
+        var coursesOpen = !collapsed && !step.locked;
+        if (coursesOpen && runtime.coursesStepOpen === false) {
+          runtime.openCluster = null;
+          applyClusterOpen();
+        }
+        runtime.coursesStepOpen = coursesOpen;
+      }
       var toggle = ui.stepToggles[step.key];
       if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
       if (step.locked) node.setAttribute("aria-disabled", "true");

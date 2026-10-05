@@ -450,6 +450,9 @@
       "onlyOne": "אפשר לקחת רק אחד מ-{codes}",
       "pickedHere": "נבחרו מספיק קורסים מהאשכול הזה בסמסטר הנוכחי",
       "needsSpecialization": "קורסי הבחירה יופיעו אחרי בחירת התמחות בשלב 1",
+      "countPicked": "נבחרו {n}",
+      "countCourses": "{n} קורסים",
+      "countCoursesOne": "קורס אחד",
       "pills": {
         "minCourses": "לפחות {n} קורסים",
         "minCoursesOne": "לפחות קורס אחד",

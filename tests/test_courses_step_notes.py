@@ -142,6 +142,7 @@ def test_the_check_follows_the_selection(page):
 
     chip = page.locator(cluster("אלגוריתמים") + " .elective-chip[data-code]").first
     code = chip.get_attribute("data-code")
+    page.click(cluster("אלגוריתמים") + " .elective-cluster-head")  # פתיחת האשכול לפני שימוש בשבב (באישור, 2026-10-05)
     chip.click()
     page.wait_for_timeout(700)
     assert page.locator(pill + " .elective-pill-check").count() == 1
@@ -156,6 +157,7 @@ def test_the_check_follows_the_selection(page):
 
 def test_the_check_is_teal(page):
     choose(page, SW, 4)
+    page.click(cluster("מדעים") + " .elective-cluster-head")  # פתיחת האשכול לפני שימוש בשבב (באישור, 2026-10-05)
     page.locator(cluster("מדעים") + " .elective-chip[data-code]").first.click()
     page.wait_for_timeout(700)
     colours = page.evaluate(
@@ -176,6 +178,7 @@ def test_a_minimum_of_two_ticks_at_two(page):
     choose(page, CIVIL, 4, specialization="מבנים")
     two = cluster("מבנים · קבוצה 1")
     assert page.locator(two + " .elective-pill").inner_text().strip() == "לפחות 2 קורסים"
+    page.click(two + " .elective-cluster-head")  # פתיחת האשכול לפני שימוש בשבב (באישור, 2026-10-05)
     page.locator(two + " .elective-chip[data-code]").nth(0).click()
     page.wait_for_timeout(700)
     assert page.locator(two + " .elective-pill-check").count() == 0, "אחד מתוך 2 — עוד אין ✓"
@@ -187,8 +190,11 @@ def test_a_minimum_of_two_ticks_at_two(page):
 # ------------------------------------------------------- פתקי "רק אחד מ-"
 def test_only_one_of_notes_sit_under_their_cluster(page):
     choose(page, SW, 4)
+    page.click(cluster("מדעים") + " .elective-cluster-head")  # פתיחת האשכול לפני קריאת ההערות שלו (באישור, 2026-10-05)
     assert notes_under(page, "מדעים") == ["אפשר לקחת רק אחד מ-62002 ו-62023"]
+    page.click(cluster("אלגוריתמים") + " .elective-cluster-head")  # פתיחת האשכול לפני קריאת ההערות שלו (באישור, 2026-10-05)
     assert notes_under(page, "אלגוריתמים") == ["אפשר לקחת רק אחד מ-61959 ו-62019"]
+    page.click(cluster("מעבדות") + " .elective-cluster-head")  # פתיחת האשכול לפני קריאת ההערות שלו (באישור, 2026-10-05)
     assert notes_under(page, "מעבדות") == []
 
 
@@ -196,14 +202,18 @@ def test_a_rule_across_clusters_shows_under_each_of_them(page):
     # ‏251100 יושב גם ב"עיבוד אותות" וגם ב"הנדסת תוכנה"; ‏251965 רק בשני.
     choose(page, SW, 4)
     line = "אפשר לקחת רק אחד מ-251100 ו-251965"
+    page.click(cluster("הנדסת תוכנה") + " .elective-cluster-head")  # פתיחת האשכול לפני קריאת ההערות שלו (באישור, 2026-10-05)
     assert line in notes_under(page, "הנדסת תוכנה")
+    page.click(cluster("עיבוד אותות ורשתות תקשורת") + " .elective-cluster-head")  # פתיחת האשכול לפני קריאת ההערות שלו (באישור, 2026-10-05)
     assert line in notes_under(page, "עיבוד אותות ורשתות תקשורת")
 
 
 def test_industrial_251966_and_51515_under_both_clusters(page):
     choose(page, IND, 2, specialization=DS)
     line = "אפשר לקחת רק אחד מ-51515 ו-251966"
+    page.click(cluster(f"{DS} · המרכז לחינוך הנדסי וליזמות") + " .elective-cluster-head")  # פתיחת האשכול לפני קריאת ההערות שלו (באישור, 2026-10-05)
     assert line in notes_under(page, f"{DS} · המרכז לחינוך הנדסי וליזמות")
+    page.click(cluster(f"{DS} · מערכות מידע ומדע הנתונים") + " .elective-cluster-head")  # פתיחת האשכול לפני קריאת ההערות שלו (באישור, 2026-10-05)
     assert line in notes_under(page, f"{DS} · מערכות מידע ומדע הנתונים")
 
 
@@ -251,6 +261,7 @@ COMPUTERS = "מחשבים (חומרה ותוכנה)"
 def test_composition_is_one_line_under_the_core_cluster(page):
     choose(page, EL, 4, specialization=COMPUTERS)
     core = f"{COMPUTERS} · קורסי ליבה בהתמחות"
+    page.click(cluster(core) + " .elective-cluster-head")  # פתיחת האשכול לפני קריאת ההערות שלו (באישור, 2026-10-05)
     assert notes_under(page, core) == ["מתוכם לפחות 3 מתחום החומרה ולפחות 3 מתחום התוכנה"]
     shown = page.inner_text("#electives")
     assert "לפחות 20 נ״ז" not in shown, "סך נ״ז ברמת התואר אינו מוצג"
@@ -280,6 +291,7 @@ MGMT = "ניהול הבנייה"
 def test_mandatory_in_specialization_on_chips_and_cards(page):
     choose(page, CIVIL, 3, specialization=MGMT)
     box = cluster(f"{MGMT} · קורסי בחירה")
+    page.click(box + " .elective-cluster-head")  # פתיחת האשכול לפני שימוש בשבב (באישור, 2026-10-05)
     for code in ("500210", "51600"):
         chip = page.locator(f"{box} .elective-chip[data-code='{code}']")
         assert chip.locator(".tag--spec").inner_text() == f"חובה בהתמחות {MGMT}"
@@ -315,6 +327,7 @@ def test_the_special_group_counts_51535_and_51537_as_one(page):
     box = cluster(SPECIAL)
     assert page.locator(box + " .elective-chip[data-code='51156']").count() == 1
     check = box + " .elective-pill-check"
+    page.click(box + " .elective-cluster-head")  # פתיחת האשכול לפני שימוש בשבב (באישור, 2026-10-05)
     page.click(box + " .elective-chip[data-code='51535']")
     page.click(box + " .elective-chip[data-code='51537']")
     page.wait_for_timeout(800)
@@ -327,6 +340,7 @@ def test_the_special_group_counts_51535_and_51537_as_one(page):
 def test_51170_note_is_on_its_card_not_the_cluster(page):
     choose_do(page, "התמחות בתעשייה")
     assert notes_under(page, SPECIAL) == []
+    page.click(cluster(SPECIAL) + " .elective-cluster-head")  # פתיחת האשכול לפני שימוש בשבב (באישור, 2026-10-05)
     page.click(cluster(SPECIAL) + " .elective-chip[data-code='51170']")
     page.wait_for_timeout(800)
     card = page.locator("#course-list .course-item:has(.course-code:text-is('51170'))")
@@ -347,6 +361,7 @@ def test_is_english_seminar_under_the_heading(page):
 
 def test_mechanical_entrepreneurship_cap_under_its_cluster(page):
     choose(page, "הנדסת מכונות", 3, specialization="תכן וייצור")
+    page.click(cluster("קורסי העשרה לכלל ההתמחויות") + " .elective-cluster-head")  # פתיחת האשכול לפני קריאת ההערות שלו (באישור, 2026-10-05)
     assert notes_under(page, "קורסי העשרה לכלל ההתמחויות") == [
         "מקורסי היזמות ברשימת ההעשרה ניתן ללמוד עד 4 נ״ז."
     ]
@@ -368,6 +383,7 @@ def test_math_shows_its_mathematical_electives_rule(client, intake):
 @pytest.mark.parametrize("code, name", [("51170", "נושא אישי 1"), ("51156", "מבוא להנדסת מערכות שירות")])
 def test_names_outside_the_catalog_on_chips_and_cards(page, code, name):
     choose_do(page, "פרויקט גמר")
+    page.click(cluster(SPECIAL) + " .elective-cluster-head")  # פתיחת האשכול לפני שימוש בשבב (באישור, 2026-10-05)
     chip = page.locator(f"{cluster(SPECIAL)} .elective-chip[data-code='{code}']")
     assert chip.locator(".elective-chip-name").inner_text().strip() == name
     chip.click()
