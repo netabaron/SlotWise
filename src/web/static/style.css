@@ -2848,7 +2848,12 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
 
 .detail-list dt { color: var(--muted); font-size: 13px; }
 .detail-list dd { margin: 0; }
-.detail-code { margin-inline-start: .5em; color: var(--muted); font-size: 13px; }
+/* ‏הרווח בין שם הקורס לקוד שלו — על השם, בצד שפונה אל הקוד. השם בתוך שורה
+   ‏RTL, ולכן ‎inline-end‎ שלו הוא הצד השמאלי, שם יושב הקוד. על ‎.detail-code‎
+   ‏(‎<bdi dir="ltr">‎) ‎margin-inline-start‎ נחת בקצה השמאלי שלו, הרחוק מהשם,
+   ‏והשניים נצמדו (DEFERRED.md, נסגר 2026-10-05). */
+.detail-name { margin-inline-end: .5em; }
+.detail-code { color: var(--muted); font-size: 13px; }
 
 .detail-overlap {
   font-size: 13px;

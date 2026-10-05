@@ -140,20 +140,6 @@ already says "קבוצה מלאה". Doing it would also take:
 * edits to protected browser tests, most of which open Software Engineering
   semester 5 in a fresh browser.
 
-### The course code runs into the course name in the lesson details — **found 2026-10-05**
-**Where:** `.detail-code` in `src/web/static/style.css`, and the "קורס" row that
-`openMeetingDetail()` in `src/web/static/app.js` builds.
-**Owner:** unassigned.
-**What:** the details panel shows the name and code with no space between them:
-"מבוא לבדיקות תוכנה61757". Measured gap: 0px at 1000px and at 1440px wide, so
-narrow screens have it too; it is not a Phase 7 regression. The code is an
-`ltrCode()` `<bdi dir="ltr">`, so its `margin-inline-start: .5em` resolves to its
-**left** edge. In the RTL row that is the side away from the name, and nothing
-separates the two. The legend chips are unaffected: their text is one string with
-a real space ("11069 אנגלית טכנית…").
-**Why not now:** found during the Phase 7 wide-layout work and kept out of it on
-purpose (decided 2026-10-05).
-
 ### Tests that start a server read the real `data/db` — four fail on a store written by `webapp.py`
 **Where:** `tests/test_hosted_missing_groups.py` (4 of its 7 tests); more generally,
 any test that calls `create_app()` without pointing `SLOTWISE_DB_ROOT` elsewhere.
@@ -877,6 +863,31 @@ settled-page signal the entry above proposes.
 protected test file.
 
 ## Closed
+
+### The course code runs into the course name in the lesson details — closed 2026-10-05
+**Where:** `.detail-code` in `src/web/static/style.css`, and the "קורס" row that
+`openMeetingDetail()` in `src/web/static/app.js` builds.
+**Owner:** unassigned.
+**What:** the details panel shows the name and code with no space between them:
+"מבוא לבדיקות תוכנה61757". Measured gap: 0px at 1000px and at 1440px wide, so
+narrow screens have it too; it is not a Phase 7 regression. The code is an
+`ltrCode()` `<bdi dir="ltr">`, so its `margin-inline-start: .5em` resolves to its
+**left** edge. In the RTL row that is the side away from the name, and nothing
+separates the two. The legend chips are unaffected: their text is one string with
+a real space ("11069 אנגלית טכנית…").
+**Why not now:** found during the Phase 7 wide-layout work and kept out of it on
+purpose (decided 2026-10-05).
+**Closed 2026-10-05: the gap moved to the name's side.** In the "קורס" row,
+`openMeetingDetail()` now gives the name the class `detail-name`, and
+`.detail-name { margin-inline-end: .5em }` puts the gap there. The name sits in the
+RTL row, so its inline-end is its left edge, the side facing the code. `.detail-code`
+lost its useless `margin-inline-start` and keeps its `dir="ltr"`, `--muted` colour
+and 13px. No text space was added inside the code. Pinned by
+`tests/test_detail_code_gap_browser.py` at 1000px and 1440px, on every block of the
+semester-5 schedule: the measured gap is at least 4px, name and code share a line
+when they fit, and the code keeps `dir="ltr"`, `--muted` and 13px. Run against the
+unfixed code, the test fails at both widths with "0.0px" between "מבוא לבדיקות
+תוכנה" and 61757.
 
 ### On a tall grid the lesson details open out of view — closed 2026-10-05
 **Where:** `#meeting-detail` in `src/web/templates/index.html` (inside `.grid-tools`,

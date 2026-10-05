@@ -7023,6 +7023,10 @@
           row[3] ? ltrCode(row[1]) : el("span", { text: row[1] }),
         ]);
         if (row[2]) {
+          // ‏הרווח יושב על השם, בצד שפונה אל הקוד (‎.detail-name‎ ב-style.css). על
+          // ‏הקוד עצמו הוא לא יכול לשבת: זה ‎<bdi dir="ltr">‎, ו-inline-start שלו
+          // ‏הוא הקצה השמאלי — הרחוק מהשם (DEFERRED.md, נסגר 2026-10-05).
+          setClass(dd.firstChild, "detail-name", true);
           var code = ltrCode(row[2]);
           setClass(code, "detail-code", true);
           dd.appendChild(code);
