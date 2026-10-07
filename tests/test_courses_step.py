@@ -226,6 +226,24 @@ def choose(page, program, year, term="א"):
     page.select_option("#select-year", str(year))
     page.select_option("#select-term", term)
     page.wait_for_timeout(1400)
+    _continue(page, track_pending_ok=True)
+
+
+def _continue(page, *, track_pending_ok=False):
+    """"המשך" על שלב 1 (Phase 8, באישור 2026-10-06).
+
+    ‏נכשל כשהכפתור כבוי — חוץ ממקרה אחד, ורק כשהקורא מתיר אותו: תיבת
+    ‏התמחות או מסלול מוצגת וריקה, והבדיקה בוחרת בה ואז קוראת שוב.
+    """
+    got = page.evaluate(
+        """() => ({disabled: document.getElementById('step-year-next').disabled,
+                  pending: [...document.querySelectorAll('#step-year .input--required')]
+                             .some(s => s.offsetParent !== null && !s.value)})"""
+    )
+    if got["disabled"]:
+        assert track_pending_ok and got["pending"], f'"המשך" של שלב 1 כבוי: {got}'
+        return
+    page.click("#step-year-next")
 
 
 def text(page, selector) -> str:
@@ -267,6 +285,7 @@ def test_specialization_badge_and_step_one_count(page):
     choose(page, CIVIL, 4)
     page.select_option("#select-specialization", "מבנים")
     page.wait_for_timeout(1300)
+    page.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
     card = page.locator("#course-list .course-item:has(.course-code:text-is('421411'))")
     assert card.locator(".tag--spec").inner_text() == "חובה בהתמחות מבנים"
     recommended = page.evaluate(

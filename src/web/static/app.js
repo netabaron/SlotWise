@@ -210,13 +210,6 @@
   var COLLAPSIBLE_STEPS = ["year", "courses", "days", "lecturers"];
 
   /**
-   * ומה מתקפל **מעצמו** כשחוזרים לעמוד. שלב 1 אינו ברשימה: הוא נקודת
-   * הכניסה — שנה, סמסטר ומסלול הם מה שמחליפים הכי הרבה — והוא גם קצר
-   * ממילא. אפשר לקפל אותו ביד, פשוט לא אוטומטית.
-   */
-  var AUTO_COLLAPSE_STEPS = ["courses", "days", "lecturers"];
-
-  /**
    * קורסים צמודים — רשת ביטחון בלבד.
    * המקור האמיתי הוא ``tied_with`` שמגיע מהשרת (מתוך curriculum.json);
    * זה נכנס לפעולה רק אם השדה חסר.
@@ -675,10 +668,10 @@
       ranked: {}, // {code: [שם מרצה, ...]}
       topN: 5,
       activeSchedule: 0,
-      // קיפול שלבים: {מפתח שלב: true/false}. **רק בחירה מפורשת** נרשמת כאן,
-      // ולכן מפתח חסר פירושו "לא הוכרע" — וזה מה שמתיר לקיפול האוטומטי
-      // לפעול פעם אחת בלי לדרוס העדפה שנקבעה ביד.
-      collapsed: {},
+      // ‏אילו שלבים הסטודנט/ית אישרו ב"המשך": {מפתח שלב: true}. ‏DESIGN.md,
+      // ‏"Completion is remembered" (2026-10-05): שדה חדש תחת אותו
+      // ‏STORAGE_KEY. ערכים תקינים לבדם לעולם אינם משלימים שלב.
+      completed: {},
     };
   }
 
@@ -776,8 +769,11 @@
     // שכבת המערכת: פתוחה, ולאן להחזיר את הפוקוס בסגירה.
     overlayOpen: false,
     overlayReturnTo: null,
-    // אילו שלבים כבר נשקלו לקיפול אוטומטי — שיקול אחד לכל שלב, לכל טעינה.
-    autoCollapsed: Object.create(null),
+    // ‏השלב שנפתח ב"שינוי" — ‏null פירושו "השלב הראשון שעוד לא הושלם".
+    // ‏לא נשמר: מי שחוזר/ת לעמוד רואה את השלבים שהשלים/ה מקופלים.
+    openStep: null,
+    // ‏מצב הזרימה מהציור האחרון: {open, frontier, status: {מפתח: ...}}.
+    stepFlow: null,
     // איזה ‏<details> בתוך באנר פתוח כרגע, לפי מפתח הבאנר.
     // ‏renderBanners בונה את #banners מחדש בכל ציור — וגם כל שתי שניות בזמן
     // רענון — ולכן מצב "פתוח" של אלמנט חייב לחיות כאן ולא ב-DOM, אחרת הרשימה
@@ -851,7 +847,7 @@
     if (!base.pinned || typeof base.pinned !== "object") base.pinned = {};
     if (!base.ranked || typeof base.ranked !== "object") base.ranked = {};
     if (!base.attendance || typeof base.attendance !== "object") base.attendance = {};
-    if (!base.collapsed || typeof base.collapsed !== "object") base.collapsed = {};
+    if (!base.completed || typeof base.completed !== "object") base.completed = {};
     base.allowSoftConflicts = true;  // גם מצב ישן שנשמר ב-localStorage מיושר
     if (!Array.isArray(base.blocked)) base.blocked = [];
     base.targetDays =
@@ -3177,6 +3173,7 @@
     ui.techFacts = byId("tech-facts");
     ui.attendanceOff = byId("attendance-off");
 
+    ui.appHeader = byId("app-header");
     ui.stickyBar = byId("sticky-bar");
     ui.stickyTabs = byId("sticky-tabs");
     ui.stickyFacts = byId("sticky-facts");
@@ -3206,9 +3203,11 @@
     };
     // שלב 5 אינו מתקפל, ולכן אין לו כפתור ואין לו שורת סיכום.
     ui.stepToggles = {};
+    ui.stepNext = {};
     ui.stepSummaries = {};
     COLLAPSIBLE_STEPS.forEach(function (key) {
       ui.stepToggles[key] = byId("step-" + key + "-toggle");
+      ui.stepNext[key] = byId("step-" + key + "-next");
       ui.stepSummaries[key] = byId("step-" + key + "-summary");
     });
   }
@@ -3419,19 +3418,17 @@
     COLLAPSIBLE_STEPS.forEach(function (key) {
       watchFold(ui.steps[key]);
       var btn = ui.stepToggles[key];
-      if (!btn) return;
-      btn.addEventListener("click", function () {
-        // שלב נעול אינו מציג כלום ואינו מקופל; לחיצה עליו לא תרשום העדפה
-        // שתקפוץ ותקפל אותו ברגע שייפתח.
-        var section = ui.steps[key];
-        if (section && section.classList.contains("is-locked")) return;
-        var next = !stepCollapsed(key);
-        // בחירה מפורשת גוברת על הקיפול האוטומטי, ולתמיד: מרגע שנרשמה
-        // כאן, ``autoCollapseIfIdle`` כבר לא נוגע בשלב הזה.
-        state.collapsed[key] = next;
-        runtime.autoCollapsed[key] = true;
-        setState({ collapsed: state.collapsed }, { solve: false });
-      });
+      if (btn) {
+        btn.addEventListener("click", function () {
+          onStepToggle(key);
+        });
+      }
+      var next = ui.stepNext[key];
+      if (next) {
+        next.addEventListener("click", function () {
+          completeStep(key);
+        });
+      }
     });
 
     ui.themeButtons.forEach(function (btn) {
@@ -3528,9 +3525,229 @@
     });
   }
 
-  /** האם השלב מקופל כרגע. מפתח חסר = פרוס. */
-  function stepCollapsed(key) {
-    return state.collapsed[key] === true;
+  /* --- זרימת השלבים (DESIGN.md, "General step behaviour", ‏Flow) ------ */
+
+  /**
+   * לחיצה על כותרת שלב. שלב נעול ("הבא") אינו לחיץ. שלב שהושלם נפתח
+   * ("שינוי"). שלב שהושלם ונפתח מחדש נסגר בלחיצה נוספת, והזרימה חוזרת
+   * לשלב הראשון שעוד לא הושלם. את השלב הזה עצמו סוגר רק "המשך".
+   */
+  function onStepToggle(key) {
+    var flow = runtime.stepFlow;
+    var status = flow && flow.status[key];
+    if (status === "complete") {
+      reopenStep(key);
+    } else if (status === "open" && stepConfirmed(key)) {
+      runtime.openStep = null;
+      render();
+    }
+  }
+
+  /** האם השלב אושר ב"המשך" והערכים בו עדיין תקינים. */
+  function stepConfirmed(key) {
+    return state.completed[key] === true && stepValid(key);
+  }
+
+  /**
+   * האם ערכי השלב מאפשרים להשלים אותו. שלב שנשמר כמושלם והערכים בו
+   * כבר אינם תקינים נפתח שוב כשלב הפעיל ("Completion is remembered").
+   * ‏ימי לימוד ומרצים תמיד תקינים: לימים אין בחירת חובה, ומרצים הוא שלב
+   * רשות — ה"המשך" שלו עובד גם בלי דירוג ובלי נעיצה.
+   */
+  function stepValid(key) {
+    if (key === "year") return identityChosen() && !trackMissing();
+    // ‏הזהות נבדקת בשלב 1; שלב שלפניו לא הושלם ממילא נעול.
+    if (key === "courses") return state.codes.length > 0;
+    return true;
+  }
+
+  /**
+   * מי פתוח, מי הושלם ומי נעול. ‏frontier הוא השלב הראשון שלא הושלם
+   * (או null כשכולם הושלמו); כל מה שלפניו הושלם, וכל מה שאחריו נעול —
+   * גם אם אושר פעם, כי אליו מגיעים רק דרך "המשך". שלב שנפתח ב"שינוי"
+   * פתוח במקום ה-frontier, ושלב אחד בלבד פתוח בכל רגע.
+   */
+  function computeStepFlow() {
+    // ‏שלב שהושלם והערכים בו כבר אינם תקינים חוזר להיות לא מושלם: אחרי
+    // ‏התיקון הוא נסגר רק ב"המשך", ולא מעצמו מתחת לאצבע. רק אחרי
+    // ‏‎/api/bootstrap‎ — לפניו אין רשימת מסלולים, ומסלול עם מועדי כניסה
+    // ‏נראה זמנית כזהות חסרה.
+    if (runtime.baseline) {
+      var dropped = false;
+      COLLAPSIBLE_STEPS.forEach(function (key) {
+        if (state.completed[key] === true && !stepValid(key)) {
+          delete state.completed[key];
+          dropped = true;
+        }
+      });
+      // שמירה בלבד: אנחנו כבר בתוך ציור, ו-setState היה מזמן ציור נוסף.
+      if (dropped) saveState();
+    }
+    var frontier = null;
+    for (var i = 0; i < COLLAPSIBLE_STEPS.length; i++) {
+      if (!stepConfirmed(COLLAPSIBLE_STEPS[i])) {
+        frontier = COLLAPSIBLE_STEPS[i];
+        break;
+      }
+    }
+    var frontierIdx =
+      frontier === null ? COLLAPSIBLE_STEPS.length : COLLAPSIBLE_STEPS.indexOf(frontier);
+    var open = runtime.openStep;
+    // ‏"שינוי" פותח רק שלב שלפני ה-frontier. אם שלב מוקדם יותר הפך לא
+    // תקין, הוא זה שנפתח, וההחלטה הקודמת נשכחת.
+    if (open !== null && COLLAPSIBLE_STEPS.indexOf(open) >= frontierIdx) {
+      open = runtime.openStep = null;
+    }
+    if (open === null) open = frontier;
+    var status = {};
+    COLLAPSIBLE_STEPS.forEach(function (key, idx) {
+      status[key] = key === open ? "open" : idx < frontierIdx ? "complete" : "locked";
+    });
+    return { open: open, frontier: frontier, status: status };
+  }
+
+  /** "המשך": השלב הושלם, הבא נפתח וגולל אל המסך. */
+  function completeStep(key) {
+    if (!stepValid(key)) return;
+    var section = ui.steps[key];
+    state.completed[key] = true;
+    runtime.openStep = null;
+    setState({ completed: state.completed }, { solve: false });
+    var flow = runtime.stepFlow;
+    var next = flow && flow.open;
+    if (next) {
+      focusStepToggle(next);
+      scrollStepIntoView(next, section);
+      return;
+    }
+    // ‏השלב האחרון: אחרי "המשך" כל השלבים מקופלים. בצר — גוללים אל
+    // ‏התוצאה; ברחב — המערכת כבר לצד השלבים, ושום דבר לא זז.
+    focusStepToggle(key);
+    if (!isWide()) {
+      afterFold(section, function () {
+        scrollBelowHeader(ui.steps && ui.steps.schedule);
+      });
+    }
+  }
+
+  /** "שינוי": השלב נפתח, גולל אל מתחת לכותרת ומסומן לרגע במסגרת. */
+  function reopenStep(key) {
+    var flow = runtime.stepFlow;
+    var closing = flow && flow.open ? ui.steps[flow.open] : null;
+    runtime.openStep = key;
+    render();
+    scrollStepIntoView(key, closing);
+    var node = ui.steps[key];
+    if (!node) return;
+    node.classList.remove("is-flash");
+    void node.offsetWidth; // ‏מתחיל את ההבהוב מחדש גם בלחיצה שנייה
+    node.classList.add("is-flash");
+    clearTimeout(node._flashTimer);
+    node._flashTimer = setTimeout(function () {
+      node.classList.remove("is-flash");
+    }, STEP_FLASH_MS);
+  }
+
+  //: כמה זמן השלב שנפתח ב"שינוי" נשאר ממוסגר (style.css, ‎.is-flash‎).
+  var STEP_FLASH_MS = 1200;
+
+  function focusStepToggle(key) {
+    var toggle = ui.stepToggles && ui.stepToggles[key];
+    if (!toggle || !toggle.focus) return;
+    try {
+      toggle.focus({ preventScroll: true });
+    } catch (e) {
+      toggle.focus();
+    }
+  }
+
+  /**
+   * מחכה שהשלב שנסגר יסיים להתקפל, כי עד אז המיקום של השלב שמתחתיו
+   * עוד זז. בלי תנועה (‏prefers-reduced-motion, או שאין מה לקפל) — מיד.
+   */
+  function afterFold(section, fn) {
+    var fold = section && section.querySelector(".step-fold");
+    if (!fold || reducedMotion()) {
+      fn();
+      return;
+    }
+    var done = false;
+    var finish = function (ev) {
+      if (ev && (ev.target !== fold || ev.propertyName !== "grid-template-rows")) return;
+      if (done) return;
+      done = true;
+      fold.removeEventListener("transitionend", finish);
+      fold.removeEventListener("transitioncancel", finish);
+      fn();
+    };
+    fold.addEventListener("transitionend", finish);
+    fold.addEventListener("transitioncancel", finish);
+    // ‏אם המעבר לא רץ בכלל (הגובה לא השתנה) אין transitionend.
+    setTimeout(function () {
+      finish(null);
+    }, STEP_FOLD_WAIT_MS);
+  }
+
+  //: קצת יותר מ-‎--fold-time‎ (350ms, style.css).
+  var STEP_FOLD_WAIT_MS = 450;
+
+  //: שלב שראשו כבר בחלק הזה של המסך, מתחת לכותרת, אינו נגלל.
+  var STEP_IN_VIEW_FRACTION = 0.4;
+
+  /**
+   * ‏"המשך" ו"שינוי": גוללים רק כשראש השלב אינו כבר על המסך, מתחת
+   * ‏לכותרת ובחלק העליון של המסך (‎STEP_IN_VIEW_FRACTION‎). שלב שכבר
+   * ‏נראה במקומו אינו מזיז את העמוד (DESIGN.md, Scroll behaviour, 2).
+   */
+  function scrollStepIntoView(key, closingSection) {
+    afterFold(closingSection, function () {
+      var node = ui.steps[key];
+      if (!node) return;
+      var top = node.getBoundingClientRect().top;
+      var cover = coverBottom();
+      if (top >= cover && top <= cover + window.innerHeight * STEP_IN_VIEW_FRACTION) return;
+      scrollBelowHeader(node);
+    });
+  }
+
+  /** תחתית מה שמכסה כרגע את ראש המסך: כותרת דביקה, וסרגל מצוף מוצג. */
+  function coverBottom() {
+    var bottom = 0;
+    [ui.appHeader, ui.stickyBar].forEach(function (bar) {
+      if (!bar) return;
+      var cs = getComputedStyle(bar);
+      if (cs.display === "none" || (cs.position !== "sticky" && cs.position !== "fixed")) return;
+      if (bar === ui.stickyBar && !bar.classList.contains("is-visible")) return;
+      var rect = bar.getBoundingClientRect();
+      if (rect.top <= 0 && rect.bottom > bottom) bottom = rect.bottom;
+    });
+    return bottom;
+  }
+
+  /**
+   * גלילה כך שראש האלמנט יושב מתחת לכותרת הדביקה (בצר) או בראש המסך
+   * (ברחב, שם הכותרת נגללת עם העמוד ועמודת המערכת נשארת דביקה).
+   */
+  function scrollBelowHeader(node) {
+    if (!node) return;
+    var y = window.pageYOffset;
+    var offset = 12;
+    var header = ui.appHeader;
+    if (header) {
+      var pos = getComputedStyle(header).position;
+      if (pos === "sticky" || pos === "fixed") offset += header.getBoundingClientRect().height;
+    }
+    var top = node.getBoundingClientRect().top + y - offset;
+    // ‏הסרגל המצוף (בצר) מופיע כששלב 1 כולו מעל המסך ויש מערכת — ראו
+    // ‏watchStickyBar. אם הגלילה תביא אותו, השלב צריך לשבת גם מתחתיו.
+    var bar = ui.stickyBar;
+    var first = ui.steps && ui.steps.year;
+    if (bar && first && !isWide() && schedules().length > 0 &&
+        getComputedStyle(bar).display !== "none" &&
+        first.getBoundingClientRect().bottom + y <= top) {
+      top -= bar.getBoundingClientRect().height;
+    }
+    window.scrollTo({ top: Math.max(0, top), behavior: reducedMotion() ? "auto" : "smooth" });
   }
 
   /* =====================================================================
@@ -9575,37 +9792,6 @@
     return true;
   }
 
-  /**
-   * מקפל שלבים שכבר היו מוכנים כשהגענו לעמוד.
-   *
-   * שלושה תנאים, וכולם נחוצים:
-   *  1. ``runtime.restored`` — יש מצב שמור. בכניסה ראשונה אין מה לקפל,
-   *     והעמוד צריך להיראות כאשף מלא.
-   *  2. ``!runtime.userActed`` — עוד לא נגעו בכלום. אחרי הנגיעה הראשונה
-   *     שום דבר לא נסגר מעצמו, כדי ששלב לא ייעלם באמצע עבודה בו.
-   *  3. ``state.collapsed[key] === undefined`` — לא נקבעה העדפה מפורשת.
-   *
-   * השיקול נעשה פעם אחת לכל שלב (``runtime.autoCollapsed``), כי "הושלם"
-   * של שלבים 3 ו-4 מגיע רק אחרי שהפתרון הראשון חוזר מהשרת — כמה ציורים
-   * אחרי הטעינה.
-   */
-  function autoCollapseIfIdle(steps) {
-    if (!runtime.restored || runtime.userActed) return;
-    var changed = false;
-    steps.forEach(function (step) {
-      if (AUTO_COLLAPSE_STEPS.indexOf(step.key) === -1) return;
-      if (runtime.autoCollapsed[step.key]) return;
-      if (!step.complete || step.locked) return;
-      runtime.autoCollapsed[step.key] = true;
-      if (state.collapsed[step.key] === undefined) {
-        state.collapsed[step.key] = true;
-        changed = true;
-      }
-    });
-    // שמירה בלבד: אנחנו כבר בתוך ציור, ו-setState היה מזמן ציור נוסף.
-    if (changed) saveState();
-  }
-
   /** שורת הסיכום של שלב 1: הזהות, ואחריה ההתמחות והמסלול — או מה שחסר. */
   function yearStepText() {
     var identity = usesPlanSemester()
@@ -9733,9 +9919,8 @@
       },
     ];
 
-    autoCollapseIfIdle(steps);
+    var flow = (runtime.stepFlow = computeStepFlow());
 
-    var activeAssigned = false;
     steps.forEach(function (step) {
       var node = ui.steps[step.key];
       setText(ui.stepStates[step.key], step.text);
@@ -9743,31 +9928,32 @@
       // ומשמשת גם כשם הנגיש של הכפתור.
       setText(ui.stepSummaries[step.key], step.text);
       if (!node) return;
-      var isActive = false;
-      if (!activeAssigned && !step.locked && !step.complete) {
-        isActive = true;
-        activeAssigned = true;
+      if (step.key === "schedule") {
+        // ‏המערכת אינה חלק מהזרימה: היא הפעילה כשאין שלב פתוח.
+        setClass(node, "is-locked", step.locked);
+        setClass(node, "is-complete", step.complete && !step.locked);
+        setClass(node, "is-active", !flow.open);
+        return;
       }
-      // שלב נעול הוא ריק ממילא, ואין טעם לקפל אותו.
-      var collapsed = stepCollapsed(step.key) && !step.locked;
-      var mark = COLLAPSIBLE_STEPS.indexOf(step.key) === -1
-        ? null
-        : sectionState(step.key);
-      setClass(node, "is-locked", step.locked);
-      setClass(node, "is-default", mark === "default" && !step.locked);
-      setClass(node, "is-conflict", mark === "conflict" && !step.locked);
-      // ‏✓ ירוק רק כשבאמת נבחר משהו — ולא על כל סעיף מהרגע הראשון.
-      setClass(
-        node,
-        "is-complete",
-        (mark === "chosen" || mark === null) && step.complete && !step.locked
-      );
+      // ‏DESIGN.md, ‏Flow: הושלם רק אחרי "המשך", שלב אחד פתוח, והבאים
+      // ‏נעולים. ‏is-default / is-conflict נשארים סימון של הערכים עצמם.
+      var status = flow.status[step.key];
+      var locked = status === "locked";
+      var collapsed = status === "complete";
+      var isActive = status === "open";
+      var mark = sectionState(step.key);
+      setClass(node, "is-locked", locked);
+      setClass(node, "is-default", mark === "default" && !locked);
+      setClass(node, "is-conflict", mark === "conflict" && !locked);
+      setClass(node, "is-complete", collapsed);
       setClass(node, "is-active", isActive);
       setClass(node, "is-collapsed", collapsed);
+      var nextBtn = ui.stepNext[step.key];
+      if (nextBtn) nextBtn.disabled = !stepValid(step.key);
       if (step.key === "courses") {
         // ‏השלב נפתח (ממקופל או מנעול): כל האשכולות סגורים (DESIGN.md,
         // ‏"Elective clusters", 2026-10-05).
-        var coursesOpen = !collapsed && !step.locked;
+        var coursesOpen = isActive;
         if (coursesOpen && runtime.coursesStepOpen === false) {
           runtime.openCluster = null;
           applyClusterOpen();
@@ -9775,14 +9961,20 @@
         runtime.coursesStepOpen = coursesOpen;
       }
       var toggle = ui.stepToggles[step.key];
-      if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
-      if (step.locked) node.setAttribute("aria-disabled", "true");
+      if (toggle) {
+        toggle.setAttribute("aria-expanded", isActive ? "true" : "false");
+        // ‏שלב נעול אינו לחיץ ואינו בסדר ה-Tab.
+        if (locked) {
+          toggle.setAttribute("aria-disabled", "true");
+          toggle.setAttribute("tabindex", "-1");
+        } else {
+          toggle.removeAttribute("aria-disabled");
+          toggle.removeAttribute("tabindex");
+        }
+      }
+      if (locked) node.setAttribute("aria-disabled", "true");
       else node.removeAttribute("aria-disabled");
     });
-    if (!activeAssigned) {
-      var last = ui.steps.schedule;
-      if (last) setClass(last, "is-active", true);
-    }
     // ‏מאותם טקסטים בדיוק: שבב ההגדרות אינו ניסוח שני של סיכום השלב.
     renderSettingsPills(steps, hasCodes && !!s);
   }
@@ -9824,6 +10016,21 @@
    * מדידה חוזרת של גובה השעה בכל פעם שהפריסה יכולה להשתנות: רוחב, גופן
    * והדפסה. ראו sizeGrid().
    */
+  /**
+   * ‏גובה התחתית אל ‎--footer-room‎. ברחב היא יושבת בעמודת השלבים, והרשת
+   * ‏שומרת לה מקום, כדי ששום דבר לא יהיה מתחת לעמודת המערכת הדביקה
+   * ‏(style.css, הפריסה הרחבה). ‏ResizeObserver: הטקסט נכתב אחרי הטעינה.
+   */
+  function watchFooterRoom() {
+    var footer = document.querySelector(".app-footer");
+    if (!footer) return;
+    var apply = function () {
+      document.documentElement.style.setProperty("--footer-room", footer.offsetHeight + "px");
+    };
+    apply();
+    if (window.ResizeObserver) new ResizeObserver(apply).observe(footer);
+  }
+
   function wireRefit() {
     window.addEventListener("resize", requestGridSizing);
     // ‏הרוחב של מיכל הרשת משתנה גם בלי שינוי חלון — כשהשכבה נפתחת, או
@@ -9866,6 +10073,7 @@
     cacheElements();
     wireEvents();
     wireRefit();
+    watchFooterRoom();
     refreshColorMap();
     render();
     fetchBootstrap();

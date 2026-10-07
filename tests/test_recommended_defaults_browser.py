@@ -130,11 +130,34 @@ def choose(page, year: int, term: str, program: str = CURRICULUM_PROGRAM) -> dic
     ריקה, וכל בדיקה שנשענת על ``choose`` הייתה נכשלת על תיבת חיפוש שאי
     אפשר להקליד בה — ולא על מה שהיא באמת בודקת.
     """
+    # "שינוי" על שלב 1 כשהוא כבר הושלם, ו"המשך" אחרי הבחירה (Phase 8, באישור 2026-10-06).
+    if page.evaluate(
+        "() => document.getElementById('step-year').classList.contains('is-collapsed')"
+    ):
+        page.click("#step-year-toggle")
     page.select_option("#select-program", program)
     page.select_option("#select-year", str(year))
     page.select_option("#select-term", term)
     page.wait_for_timeout(1200)
+    _continue(page, track_pending_ok=True)
     return snap(page)
+
+
+def _continue(page, *, track_pending_ok=False):
+    """"המשך" על שלב 1 (Phase 8, באישור 2026-10-06).
+
+    ‏נכשל כשהכפתור כבוי — חוץ ממקרה אחד, ורק כשהקורא מתיר אותו: תיבת
+    ‏התמחות או מסלול מוצגת וריקה, והבדיקה בוחרת בה ואז קוראת שוב.
+    """
+    got = page.evaluate(
+        """() => ({disabled: document.getElementById('step-year-next').disabled,
+                  pending: [...document.querySelectorAll('#step-year .input--required')]
+                             .some(s => s.offsetParent !== null && !s.value)})"""
+    )
+    if got["disabled"]:
+        assert track_pending_ok and got["pending"], f'"המשך" של שלב 1 כבוי: {got}'
+        return
+    page.click("#step-year-next")
 
 
 def with_identity(page) -> dict:
@@ -352,6 +375,7 @@ def test_summer_drops_the_plan_and_keeps_the_manual_pick(page):
     """אין סמסטר קיץ בתוכנית. מסירים את מה שהמערכת סימנה — ורק אותו."""
     with_identity(page)
     add_by_search(page, "61739")
+    page.click("#step-year-toggle")  # "שינוי" על שלב 1 (Phase 8, באישור 2026-10-06)
     page.select_option("#select-term", "קיץ")
     page.wait_for_timeout(1200)
     state = snap(page)
@@ -391,6 +415,7 @@ def test_switching_program_drops_the_previous_program_plan(page):
     tick_recommended(page)
     assert "61756" in snap(page)["checked"], "מתחילים עם תוכנית הנדסת תוכנה"
 
+    page.click("#step-year-toggle")  # "שינוי" על שלב 1 (Phase 8, באישור 2026-10-06)
     page.select_option("#select-program", other_program(page))
     page.wait_for_timeout(2000)
     state = snap(page)
@@ -402,8 +427,10 @@ def test_a_program_without_a_curriculum_keeps_a_hand_built_list(page):
     """‏SPEC_MULTIFACULTY: בלי תוכנית לימודים הכול נבחר מהקטלוג, והמערכת
     לא נוגעת בבחירה שנבנתה ביד — היא מסירה רק מה שהיא עצמה סימנה."""
     with_identity(page)
+    page.click("#step-year-toggle")  # "שינוי" על שלב 1 (Phase 8, באישור 2026-10-06)
     page.select_option("#select-program", other_program(page))
     page.wait_for_timeout(2000)
+    page.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
     # במצב קטלוג אותה תיבת חיפוש מזינה את רשימת הקטלוג שמתחתיה, ולא רשימה
     # נפתחת — ולכן הבחירה היא בתיבת הסימון שם.
     page.fill("#course-search", "11004")
@@ -413,6 +440,7 @@ def test_a_program_without_a_curriculum_keeps_a_hand_built_list(page):
     before = snap(page)
     assert before["manualCodes"] == ["11004"]
 
+    page.click("#step-year-toggle")  # "שינוי" על שלב 1 (Phase 8, באישור 2026-10-06)
     for year, term in ((1, "א"), (4, "ב"), (3, "א")):
         page.select_option("#select-year", str(year))
         page.select_option("#select-term", term)
@@ -634,6 +662,7 @@ def test_adoption_does_not_swallow_the_students_next_choice(browser, server):
         p.select_option("#select-year", "3")
         p.select_option("#select-term", "א")
         p.wait_for_timeout(1800)
+        p.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
 
         state = tick_recommended(p)
         assert state["autoSemester"] == "5"
@@ -658,8 +687,14 @@ def test_another_department_gets_its_own_plan_not_software_engineering(page):
     tick_recommended(page)
     assert "61756" in snap(page)["checked"], "מתחילים בהנדסת תוכנה"
 
+    page.click("#step-year-toggle")  # "שינוי" על שלב 1 (Phase 8, באישור 2026-10-06)
     page.select_option("#select-program", "הנדסה אזרחית")
     page.wait_for_timeout(2200)
+    # ‏בחירת התמחות נוספה (Phase 8, באישור 2026-10-06): בסמסטר 5 של אזרחית היא חובה, ובלעדיה
+    # ‏שלב הקורסים נעול. ההמלצה של "מבנים" כולה קורסי 42.
+    page.select_option("#select-specialization", "מבנים")
+    page.wait_for_timeout(1300)
+    _continue(page)
     # התוכנית החדשה מוצגת ואינה מסומנת, כמו כל המלצה — ולכן סימון
     # שני. מה שהבדיקה בודקת הוא שהרשימה המסומנת היא של המסלול
     # החדש בלבד, לא מי לחץ על מה.
@@ -677,6 +712,7 @@ def test_another_department_gets_its_own_plan_not_software_engineering(page):
 
 def test_track_courses_are_shown_but_never_auto_checked(page):
     with_identity(page)
+    page.click("#step-year-toggle")  # "שינוי" על שלב 1 (Phase 8, באישור 2026-10-06)
     page.select_option("#select-program", "הנדסה אזרחית")
     page.wait_for_timeout(2200)
     rows = {r["code"]: r for r in snap(page)["rows"]}
@@ -700,6 +736,7 @@ def test_a_department_with_no_chapter_stays_on_the_catalog(page):
     """למסלול בלי תוכנית אסור לקבל לוח סמסטרים של מחלקה אחרת, ואסור
     שיראה "סמסטר 5 בתוכנית הלימודים"."""
     with_identity(page)
+    page.click("#step-year-toggle")  # "שינוי" על שלב 1 (Phase 8, באישור 2026-10-06)
     page.select_option("#select-program", NO_CURRICULUM_PROGRAM)
     page.wait_for_timeout(2200)
     state = snap(page)

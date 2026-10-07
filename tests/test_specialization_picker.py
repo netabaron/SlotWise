@@ -339,11 +339,25 @@ def test_the_choice_is_cleared_when_it_no_longer_applies(page):
     assert view(page)["saved"]["specialization"] == "", "מסלול אחר — ההתמחות יורדת"
 
 
-def test_ticked_core_courses_survive_choosing_a_specialization(page):
+def test_ticked_core_courses_survive_a_specialization_change(page):
+    """קורסי הליבה שסומנו נשארים מסומנים כשההתמחות מתחלפת.
+
+    ‏נכתבה מחדש ב-2026-10-07 (Phase 8, באישור). עד אז: לסמן את המומלצים
+    ‏ואז לבחור התמחות. מאז Phase 8 שלב הקורסים נעול עד ששלב 1 תקין, ובסמסטר
+    ‏5 של אזרחית ההתמחות היא חובה — ולכן אי אפשר לסמן לפני שבוחרים. הנקודה
+    ‏נשמרת על החלפה: בוחרים התמחות, מסמנים, "שינוי", ומחליפים לאחרת.
+    """
     choose(page, CIVIL, 3)
+    first = pick(page, "#select-specialization", "ניהול הבנייה")
+    page.click("#step-year-next")  # "המשך" אל שלב הקורסים
     page.click("#btn-restore-recommended")
     page.wait_for_timeout(1000)
     before = set(view(page)["checked"])
     assert before
+    page.click("#step-year-toggle")  # "שינוי" על שלב 1
     v = pick(page, "#select-specialization", "מבנים")
-    assert before <= set(v["checked"]), "קורסי הליבה שסומנו נשארים מסומנים"
+    # ‏הליבה: מה שמומלץ בשתי ההתמחויות. קורסי "ניהול הבנייה" עצמם יורדים
+    # ‏בהחלפה בצדק — הם ההמלצה של ההתמחות שעזבו.
+    core = set(first["autoCodes"]) & set(v["autoCodes"])
+    assert core and core <= before, (core, before)
+    assert core <= set(v["checked"]), "קורסי הליבה שסומנו נשארים מסומנים"

@@ -100,6 +100,7 @@ def _open(browser, server, width=1440, height=900, **ctx_opts):
     page.select_option("#select-program", "הנדסת תוכנה")
     page.select_option("#select-year", "3")
     page.select_option("#select-term", "א")
+    page.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
     page.wait_for_selector(HEAD, timeout=20000)
     page.wait_for_timeout(800)
     return ctx, page
@@ -237,9 +238,11 @@ def test_changing_semester_closes_every_cluster(browser, server):
         pg.click(f"{HEAD}[data-key='{key}']")
         _wait_settled(pg)
         assert any(c["open"] for c in _clusters(pg))
+        pg.click("#step-year-toggle")  # "שינוי" על שלב 1 (Phase 8, באישור 2026-10-06)
         pg.select_option("#select-term", "ב")
         pg.wait_for_timeout(2500)
         pg.select_option("#select-term", "א")
+        pg.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
         pg.wait_for_selector(HEAD, timeout=20000)
         pg.wait_for_timeout(1500)
         _assert_all_closed(_clusters(pg), "אחרי החלפת סמסטר")
@@ -253,6 +256,15 @@ def test_reopening_the_step_closes_every_cluster(browser, server):
         key = _clusters(pg)[0]["key"]
         pg.click(f"{HEAD}[data-key='{key}']")
         _wait_settled(pg)
+        # ‏השלב הפתוח נסגר רק ב"המשך"; שלב שהושלם ונפתח ב"שינוי" נסגר גם
+        # ‏מהכותרת (Phase 8, באישור 2026-10-06). שלב בלי קורסים אינו מושלם,
+        # ‏ולכן "סמנו הכל" לפני "המשך" (באישור 2026-10-07).
+        pg.click("#btn-restore-recommended")
+        pg.wait_for_timeout(600)
+        pg.click("#step-courses-next")
+        pg.wait_for_timeout(600)
+        pg.click("#step-courses-toggle")
+        pg.wait_for_timeout(600)
         pg.click("#step-courses-toggle")
         pg.wait_for_timeout(600)
         assert pg.evaluate("document.getElementById('step-courses').classList.contains('is-collapsed')")

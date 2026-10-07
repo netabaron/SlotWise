@@ -1311,6 +1311,30 @@ html.is-modal-open body { overflow: hidden; }
   .steps { --fold-time: 0s; }
 }
 
+/* ‏"המשך" בתחתית השלב הפתוח (DESIGN.md, "General step behaviour", Flow).
+   הוא בתוך ‎.step-fold‎, ולכן מתקפל ויוצא מסדר ה-Tab יחד עם הגוף. */
+.step-next-row {
+  display: flex;
+  justify-content: flex-end;
+  padding-block-start: 6px;
+}
+.step-next { min-inline-size: 7rem; }
+
+/* ‏"שינוי": השלב שנפתח ממוסגר לרגע (Scroll behaviour, 2), ‏‎STEP_FLASH_MS‎
+   ב-app.js. בלי תנועה המסגרת פשוט מופיעה ונעלמת. */
+.step.is-flash {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  animation: step-flash 1.2s ease-out forwards;
+}
+@keyframes step-flash {
+  0%, 55% { outline-color: var(--ink); }
+  100% { outline-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .step.is-flash { animation: none; }
+}
+
 .note {
   font-size: 13px;
   color: var(--muted);
@@ -2917,6 +2941,15 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
 
 .step.is-conflict { border-color: var(--warn-line); }
 
+/* ‏שלב שאושר ב"המשך" הוא ‏✓ גם כשהערכים בו הם ברירת המחדל — מרצים בלי
+   דירוג, למשל. ההשלמה באה מהלחיצה, לא מהערכים (DESIGN.md, Flow). */
+.step.is-complete.is-default .step-title::before {
+  content: "\2713";
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--sf);
+}
+
 /* ---- שדות לפי תוכן, לא ברוחב מלא ---- */
 .field--sm { flex: 0 1 8rem; }
 .field--md { flex: 0 1 13rem; }
@@ -3167,6 +3200,25 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
   }
 
   .steps > .step--stepper { grid-column: 1; min-inline-size: 0; }
+
+  /* ‏עמודה דביקה אינה יוצאת מאזור הרשת שלה, ולכן כל מה שמתחת ל-‎.steps‎ —
+     הריפוד התחתון והתחתית — דחף אותה מעלה בסוף העמוד (‎91px‎ ב-1440×900;
+     עם שלב אחד פתוח מגיעים לסוף העמוד כל הזמן). ברחב אין דבר מתחתיה:
+     בלי ריפוד תחתון, התחתית יושבת בתחתית עמודת השלבים, והמקום שלה שמור
+     בתוך הרשת — 40px הרווח שהיה, ועוד גובה התחתית (‎--footer-room‎,
+     נמדד ב-app.js, כי הטקסט שלה ושבירת השורות משתנים). */
+  body { position: relative; }
+  .steps { padding-block-end: 0; }
+  #step-lecturers { margin-block-end: calc(40px + var(--footer-room, 0px)); }
+  /* ‏הרוחב: השוליים החיצוניים, עמודת השלבים והרווח בין העמודות (20px),
+     בלי ריפוד צד — כדי שהשורה של מצב האירוח (‎427px‎) תישאר שורה אחת. */
+  .app-footer {
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline-start: 0;
+    inline-size: calc(clamp(12px, 3vw, 28px) + var(--wide-steps) + 20px);
+    padding-inline: 0;
+  }
 
   #step-schedule {
     grid-column: 2;

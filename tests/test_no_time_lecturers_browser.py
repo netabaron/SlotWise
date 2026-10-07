@@ -88,8 +88,11 @@ def _page(browser, server, extra, scheme="light"):
     pg.select_option("#select-year", "3")
     pg.select_option("#select-term", "א")
     pg.wait_for_timeout(2500)
+    pg.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
     pg.click("#btn-restore-recommended")
     pg.wait_for_timeout(4000)
+    pg.click("#step-courses-next")  # "המשך" אל ימי הלימוד (Phase 8, באישור 2026-10-06)
+    pg.click("#step-days-next")  # "המשך" אל המרצים (Phase 8, באישור 2026-10-06)
     pg.evaluate(
         """(a) => { const s = JSON.parse(localStorage.getItem(a.key) || '{}');
                     s.codes = (s.codes || []).concat(a.codes);

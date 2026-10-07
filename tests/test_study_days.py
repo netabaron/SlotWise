@@ -74,8 +74,10 @@ def _ready(browser, server, scheme="light", width=1280):
     pg.select_option("#select-year", "3")
     pg.select_option("#select-term", "א")
     pg.wait_for_timeout(2500)
+    pg.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
     pg.click("#btn-restore-recommended")
     pg.wait_for_timeout(5000)
+    pg.click("#step-courses-next")  # "המשך" אל ימי הלימוד (Phase 8, באישור 2026-10-06)
     return ctx, pg
 
 

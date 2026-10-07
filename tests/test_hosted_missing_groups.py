@@ -188,6 +188,10 @@ def picked(browser, server):
     )
     page.reload()
     page.wait_for_timeout(3500)
+    # "המשך" על שלבים 1–3 כדי להגיע אל המרצים (Phase 8, באישור 2026-10-06)
+    page.click("#step-year-next")
+    page.click("#step-courses-next")
+    page.click("#step-days-next")
     _expand(page, "step-lecturers")
     page.wait_for_timeout(600)
     page.errors = errors  # type: ignore[attr-defined]

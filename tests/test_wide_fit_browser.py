@@ -96,6 +96,7 @@ def _open(browser, server, size):
     page.select_option("#select-year", "3")
     page.select_option("#select-term", "א")
     page.wait_for_timeout(2500)
+    page.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
     page.click("#btn-restore-recommended")
     page.wait_for_selector("#schedule-grid .ev", timeout=20000)
     _settle(page)

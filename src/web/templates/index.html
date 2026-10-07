@@ -104,6 +104,8 @@
                         ‏grid-template-rows שלו (0fr ↔ 1fr), ולכן הגוף צריך
                         עטיפה משלו. ‏app.js מוסיף לו is-folding בזמן הפתיחה.
     ‏.step-change        "שינוי" בסוף שורת שלב מקופל. חלק מהכפתור, לא פקד נפרד.
+    #step-<key>-next      "המשך" בתחתית גוף השלב. הלחיצה עליו היא הדבר היחיד
+                         שמשלים שלב (DESIGN.md, "General step behaviour", Flow).
     מראה (docs/DESIGN.md, Stepper): מקופל = שורה אחת עם ✓, השם והסיכום;
     נעול = שורה מושתקת אחת עם הסיבה; פרוס = פאנל מלא, ‏is-active במסגרת דיו.
     ‏#step-<key>-state מוסתר חזותית בשלבים 1..4 (נשאר ל-aria-live).
@@ -399,6 +401,9 @@
       <p class="note track-deadline" id="specialization-deadline" hidden></p>
       <p class="resolved" id="semester-summary" role="status" aria-live="polite"></p>
       <p class="note" id="year-note"></p>
+      <div class="step-next-row">
+        <button type="button" class="btn btn-primary step-next" id="step-year-next">{{ S.ui.steps.next }}</button>
+      </div>
     </div>
     </div>
   </section>
@@ -481,6 +486,9 @@
         <p class="note" id="electives-needs-spec" hidden>{{ S.app.electives.needsSpecialization }}</p>
         <div class="electives-groups" id="electives-groups"></div>
       </div>
+      <div class="step-next-row">
+        <button type="button" class="btn btn-primary step-next" id="step-courses-next">{{ S.ui.steps.next }}</button>
+      </div>
     </div>
     </div>
   </section>
@@ -551,6 +559,9 @@
           <div class="blocked" id="blocked-list"></div>
         </div>
       </details>
+      <div class="step-next-row">
+        <button type="button" class="btn btn-primary step-next" id="step-days-next">{{ S.ui.steps.next }}</button>
+      </div>
     </div>
     </div>
   </section>
@@ -581,6 +592,9 @@
       <div class="attendance-off" id="attendance-off" hidden></div>
       <div class="lect-courses" id="lecturer-courses"></div>
       <p class="note" id="lecturers-note"></p>
+      <div class="step-next-row">
+        <button type="button" class="btn btn-primary step-next" id="step-lecturers-next">{{ S.ui.steps.next }}</button>
+      </div>
     </div>
     </div>
   </section>

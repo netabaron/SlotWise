@@ -123,6 +123,24 @@ def choose(page, program, year, term="א", specialization=""):
     if specialization:
         page.select_option("#select-specialization", specialization)
         page.wait_for_timeout(1300)
+    _continue(page, track_pending_ok=True)
+
+
+def _continue(page, *, track_pending_ok=False):
+    """"המשך" על שלב 1 (Phase 8, באישור 2026-10-06).
+
+    ‏נכשל כשהכפתור כבוי — חוץ ממקרה אחד, ורק כשהקורא מתיר אותו: תיבת
+    ‏התמחות או מסלול מוצגת וריקה, והבדיקה בוחרת בה ואז קוראת שוב.
+    """
+    got = page.evaluate(
+        """() => ({disabled: document.getElementById('step-year-next').disabled,
+                  pending: [...document.querySelectorAll('#step-year .input--required')]
+                             .some(s => s.offsetParent !== null && !s.value)})"""
+    )
+    if got["disabled"]:
+        assert track_pending_ok and got["pending"], f'"המשך" של שלב 1 כבוי: {got}'
+        return
+    page.click("#step-year-next")
 
 
 def cluster(key: str) -> str:
@@ -260,6 +278,11 @@ COMPUTERS = "מחשבים (חומרה ותוכנה)"
 
 def test_composition_is_one_line_under_the_core_cluster(page):
     choose(page, EL, 4, specialization=COMPUTERS)
+    # ‏בחירת מסלול נוספה (Phase 8, באישור 2026-10-06): בסמסטר 7 "סוג תכן הנדסי" חובה, ובלעדיו
+    # ‏שלב הקורסים נעול. "בתעשייה" אינו משנה את האשכולות ואת ההערות.
+    page.select_option("#select-route", "תכן הנדסי בתעשייה")
+    page.wait_for_timeout(1300)
+    _continue(page)
     core = f"{COMPUTERS} · קורסי ליבה בהתמחות"
     page.click(cluster(core) + " .elective-cluster-head")  # פתיחת האשכול לפני קריאת ההערות שלו (באישור, 2026-10-05)
     assert notes_under(page, core) == ["מתוכם לפחות 3 מתחום החומרה ולפחות 3 מתחום התוכנה"]
@@ -312,6 +335,7 @@ def choose_do(page, route):
     choose(page, IND, 4, specialization=DO)
     page.select_option("#select-route", route)
     page.wait_for_timeout(1300)
+    page.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
 
 
 def test_the_special_group_is_a_cluster_with_its_pill(page):

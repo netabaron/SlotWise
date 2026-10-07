@@ -103,6 +103,7 @@ def _identity(pg):
     pg.select_option("#select-year", "3")
     pg.select_option("#select-term", "א")
     pg.wait_for_timeout(3000)
+    pg.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
 
 
 def _pick_courses(pg):
@@ -203,6 +204,7 @@ def test_one_real_choice_turns_exactly_one_section(browser, server):
     try:
         _identity(pg)
         _pick_courses(pg)
+        pg.click("#step-courses-next")  # "המשך" אל ימי הלימוד (Phase 8, באישור 2026-10-06)
         before = {s["id"]: s["def"] for s in pg.evaluate(STEPS)}
         pg.click('.day-btn[data-days="3"]')
         pg.wait_for_timeout(2500)
@@ -262,8 +264,10 @@ def test_the_mark_survives_a_reload(browser, server):
         pg.wait_for_timeout(4500)
         _identity(pg)
         _pick_courses(pg)
+        pg.click("#step-courses-next")  # "המשך" אל ימי הלימוד (Phase 8, באישור 2026-10-06)
         pg.click('.day-btn[data-days="3"]')
         pg.wait_for_timeout(2500)
+        pg.click("#step-days-next")  # "המשך" אל המרצים (Phase 8, באישור 2026-10-06)
         pg.reload()
         pg.wait_for_timeout(4500)
         after = {s["id"]: s["def"] for s in pg.evaluate(STEPS)}

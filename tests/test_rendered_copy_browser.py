@@ -185,6 +185,7 @@ def test_no_missing_keys_while_stepping_through(dev):
     dev.wait_for_timeout(2500)
     # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
     # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    dev.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8)
     dev.click("#btn-restore-recommended")
     dev.wait_for_timeout(2500)
     hits += scan(dev, "year+term")
@@ -199,25 +200,22 @@ def test_no_missing_keys_while_stepping_through(dev):
     except Exception:
         pass
 
-    for key in ("courses", "days", "lecturers"):
-        try:
-            if dev.evaluate(
-                "document.getElementById('step-%s')"
-                ".classList.contains('is-collapsed')" % key
-            ):
-                dev.click("#step-%s-toggle" % key)
-                dev.wait_for_timeout(500)
-        except Exception:
-            pass
+    # ‏Phase 8: שלב אחד פתוח בכל רגע. עוברים בזרימה ב"המשך" וסורקים כל שלב.
+    dev.click("#step-courses-next")
     dev.wait_for_timeout(1200)
-    hits += scan(dev, "steps-expanded")
+    hits += scan(dev, "step-days")
 
-    try:
-        dev.click('.day-btn[data-days="3"]')
-        dev.wait_for_timeout(2000)
-        hits += scan(dev, "days-3")
-    except Exception:
-        pass
+    dev.click('.day-btn[data-days="3"]')
+    dev.wait_for_timeout(2000)
+    hits += scan(dev, "days-3")
+
+    dev.click("#step-days-next")
+    dev.wait_for_timeout(1200)
+    hits += scan(dev, "step-lecturers")
+
+    dev.click("#step-lecturers-next")
+    dev.wait_for_timeout(800)
+    hits += scan(dev, "all-complete")
 
     try:
         dev.evaluate("document.getElementById('tech-details').open = true")
@@ -279,20 +277,21 @@ def test_no_empty_labels(fresh):
     fresh.wait_for_timeout(2500)
     # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
     # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    fresh.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8)
     fresh.click("#btn-restore-recommended")
     fresh.wait_for_timeout(2500)
-    for key in ("courses", "days", "lecturers"):
-        try:
-            if fresh.evaluate(
-                "document.getElementById('step-%s')"
-                ".classList.contains('is-collapsed')" % key
-            ):
-                fresh.click("#step-%s-toggle" % key)
-                fresh.wait_for_timeout(400)
-        except Exception:
-            pass
-    fresh.wait_for_timeout(1000)
-    empty = fresh.evaluate(
+    # ‏Phase 8: שלב אחד פתוח בכל רגע, ולכן כל שלב נבדק כשהוא הפתוח.
+    empty = []
+    for nxt in ("courses", "days", "lecturers"):
+        empty += _empty_labels(fresh)
+        fresh.click("#step-%s-next" % nxt)
+        fresh.wait_for_timeout(1000)
+    empty += _empty_labels(fresh)
+    assert empty == [], "תוויות ריקות: " + "; ".join(empty)
+
+
+def _empty_labels(page):
+    return page.evaluate(
         """(sels) => {
       const bad = [];
       sels.forEach(function (sel) {
@@ -308,7 +307,6 @@ def test_no_empty_labels(fresh):
     }""",
         LABEL_SELECTORS,
     )
-    assert empty == [], "תוויות ריקות: " + "; ".join(empty)
 
 
 def test_no_raw_key_names_on_screen(fresh):
@@ -319,6 +317,7 @@ def test_no_raw_key_names_on_screen(fresh):
     fresh.wait_for_timeout(2500)
     # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
     # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    fresh.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8)
     fresh.click("#btn-restore-recommended")
     fresh.wait_for_timeout(2500)
     found = fresh.evaluate(
@@ -346,6 +345,7 @@ def test_key_screens_carry_hebrew(fresh):
     fresh.wait_for_timeout(2500)
     # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
     # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    fresh.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8)
     fresh.click("#btn-restore-recommended")
     fresh.wait_for_timeout(2500)
     regions = {
@@ -392,6 +392,7 @@ def _with_schedule(page):
     page.wait_for_timeout(2500)
     # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
     # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    page.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8)
     page.click("#btn-restore-recommended")
     page.wait_for_timeout(3000)
     page.wait_for_selector("#schedule-grid .ev", timeout=15000)
@@ -624,13 +625,10 @@ def test_room_codes_are_explicitly_ltr_everywhere(fresh):
         assert attr == "ltr" and computed == "ltr", f"בפאנל: dir={attr} computed={computed}"
     fresh.keyboard.press("Escape")
     fresh.wait_for_timeout(400)
-    # טבלת המרצים
-    for key in ("lecturers",):
-        if fresh.evaluate(
-            "document.getElementById('step-%s').classList.contains('is-collapsed')" % key
-        ):
-            fresh.click("#step-%s-toggle" % key)
-            fresh.wait_for_timeout(600)
+    # טבלת המרצים — ‏Phase 8: מגיעים אליה ב"המשך".
+    fresh.click("#step-courses-next")
+    fresh.click("#step-days-next")
+    fresh.wait_for_timeout(600)
     table = fresh.evaluate(
         """() => [].slice.call(document.querySelectorAll('.lect-table .code'))
              .map(e => getComputedStyle(e).direction)"""
@@ -787,6 +785,10 @@ def _overlap_on(page):
 
     # ‏מאז שלב 4 של העיצוב כל קורס בשלב המרצים הוא אקורדיון, ורק אחד פתוח.
     # המתג של 61759 נמצא בגוף סגור עד שפותחים את הקורס.
+    # ‏Phase 8: שלב המרצים נפתח רק דרך "המשך" על הקורסים וימי הלימוד.
+    page.click("#step-courses-next")
+    page.click("#step-days-next")
+    page.wait_for_timeout(500)
     head = page.locator('[data-fk="lect-course-61759"]')
     if head.get_attribute("aria-expanded") != "true":
         head.click()
@@ -1011,10 +1013,12 @@ def test_section_marks_are_stateful(fresh):
     fresh.wait_for_timeout(2500)
     # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
     # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    fresh.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8)
     fresh.click("#btn-restore-recommended")
     fresh.wait_for_timeout(3000)
-    assert marks()[0] == "is-complete", "אחרי בחירת שנה וסמסטר הסעיף אמור להיות 'נבחר'"
+    assert marks()[0] == "is-complete", "אחרי \"המשך\" על שלב 1 הסעיף מושלם"
 
+    fresh.click("#step-courses-next")  # "המשך" אל ימי הלימוד (Phase 8)
     fresh.click('.day-btn[data-days="2"]')
     fresh.wait_for_timeout(2500)
     assert "is-conflict" in marks(), "יעד ימים בלתי אפשרי אמור להופיע כקונפליקט"
@@ -1042,6 +1046,7 @@ def test_semester_line_is_not_duplicated(fresh):
     fresh.wait_for_timeout(2500)
     # ‏שום קורס אינו מסומן מראש מאז 2026-09-09; הסימון הוא בחירה,
     # ולכן בדיקה שצריכה מערכת מצוירת חייבת לבחור אותה.
+    fresh.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8)
     fresh.click("#btn-restore-recommended")
     fresh.wait_for_timeout(3000)
     state = fresh.evaluate(

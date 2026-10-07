@@ -129,6 +129,7 @@ def _open(browser, server, scheme="light"):
     page.select_option("#select-year", "3")
     page.select_option("#select-term", "א")
     page.wait_for_timeout(2500)
+    page.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
     page.click("#btn-restore-recommended")
     page.wait_for_selector("#alt-cards .alt-card", timeout=20000)
     page.wait_for_timeout(700)

@@ -125,6 +125,7 @@ def test_the_page_clears_a_saved_pin_with_its_toast(server):
             pg.select_option("#select-year", "3")
             pg.select_option("#select-term", "א")
             pg.wait_for_timeout(2500)
+            pg.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
             pg.click("#btn-restore-recommended")
             pg.wait_for_timeout(4000)
             pg.evaluate(

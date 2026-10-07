@@ -97,6 +97,19 @@ def _open_semester_5(browser, server, width=WIDE, height=900):
     page.select_option("#select-year", "3")
     page.select_option("#select-term", "א")
     page.wait_for_timeout(2500)
+    page.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
+    # ‏מחכים ששלב הקורסים יסיים להיפתח לפני הלחיצה הבאה: באמצע הפתיחה
+    # ‏Playwright גולל בעצמו אל הכפתור החשוף-למחצה, והעמוד נשאר גלול
+    # ‏(באישור 2026-10-07).
+    page.wait_for_function(
+        """() => { const s = document.getElementById('step-courses');
+                   const fold = s.querySelector('.step-fold');
+                   return s.classList.contains('is-active') && !s.classList.contains('is-locked')
+                     && fold.getAnimations().length === 0
+                     && getComputedStyle(fold.firstElementChild).visibility === 'visible'
+                     && fold.getBoundingClientRect().height > 0; }""",
+        timeout=5000,
+    )
     page.click("#btn-restore-recommended")
     page.wait_for_selector("#schedule-grid .ev", timeout=20000)
     _settle(page)
@@ -173,11 +186,14 @@ def test_the_timetable_column_is_one_viewport_tall_and_stays_in_view(browser, se
     ctx, pg = _open_semester_5(browser, server, width=WIDE, height=900)
     try:
         assert _rect(pg, "#step-schedule")["height"] == pytest.approx(900, abs=1)
+        # ‏Phase 8 (באישור 2026-10-07): שלב אחד פתוח, ולכן העמוד קצר יותר
+        # ‏מכשכל השלבים היו פרוסים. גוללים עד הסוף, ודורשים 600px לפחות.
         doc = pg.evaluate("document.documentElement.scrollHeight")
-        assert doc > 900 + 1500, f"העמוד קצר מכדי לגלול את השלבים: {doc}"
-        pg.evaluate("window.scrollTo(0, 1500)")
+        far = pg.evaluate("document.documentElement.scrollHeight - window.innerHeight")
+        assert far >= 600, f"העמוד קצר מכדי לגלול את השלבים: {doc}"
+        pg.evaluate("(y) => window.scrollTo(0, y)", far)
         pg.wait_for_timeout(300)
-        assert pg.evaluate("window.scrollY") == pytest.approx(1500, abs=1)
+        assert pg.evaluate("window.scrollY") == pytest.approx(far, abs=1)
         sched = _rect(pg, "#step-schedule")
         assert sched["top"] == pytest.approx(0, abs=1), sched
         assert sched["bottom"] == pytest.approx(900, abs=1), sched

@@ -105,6 +105,7 @@ def _open(browser, server, extra, mutate=None):
     pg.select_option("#select-year", "3")
     pg.select_option("#select-term", "א")
     pg.wait_for_timeout(2500)
+    pg.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
     pg.click("#btn-restore-recommended")
     pg.wait_for_selector("#schedule-grid .ev", timeout=20000)
     pg.evaluate(

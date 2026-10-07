@@ -116,9 +116,11 @@ def page(server):
         pg.select_option("#select-year", "3")
         pg.select_option("#select-term", "א")
         pg.wait_for_timeout(2500)
+        pg.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
         # ‏הקורסים אינם מסומנים מראש; בלי סימון אין מערכת ואין ציון התאמה.
         pg.click("#btn-restore-recommended")
         pg.wait_for_timeout(6000)
+        pg.click("#step-courses-next")  # "המשך" אל ימי הלימוד (Phase 8, באישור 2026-10-06)
         # ‏ובוחרים יעד ימים. בלי יעד אין קנס על מספר הימים, חמש המערכות
         # יוצאות שקולות, והפאנל מציג ‎fitTied‎ במקום תווית המובילה — נכון
         # לגמרי, אבל אז אין כאן מה לבדוק.
