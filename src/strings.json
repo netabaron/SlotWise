@@ -30,9 +30,8 @@
       "themeDark": "כהה",
       "themeDarkTitle": "תמיד כהה"
     },
-    "sticky": {
-      "regionLabel": "סיכום המערכת הנבחרת",
-      "btnShowGrid": "הצג מערכת"
+    "bottomBar": {
+      "regionLabel": "סיכום המערכת הנבחרת"
     },
     "banners": {
       "regionLabel": "הודעות",
@@ -96,14 +95,11 @@
       "resetLabel": "איפוס הדירוג והנעיצות"
     },
     "schedule": {
-      "tabsLabel": "מערכות מוצעות",
       "btnPrint": "הדפסה",
       "softTitle": "חפיפות מכוונות במערכת הזו",
       "gridLabel": "מערכת שבועית",
       "emptyTitle": "אין מערכת אפשרית עם הבחירות האלה",
-      "emptySub": "להלן מה שחוסם, ומה אפשר לשחרר כדי לפתוח פתרון:",
-      "overlayTitle": "המערכת השבועית",
-      "overlayClose": "סגירה"
+      "emptySub": "להלן מה שחוסם, ומה אפשר לשחרר כדי לפתוח פתרון:"
     },
     "fallbackPage": {
       "title": "SlotWise",
@@ -192,6 +188,7 @@
       "pickTarget": "יש לבחור יעד ימי לימוד"
     },
     "header": {
+      "stepCount": "שלב {n} מתוך {total}",
       "offline": "אין חיבור לשרת המקומי",
       "loading": "בטעינת נתונים…",
       "empty": "אין נתונים בקטלוג הנוכחי",
@@ -465,14 +462,9 @@
       },
       "noCode": "השנתון מדפיס את הקורס בלי מספר קורס, ולכן אי אפשר לסמן אותו כאן."
     },
-    "sticky": {
-      "facts": {
-        "days": "ימים",
-        "finish": "שעת סיום",
-        "gaps": "זמן המתנה"
-      },
-      "tabLabel": "מערכת {index} · {label}",
-      "selectorLabel": "מערכת:"
+    "bottomBar": {
+      "facts": "{days} ימים · עד {time}",
+      "factsOneDay": "יום אחד · עד {time}"
     },
     "steps": {
       "year": {

@@ -157,7 +157,7 @@ def test_strings_reach_the_browser(fresh):
 def test_app_branch_is_whole(fresh):
     """‏הזרקה חלקית הייתה נראית בדיוק כמו התקלה שדווחה: השרת תקין, הלקוח ריק."""
     subs = fresh.evaluate("Object.keys(window.STRINGS.app).sort()")
-    for need in ("grid", "header", "lecturers", "schedule", "sticky", "steps", "score"):
+    for need in ("grid", "header", "lecturers", "schedule", "bottomBar", "steps", "score"):
         assert need in subs, f"חסר app.{need}; יש רק {subs}"
 
 
@@ -224,14 +224,14 @@ def test_no_missing_keys_while_stepping_through(dev):
     except Exception:
         pass
 
+    # ‏Phase 8: הסרגל התחתון והכותרת הדקה, אחרי גלילה (במקום השכבה שהוסרה).
     try:
-        dev.evaluate("window.scrollTo(0, 1200)")
-        dev.wait_for_timeout(600)
-        dev.click("#btn-show-grid")
-        dev.wait_for_timeout(1200)
-        hits += scan(dev, "overlay")
-        dev.keyboard.press("Escape")
-        dev.wait_for_timeout(500)
+        dev.evaluate("window.scrollTo(0, 0)")
+        dev.click("#step-year-toggle")
+        dev.wait_for_timeout(800)
+        dev.evaluate("window.scrollTo(0, 400)")
+        dev.wait_for_timeout(800)
+        hits += scan(dev, "bottom-bar")
     except Exception:
         pass
 

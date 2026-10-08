@@ -90,6 +90,8 @@
   --accent: var(--ink);
   --accent-ink: var(--sf);
   --focus: var(--ink);
+  /* ‏ריחוף על כפתור הבנייה (מלא ‎--ink‎) — DESIGN.md, Scroll behaviour, 4. */
+  --ink-hover: #2a2a2e;
 
   /* ‏משטחי המשנה, ולמה הם אינם ‎--ln‎/‎--bd‎ בבהיר: ‎--muted‎ יושב עליהם
      (תג "בתכנית" על ‎--chip‎, שורת מרצה מדורגת על ‎--accent-soft‎), ו-‎--sec‎
@@ -127,6 +129,10 @@
   --gap: 14px;
   --shadow: 0 1px 0 rgba(74, 56, 38, .05), 0 2px 6px rgba(74, 56, 38, .09);
   --shadow-sm: 0 1px 2px rgba(74, 56, 38, .10);
+  /* ‏הכותרת הדקה (Scroll behaviour, 1), ומה שנדבק מתחתיה: ראש הקורס הפתוח
+     ‏בשלב המרצים (3). ברחב הכותרת אינה דביקה, ולכן ‎--sticky-top‎ שם 0. */
+  --head-thin: 48px;
+  --sticky-top: var(--head-thin);
 
   /* ---- עשרה צבעי קורס נגישים ----
      כל שילוב רקע/טקסט נבדק: יחס ניגודיות ‎>= 9:1‎ במצב בהיר ובמצב כהה כאחד
@@ -176,6 +182,7 @@
   --dark-accent-ink: var(--dark-sf);
   --dark-accent-soft: var(--dark-bd);
   --dark-focus: var(--dark-ink);
+  --dark-ink-hover: #d9d9d6;
 
   --dark-info-bg: #1b2431;  --dark-info-line: #4a6f9e;  --dark-info-ink: #bcd3ef;
   --dark-ok-bg:   #1a2c17;  --dark-ok-line:   #4f8a45;  --dark-ok-ink:   #b6e0a2;
@@ -264,6 +271,7 @@
     --accent-ink: var(--dark-accent-ink);
     --accent-soft: var(--dark-accent-soft);
     --focus: var(--dark-focus);
+    --ink-hover: var(--dark-ink-hover);
 
     --info-bg: var(--dark-info-bg);  --info-line: var(--dark-info-line);  --info-ink: var(--dark-info-ink);
     --ok-bg: var(--dark-ok-bg);  --ok-line: var(--dark-ok-line);  --ok-ink: var(--dark-ok-ink);
@@ -318,6 +326,7 @@
     --accent-ink: var(--dark-accent-ink);
     --accent-soft: var(--dark-accent-soft);
     --focus: var(--dark-focus);
+    --ink-hover: var(--dark-ink-hover);
 
     --info-bg: var(--dark-info-bg);  --info-line: var(--dark-info-line);  --info-ink: var(--dark-info-ink);
     --ok-bg: var(--dark-ok-bg);  --ok-line: var(--dark-ok-line);  --ok-ink: var(--dark-ok-ink);
@@ -935,129 +944,78 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
 }
 
 /* ==========================================================================
-   6ב. סרגל מצוף ושכבת המערכת
+   6ב. גלילה: כותרת דקה וסרגל תחתון (docs/DESIGN.md, "Scroll behaviour")
    ========================================================================== */
 
-/* ‏fixed ולא sticky: הסרגל צריך להופיע *בגלילה*, לא במקום שבו הוא יושב
-   ב-DOM. ‏visibility (ולא display) כדי שההחלקה פנימה תוכל לרוץ — וגם כדי
-   שכשהוא מוסתר הוא יוצא מסדר ה-Tab ומעץ הנגישות. */
-.sticky-bar {
+/* ‏פריט 1, מסך צר בלבד: ‎app.js‎ מוסיף ‎.is-thin‎ אחרי ~20px גלילה, וברחב
+   לעולם לא. ‏fixed ולא sticky: גובה הכותרת משתנה, ו-‎#app-header-spacer‎
+   שומר את גובהה המלא — כך שום דבר מתחתיה אינו זז, והגלילה אינה נגררת
+   חזרה אל מתחת לסף. */
+.app-header-spacer { display: none; }
+.app-header-spacer.is-on { display: block; }
+
+.header-step {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sec);
+  white-space: nowrap;
+}
+
+.app-header.is-thin {
   position: fixed;
   inset-block-start: 0;
   inset-inline: 0;
-  z-index: 55;
-  display: flex;
+  z-index: 50;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 10px var(--gap);
-  /* ~‏52px: הריפוד ועוד שורת פקדים אחת. */
-  padding: 8px clamp(12px, 3vw, 28px);
-  background: var(--panel);
-  border-block-end: 1px solid var(--line);
-  box-shadow: var(--shadow);
-  transform: translateY(-100%);
-  visibility: hidden;
-  transition: transform .18s ease, visibility .18s;
+  block-size: var(--head-thin);
+  padding-block: 0;
+  box-shadow: none;
 }
+.app-header.is-thin .header-side { display: none; }
+.app-header.is-thin .brand-icon { inline-size: 24px; block-size: 24px; }
+.app-header.is-thin .brand-title { font-size: 18px; }
 
-.sticky-bar.is-visible { transform: none; visibility: visible; }
-
-.sticky-tabs {
-  display: flex;
-  gap: 4px;
-  flex: none;
-}
-
-.sticky-tab {
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  inline-size: 1.9rem;
-  block-size: 1.9rem;
-  border-radius: 50%;
-  border: 1px solid var(--line-strong);
-  background: var(--panel);
-  color: var(--ink);
-  cursor: pointer;
-}
-
-.sticky-tab:hover { border-color: var(--accent); }
-
-.sticky-tab[aria-selected="true"] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-}
-
-.sticky-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  align-items: baseline;
-  /* הסרגל לא גדל: העובדות נחתכות לפני שהכפתור נדחף מהמסך. */
-  flex: 1 1 auto;
-  min-inline-size: 0;
-  overflow: hidden;
-}
-
-.sticky-fact { display: inline-flex; gap: .4em; align-items: baseline; white-space: nowrap; }
-.sticky-fact-label { font-size: 13px; color: var(--muted); }
-.sticky-fact-value { font-size: 13.5px; font-variant-numeric: tabular-nums; }
-
-.sticky-bar .btn { flex: none; }
-
-/* ---- שכבת המערכת ---- */
-.overlay-backdrop {
+/* ‏פריט 4, מסך צר בלבד. ‏visibility (ולא display) כדי שההחלקה תוכל לרוץ —
+   וגם כדי שכשהוא מוסתר הוא יוצא מסדר ה-Tab ומעץ הנגישות. */
+.bottom-bar {
   position: fixed;
-  inset: 0;
-  z-index: 80;
+  inset-block-end: 0;
+  inset-inline: 0;
+  z-index: 55;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: clamp(8px, 2vw, 24px);
-  background: rgba(0, 0, 0, .55);
+  justify-content: space-between;
+  gap: var(--gap);
+  padding: 10px clamp(12px, 3vw, 28px);
+  background: var(--sf);
+  border-block-start: 1px solid var(--bd);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform .2s ease, visibility .2s;
 }
-
-.overlay-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  inline-size: min(1400px, 100%);
-  /* גובה מרבי + min-block-size: 0 בילדים = הרשת גוללת בתוך השכבה
-     במקום לגלוש ממנה. כאן, בניגוד לעמוד עצמו, זו גלילה אחת וברורה. */
-  max-block-size: 100%;
-  padding: 14px clamp(12px, 2vw, 20px) 16px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+.bottom-bar.is-visible { transform: none; visibility: visible; }
+.bottom-bar-facts {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-inline-size: 0;
 }
+.bottom-bar .btn { flex: none; }
 
-.overlay-panel:focus { outline: none; }
+/* ‏"בנה מערכות" גולל אל התוצאה ב-scrollIntoView; בצר היא נוחתת מתחת לכותרת
+   הדקה ולא מאחוריה. ברחב ‎--sticky-top‎ הוא 0. */
+#step-schedule { scroll-margin-block-start: var(--sticky-top); }
 
-.overlay-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px var(--gap);
-  align-items: center;
+/* ‏בזמן שהסרגל מוצג, העמוד מקבל ריפוד תחתון בגובהו — הוא לעולם לא מכסה
+   תוכן — והודעות חולפות עולות מעליו. מסך בלבד: בהדפסה אין סרגל. */
+@media screen {
+  body.has-bottom-bar { padding-block-end: var(--bottom-bar-h, 0px); }
+  body.has-bottom-bar .toasts { inset-block-end: calc(16px + var(--bottom-bar-h, 0px)); }
 }
-
-.overlay-title { font-size: 16px; flex: none; }
-.overlay-head .btn { margin-inline-start: auto; }
-
-.overlay-panel > .legend { flex: none; }
-
-.overlay-panel > .grid-scroll {
-  flex: 1 1 auto;
-  min-block-size: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-}
-
-/* נעילת הגלילה מאחורי השכבה */
-html.is-modal-open,
-html.is-modal-open body { overflow: hidden; }
 
 /* ==========================================================================
    7. השלבים — סטפר (docs/DESIGN.md, "Steps" ו-Phase 2)
@@ -1853,15 +1811,28 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 /* ---- הקורס: אקורדיון עם פס צבע ---- */
 .lect-courses { display: flex; flex-direction: column; gap: 8px; }
 
+/* ‏‎overflow: clip‎ ולא ‎hidden‎: שניהם חותכים לפינות המעוגלות, אבל ‎hidden‎
+   ‏הופך את הכרטיס למיכל גלילה, ו-‎sticky‎ של הראש שלו היה נעצר בו ולא במסך. */
 .lect-course {
   border: 1px solid var(--bd);
   border-inline-start: 4px solid var(--ev-bd, var(--bd));
   border-radius: 10px;
   background: var(--sf);
-  overflow: hidden;
+  overflow: clip;
 }
 
 .lect-course-h { margin: 0; font-size: inherit; font-weight: inherit; }
+
+/* ‏Scroll behaviour, 3: ראש הקורס הפתוח נדבק מתחת לכותרת הדקה (ובראש המסך
+   ברחב) כל עוד שורות הקבוצות שלו נגללות. ‏sticky נעצר בגבולות הכרטיס, ולכן
+   הוא יוצא יחד איתו כשהקורס נגמר. */
+.lect-course.is-open > .lect-course-h {
+  position: sticky;
+  inset-block-start: var(--sticky-top);
+  z-index: 4;
+  background: var(--sf);
+  border-block-end: 1px solid var(--ln);
+}
 
 .lect-course-head {
   display: flex;
@@ -2237,6 +2208,13 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   border-block-end: 1px solid var(--line-strong);
 }
 
+/* ‏Scroll behaviour, 5, מסך צר: ‎app.js‎ מזיז את שורת הימים (‎--hd-shift‎)
+   כך שתשב מתחת לכותרת הדקה כל עוד הרשת על המסך. ברחב המשתנה אינו מוצב
+   ו-‎sticky‎ שלמעלה עושה את העבודה בתוך התיבה. מסך בלבד. */
+@media screen {
+  #schedule-grid .hd { transform: translateY(var(--hd-shift, 0px)); }
+}
+
 /* עמודת השעות נשארת גלויה גם כשגוללים את הימים */
 .tl {
   position: sticky;
@@ -2452,11 +2430,6 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
 
   body { background: #ffffff; font-size: 11.5px; padding: 8mm; }
 
-  /* הדפסה בזמן שהשכבה פתוחה: בלי זה נעילת הגלילה הייתה חותכת את הדף
-     אחרי העמוד הראשון. */
-  html.is-modal-open,
-  html.is-modal-open body { overflow: visible !important; }
-
   /* ‏על הנייר: הרשת, ושורת כותרת אחת מעליה. שום דבר אחר.
      ההגדרות, החלופות והמיון, אזהרת חפיפה, שבבי הנתונים, פאנל הפרטים
      והמקרא הם כולם עזרי **החלטה**. אחרי שההחלטה התקבלה,
@@ -2538,7 +2511,20 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
   margin-inline: auto;
 }
 
-.btn-build { font-size: 15px; padding: 10px 22px; }
+/* ‏מלא ‎--ink‎ עם טקסט ‎--sf‎ בשני המצבים, ו-‎--ink-hover‎ בריחוף (DESIGN.md,
+   Scroll behaviour, 4). הכפתור שבעמוד והכפתור שבסרגל התחתון זהים. */
+.btn-build {
+  font-size: 15px;
+  padding: 10px 22px;
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--sf);
+}
+.btn-build:hover:not(:disabled) {
+  background: var(--ink-hover);
+  border-color: var(--ink-hover);
+  filter: none;
+}
 
 /* ‏"פרטים טכניים" — מקופל, שקט, ובתחתית. */
 .tech-details {
@@ -2711,22 +2697,6 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
   font-size: 13px;
   direction: ltr;
   unicode-bidi: isolate;
-}
-
-/* ==========================================================================
-   19. שלב 3 — מה מבדיל בין המערכות
-   ========================================================================== */
-
-/* בסרגל המצוף ובשכבה — מה מייחד, במקום סטטיסטיקה שחוזרת מתחת. */
-.sticky-label { font-size: 13px; font-weight: 600; }
-
-
-/* ‏"מערכת:" לפני העיגולים — בלעדיה חמישה מספרים בשורה אינם אומרים דבר. */
-.sticky-selector-label {
-  flex: none;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
 }
 
 /* ==========================================================================
@@ -3176,15 +3146,19 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
     /* צעד 1 של סדר ההתאמה: ליום ו׳ ריק אין עמודה. */
     --day-empty-fri: 0px;
     --wide-steps: 400px;
+    /* ‏הכותרת נגללת עם העמוד, ולכן מה שנדבק נדבק לראש המסך. */
+    --sticky-top: 0px;
   }
 
   /* ‏הכותרת נגללת עם העמוד; העמודה של המערכת היא שנדבקת. */
   .app-header { position: static; }
 
-  /* ‏השלבים על המסך והמערכת תמיד עדכנית: אין כפתור בנייה, אין סרגל מצוף
-     ‏(וממילא אין דרך לשכבה), ואין שורת הגדרות. */
+  /* ‏השלבים על המסך והמערכת תמיד עדכנית: אין כפתור בנייה, אין סרגל תחתון
+     ‏ואין שורת הגדרות. הכותרת אינה מתכווצת ואין בה מספר שלב. */
   .build-row,
-  .sticky-bar,
+  .bottom-bar,
+  .header-step,
+  .app-header-spacer,
   .settings-pills { display: none !important; }
 
   /* ‏שתי עמודות. השורה האחרונה, ‎1fr‎, היא שסופגת את גובה המסך של עמודת

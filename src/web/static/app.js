@@ -764,11 +764,14 @@
     // ‏האם המשתמש/ת כבר נגעו במשהו בעמוד. הקיפול האוטומטי פועל רק לפני
     // הנגיעה הראשונה: שלב שנסגר מתחת לאצבע באמצע עבודה הוא הפרעה, לא עזרה.
     userActed: false,
-    // האם גללנו מעבר לשלב 1 — התנאי להופעת הסרגל המצוף.
-    pastFirstStep: false,
-    // שכבת המערכת: פתוחה, ולאן להחזיר את הפוקוס בסגירה.
-    overlayOpen: false,
-    overlayReturnTo: null,
+    // ‏הסרגל התחתון (צר): האם כפתור הבנייה שבעמוד, או התוצאה, על המסך.
+    // ‏‎true‎ עד שה-IntersectionObserver עונה — עד אז הסרגל אינו מופיע.
+    buildRowSeen: true,
+    resultsSeen: true,
+    // ‏רגע הנחיתה (DESIGN.md, Scroll behaviour, 6): האם המערכת הבאה שתוצג
+    // ‏מתשובה חדשה של השרת נוחתת. ‏true בטעינה, אחרי "בנה מערכות", ואחרי
+    // ‏שלא הייתה מערכת להציג.
+    landPending: true,
     // ‏השלב שנפתח ב"שינוי" — ‏null פירושו "השלב הראשון שעוד לא הושלם".
     // ‏לא נשמר: מי שחוזר/ת לעמוד רואה את השלבים שהשלים/ה מקופלים.
     openStep: null,
@@ -3174,18 +3177,12 @@
     ui.attendanceOff = byId("attendance-off");
 
     ui.appHeader = byId("app-header");
-    ui.stickyBar = byId("sticky-bar");
-    ui.stickyTabs = byId("sticky-tabs");
-    ui.stickyFacts = byId("sticky-facts");
-    ui.btnShowGrid = byId("btn-show-grid");
-    ui.overlay = byId("grid-overlay");
-    ui.overlayPanel = byId("grid-overlay-panel");
-    ui.overlayTabs = byId("overlay-tabs");
-    ui.overlayFacts = byId("overlay-facts");
-    ui.overlayLegend = byId("overlay-legend");
-    ui.overlayGrid = byId("overlay-grid");
-    ui.overlayGridScroll = byId("overlay-grid-scroll");
-    ui.btnCloseGrid = byId("btn-close-grid");
+    ui.headerSpacer = byId("app-header-spacer");
+    ui.headerStep = byId("header-step");
+    ui.buildRow = byId("build-row");
+    ui.bottomBar = byId("bottom-bar");
+    ui.bottomFacts = byId("bottom-bar-facts");
+    ui.btnBottomBuild = byId("btn-bottom-build");
 
     ui.steps = {
       year: byId("step-year"),
@@ -3462,29 +3459,17 @@
     if (ui.btnBuild) {
       // הכפתור עושה בדיוק את מה שכתוב עליו: מחשב מחדש, ואז לוקח אל התוצאה.
       ui.btnBuild.addEventListener("click", function () {
-        doSolve();
-        var target = ui.steps && ui.steps.schedule;
-        if (target && target.scrollIntoView) {
-          target.scrollIntoView({ block: "start" });
-        }
+        buildAndShow(false);
       });
     }
-    if (ui.btnShowGrid) {
-      ui.btnShowGrid.addEventListener("click", openGridOverlay);
-    }
-    if (ui.btnCloseGrid) {
-      ui.btnCloseGrid.addEventListener("click", closeGridOverlay);
-    }
-    if (ui.overlay) {
-      // לחיצה על הרקע בלבד — לא על הפאנל עצמו.
-      ui.overlay.addEventListener("mousedown", function (ev) {
-        if (ev.target === ui.overlay) closeGridOverlay();
+    if (ui.btnBottomBuild) {
+      // ‏אותה פעולה בדיוק כמו הכפתור שבעמוד (DESIGN.md, Scroll behaviour, 4).
+      ui.btnBottomBuild.addEventListener("click", function () {
+        buildAndShow(true);
       });
     }
-    if (ui.overlayPanel) {
-      ui.overlayPanel.addEventListener("keydown", overlayKeydown);
-    }
-    watchStickyBar();
+    watchBottomBar();
+    wireScrollChrome();
 
     // נגיעה ראשונה כלשהי בעמוד מכבה את הקיפול האוטומטי. ``capture`` כדי
     // שגם לחיצה שנעצרת בדרך תיספר, ו-``passive`` כדי לא לעכב גלילה.
@@ -3710,18 +3695,14 @@
     });
   }
 
-  /** תחתית מה שמכסה כרגע את ראש המסך: כותרת דביקה, וסרגל מצוף מוצג. */
+  /** תחתית מה שמכסה כרגע את ראש המסך: הכותרת, כשהיא דביקה או קבועה. */
   function coverBottom() {
-    var bottom = 0;
-    [ui.appHeader, ui.stickyBar].forEach(function (bar) {
-      if (!bar) return;
-      var cs = getComputedStyle(bar);
-      if (cs.display === "none" || (cs.position !== "sticky" && cs.position !== "fixed")) return;
-      if (bar === ui.stickyBar && !bar.classList.contains("is-visible")) return;
-      var rect = bar.getBoundingClientRect();
-      if (rect.top <= 0 && rect.bottom > bottom) bottom = rect.bottom;
-    });
-    return bottom;
+    var bar = ui.appHeader;
+    if (!bar) return 0;
+    var cs = getComputedStyle(bar);
+    if (cs.display === "none" || (cs.position !== "sticky" && cs.position !== "fixed")) return 0;
+    var rect = bar.getBoundingClientRect();
+    return rect.top <= 0 && rect.bottom > 0 ? rect.bottom : 0;
   }
 
   /**
@@ -3738,14 +3719,10 @@
       if (pos === "sticky" || pos === "fixed") offset += header.getBoundingClientRect().height;
     }
     var top = node.getBoundingClientRect().top + y - offset;
-    // ‏הסרגל המצוף (בצר) מופיע כששלב 1 כולו מעל המסך ויש מערכת — ראו
-    // ‏watchStickyBar. אם הגלילה תביא אותו, השלב צריך לשבת גם מתחתיו.
-    var bar = ui.stickyBar;
-    var first = ui.steps && ui.steps.year;
-    if (bar && first && !isWide() && schedules().length > 0 &&
-        getComputedStyle(bar).display !== "none" &&
-        first.getBoundingClientRect().bottom + y <= top) {
-      top -= bar.getBoundingClientRect().height;
+    // ‏בצר, גלילה אל מעבר ל-‎HEADER_THIN_AFTER‎ מביאה את הכותרת הדקה
+    // ‏(שעוד לא קיימת אם אנחנו בראש העמוד), והשלב צריך לשבת מתחתיה.
+    if (!isWide() && !headerThin() && top - thinHeaderHeight() > HEADER_THIN_AFTER) {
+      top -= thinHeaderHeight();
     }
     window.scrollTo({ top: Math.max(0, top), behavior: reducedMotion() ? "auto" : "smooth" });
   }
@@ -3794,35 +3771,140 @@
   }
 
   /* =====================================================================
-   * 8ב. סרגל מצוף ושכבת המערכת
+   * 8ב. גלילה: כותרת דקה, סרגל תחתון, שורת ימים נעוצה (DESIGN.md,
+   *     "Scroll behaviour", 1, 4 ו-5)
    * ===================================================================== */
 
+  //: אחרי כמה פיקסלים של גלילה הכותרת הופכת לפס דק (פריט 1, "~20px").
+  var HEADER_THIN_AFTER = 20;
+
+  function headerThin() {
+    return !!(ui.appHeader && ui.appHeader.classList.contains("is-thin"));
+  }
+
+  /** גובה הכותרת הדקה: ‎--head-thin‎ ב-style.css, מקור יחיד. */
+  function thinHeaderHeight() {
+    var raw = getComputedStyle(document.documentElement).getPropertyValue("--head-thin");
+    return parseFloat(raw) || 48;
+  }
+
   /**
-   * הסרגל מופיע רק אחרי שחולפים על שלב 1.
-   * ‏IntersectionObserver ולא מאזין scroll: הוא לא מריץ קוד בכל פיקסל של
-   * גלילה, וזה משנה בעמוד שיש בו רשת של מאות תאים.
+   * ‏הכותרת הדקה והשורה הנעוצה של הימים — מה שתלוי במיקום הגלילה. מאזין
+   * ‏scroll אחד, פריים אחד לכל היותר: שניהם עוקבים אחרי כל פיקסל, ולכן
+   * ‏IntersectionObserver אינו מתאים כאן (בניגוד לסרגל התחתון).
    */
-  function watchStickyBar() {
-    var first = ui.steps && ui.steps.year;
-    if (!first || !ui.stickyBar) return;
-    if (typeof window.IntersectionObserver !== "function") {
-      // דפדפן בלי IO — הסרגל פשוט מוצג תמיד. עדיף מאשר שלא יופיע כלל.
-      runtime.pastFirstStep = true;
-      renderStickyBar();
-      return;
+  function wireScrollChrome() {
+    var frame = 0;
+    var tick = function () {
+      frame = 0;
+      updateHeaderThin();
+      updatePinnedDays();
+    };
+    var onScroll = function () {
+      if (!window.requestAnimationFrame) {
+        tick();
+        return;
+      }
+      if (!frame) frame = window.requestAnimationFrame(tick);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    tick();
+  }
+
+  /**
+   * ‏פריט 1: במסך צר, אחרי ‎HEADER_THIN_AFTER‎ פיקסלים, הכותרת הופכת לפס
+   * ‏קבוע ודק. המרווח שאחריה מקבל את גובהה המלא — נמדד רגע לפני שהיא
+   * ‏מתכווצת — ולכן שום דבר בעמוד אינו זז, והגלילה אינה חוזרת אל מתחת לסף.
+   */
+  function updateHeaderThin() {
+    var header = ui.appHeader;
+    if (!header) return;
+    var thin = !isWide() && (window.pageYOffset || 0) > HEADER_THIN_AFTER;
+    if (thin === headerThin()) return;
+    if (thin && ui.headerSpacer) {
+      ui.headerSpacer.style.blockSize = header.getBoundingClientRect().height + "px";
     }
-    var io = new window.IntersectionObserver(
-      function (entries) {
-        entries.forEach(function (entry) {
-          // ‏"חלפנו" = השלב כולו מעל קצה המסך העליון, ולא מתחת לו.
-          runtime.pastFirstStep =
-            !entry.isIntersecting && entry.boundingClientRect.bottom <= 0;
-        });
-        renderStickyBar();
-      },
-      { threshold: 0 }
+    setClass(header, "is-thin", thin);
+    setClass(ui.headerSpacer, "is-on", thin);
+    renderHeaderStep();
+  }
+
+  /** ‏"שלב X מתוך Y" בכותרת הדקה; כשכל השלבים הושלמו — כלום. */
+  function renderHeaderStep() {
+    if (!ui.headerStep) return;
+    var flow = runtime.stepFlow;
+    var open = flow && flow.frontier !== null ? flow.open : null;
+    var idx = open ? COLLAPSIBLE_STEPS.indexOf(open) : -1;
+    setText(
+      ui.headerStep,
+      idx >= 0 ? Tf("app.header.stepCount", { n: idx + 1, total: COLLAPSIBLE_STEPS.length }) : ""
     );
-    io.observe(first);
+    setHidden(ui.headerStep, !(idx >= 0 && headerThin()));
+  }
+
+  /**
+   * ‏פריט 5, במסך צר: מיכל הרשת נגלל לרוחב, ולכן הוא מיכל גלילה, ו-‎sticky‎
+   * ‏של שורת הימים נעצר בו ולא במסך. במקום זה השורה מוזזת למטה (‎--hd-shift‎)
+   * ‏כך שתשב מתחת לכותרת הדקה כל עוד הרשת על המסך, ולעולם לא מעבר לתחתיתה.
+   * ‏ברחב זה ‎sticky‎ רגיל בתוך התיבה (צעד 4 של סדר ההתאמה), והמשתנה מאופס.
+   */
+  function updatePinnedDays() {
+    var grid = ui.grid;
+    if (!grid) return;
+    var shift = 0;
+    if (!isWide() && ui.gridScroll && !ui.gridScroll.hidden) {
+      var head = grid.querySelector(".hd");
+      var rect = grid.getBoundingClientRect();
+      if (head && rect.height > 0) {
+        var max = rect.height - head.getBoundingClientRect().height;
+        shift = clamp(coverBottom() - rect.top, 0, Math.max(0, max));
+      }
+    }
+    var value = shift ? Math.round(shift) + "px" : "";
+    if (grid.style.getPropertyValue("--hd-shift") !== value) {
+      if (value) grid.style.setProperty("--hd-shift", value);
+      else grid.style.removeProperty("--hd-shift");
+    }
+  }
+
+  /**
+   * ‏פריט 4: הסרגל התחתון מופיע רק כשכפתור הבנייה שבעמוד והתוצאה שניהם מחוץ
+   * ‏למסך. ‏IntersectionObserver ולא מאזין scroll: הוא לא מריץ קוד בכל פיקסל.
+   * ‏בדפדפן בלי IO הסרגל פשוט אינו מופיע — הכפתור שבעמוד קיים תמיד.
+   */
+  function watchBottomBar() {
+    if (!ui.bottomBar || typeof window.IntersectionObserver !== "function") return;
+    var io = new window.IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.target === ui.buildRow) runtime.buildRowSeen = entry.isIntersecting;
+        if (entry.target === ui.steps.schedule) runtime.resultsSeen = entry.isIntersecting;
+      });
+      renderBottomBar();
+    });
+    if (ui.buildRow) io.observe(ui.buildRow);
+    if (ui.steps && ui.steps.schedule) io.observe(ui.steps.schedule);
+  }
+
+  /** ‏"בנה מערכות", מהעמוד או מהסרגל: מחשב מחדש ולוקח אל התוצאה. */
+  function buildAndShow(fromBar) {
+    runtime.landPending = true;
+    doSolve();
+    var target = ui.steps && ui.steps.schedule;
+    // ‏‎scroll-margin‎ על ‎#step-schedule‎ (style.css) משאיר את ראש התוצאה
+    // ‏מתחת לכותרת הדקה.
+    if (target && target.scrollIntoView) target.scrollIntoView({ block: "start" });
+    if (!fromBar) return;
+    // ‏הסרגל ייעלם כשהתוצאה תגיע למסך, ולכן הפוקוס עובר אליה ולא נשאר על
+    // ‏כפתור שאינו מוצג עוד.
+    var focus = ui.gridScroll && !ui.gridScroll.hidden ? ui.gridScroll : ui.btnBuild;
+    if (focus && focus.focus) {
+      try {
+        focus.focus({ preventScroll: true });
+      } catch (e) {
+        focus.focus();
+      }
+    }
   }
 
   /** שעת הסיום המאוחרת ביותר במערכת, בדקות. ‏null כשאין מפגשים. */
@@ -3833,62 +3915,6 @@
       if (end !== null && (latest === null || end > latest)) latest = end;
     });
     return latest;
-  }
-
-  /** שלוש העובדות שהסרגל מחזיק. אותן עובדות בדיוק גם בשכבה. */
-  /**
-   * מה שהסרגל המצוף מחזיק: לא סטטיסטיקה.
-   *
-   * ‏"ימים 5 · שעת סיום 19:50 · זמן המתנה 3:00" הופיע גם כאן וגם בפאנל
-   * שמתחת, ובשתי הלשוניות היה זהה — כלומר לא עזר לבחור ולא הוסיף מידע.
-   * במקומו: מה מייחד את המערכת שנבחרה.
-   */
-  function stickyLabel(list, idx) {
-    if (!list.length) return "";
-    var labels = differentiators(list);
-    return labels[clamp(idx, 0, labels.length - 1)] || "";
-  }
-
-  /** לשונית מוקטנת: המספר בלבד, והתיאור המלא ב-title ו-aria-label. */
-  /** לשונית מוקטנת: המספר בלבד, והתיאור המבדיל ב-title וב-aria-label. */
-  function compactTabs(box, list, prefix) {
-    var labels = differentiators(list);
-    list.forEach(function (sch, idx) {
-      var label = Tf("app.sticky.tabLabel", {
-        index: idx + 1,
-        label: labels[idx],
-      });
-      box.appendChild(
-        el("button", {
-          class: "sticky-tab",
-          attrs: {
-            type: "button",
-            role: "tab",
-            "aria-selected": idx === state.activeSchedule ? "true" : "false",
-            "aria-label": label,
-            title: label,
-          },
-          data: { fk: prefix + idx },
-          text: String(idx + 1),
-          on: {
-            click: function () {
-              setState({ activeSchedule: idx }, { solve: false });
-            },
-          },
-        })
-      );
-    });
-  }
-
-  function factChips(box, sch) {
-    stickyFacts(sch).forEach(function (f) {
-      box.appendChild(
-        el("span", { class: "sticky-fact" }, [
-          el("span", { class: "sticky-fact-label", text: f.label }),
-          el("strong", { class: "sticky-fact-value ltr", text: f.value }),
-        ])
-      );
-    });
   }
 
   /** המצב שהתחתית צוירה לפיו, כדי לא לבנות אותה מחדש בכל ‏render(). */
@@ -3991,125 +4017,46 @@
     });
   }
 
-  function renderStickyBar() {
-    if (!ui.stickyBar) return;
-    var list = schedules();
+  function renderBottomBar() {
+    var bar = ui.bottomBar;
+    if (!bar) return;
     var sch = activeSchedule();
-    // אין מה לסכם לפני שיש פתרון, וגם לא בראש העמוד.
-    var show = runtime.pastFirstStep === true && list.length > 0 && !!sch;
-    setClass(ui.stickyBar, "is-visible", show);
-    if (!show) return;
-    if (ui.stickyTabs) {
-      rebuild(ui.stickyTabs, function (box) {
-        compactTabs(box, list, "bar-tab-");
-      });
+    var show =
+      !isWide() && !!sch && schedules().length > 0 &&
+      runtime.buildRowSeen === false && runtime.resultsSeen === false;
+    if (sch && ui.bottomFacts) {
+      var dayCount = num(sch.days_count, 0);
+      var finish = lastFinishOf(sch);
+      setText(
+        ui.bottomFacts,
+        Tf(dayCount === 1 ? "app.bottomBar.factsOneDay" : "app.bottomBar.facts", {
+          days: dayCount,
+          time: finish === null ? "—" : fmtTime(finish),
+        })
+      );
     }
-    if (ui.stickyFacts) {
-      rebuild(ui.stickyFacts, function (box) {
-        var label = stickyLabel(list, state.activeSchedule);
-        if (label) {
-          box.appendChild(el("span", { class: "sticky-label", text: label }));
+    if (!show && bar.contains(document.activeElement)) {
+      // ‏הסרגל נעלם מתחת לפוקוס: הוא עובר לכפתור שבעמוד — או, ברחב, שם
+      // ‏הכפתור אינו מוצג, לרשת עצמה — ולא נופל ל-body.
+      var back = [ui.btnBuild, ui.gridScroll].filter(function (n) {
+        return n && n.offsetParent !== null;
+      })[0];
+      if (back) {
+        try {
+          back.focus({ preventScroll: true });
+        } catch (e) {
+          back.focus();
         }
-      });
-    }
-  }
-
-  function renderGridOverlay() {
-    if (!ui.overlay || !runtime.overlayOpen) return;
-    var list = schedules();
-    var sch = activeSchedule();
-    if (!sch) {
-      closeGridOverlay();
-      return;
-    }
-    if (ui.overlayTabs) {
-      rebuild(ui.overlayTabs, function (box) {
-        compactTabs(box, list, "ov-tab-");
-      });
-    }
-    if (ui.overlayFacts) {
-      rebuild(ui.overlayFacts, function (box) {
-        var label = stickyLabel(list, state.activeSchedule);
-        if (label) {
-          box.appendChild(el("span", { class: "sticky-label", text: label }));
-        }
-      });
-    }
-    if (ui.overlayLegend) {
-      rebuild(ui.overlayLegend, function (box) {
-        buildLegend(box, sch);
-      });
-    }
-    if (ui.overlayGrid) {
-      rebuild(ui.overlayGrid, function (box) {
-        buildGrid(box, sch, softConflictInfo(sch));
-      });
-      requestGridSizing();
-    }
-  }
-
-  /** כל מה שאפשר להעביר אליו פוקוס בתוך השכבה, בסדר מסמך. */
-  function focusableIn(root) {
-    if (!root) return [];
-    var nodes = root.querySelectorAll(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    return Array.prototype.filter.call(nodes, function (n) {
-      return !n.disabled && n.offsetParent !== null;
-    });
-  }
-
-  /** ‏Esc סוגר, ו-Tab מסתובב בתוך השכבה במקום לברוח לעמוד שמאחוריה. */
-  function overlayKeydown(ev) {
-    if (ev.key === "Escape") {
-      ev.preventDefault();
-      closeGridOverlay();
-      return;
-    }
-    if (ev.key !== "Tab") return;
-    var items = focusableIn(ui.overlayPanel);
-    if (!items.length) return;
-    var first = items[0];
-    var last = items[items.length - 1];
-    var active = document.activeElement;
-    if (ev.shiftKey && (active === first || active === ui.overlayPanel)) {
-      ev.preventDefault();
-      last.focus();
-    } else if (!ev.shiftKey && active === last) {
-      ev.preventDefault();
-      first.focus();
-    }
-  }
-
-  function openGridOverlay() {
-    if (!ui.overlay || runtime.overlayOpen) return;
-    if (!activeSchedule()) return;
-    runtime.overlayReturnTo = document.activeElement;
-    runtime.overlayOpen = true;
-    setHidden(ui.overlay, false);
-    setClass(document.documentElement, "is-modal-open", true);
-    renderGridOverlay();
-    // הפוקוס נכנס לפאנל עצמו: קורא מסך מכריז את שם הדיאלוג, ומשם Tab
-    // מתחיל מהפקד הראשון שבתוכו.
-    if (ui.overlayPanel) ui.overlayPanel.focus();
-  }
-
-  function closeGridOverlay() {
-    if (!ui.overlay || !runtime.overlayOpen) return;
-    runtime.overlayOpen = false;
-    setHidden(ui.overlay, true);
-    setClass(document.documentElement, "is-modal-open", false);
-    var back = runtime.overlayReturnTo;
-    runtime.overlayReturnTo = null;
-    // חזרה לכפתור שפתח — ובלי שהוא נעלם בינתיים, לכפתור שבסרגל.
-    var target =
-      back && back.isConnected && back.offsetParent !== null ? back : ui.btnShowGrid;
-    if (target) {
-      try {
-        target.focus();
-      } catch (e) {
-        /* פוקוס נכשל — לא סיבה להשאיר את השכבה פתוחה */
       }
+    }
+    setClass(bar, "is-visible", show);
+    setClass(document.body, "has-bottom-bar", show);
+    // ‏ריפוד תחתון לעמוד בגובה הסרגל, כדי שלעולם לא יכסה תוכן (style.css).
+    if (show) {
+      document.documentElement.style.setProperty(
+        "--bottom-bar-h",
+        Math.ceil(bar.getBoundingClientRect().height) + "px"
+      );
     }
   }
 
@@ -4514,12 +4461,11 @@
     renderLecturersStep();
     renderScheduleStep();
     renderStepStates();
-    renderStickyBar();
+    renderHeaderStep();
+    renderBottomBar();
     renderTechDetails();
     renderFooter();
     markMissingStrings();
-    // אחרי שלב 5 — הוא זה שמחשב את המערכת הפעילה, והשכבה מציגה אותה.
-    renderGridOverlay();
   }
 
   /* --- כותרת: טריות, כפתורים, יומן ---------------------------------- */
@@ -7409,6 +7355,56 @@
     });
   }
 
+  /* --- רגע הנחיתה (DESIGN.md, "Scroll behaviour", 6) ------------------- */
+
+  //: ‏≈70ms בין בלוק לבלוק, 500ms לכל אחד.
+  var LAND_STAGGER_MS = 70;
+  var LAND_MS = 500;
+  var LAND_ID = "ev-land";
+
+  /**
+   * ‏הבלוקים נחשפים בזה אחר זה, לפי יום ואז לפי שעה: ‏clip-path נפתח מלמעלה
+   * ‏למטה. ‏fill: backwards — בלוק שתורו עוד לא הגיע ממתין סגור ולא מופיע
+   * ‏לפני זמנו.
+   *
+   * ‏לא transform ולא opacity: הזזה הייתה משנה את המלבן של הבלוק במשך ~2
+   * ‏שניות, וכל מדידה בזמן הזה — ‏FLIP של החלפת חלופה, פרטי השיעור, ההתאמה
+   * ‏למסך — הייתה רואה בלוק במקום הלא נכון; ושקיפות היא בדיוק מה ש-
+   * ‏tests/test_no_opacity_on_text.py אוסר על טקסט. ‏clip-path אינו משנה את
+   * ‏המלבן ואינו מחוויר דבר — הוא רק מסתיר את מה שעוד לא נחשף.
+   * ‏prefers-reduced-motion: בלי נחיתה — הבלוקים פשוט במקומם.
+   */
+  function playLanding(root) {
+    if (!root || reducedMotion()) return;
+    var blocks = Array.prototype.slice.call(root.querySelectorAll(".ev"));
+    var at = function (b, prop) {
+      return parseInt(b.style[prop], 10) || 0;
+    };
+    blocks.sort(function (a, b) {
+      return at(a, "gridColumnStart") - at(b, "gridColumnStart") ||
+        at(a, "gridRowStart") - at(b, "gridRowStart");
+    });
+    blocks.forEach(function (b, i) {
+      if (typeof b.animate !== "function") return;
+      var anim = b.animate(
+        [{ clipPath: "inset(0 0 100% 0)" }, { clipPath: "inset(0 0 0 0)" }],
+        { duration: LAND_MS, delay: i * LAND_STAGGER_MS, easing: MOVE_EASING, fill: "backwards" }
+      );
+      anim.id = LAND_ID;
+    });
+  }
+
+  function cancelLanding(root) {
+    if (!root) return;
+    var blocks = root.querySelectorAll(".ev");
+    for (var i = 0; i < blocks.length; i++) {
+      if (typeof blocks[i].getAnimations !== "function") continue;
+      blocks[i].getAnimations().forEach(function (a) {
+        if (a.id === LAND_ID) a.finish();
+      });
+    }
+  }
+
   /* --- המקרא: הדגשת קורס (DESIGN.md, "Results page", 7) ---------------- */
 
   /**
@@ -7811,11 +7807,22 @@
     var shownIdx = clamp(state.activeSchedule, 0, Math.max(0, list.length - 1));
     var switching =
       !!sch && runtime.gridShown.solve === s && runtime.gridShown.idx !== shownIdx;
+    // ‏נחיתה שעוד רצה מסתיימת מיד: בלוק חשוף למחצה אינו נקודת מוצא לתנועה.
+    if (switching) cancelLanding(ui.grid);
     var before = switching ? blockRects(ui.grid) : null;
     if (switching) cancelMoves(ui.grid);
     if (ui.grid) {
       if (sch) buildGrid(ui.grid, sch, soft, { persist: true });
       else clear(ui.grid);
+    }
+    // ‏רגע הנחיתה (Scroll behaviour, 6): פעם אחת לכל בנייה — תשובה חדשה של
+    // ‏השרת אחרי טעינה, אחרי "בנה מערכות" או אחרי שלא הייתה מערכת. לא בהחלפת
+    // ‏חלופה (שזזה), ולא בעדכון חי של מערכת שכבר מוצגת.
+    if (!sch) {
+      runtime.landPending = true;
+    } else if (runtime.landPending && runtime.gridShown.solve !== s) {
+      runtime.landPending = false;
+      playLanding(ui.grid);
     }
     runtime.gridShown = { solve: s, idx: sch ? shownIdx : -1 };
     setHidden(ui.gridScroll, !sch);
@@ -9160,16 +9167,16 @@
     return false;
   }
 
-  /** שתי הרשתות: שלב 5 והשכבה — ובהדפסה, עמוד אחד כשאפשר. */
+  /** רשת שלב 5 — ובהדפסה, עמוד אחד כשאפשר. */
   function sizeGrids() {
     if (gridSizingFrame && window.cancelAnimationFrame) {
       window.cancelAnimationFrame(gridSizingFrame);
     }
     gridSizingFrame = 0;
     fitScreenGrid();
-    sizeGrid(ui.overlayGrid);
     fitGridToPage();
     scrollGridToFirstLesson();
+    updatePinnedDays();
   }
 
   /**
@@ -9347,15 +9354,14 @@
   }
 
   /**
-   * ‏השכבה "הצג מערכת" אינה נגישה במסך רחב — הכפתור שלה בסרגל המצוף, שאינו
-   * מוצג שם. אם היא פתוחה כשהחלון מתרחב, היא נסגרת, והפוקוס עובר לרשת
-   * עצמה ולא נופל ל-body.
+   * ‏הכותרת הדקה והסרגל התחתון קיימים רק בצר: כשהחלון מתרחב הם נעלמים,
+   * ‏וכשהוא מצטמצם הם חוזרים לפי מיקום הגלילה.
    */
   function onWideChange() {
-    if (isWide() && runtime.overlayOpen) {
-      runtime.overlayReturnTo = ui.gridScroll;
-      closeGridOverlay();
-    }
+    updateHeaderThin();
+    renderHeaderStep();
+    renderBottomBar();
+    updatePinnedDays();
     requestGridSizing();
   }
 
@@ -10039,9 +10045,7 @@
     // עושה בגובה לא ייצור לולאת ResizeObserver.
     if (window.ResizeObserver) {
       var ro = new ResizeObserver(requestGridSizing);
-      [ui.gridScroll, ui.overlayGridScroll].forEach(function (node) {
-        if (node) ro.observe(node);
-      });
+      if (ui.gridScroll) ro.observe(ui.gridScroll);
     }
     // ‏Heebo רחב מגופן הגיבוי. מדידה שקדמה לטעינתו קבעה גובה לטקסט צר
     // מזה שבסוף צויר — זו אחת משתי הסיבות לחיתוך שב-DEFERRED.

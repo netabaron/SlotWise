@@ -218,32 +218,34 @@ def test_the_step_heading_is_not_shown_but_stays_for_screen_readers(wide):
 # ==========================================================================
 # 2. מה שאינו מוצג במסך רחב
 # ==========================================================================
-def test_build_button_sticky_bar_and_settings_pills_are_hidden_at_1440(wide):
+def test_build_button_bottom_bar_and_settings_pills_are_hidden_at_1440(wide):
     wide.evaluate("window.scrollTo(0, 1500)")
     wide.wait_for_timeout(400)
     try:
-        for sel in ("#build-row", "#sticky-bar", "#settings-pills"):
+        # ‏Phase 8: ‏#sticky-bar הוסר; הסרגל התחתון במקומו (באישור 2026-10-08).
+        for sel in ("#build-row", "#bottom-bar", "#settings-pills"):
             assert _rect(wide, sel)["display"] == "none", sel
     finally:
         wide.evaluate("window.scrollTo(0, 0)")
         wide.wait_for_timeout(200)
 
 
-def test_build_button_sticky_bar_and_settings_pills_are_visible_at_1000(browser, server):
+def test_build_button_bottom_bar_and_settings_pills_are_visible_at_1000(browser, server):
     ctx, pg = _open_semester_5(browser, server, width=NARROW, height=900)
     try:
         assert _shown(pg, "#build-row")
         assert _shown(pg, "#btn-build")
         assert _shown(pg, "#settings-pills")
-        # הסרגל המצוף מופיע אחרי שחולפים על שלב 1.
+        # ‏הסרגל התחתון מופיע אחרי הגלילה, כשהכפתור שבעמוד והתוצאה מחוץ
+        # ‏למסך (Phase 8: במקום הסרגל המצוף, באישור 2026-10-08).
         below = pg.evaluate("document.getElementById('step-year').getBoundingClientRect().bottom + window.scrollY + 20")
         pg.evaluate(f"window.scrollTo(0, {below})")
         pg.wait_for_function(
-            "() => document.getElementById('sticky-bar').classList.contains('is-visible')", timeout=5000
+            "() => document.getElementById('bottom-bar').classList.contains('is-visible')", timeout=5000
         )
         pg.wait_for_timeout(400)
-        assert _shown(pg, "#sticky-bar")
-        assert _shown(pg, "#btn-show-grid")
+        assert _shown(pg, "#bottom-bar")
+        assert _shown(pg, "#btn-bottom-build")
     finally:
         ctx.close()
 
@@ -390,28 +392,30 @@ def test_opening_the_details_moves_nothing(browser, server):
 
 
 # ==========================================================================
-# 5. השכבה נסגרת כשהחלון מתרחב
+# 5. הסרגל התחתון נעלם כשהחלון מתרחב
 # ==========================================================================
-def test_the_overlay_closes_when_the_window_widens(browser, server):
+# ‏Phase 8: השכבה "הצג מערכת" הוסרה; אותה התנהגות — נעלם ברחב, והפוקוס
+# ‏אינו נופל ל-body — נבדקת על הסרגל התחתון (באישור 2026-10-08).
+def test_the_bottom_bar_goes_away_when_the_window_widens(browser, server):
     ctx, pg = _open_semester_5(browser, server, width=NARROW, height=900)
     try:
         below = pg.evaluate("document.getElementById('step-year').getBoundingClientRect().bottom + window.scrollY + 20")
         pg.evaluate(f"window.scrollTo(0, {below})")
         pg.wait_for_function(
-            "() => document.getElementById('sticky-bar').classList.contains('is-visible')", timeout=5000
+            "() => document.getElementById('bottom-bar').classList.contains('is-visible')", timeout=5000
         )
         pg.wait_for_timeout(300)
-        pg.click("#btn-show-grid")
-        pg.wait_for_timeout(300)
-        assert pg.evaluate("!document.getElementById('grid-overlay').hidden")
+        pg.focus("#btn-bottom-build")
+        pg.wait_for_timeout(100)
+        assert pg.evaluate("document.activeElement.id") == "btn-bottom-build"
         pg.set_viewport_size({"width": WIDE, "height": 900})
         pg.wait_for_timeout(600)
         got = pg.evaluate(
-            """() => ({hidden: document.getElementById('grid-overlay').hidden,
-                       modal: document.documentElement.classList.contains('is-modal-open'),
+            """() => ({hidden: !document.getElementById('bottom-bar').classList.contains('is-visible'),
+                       padded: document.body.classList.contains('has-bottom-bar'),
                        focus: document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : null})"""
         )
-        assert got["hidden"] and not got["modal"], got
+        assert got["hidden"] and not got["padded"], got
         assert got["focus"] not in (None, "BODY", "HTML"), got
         assert _shown(pg, "#" + got["focus"]), got
     finally:
