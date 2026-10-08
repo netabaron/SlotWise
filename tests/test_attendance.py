@@ -703,8 +703,15 @@ def test_linked_to_is_still_enforced_when_conflicts_go_soft(courses):
 
 
 def test_solve_can_return_a_soft_schedule_and_flags_it(courses):
-    """solve חייבת להחזיר מערכות רכות *ולסמן* אותן — לא בשקט."""
-    prefs = soft_prefs(target_days=4)
+    """solve חייבת להחזיר מערכות רכות *ולסמן* אותן — לא בשקט.
+
+    מאז 2026-10-09 הסדר הוא לפי עדיפות, וחפיפה נכנסת לחמש המובילות רק כשהיא
+    קונה משהו. כאן היא לא חוסכת יום (הרצאת 61753 ממילא אינה נספרת), ולכן
+    מדורג/ת מתרגל/ת שרק חפיפה מאפשרת. בלי זה הבדיקה דילגה בלי לבדוק דבר."""
+    prefs = soft_prefs(
+        target_days=4,
+        preferred_lecturers={"61756": {"תרגול": ["מר חסאוי טירן"]}},
+    )
     best = solve(courses, prefs, top_n=5)
     assert best
     soft = [s for s in best if s.soft_conflicts > 0]

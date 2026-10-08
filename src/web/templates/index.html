@@ -178,15 +178,15 @@
                                    ושורת הסבר אחת; hidden כשאין כאלה
                   כל קורס: section.lect-course.c<N> — אקורדיון, אחד פתוח בכל
                   פעם. ‏.lect-course-head הוא הכפתור (aria-expanded), ובסופו
-                  ‏.lect-course-choice: "לא דורג" / "עדיפות: A ← B" / "נעוץ: A".
+                  ‏.lect-course-choice: "לא דורג" / "עדיפות: A ← B" /
+                  "הרצאה: A ← B · תרגול: C" (דירוג לכל סוג, 2026-10-09).
                   בגוף: מתגי "חובת נוכחות" לכל סוג רכיב (input[data-fk=
                   "att-<קוד>-<סוג>"]) עם ⓘ אחד שפותח את ההסבר, הערות הידיעון
                   פעם אחת לקורס, וטבלת הקבוצות.
                   שורת טבלה: מספר הקבוצה ב-title בלבד (לא עמודה).
-                  מחלקות: "is-ranked" (‏.rank-circle מלא) · "is-pinned" ·
+                  מחלקות: "is-ranked" (‏.rank-circle מלא) ·
                   "is-dead" (aria-disabled="true", ‏title עם הסיבה המלאה,
                   ושורה "לא משאיר מערכת אפשרית" מתחת לשם המרצה).
-                  כפתור הנעיצה: class "pin-btn".
   5 המערכת        #settings-pills, #alt-head > #alt-title #alt-updating #alt-sort #alt-prev
                   #alt-pos #alt-pos-label #alt-next, .alt-actions > #btn-print #btn-full,
                   #alt-cards (כרטיס לכל חלופה)
@@ -588,7 +588,7 @@
     <div class="step-fold">
     <div class="step-body" id="step-lecturers-body">
       <!-- ‏אין מקרא: העיגול המקווקו הריק = "לחצו לדירוג", עיגול מלא ממוספר =
-           הדירוג, והנעץ = נעיצה. ההסבר על חובת נוכחות יושב מאחורי ⓘ בכל קורס. -->
+           הדירוג בסוג של השורה. ההסבר על חובת נוכחות יושב מאחורי ⓘ בכל קורס. -->
       <div class="attendance-off" id="attendance-off" hidden></div>
       <div class="lect-courses" id="lecturer-courses"></div>
       <p class="note" id="lecturers-note"></p>

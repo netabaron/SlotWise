@@ -931,7 +931,10 @@ def test_solve_returns_schedules_with_the_full_shape(solve_payload):
         assert field in best, f"שדה {field} חסר במערכת: {sorted(best)}"
     assert best["days_count"] == MIN_DAYS
     assert sorted(best["days"]) == DAYS_USED
-    assert set(best["breakdown"]) >= {"lecturer", "days", "gaps", "compactness"}
+    # ‏ימים ומרצים אינם נקודות מאז 2026-10-09: הם שדות משלהם, לפני הניקוד.
+    assert set(best["breakdown"]) >= {"gaps", "compactness"}
+    for field in ("days_over_target", "lecturer_ranks", "lecturer_misses"):
+        assert field in best, f"שדה {field} חסר במערכת: {sorted(best)}"
     assert isinstance(best["gap_minutes"], int) and best["gap_minutes"] >= 0
 
 
@@ -955,55 +958,6 @@ def test_solve_respects_top_n(client, solve_payload):
     assert len(_pick_list(data, "schedules")) <= 3
     assert data.get("feasible_count") == solve_payload.get("feasible_count"), (
         "top_n לא משנה את מספר האפשרויות"
-    )
-
-
-def test_solve_honours_a_pin(client):
-    body = _solve_body(pinned={ALGO: {LECTURE: GOOD_PIN}}, top_n=10)
-    data = _ok(client.post("/api/solve", json=body))
-    schedules = _pick_list(data, "schedules")
-    assert schedules, "נעיצה חוקית חייבת להשאיר פתרונות"
-    for schedule in schedules:
-        chosen = [
-            p for p in schedule["picks"] if p["code"] == ALGO and p["kind"] == LECTURE
-        ]
-        assert len(chosen) == 1
-        assert chosen[0]["group_id"] == GOOD_PIN, (
-            f"הנעיצה לא כובדה: {chosen[0]['group_id']}"
-        )
-
-
-def test_solve_pin_narrows_the_result_set_to_the_pinned_group(client):
-    """נעיצה אמיתית: בלי נעיצה שתי הקבוצות מופיעות, ואיתה — רק אחת."""
-    loose = _ok(client.post("/api/solve", json=_solve_body(top_n=10)))
-    loose_ids = {
-        pick["group_id"]
-        for schedule in _pick_list(loose, "schedules")
-        for pick in schedule["picks"]
-        if pick["code"] == "61756" and pick["kind"] == TUTORIAL
-    }
-    assert len(loose_ids) > 1, f"הנתונים אמורים לאפשר יותר מתרגול אחד ל-61756: {loose_ids}"
-
-    body = _solve_body(pinned={"61756": {TUTORIAL: "271060310/1"}}, top_n=10)
-    data = _ok(client.post("/api/solve", json=body))
-    schedules = _pick_list(data, "schedules")
-    assert schedules
-    for schedule in schedules:
-        chosen = [p for p in schedule["picks"] if p["code"] == "61756" and p["kind"] == TUTORIAL]
-        assert [p["group_id"] for p in chosen] == ["271060310/1"], (
-            f"הנעיצה לא כובדה: {chosen}"
-        )
-    # ‏עד 2026-09-10: ``== 14``. מה שנעיצה עושה הוא **לצמצם** — היא לא
-    # מבטיחה מספר מסוים, והמספר זז בכל פעם שהידיעון מוסיף קבוצה. שני
-    # הקצוות חשובים: אפס פירושו שהנעיצה הרגה הכול, ושוויון פירושו
-    # שהתעלמו ממנה.
-    pinned_count = data.get("feasible_count")
-    loose_count = loose.get("feasible_count")
-    assert isinstance(pinned_count, int) and pinned_count > 0, (
-        f"נעיצה חוקית חייבת להשאיר צירופים; קיבלתי {pinned_count}"
-    )
-    assert pinned_count < loose_count, (
-        f"נעיצה חייבת לצמצם: {pinned_count} מול {loose_count} בלעדיה"
     )
 
 
@@ -1198,19 +1152,6 @@ def test_solve_rejects_an_unknown_course_code(client):
     assert "99999" in blob, f"קוד לא מוכר חייב להיות מדווח: {json.dumps(data, ensure_ascii=False)[:300]}"
     assert _hebrew(blob), "חייבת להיות סיבה בעברית"
     assert _pick_list(data, "schedules") == [], "אסור להחזיר מערכת שמתעלמת מהקורס"
-
-
-def test_solve_does_not_silently_ignore_a_pin_to_a_group_that_does_not_exist(client):
-    resp = client.post(
-        "/api/solve", json=_solve_body(pinned={ALGO: {LECTURE: "no-such-group"}})
-    )
-    data = _assert_clean_response(resp)
-    if resp.status_code == 200:
-        assert data.get("feasible_count") == 0, (
-            "נעיצה לקבוצה לא קיימת לא יכולה להחזיר מערכות כאילו כלום"
-        )
-    else:
-        assert resp.status_code in (400, 404, 422)
 
 
 @pytest.mark.parametrize(

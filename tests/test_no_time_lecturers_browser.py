@@ -144,8 +144,9 @@ def test_a_no_time_group_the_rule_excludes_is_shown_as_unavailable(browser, serv
         assert "is-dead" in got["cls"].split() and got["disabled"] == "true", got
         assert got["sub"] == NO_TIME, got
         assert ROW["deadLine"] not in got["text"], got
-        assert NO_TIME in got["title"] and NO_TIME in (got["pinLabel"] or ""), got
-        assert got["pinDisabled"] is True, got
+        assert NO_TIME in got["title"], got
+        # ‏אין נעיצה מאז 2026-10-09 — ולכן גם אין כפתור נעיצה בשורה.
+        assert got["pinLabel"] is None and got["pinDisabled"] is None, got
         # צבע, לא שקיפות.
         assert got["subColor"] == got["mut"], got
         assert got["opacity"] == ["1", "1"], got
@@ -153,21 +154,17 @@ def test_a_no_time_group_the_rule_excludes_is_shown_as_unavailable(browser, serv
         ctx.close()
 
 
-def test_it_cannot_be_ranked_or_pinned(browser, server):
-    """הנעיצה — על מעבדה ‏/8 של 11232. הדירוג — על הרצאה 273550200 של 53110:
-    בלי מועד, ליד הרצאה עם מועד, ועם שם מרצה (למעבדה ‏/8 אין שם, ושם ריק
-    ממילא אינו מדורג — שם הבדיקה לא הייתה יכולה להיכשל)."""
+def test_it_cannot_be_ranked(browser, server):
+    """הדירוג — על הרצאה 273550200 של 53110: בלי מועד, ליד הרצאה עם מועד,
+    ועם שם מרצה (למעבדה ‏/8 של 11232 אין שם, ושם ריק ממילא אינו מדורג —
+    שם הבדיקה לא הייתה יכולה להיכשל). נעיצה כבר אין (2026-10-09)."""
     ctx, pg = _page(browser, server, ["11232", "53110"])
     try:
         assert pg.evaluate(ROWINFO, THESIS)["sub"] == NO_TIME
         pg.evaluate("fk => document.querySelector('[data-fk=\"' + fk + '\"]').click()", THESIS)
-        pg.evaluate(
-            "fk => document.querySelector('[data-fk=\"' + fk + '\"] .pin-btn').click()", LAB8
-        )
         pg.wait_for_timeout(600)
         state = pg.evaluate("() => window.slotwise.getState()")
         assert not (state.get("ranked") or {}).get("53110"), state.get("ranked")
-        assert not (state.get("pinned") or {}).get("11232"), state.get("pinned")
     finally:
         ctx.close()
 

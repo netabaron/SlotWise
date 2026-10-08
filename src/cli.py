@@ -2540,8 +2540,9 @@ def build_preferences(
     target_days = args.days if args.days else int(prefs_json.get("target_days", 4) or 4)
 
     weights = dict(prefs_json.get("weights") or {})
-    weights.setdefault("lecturer", 10.0)
-    weights.setdefault("days", 8.0)
+    # ימים ומרצים אינם משקולות מאז 2026-10-09 — הם רמות עדיפות (scheduler._sort_key).
+    weights.pop("lecturer", None)
+    weights.pop("days", None)
     weights.setdefault("gaps", 4.0)
     weights.setdefault("compactness", 1.0)
 

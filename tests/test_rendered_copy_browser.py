@@ -787,6 +787,11 @@ def _overlap_on(page):
     # המתג של 61759 נמצא בגוף סגור עד שפותחים את הקורס.
     # ‏Phase 8: שלב המרצים נפתח רק דרך "המשך" על הקורסים וימי הלימוד.
     page.click("#step-courses-next")
+    # ‏מאז 2026-10-09 חפיפה נכנסת לסדר רק כשהיא קונה משהו — יום, או מרצה
+    # מדורג/ת (docs/DESIGN.md → Lecturers, "How a ranking chooses"). בלי יעד
+    # ימים היא אחרי כל 742 המערכות הנקיות. ביעד 3 היא בין 20 הראשונות.
+    page.click('.day-btn[data-days="3"]')
+    page.wait_for_timeout(500)
     page.click("#step-days-next")
     page.wait_for_timeout(500)
     head = page.locator('[data-fk="lect-course-61759"]')

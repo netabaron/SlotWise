@@ -301,42 +301,29 @@ def test_stat_pills_are_in_design_order(page):
     assert order == PILL_ORDER, order
 
 
-def _expected_fits(scores):
-    """אותו חישוב כמו fitScores() ב-app.js: ביחס לטובה מבין המוצגות."""
-    best = max(scores)
-    scale = max(abs(best), 1)
-    # ‏Math.round של JS מעגל ‎.5‎ למעלה; round של פייתון — לזוגי.
-    return [min(100, max(0, math.floor(100 * (1 - (best - v) / scale) + 0.5))) for v in scores]
-
-
 def test_the_top_schedule_carries_the_label_and_the_facts(page):
-    """הציפייה נגזרת מהניקוד שהשרת החזיר, ולא מהנחה על הנתונים: עם הקטלוג
-    הקפוא כל חמש המערכות שקולות, ואז אין "מובילה" — השבב אומר "התאמה 100%"."""
+    """הראשונה בסדר השרת נושאת "ההתאמה הגבוהה ביותר"; לשאר אין שבב התאמה,
+    ואין אחוז בכלל (2026-10-09)."""
     pills = page.evaluate(
         """() => Object.fromEntries([...document.querySelectorAll('#schedule-summary .stat-pill')]
               .map(p => [p.dataset.stat, p.textContent.trim()]))"""
     )
     fit = page.evaluate(
         """() => { const p = document.querySelector('#schedule-summary .stat-pill.fit');
+                   if (!p) return null;
                    const label = p.querySelector('.fit-label');
                    const value = p.querySelector('.fit-value');
                    return {label: label ? label.textContent : null,
                            value: value.textContent,
                            best: value.classList.contains('fit-value--best')}; }"""
     )
-    runtime = page.evaluate(
-        """() => ({scores: window.slotwise.getRuntime().solve.schedules.map(s => s.score),
-                   active: window.slotwise.getState().activeSchedule})"""
-    )
-    fits = _expected_fits(runtime["scores"])
-    tied = len(fits) > 1 and len(set(fits)) == 1
-    mine = fits[runtime["active"]]
-    if not tied and mine == max(fits):
+    active = page.evaluate("window.slotwise.getState().activeSchedule")
+    # ‏אין אחוז (2026-10-09): הראשונה בסדר השרת נושאת את התווית, ולשאר אין שבב.
+    if active == 0:
         assert fit == {"label": None, "value": STRINGS["app"]["compare"]["bestOverall"],
-                       "best": True}, (fit, fits)
+                       "best": True}, fit
     else:
-        assert fit == {"label": SCHED["fitLabel"], "value": fill(SCHED["fitValue"], score=mine),
-                       "best": False}, (fit, fits)
+        assert "fit" not in pills, pills
     sch = page.evaluate(
         "window.slotwise.getRuntime().solve.schedules[window.slotwise.getState().activeSchedule]"
     )

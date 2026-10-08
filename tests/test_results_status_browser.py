@@ -71,13 +71,12 @@ def client():
 
 @pytest.mark.parametrize("group,want", [(FULL_GROUP, FULL), (OPEN_GROUP, "")])
 def test_a_solve_pick_carries_the_group_status(client, group, want):
-    res = client.post(
-        "/api/solve",
-        json={"codes": [FULL_CODE], "semester": "א", "pinned": {FULL_CODE: {FULL_KIND: group}}},
-    )
+    # ‏בלי נעיצה (2026-10-09): ל-11061 שתי קבוצות, ושתיהן חוזרות בחמש המובילות.
+    res = client.post("/api/solve", json={"codes": [FULL_CODE], "semester": "א"})
     assert res.status_code == 200, res.get_data(as_text=True)
-    picks = res.get_json()["schedules"][0]["picks"]
-    pick = next(p for p in picks if p["group_id"] == group)
+    pick = next(
+        p for s in res.get_json()["schedules"] for p in s["picks"] if p["group_id"] == group
+    )
     assert pick["status_note"] == want, pick
     # ‏note נשאר note: המצב אינו מוזרק אליו (attendance_info סורק אותו).
     assert FULL not in (pick.get("note") or ""), pick
@@ -342,12 +341,14 @@ def test_the_line_is_one_plain_sentence_on_the_top_schedule(browser, server):
 @pytest.mark.parametrize("names", [["מרצה שאינו בקטלוג"], ["מרצה שאינו בקטלוג", "מרצה אחר שאינו בקטלוג"]])
 def test_missing_preferred_lecturers_are_named(browser, server, names):
     codes = ["61757", "62027"][: len(names)]
-    ranked = {code: [name] for code, name in zip(codes, names)}
+    # ‏דירוג לכל סוג (2026-10-09). רשימה שטוחה של שם שאינו מלמד דבר אינה דירוג.
+    ranked = {code: {"הרצאה": [name]} for code, name in zip(codes, names)}
     ctx, pg = _open(browser, server, ranked=ranked)
     try:
         line = _line(pg)
         key = "lecturer" if len(names) == 1 else "lecturers"
-        want = fill(SCHED["lost"][key], names=", ".join(names))
+        shown = [fill(SCHED["lostLecturer"], name=name, kind="הרצאה") for name in names]
+        want = fill(SCHED["lost"][key], names=", ".join(shown))
         assert line and ["lecturer", want] in line["items"], (want, line)
     finally:
         ctx.close()

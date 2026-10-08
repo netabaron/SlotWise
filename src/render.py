@@ -64,10 +64,10 @@ UNKNOWN_LECTURER_HE = "מרצה לא ידוע"
 
 #: תרגום מפתחות ה-breakdown של scheduler.score לעברית.
 BREAKDOWN_LABELS_HE: dict[str, str] = {
-    "lecturer": "מרצים מועדפים (lecturer)",
-    "days": "מספר ימים בקמפוס (days)",
     "gaps": "חורים בין שיעורים (gaps)",
     "compactness": "אורך יום הלימודים (compactness)",
+    "late_finish": "סיום מאוחר (late_finish)",
+    "soft_conflict": "חפיפות מכוונות (soft_conflict)",
 }
 
 # --------------------------------------------------------------------------
@@ -757,7 +757,9 @@ def _score_table_html(sched: ScoredSchedule) -> str:
     days_letters = "".join(
         DAY_LETTERS_HE[d] for d in sorted(sched.selection.days_used()) if d in DAY_LETTERS_HE
     )
+    # ימים מעל היעד ודירוג המרצים קודמים לניקוד ואינם חלק ממנו (2026-10-09).
     extras = [
+        ("ימים מעל היעד", str(int(getattr(sched, "days_over_target", 0) or 0))),
         ("ימים בקמפוס", f"{sched.days_count} ({days_letters})"),
         ("סה\"כ חורים", f"{sched.gap_minutes // 60}:{sched.gap_minutes % 60:02d} שעות"),
         ("מרצים מועדפים שהתקבלו", f"{sched.lecturer_hits}/{sched.lecturer_total}"),
@@ -883,8 +885,8 @@ if __name__ == "__main__":  # pragma: no cover
     demo_sel = Selection(demo_groups)
     demo = ScoredSchedule(
         selection=demo_sel,
-        score=31.5,
-        breakdown={"lecturer": 10.0, "days": 0.0, "gaps": -2.0, "compactness": -1.5},
+        score=-3.5,
+        breakdown={"gaps": -2.0, "compactness": -1.5},
         days_count=len(demo_sel.days_used()),
         gap_minutes=demo_sel.gap_minutes(),
         lecturer_hits=1,

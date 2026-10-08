@@ -40,6 +40,7 @@ from collections.abc import Iterator
 import dataclasses
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any
 
 from models import (
     DAY_LETTERS_HE,
@@ -75,18 +76,11 @@ WEIGHT_SOFT_CONFLICT: str = "soft_conflict"
 #: "לסיים מוקדם" — הבקשה המפורשת של הסטודנט/ית.
 WEIGHT_LATE_FINISH: str = "late_finish"
 
-#: כמה משקל יש להעדפת המרצה **לפי סוג הרכיב**.
-#: הרצאה שווה מלוא המשקל; תרגול/מעבדה שווים פחות — כי אפשר להתפשר על
-#: המתרגל/ת אם זה מקצר את היום, אבל לא על מי שמעביר/ה את ההרצאה.
-#: סוג שאינו ברשימה מקבל 1.0 (לא מנחשים כלפי מטה).
-LECTURER_KIND_WEIGHT: dict[str, float] = {
-    KIND_LECTURE: 1.0,
-    KIND_COMBINED: 1.0,
-    KIND_TUTORIAL: 0.4,
-    KIND_LAB: 0.4,
-    KIND_PROJECT: 0.4,
-    KIND_OTHER: 0.6,
-}
+#: הסוגים שנחשבים "הרצאה" בשבירת שוויון של דירוג המרצים (docs/DESIGN.md →
+#: Lecturers, "How a ranking chooses", 2026-10-09): כשלשתי מערכות אותו מספר
+#: רכיבים בדירוג 1, זו שיותר מהם הרצאות מנצחת. כל השאר — תרגול, מעבדה,
+#: פרויקט, אחר — הם צד ה"תרגול".
+LECTURE_KINDS: frozenset[str] = frozenset({KIND_LECTURE, KIND_COMBINED})
 
 #: השעה שממנה ואילך יום נחשב "נגמר מאוחר". 14:00 — כל שעה אחריה היא שעה
 #: שביקשו במפורש להימנע ממנה. שימו לב שזה **לא** span: יום 08:00-12:00 ויום
@@ -125,20 +119,23 @@ LATE_BASELINE_MIN: int = 14 * 60
 #: סביר עבור הימנעות מהפסקה שאי אפשר להימנע ממנה ממילא.
 LUNCH_WINDOW: tuple[int, int] = (12 * 60 + 20, 12 * 60 + 50)
 
+#: המשקולות של הרמה האחרונה בלבד (docs/DESIGN.md → Lecturers, "How a ranking
+#: chooses", 2026-10-09). ימי הלימוד ודירוג המרצים אינם נקודות: הם רמות
+#: עדיפות שקודמות לכל המשקולות האלה, ולכן אין להם משקל. ‏``soft_conflict``
+#: נשאר כאן רק לתצוגה: מספר החפיפות הוא רמה משלו, והקנס שווה בכל המערכות
+#: שבאותה רמה.
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "lecturer": 10.0,
-    "days": 8.0,
     "gaps": 4.0,
     "compactness": 1.0,
-            # "לסיים מוקדם" — הבקשה המפורשת של הסטודנט/ית.
-            WEIGHT_LATE_FINISH: 4.0,
+    # "לסיים מוקדם" — הבקשה המפורשת של הסטודנט/ית.
+    WEIGHT_LATE_FINISH: 4.0,
     WEIGHT_SOFT_CONFLICT: 6.0,
 }
 
-#: ארבעת רכיבי הניקוד הקבועים, שתמיד מופיעים ב-``ScoredSchedule.breakdown``.
-#: ‏``soft_conflict`` הוא רכיב חמישי **מותנה** — הוא מצטרף רק כשיש חפיפה
-#: מכוונת בפועל. מי שמציג את הפירוק (render / web) חייב לסבול מפתח נוסף.
-CORE_BREAKDOWN_KEYS: tuple[str, ...] = ("lecturer", "days", "gaps", "compactness")
+#: רכיבי הניקוד הקבועים, שתמיד מופיעים ב-``ScoredSchedule.breakdown``.
+#: ‏``soft_conflict`` מצטרף רק כשיש חפיפה מכוונת בפועל. מי שמציג את הפירוק
+#: (render / web) חייב לסבול מפתח נוסף.
+CORE_BREAKDOWN_KEYS: tuple[str, ...] = ("gaps", "compactness", WEIGHT_LATE_FINISH)
 
 # --------------------------------------------------------------------------
 # חובת נוכחות (attendance)
@@ -239,15 +236,18 @@ class Preferences:
 
     אילוצים קשיחים (hard constraints) — פוסלים קבוצה לגמרי:
         earliest, latest, blocked_windows, forbid_friday
-    העדפות רכות (soft preferences) — רק משפיעות על הניקוד:
+    העדפות רכות (soft preferences) — רק משפיעות על הסדר:
         target_days, preferred_lecturers, weights
+        (לפי עדיפות, לא בסכום — ראי _sort_key)
     ויתור מודע (deliberate trade-off) — הופך אילוץ קשיח לרך:
         attendance, allow_soft_conflicts
     """
 
     target_days: int = 4
-    #: {קוד קורס: [שם מרצה מועדף ביותר, שני, שלישי, ...]}
-    preferred_lecturers: dict[str, list[str]] = field(default_factory=dict)
+    #: ‏{קוד קורס: {סוג רכיב: [מועדף ביותר, שני, ...]}} — דירוג לכל סוג בנפרד.
+    #: רשימה שטוחה ‏{קוד: [...]} עדיין מתקבלת (נשמרה כך לפני 2026-10-09);
+    #: ‏``rankings_by_kind`` פורש אותה לכל סוג שהמרצים שבה מלמדים בו.
+    preferred_lecturers: dict[str, Any] = field(default_factory=dict)
     #: (יום, התחלה בדקות, סוף בדקות) — חלונות שבהם הסטודנטית לא זמינה
     blocked_windows: list[tuple[int, int, int]] = field(default_factory=list)
     #: אף שיעור לא יתחיל לפני השעה הזו (בדקות מחצות)
@@ -257,15 +257,7 @@ class Preferences:
     #: ‏``soft_conflict`` נמצא כאן כדי שהמשקל יהיה *גלוי וניתן לכוונון* גם
     #: כשלא נגעו בו — אבל הוא מוכפל ב-0 בכל מערכת בלי חפיפה מכוונת, ולכן
     #: אינו משנה אף ניקוד קיים.
-    weights: dict[str, float] = field(
-        default_factory=lambda: {
-            "lecturer": 10.0,
-            "days": 8.0,
-            "gaps": 4.0,
-            "compactness": 1.0,
-            WEIGHT_SOFT_CONFLICT: 6.0,
-        }
-    )
+    weights: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_WEIGHTS))
     forbid_friday: bool = False
 
     #: ‏{קוד קורס: {סוג רכיב: האם נדרשת נוכחות}}. **מפתח חסר פירושו True.**
@@ -289,8 +281,6 @@ class Preferences:
     #: בהרצאה של 61753", והמערכת המשיכה לחסום — כי מתג נפרד וכבוי ביטל את
     #: הסימון בשקט. שני פקדים לאותה החלטה אחת; נשאר רק אחד.
     allow_soft_conflicts: bool = True
-    #: דריסה של ``LECTURER_KIND_WEIGHT``. ריק = ברירת המחדל.
-    lecturer_kind_weight: dict[str, float] = field(default_factory=dict)
 
 
 
@@ -1074,22 +1064,11 @@ def soft_conflict_minutes_of(sched: ScoredSchedule) -> int:
 # ==========================================================================
 # 2. score — ניקוד מערכת בודדת
 # ==========================================================================
-def _kind_weight(prefs: "Preferences", kind: str) -> float:
-    """משקל העדפת המרצה לסוג רכיב. הרצאה = מלא, תרגול = חלקי."""
-    override = getattr(prefs, "lecturer_kind_weight", None) or {}
-    if kind in override:
-        try:
-            return float(override[kind])
-        except (TypeError, ValueError):
-            pass
-    return LECTURER_KIND_WEIGHT.get(kind, 1.0)
-
-
 def _ranking_for(ranking: Any, kind: str | None = None) -> list:
     """מקבל רשימה שטוחה **או** מילון לפי סוג רכיב.
 
-    ``{"61832": ["ד\"ר X"]}``                       — כמו קודם, לכל הרכיבים
-    ``{"61832": {"הרצאה": ["X"], "תרגול": ["Y"]}}``  — העדפה נפרדת לכל רכיב
+    ``{"61832": ["ד\\"ר X"]}``                       — רשימה אחת לכל הרכיבים
+    ``{"61832": {"הרצאה": ["X"], "תרגול": ["Y"]}}``  — דירוג נפרד לכל רכיב
     """
     if isinstance(ranking, dict):
         if kind is None:
@@ -1103,98 +1082,145 @@ def _ranking_for(ranking: Any, kind: str | None = None) -> list:
     return list(ranking or [])
 
 
-def _lecturer_component(
-    sel: Selection, prefs: Preferences
-) -> tuple[float, int, int]:
+def _clean_names(names: Any) -> list[str]:
+    """שמות אחרי strip, בלי ריקים ובלי כפילויות (לפי ``_norm_name``), בסדר."""
+    if isinstance(names, str):
+        names = [names]
+    out: list[str] = []
+    seen: set[str] = set()
+    for name in names or []:
+        text = str(name).strip()
+        key = _norm_name(text)
+        if key and key not in seen:
+            seen.add(key)
+            out.append(text)
+    return out
+
+
+def rankings_by_kind(
+    courses: "list[Course] | tuple[Course, ...]", preferred: "dict[str, Any] | None"
+) -> dict[str, dict[str, list[str]]]:
+    """‏``{קוד: {סוג רכיב: [שמות]}}`` — הדירוג כפי שהמנוע קורא אותו.
+
+    ‏2026-10-09 (docs/DESIGN.md → Lecturers): כל סוג רכיב מדורג בנפרד.
+      * מילון לפי סוג נשאר כפי שהוא (אחרי ניקוי שמות). שם שאינו מלמד בסוג
+        הזה נשאר: הסטודנט/ית בחר/ה בו, והוא נספר כ"חסר", לא נמחק בשקט.
+      * רשימה שטוחה — כך נשמר הדירוג לפני השינוי, כשלחיצה אחת דירגה מרצה
+        בכל סוג שהוא מלמד — נפרשת לכל סוג **שאחד המרצים שבה מלמד בו**,
+        בסדר שלה. בלי הסינון הזה מרצה הרצאה היה נאמר "חסר" בתרגול שמעולם
+        לא לימד.
+    קוד שאינו בין הקורסים נשאר כפי שהוא; הוא ממילא לא במערכת.
     """
-    רכיב המרצים. מחזירה (L, פגיעות_במקום_ראשון, מספר_הקורסים_המדורגים).
+    by_code = {c.code: c for c in courses}
+    out: dict[str, Any] = {}
+    for code, ranking in (preferred or {}).items():
+        course = by_code.get(code)
+        if isinstance(ranking, dict):
+            per_kind = {}
+            for kind, value in ranking.items():
+                names = _clean_names(value)
+                if names:
+                    per_kind[str(kind)] = names
+            if per_kind:
+                out[code] = per_kind
+            continue
+        names = _clean_names(ranking)
+        if not names:
+            continue
+        if course is None:
+            out[code] = names
+            continue
+        per_kind = {}
+        for kind in course.kinds():
+            teaching = {_norm_name(g.lecturer) for g in course.groups_of(kind)}
+            kept = [n for n in names if _norm_name(n) in teaching]
+            if kept:
+                per_kind[kind] = kept
+        if per_kind:
+            out[code] = per_kind
+    return out
 
-    כלל הניקוד: לכל קורס שיש לו דירוג מרצים, מסתכלים על הקבוצות שנבחרו בו
-    ולוקחים את הדירוג ה*טוב ביותר* שהושג. דירוג 0 (המרצה המועדף) שווה 1.0,
-    דירוג i שווה 1/(i+1): 1.0, 0.5, 0.333... מרצה שלא ברשימה — 0.0.
+
+def _lecturer_ranks(sel: Selection, prefs: Preferences) -> list[dict[str, Any]]:
+    """הדירוג שהושג בכל רכיב מדורג שבמערכת: רשומה לכל (קורס, סוג).
+
+    ``rank`` מתחיל ב-1. מרצה שאינו ברשימה מקבל ``len(names) + 1`` — מתחת
+    לדירוג האחרון. רשימה שטוחה (כש-score נקרא בלי ``rankings_by_kind``)
+    חלה על כל סוג של הקורס שבמערכת; ``solve`` פורש אותה מראש לפי הקורסים.
     """
-    present_codes = sel.course_codes()
-
-    total = 0.0
-    hits = 0
-    ranked_courses = 0
-
+    records: list[dict[str, Any]] = []
     for code, ranking in (prefs.preferred_lecturers or {}).items():
-        if not _ranking_for(ranking):
-            continue  # רשימה ריקה = "אין לי העדפה" — לא נספר כקורס מדורג
-        if code not in present_codes:
-            continue  # דירוג לקורס שלא במערכת הזו — לא רלוונטי ולא מעוות את היחס
-
-        ranked_courses += 1
-
-        # מיפוי שם מרצה מנורמל -> הדירוג הטוב ביותר שלו ברשימה
-        rank_of: dict[str, int] = {}
-        for i, name in enumerate(_ranking_for(ranking)):
-            key = _norm_name(name)
-            if key and key not in rank_of:
-                rank_of[key] = i
-
-        # הדירוג הטוב ביותר **לכל סוג רכיב בנפרד**, כדי שאפשר יהיה לשקלל
-        # הרצאה ותרגול אחרת. קודם נלקח המקסימום על כל הקורס, וכך העדפה
-        # למרצה ההרצאה והעדפה למתרגל/ת נשקלו זהה — בדיוק מה שביקשו להפריד.
-        best_by_kind: dict[str, int] = {}
-        for g in sel.groups:
-            if g.course_code != code:
-                continue
-            r = rank_of.get(_norm_name(g.lecturer))
-            if r is None:
-                continue
-            cur = best_by_kind.get(g.kind)
-            if cur is None or r < cur:
-                best_by_kind[g.kind] = r
-
-        if best_by_kind:
-            best_rank = min(best_by_kind.values())
-            # הציון הוא הטוב ביותר מבין הרכיבים, אחרי שקלול לפי סוג:
-            # הרצאה עם המרצה המועדף/ת שווה יותר מתרגול איתו/ה.
-            total += max(
-                (1.0 / (rank + 1)) * _kind_weight(prefs, kind)
-                for kind, rank in best_by_kind.items()
+        groups = [g for g in sel.groups if g.course_code == code]
+        if not groups:
+            continue  # קורס שאינו במערכת הזו — לא נספר
+        if isinstance(ranking, dict):
+            wanted = {str(k): _clean_names(v) for k, v in ranking.items()}
+        else:
+            flat = _clean_names(ranking)
+            wanted = {g.kind: flat for g in groups}
+        for kind, names in wanted.items():
+            if not names:
+                continue  # רשימה ריקה = "אין לי העדפה"
+            group = next((g for g in groups if g.kind == kind), None)
+            if group is None:
+                continue  # סוג שאין לו קבוצה במערכת
+            norm = [_norm_name(n) for n in names]
+            got = _norm_name(group.lecturer)
+            rank = norm.index(got) + 1 if got in norm else len(names) + 1
+            records.append(
+                {"code": code, "kind": kind, "names": list(names),
+                 "got": group.lecturer, "rank": rank}
             )
-            if best_rank == 0:
-                hits += 1
-        # אחרת: 0.0 — אף אחת מהקבוצות שנבחרו אינה של מרצה מהרשימה.
+    records.sort(key=lambda r: (r["code"], _kind_rank(r["kind"]), r["kind"]))
+    return records
 
-    return total, hits, ranked_courses
+
+def _lecturer_key(records: list[dict[str, Any]]) -> tuple[int, ...]:
+    """רמת המרצים במפתח המיון (docs/DESIGN.md → "How a ranking chooses").
+
+    לכל דירוג r מ-1 ועד אורך הרשימה הארוכה ביותר: יותר רכיבים בדירוג r
+    קודם, ובשוויון — יותר מהם הרצאות. ‏(קטן יותר = טוב יותר, ולכן שלילי.)
+    """
+    deepest = max((len(r["names"]) for r in records), default=0)
+    key: list[int] = []
+    for level in range(1, deepest + 1):
+        at = [r for r in records if r["rank"] == level]
+        key.append(-len(at))
+        key.append(-sum(1 for r in at if r["kind"] in LECTURE_KINDS))
+    return tuple(key)
 
 
 def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
     """
-    נותנת ניקוד למערכת אחת. ניקוד גבוה = מערכת טובה יותר.
+    מחשבת את כל מה שקובע את מקומה של מערכת אחת בסדר.
 
-    הנוסחה (בדיוק כמו ב-docs/SPEC.md, בתוספת הרכיב החמישי של SPEC_V2 §2):
-        score = w_lecturer * L  -  w_days * D  -  w_gaps * (G/60)
-                                -  w_compactness * (S/60)  -  w_soft_conflict * C
+    ‏**מאז 2026-10-09 הסדר הוא לפי עדיפות, לא לפי סכום** (docs/DESIGN.md →
+    Lecturers, "How a ranking chooses"; ‏_sort_key):
+        1. ‏``days_over_target`` — ימים מעל היעד (ימים בלי חובת נוכחות לא נספרים);
+        2. ‏``lecturer_ranks`` — הדירוג שהושג בכל (קורס, סוג) מדורג;
+        3. מספר החפיפות המכוונות;
+        4. ‏``score`` — רק הרמה האחרונה, בסכום משוקלל:
+               score = -w_gaps * (G/60) - w_compactness * (S/60)
+                       - w_late_finish * (L/60) - w_soft_conflict * C
 
     כאשר:
-        L = סכום ציוני המרצים (1.0 למרצה המועדף, 1/(i+1) לדירוג i, 0 ללא-מדורג)
-        D = max(0, מספר ימי הלימוד - target_days)      ← קנס על יום עודף
         G = דקות ה"חורים" שנספרות לחובה — בלי חלון הצהריים הקבוע
             ‏(LUNCH_WINDOW)                             ← billable_gap_minutes()
             ‏ScoredSchedule.gap_minutes נשאר המספר המלא, לתצוגה ול-API.
         S = סך "אורך היום" (מהשיעור הראשון לאחרון)     ← models.Selection.span_minutes()
+        L = דקות הלימוד אחרי 14:00                      ← late_finish_minutes()
         C = מספר החפיפות המכוונות (זוגות קבוצות)       ← soft_conflicts_in()
 
-    G ו-S מחולקים ב-60 כדי שהמשקולות ידברו בשעות, לא בדקות.
-
-    על הרכיב החמישי:
-        C הוא 0 בכל מצב שאינו ``allow_soft_conflicts=True`` — כלומר בכל
-        השימושים הקיימים. לכן ``breakdown`` ממשיך להכיל **בדיוק** את ארבעת
-        המפתחות הוותיקים, וה-``soft_conflict`` מצטרף אליהם רק כשהוא באמת
-        פועל. זה לא קישוט: ``breakdown`` הוא חוזה שמוצג לסטודנט, ואסור
-        שיצוץ בו רכיב "0.00" על ויתור שמעולם לא נעשה.
+    ‏C כבר רמה בפני עצמה (3), ולכן בתוך הרמה האחרונה הקנס שלו שווה בכל
+    המערכות שמושוות — הוא נשאר ב-``breakdown`` כדי שהממשק יוכל לומר
+    "שיעורים חופפים", ומצטרף רק כשיש חפיפה בפועל: ``breakdown`` הוא חוזה
+    שמוצג לסטודנט, ואסור שיצוץ בו רכיב "0.00" על ויתור שמעולם לא נעשה.
+    ‏``score == sum(breakdown)`` תמיד.
     """
-    w_lect = _weight(prefs, "lecturer")
-    w_days = _weight(prefs, "days")
     w_gaps = _weight(prefs, "gaps")
     w_comp = _weight(prefs, "compactness")
 
-    lecturer_sum, lecturer_hits, lecturer_total = _lecturer_component(sel, prefs)
+    ranks = _lecturer_ranks(sel, prefs)
 
     days_used = sel.days_used()
     # יום שכולו רכיבים בלי חובת נוכחות אינו יום קמפוס — פשוט לא מגיעים.
@@ -1202,7 +1228,7 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
     # לוותר עליו, ואז סופרת אותו כאילו הוא מחייב הגעה.
     skippable = attendance_free_days(sel, prefs)
     effective_days = days_used - skippable
-    days_penalty = max(0, len(effective_days) - prefs.target_days)
+    days_over = max(0, len(effective_days) - prefs.target_days)
 
     gap_min = sel.gap_minutes()  # מ-models — לא ממציאים מחדש
     # מה שנספר לחובה: אותה המתנה, בלי הפסקת הצהריים הקבועה. המספר המוצג
@@ -1216,10 +1242,8 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
     soft_count = len(conflicts)
     soft_minutes = sum(c.minutes for c in conflicts)
 
-    # כל רכיב כבר מוכפל במשקל וחתום (+ לטובה, - לרעה).
+    # כל רכיב כבר מוכפל במשקל וחתום (- לרעה).
     breakdown = {
-        "lecturer": w_lect * lecturer_sum,
-        "days": -w_days * days_penalty,
         "gaps": -w_gaps * (billable_gap_min / 60.0),
         "compactness": -w_comp * (span_min / 60.0),
         # ככל שהיום נגמר מאוחר יותר — קנס גדול יותר. זה המדד שמבטא
@@ -1236,19 +1260,49 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
         breakdown=breakdown,
         days_count=len(days_used),
         gap_minutes=gap_min,
-        lecturer_hits=lecturer_hits,
-        lecturer_total=lecturer_total,
+        # פגיעה = רכיב מדורג שקיבל את דירוג 1; הסך = מספר הרכיבים המדורגים.
+        lecturer_hits=sum(1 for r in ranks if r["rank"] == 1),
+        lecturer_total=len(ranks),
     )
-    # שני השדות האלה נצמדים למופע ולא לחוזה של models.ScoredSchedule, בדיוק
+    # השדות האלה נצמדים למופע ולא לחוזה של models.ScoredSchedule, בדיוק
     # כמו ``.truncated`` ש-solve() מצמיד — כדי שמודל הנתונים המשותף יישאר
     # כפי שהוא. הקוראים שאינם בטוחים ישתמשו ב-soft_conflicts_of() /
-    # soft_conflict_minutes_of(), שאף פעם לא נופלים.
+    # days_over_target_of() / lecturer_ranks_of(), שאף פעם לא נופלים.
     sched.late_finish_minutes = late_min  # type: ignore[attr-defined]
     sched.skippable_days = sorted(skippable)  # type: ignore[attr-defined]
     sched.effective_days = len(effective_days)  # type: ignore[attr-defined]
     sched.soft_conflicts = soft_count  # type: ignore[attr-defined]
     sched.soft_conflict_minutes = soft_minutes  # type: ignore[attr-defined]
+    sched.days_over_target = days_over  # type: ignore[attr-defined]
+    sched.lecturer_ranks = ranks  # type: ignore[attr-defined]
+    sched.lecturer_key = _lecturer_key(ranks)  # type: ignore[attr-defined]
     return sched
+
+
+def days_over_target_of(sched: ScoredSchedule) -> int:
+    """כמה ימים מעל היעד — 0 כשהמערכת לא נוקדה כאן."""
+    try:
+        return int(getattr(sched, "days_over_target", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def lecturer_ranks_of(sched: ScoredSchedule) -> list[dict[str, Any]]:
+    """הדירוג שהושג בכל רכיב מדורג — ריק כשהמערכת לא נוקדה כאן."""
+    return list(getattr(sched, "lecturer_ranks", None) or [])
+
+
+def lecturer_misses_of(sched: ScoredSchedule) -> list[dict[str, str]]:
+    """הרכיבים שבהם המרצה בדירוג 1 אינו במערכת: ‏{code, kind, name}.
+
+    ‏``name`` הוא השם הראשון ברשימה של אותו רכיב. זה מה שהממשק אומר
+    ("בלי המרצה שבחרת: X (תרגול)"), ולכן הוא מחושב כאן ולא בדפדפן.
+    """
+    return [
+        {"code": r["code"], "kind": r["kind"], "name": r["names"][0]}
+        for r in lecturer_ranks_of(sched)
+        if r["rank"] != 1 and r["names"]
+    ]
 
 
 # ==========================================================================
@@ -1266,20 +1320,27 @@ def _stable_key(sel: Selection) -> str:
     )
 
 
-def _sort_key(sched: ScoredSchedule) -> tuple[float, int, int, int, int, str]:
+def _sort_key(sched: ScoredSchedule) -> tuple:
     """
-    סדר העדיפויות: ניקוד גבוה, ואז פחות חפיפות מכוונות, ואז פחות ימים,
-    ואז פחות חורים, ואז יום קצר יותר, ואז מפתח טקסטואלי יציב.
-    (הכל 'קטן יותר = טוב יותר').
+    סדר העדיפויות (docs/DESIGN.md → Lecturers, "How a ranking chooses",
+    הוחלט 2026-10-09). קטן יותר = טוב יותר, וכל רמה מכריעה לגמרי לפני הבאה:
 
-    החפיפות המכוונות נכנסות מיד אחרי הניקוד: הקנס כבר תומחר בניקוד עצמו,
-    אבל אם שתי מערכות יצאו שוות בדיוק — עדיף להציע לסטודנט את זו שלא דורשת
-    ממנו לוותר על שיעור. בברירת המחדל הערך הזה הוא 0 בכל המערכות, ולכן
-    הסדר זהה לחלוטין לסדר שהיה לפני SPEC_V2.
+        1. פחות ימים מעל יעד הימים;
+        2. דירוג המרצים (``_lecturer_key``);
+        3. פחות חפיפות מכוונות. חפיפה נוגעת תמיד בשיעור שהסטודנט/ית סימנ/ה
+           כלא-מחייב-נוכחות, ולכן מותר לה לחסוך יום או לכבד מרצה מדורג/ת;
+        4. ניקוד גבוה — חורים, סיום מאוחר ואורך היום, משוקללים זה מול זה;
+    ואחריהם שוברי השוויון הוותיקים: פחות ימים, פחות חורים, יום קצר יותר,
+    ומפתח טקסטואלי יציב.
+
+    אין כאן נקודות שנסחרות בין הרמות: מרצה בדירוג 1 לא "שווה" שעה של
+    חור — הוא נבחר תמיד, אלא אם כל דרך לקבל אותו עולה יום.
     """
     return (
-        -round(sched.score, _SCORE_PRECISION),
+        days_over_target_of(sched),
+        tuple(getattr(sched, "lecturer_key", ()) or ()),
         soft_conflicts_of(sched),
+        -round(sched.score, _SCORE_PRECISION),
         sched.days_count,
         sched.gap_minutes,
         sched.selection.span_minutes(),
@@ -1341,6 +1402,11 @@ def solve(
         Infeasible:       אין אף מערכת אפשרית; .reasons מכיל את ההסבר.
     """
     _validate_tied(courses)
+    # הדירוג נקרא לכל סוג רכיב בנפרד; רשימה שטוחה נפרשת כאן, פעם אחת, לפי
+    # מי שמלמד בכל סוג (rankings_by_kind).
+    prefs = replace(
+        prefs, preferred_lecturers=rankings_by_kind(courses, prefs.preferred_lecturers)
+    )
 
     keep = max(1, int(top_n))
     # מגזמים את הרשימה מדי פעם כדי לא לאגור עשרות אלפי אובייקטים בזיכרון.

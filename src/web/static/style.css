@@ -1757,7 +1757,7 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 /* ==========================================================================
    10. שלב 4 — מרצים (docs/DESIGN.md, "Lecturers")
    בלי מקרא: הפקדים מסבירים את עצמם. עיגול מקווקו ריק = "לחצו לדירוג",
-   עיגול מלא ממוספר = הדירוג, נעץ = נעיצה. כל קורס הוא אקורדיון בצבע שלו
+   עיגול מלא ממוספר = הדירוג (לכל סוג בנפרד). כל קורס הוא אקורדיון בצבע שלו
    — אותו צבע שיהיה לו במערכת — ורק אחד פתוח בכל פעם.
    ========================================================================== */
 
@@ -1851,7 +1851,7 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .lect-course-head:hover { background: var(--panel-2); }
 .lect-course-title { font-size: 14px; font-weight: 600; }
 .lect-course-meta { font-size: 13px; color: var(--mut); }
-/* ‏הסיכום החי — "לא דורג" / "עדיפות: A ← B" / "נעוץ: A" — בסוף השורה. */
+/* ‏הסיכום החי — "לא דורג" / "עדיפות: A ← B" / "הרצאה: A ← B · תרגול: C" — בסוף השורה. */
 .lect-course-end {
   display: inline-flex;
   align-items: baseline;
@@ -2007,14 +2007,9 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 /* ‏הודעת הידיעון על הקבוצה ("הקורס מלא") — מתחת לשם המרצה. */
 .group-status { color: var(--warn-ink); font-weight: 500; }
 
-/* ---- נעיצה ---- */
-/* ‏שורה נעוצה: רקע בגוון הקורס, ונעץ מלא בצבע הקורס. */
-.lect-table tbody tr.is-pinned > td,
-.lect-table tbody tr.is-pinned:hover > td { background: var(--ev-bg); }
-
 /* ‏שורה שלא משאירה מערכת אפשרית: מעומעמת בצבע ולא ב-opacity (החלטה
    ‏2026-09-24 — ‏tests/test_no_opacity_on_text.py). הכול ב-‎--mut‎, העיגול
-   והנעץ דהויים, ושורה "לא משאיר מערכת אפשרית" מתחת לשם. לא לחיצה. */
+   דהוי, ושורה "לא משאיר מערכת אפשרית" מתחת לשם. לא לחיצה. */
 .lect-table tbody tr.is-dead,
 .lect-table tbody tr[aria-disabled="true"] { cursor: not-allowed; }
 .lect-table tbody tr.is-dead > td,
@@ -2035,35 +2030,6 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 /* יום ושעה בתא אחד */
 .when-line { display: flex; gap: .45em; align-items: baseline; }
 .when-day { font-weight: 600; }
-
-.lect-table .th-pin,
-.lect-table .cell-pin { text-align: center; inline-size: 1px; white-space: nowrap; }
-
-/* ‏הנעץ: מתאר ב-‎--sec‎; מלא בצבע הקורס כשנעוץ. בלי opacity ובלי
-   ‏filter — המצב נאמר בצורה (מתאר/מילוי) ובצבע, לא בשקיפות. */
-.pin-btn {
-  display: inline-grid;
-  place-items: center;
-  inline-size: 28px;
-  block-size: 28px;
-  padding: 0;
-  border-radius: 50%;
-  border: 0;
-  background: none;
-  color: var(--sec);
-  cursor: pointer;
-}
-.pin-btn svg { inline-size: 18px; block-size: 18px; }
-.pin-btn svg path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linejoin: round;
-}
-.pin-btn:hover:not(:disabled) { color: var(--ink); }
-.pin-btn[aria-pressed="true"] { color: var(--ev-bd, var(--ink)); }
-.pin-btn[aria-pressed="true"] svg path { fill: currentColor; }
-.pin-btn:disabled { cursor: not-allowed; color: var(--bd); }
 
 /* ==========================================================================
    11. שלב 5 — החלופות, המקרא, והרשת השבועית

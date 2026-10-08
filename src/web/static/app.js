@@ -296,24 +296,6 @@
     return Tf("app.schedule.duration", { span: fmtSpan(minutes) });
   }
 
-  /**
-   * ‏87 -> "87%". הניסוח היחיד של ההתאמה, בכל מקום שבו היא מוצגת.
-   *
-   * ‏עד 2026-09-08 הנוסח היה ‎"{score} / 100"‎, והוא נשבר בדו-כיווניות:
-   * ‏"87 / 100" הוא שני מקטעי מספר עם מפריד נייטרלי ביניהם, ובפסקה RTL
-   * הנייטרלי מקבל כיוון ימין-לשמאל והמקטעים מסודרים מימין לשמאל — כלומר
-   * התא הראה ‎"100 / 87"‎. בפאנל הניקוד זה הוסתר על ידי ‎class="ltr"‎;
-   * בטבלת ההשוואה, שבנתה את אותה מחרוזת לתוך ‎<td>‎ רגיל, זה נראה.
-   *
-   * ‏אחוז אחד אומר בדיוק את מה ש-‎"87 / 100"‎ אמר, בפחות מקום, ואי אפשר
-   * לסדר אותו מחדש: ‎%‎ הוא ET, וכלל W5 של אלגוריתם הדו-כיווניות מצרף
-   * ‏ET צמוד ל-EN לאותו מקטע. מספר אחד אינו יכול להתהפך — התיקון מסלק
-   * את הסיבה, ולא את הסימפטום.
-   */
-  function fmtFit(score) {
-    return Tf("app.schedule.fitValue", { score: clamp(Math.round(num(score, 0)), 0, 100) });
-  }
-
   /** 410 -> "6:50". */
   function fmtSpan(minutes) {
     var m = Math.max(0, Math.round(num(minutes, 0)));
@@ -664,8 +646,13 @@
       earliest: null, // דקות מחצות, או null
       latest: null,
       blocked: [], // [[יום, התחלה, סוף], ...]
+      // ‏נעיצות שנשמרו לפני 2026-10-09. אין עוד נעיצה: ``migratePins`` הופך כל
+      // אחת לדירוג 1 ומרוקן את השדה. הוא נשאר ריק ולא נמחק, כדי שמצב ישן
+      // וחדש ייקראו באותה צורה.
       pinned: {}, // {code: {kind: group_id}}
-      ranked: {}, // {code: [שם מרצה, ...]}
+      // ‏{code: {kind: [שם מרצה, ...]}} — דירוג לכל סוג בנפרד. רשימה שטוחה
+      // ‏{code: [...]} מלפני השינוי נשארת כפי שנשמרה (ראי ``rankingFor``).
+      ranked: {},
       topN: 5,
       activeSchedule: 0,
       // ‏אילו שלבים הסטודנט/ית אישרו ב"המשך": {מפתח שלב: true}. ‏DESIGN.md,
@@ -2042,23 +2029,69 @@
     };
   }
 
-  function pinnedGroup(code, kind) {
-    var byCourse = state.pinned[txt(code)];
-    if (!byCourse) return null;
-    var gid = byCourse[txt(kind)];
-    return gid === undefined || gid === null ? null : txt(gid);
+  /**
+   * הדירוג של רכיב אחד — קורס וסוג — כפי שהשרת קורא אותו
+   * ‏(scheduler.rankings_by_kind; ‏DESIGN.md → Lecturers, 2026-10-09).
+   * רשימה שטוחה שנשמרה לפני כן נקראת לכל סוג שהמרצים שבה מלמדים בו, בסדר
+   * שלה — כמו שלחיצה אחת דירגה מרצה בכל סוג שהוא מלמד.
+   */
+  function rankingFor(code, kind) {
+    var entry = state.ranked[txt(code)];
+    if (!entry) return [];
+    if (Array.isArray(entry)) {
+      var data = courseDataByCode(code);
+      if (!data) return entry.slice();
+      var teaching = Object.create(null);
+      (data.groups || []).forEach(function (g) {
+        if (txt(g.kind) === txt(kind)) teaching[normLecturer(g.lecturer)] = true;
+      });
+      return entry.filter(function (name) {
+        return teaching[normLecturer(name)];
+      });
+    }
+    var list = entry[txt(kind)];
+    return Array.isArray(list) ? list.slice() : [];
   }
 
-  function rankOf(code, lecturer) {
-    var list = state.ranked[txt(code)];
-    if (!Array.isArray(list)) return 0;
-    var i = list.indexOf(txt(lecturer));
+  /** ‏{סוג: [שמות]} לקורס אחד, בלי סוגים ריקים. */
+  function rankingByKind(code) {
+    var entry = state.ranked[txt(code)];
+    var out = {};
+    if (!entry) return out;
+    if (!Array.isArray(entry)) {
+      Object.keys(entry).forEach(function (kind) {
+        if (Array.isArray(entry[kind]) && entry[kind].length) out[kind] = entry[kind].slice();
+      });
+      return out;
+    }
+    var data = courseDataByCode(code);
+    uniq(
+      ((data && data.groups) || []).map(function (g) {
+        return txt(g.kind);
+      })
+    ).forEach(function (kind) {
+      var list = rankingFor(code, kind);
+      if (list.length) out[kind] = list;
+    });
+    return out;
+  }
+
+  function rankOf(code, kind, lecturer) {
+    var i = rankingFor(code, kind).indexOf(txt(lecturer));
     return i === -1 ? 0 : i + 1;
+  }
+
+  /** האם לרשומת דירוג אחת יש שם כלשהו — בכל אחת משתי הצורות. */
+  function rankingHasNames(entry) {
+    if (Array.isArray(entry)) return entry.length > 0;
+    return !!entry && typeof entry === "object" && Object.keys(entry).some(function (k) {
+      return Array.isArray(entry[k]) && entry[k].length > 0;
+    });
   }
 
   /**
    * עותק של מפת {קוד: ...} עם הקורסים שנבחרו בלבד.
-   * רשומה רדומה של קורס שירד מהרשימה נשמרת במצב (‏prunePicks לא מוחק
+   * רשומה רדומה של קורס שירד מהרשימה נשמרת במצב (‏migratePins לא מוחק
    * אותה), ולכן כל מי שמדווח או שולח חייב לסנן — אחרת יוצהר על נעיצות
    * שאינן שייכות לשום קורס שעל המסך.
    */
@@ -2071,20 +2104,18 @@
     return out;
   }
 
-  function pinCount() {
-    var n = 0;
-    var picked = pickedFor(state.pinned);
-    Object.keys(picked).forEach(function (code) {
-      n += Object.keys(picked[code] || {}).length;
-    });
-    return n;
-  }
-
   function rankedCount() {
     var n = 0;
     var picked = pickedFor(state.ranked);
     Object.keys(picked).forEach(function (code) {
-      n += (picked[code] || []).length;
+      var entry = picked[code];
+      if (Array.isArray(entry)) {
+        n += entry.length;
+        return;
+      }
+      Object.keys(entry || {}).forEach(function (kind) {
+        n += (entry[kind] || []).length;
+      });
     });
     return n;
   }
@@ -2532,9 +2563,9 @@
             semester: prev.semester || "",
           };
         });
-        // ניקוי נעיצות/דירוגים משנה את גוף הבקשה לפותר. בלי חישוב מחדש
-        // המסך היה נשאר עם תשובה שנבנתה סביב נעיצה שכבר נמחקה.
-        if (prunePicks()) scheduleSolve(0);
+        // נעיצה ישנה שהפכה לדירוג משנה את גוף הבקשה לפותר. בלי חישוב מחדש
+        // המסך היה נשאר עם תשובה שנבנתה בלי הדירוג החדש.
+        if (migratePins()) scheduleSolve(0);
         refreshColorMap();
         render();
       })
@@ -2601,76 +2632,46 @@
     };
   }
 
-  /** ניקוי נעיצות ודירוגים שכבר לא קיימים בנתונים. */
   /**
-   * ניקוי הבחירות העדינות — נעיצות, דירוג מרצים, חובות נוכחות.
+   * נעיצות שנשמרו לפני 2026-10-09 הופכות לדירוג (DESIGN.md → Lecturers,
+   * "Saved pins"): המרצה של הקבוצה הנעוצה מקבל/ת דירוג 1 בסוג שלה, אלא אם
+   * הסוג הזה כבר מדורג. הנעיצה נמחקת, וטוסט אחד אומר זאת — פעם אחת, כי
+   * ``state.pinned`` מתרוקן.
    *
-   * ‏**קוד שאינו מסומן אינו נמחק כאן.** מאז שהחלפת שנה/סמסטר מחליפה את
-   * רשימת הקורסים, מחיקה לפי "לא מסומן" הייתה משמעותה שהצצה בסמסטר אחר
-   * וחזרה מוחקת בשקט נעיצה שנבחרה ביד — עבודה אמיתית שאבדה בלי שנאמר עליה
-   * דבר. הרשומות נשארות רדומות, וחוזרות לעצמן כשהקורס נבחר שוב.
-   * מה שכן מנוקה: נעיצה על קבוצה שכבר אינה קיימת בנתונים.
-   *
-   * מה שנשלח לשרת מסונן בנפרד (``buildSolveBody``), ולכן רשומה רדומה אינה
-   * מגיעה לחוט ואינה משפיעה על השיבוץ.
+   * ‏**קוד שאינו מסומן אינו נמחק כאן.** נעיצה של קורס שאין לו עדיין נתונים
+   * מחכה לנתונים; דירוג וחובות נוכחות נשמרים גם לקורס שאינו מסומן כרגע,
+   * כי הם תלויים רק בקורס עצמו.
    */
-  function prunePicks() {
+  function migratePins() {
     var changed = false;
+    var converted = 0;
 
-    Object.keys(state.pinned).forEach(function (code) {
+    Object.keys(state.pinned || {}).forEach(function (code) {
       var data = courseDataByCode(code);
       if (!data) return; // אין עדיין נתונים — לא נוגעים
       var byKind = state.pinned[code] || {};
       Object.keys(byKind).forEach(function (kind) {
         var gid = txt(byKind[kind]);
-        var exists = data.groups.some(function (g) {
-          return g.kind === kind && g.group_id === gid;
-        });
-        if (!exists) {
-          delete byKind[kind];
-          changed = true;
+        var group = (data.groups || []).filter(function (g) {
+          return txt(g.kind) === txt(kind) && txt(g.group_id) === gid;
+        })[0];
+        var name = group ? txt(group.lecturer) : "";
+        if (name) {
+          var per = rankingByKind(code);
+          if (!(per[kind] && per[kind].length)) {
+            per[kind] = [name];
+            state.ranked[code] = per;
+          }
+          converted += 1;
         }
       });
-      if (!Object.keys(byKind).length) {
-        delete state.pinned[code];
-        changed = true;
-      }
-    });
-
-    // דירוג מרצים וחובות נוכחות נשמרים גם לקורס שאינו מסומן כרגע: הם
-    // תלויים רק בקורס עצמו, ולכן נכונים גם כשחוזרים אליו.
-
-    if (changed) saveState();
-    return changed;
-  }
-
-  /**
-   * נעיצות שהשרת שחרר ‏(``dropped_pins`` מ-/api/solve) — הקבוצה כבר לא קיימת
-   * בנתונים. השרת מחזיר אותן במפורש כדי שנמחק אותן מהמצב ונחשב מחדש; בלי זה
-   * המסך נתקע על תשובה ריקה שמסבירה נעיצה שכבר לא נמצאת בשום מקום בממשק.
-   * מחזירה ‏true אם באמת נמחק משהו — כך אין לולאת חישוב אינסופית.
-   */
-  function applyDroppedPins(data) {
-    var dropped = pickList(data, ["dropped_pins", "droppedPins"], null);
-    if (!dropped.length) return false;
-    var changed = false;
-    var reasons = [];
-    dropped.forEach(function (rec) {
-      if (!rec || typeof rec !== "object") return;
-      var code = txt(rec.code);
-      var kind = txt(rec.kind);
-      var byKind = state.pinned[code];
-      if (!byKind || !Object.prototype.hasOwnProperty.call(byKind, kind)) return;
-      delete byKind[kind];
-      if (!Object.keys(byKind).length) delete state.pinned[code];
+      delete state.pinned[code];
       changed = true;
-      var why = txt(rec.reason);
-      if (why) reasons.push(why);
     });
+
     if (!changed) return false;
     saveState();
-    // לא למחוק בשקט: הסיבה של השרת נעלמת עם התשובה הבאה.
-    toast(reasons.join(" ") || T("app.toasts.pinReleased"), "warn");
+    if (converted) toast(T("app.lecturers.pinsConverted"), "ok");
     return true;
   }
 
@@ -2800,10 +2801,9 @@
       // קנס אפס לכל מספר ימים — כלומר "בלי העדפה", ולא ניחוש. ‏4 היה
       // מעניש כל מערכת בת 5 ימים בשם בחירה שאיש לא עשה.
       target_days: num(state.targetDays, null) === null ? 6 : state.targetDays,
-      // רק לקורסים שנבחרו. ‏prunePicks כבר לא מוחק רשומה של קורס שירד
+      // רק לקורסים שנבחרו. ‏migratePins אינו מוחק רשומה של קורס שירד
       // מהרשימה — היא נשארת רדומה כדי לחזור אם הקורס יחזור — ולכן הסינון
       // חייב לקרות כאן, בדיוק כמו ב-attendanceBody.
-      pinned: pickedFor(state.pinned),
       ranked: pickedFor(state.ranked),
       blocked: deepCopy(state.blocked),
       forbid_friday: state.forbidFriday === true,
@@ -2861,7 +2861,6 @@
           state.activeSchedule = 0;
           saveState();
         }
-        if (applyDroppedPins(data)) scheduleSolve(0);
         render();
       })
       .catch(function (err) {
@@ -3391,7 +3390,7 @@
 
     if (ui.btnClearRanking) {
       ui.btnClearRanking.addEventListener("click", function () {
-        setState({ ranked: {}, pinned: {}, activeSchedule: 0 });
+        setState({ ranked: {}, activeSchedule: 0 });
         toast(T("app.toasts.rankingCleared"), "ok");
       });
     }
@@ -3543,7 +3542,7 @@
    * האם ערכי השלב מאפשרים להשלים אותו. שלב שנשמר כמושלם והערכים בו
    * כבר אינם תקינים נפתח שוב כשלב הפעיל ("Completion is remembered").
    * ‏ימי לימוד ומרצים תמיד תקינים: לימים אין בחירת חובה, ומרצים הוא שלב
-   * רשות — ה"המשך" שלו עובד גם בלי דירוג ובלי נעיצה.
+   * רשות — ה"המשך" שלו עובד גם בלי דירוג.
    */
   function stepValid(key) {
     if (key === "year") return identityChosen() && !trackMissing();
@@ -5005,7 +5004,6 @@
         if (!fromPlan && manual.indexOf(c) === -1) manual.push(c);
       } else {
         delete set[c];
-        delete state.pinned[c];
         delete state.ranked[c];
         // ביטול של קורס מומלץ נזכר, אחרת משיכה חוזרת של רשימת הסמסטר
         // הייתה מסמנת אותו שוב ומבטלת את ההחלטה בלי לומר מילה.
@@ -6385,36 +6383,32 @@
     });
   }
 
-  function toggleLecturer(code, lecturer) {
+  /**
+   * לחיצה על שורה: מדרגת את המרצה **בסוג של השורה בלבד** (2026-10-09), או
+   * מסירה אותו/ה ממנו ומספרת מחדש. רשימה שטוחה ישנה נכתבת כאן מחדש לפי סוג.
+   */
+  function toggleLecturer(code, kind, lecturer) {
     var name = txt(lecturer);
     if (!name) return;
     var ranked = deepCopy(state.ranked);
-    var list = Array.isArray(ranked[code]) ? ranked[code].slice() : [];
+    var per = rankingByKind(code);
+    var list = per[kind] ? per[kind].slice() : [];
     var i = list.indexOf(name);
     if (i === -1) {
       list.push(name);
       // הדירוג שזה עתה ניתן — ‏groupRow מקפיץ את העיגול שלו, פעם אחת.
-      runtime.popRank = { code: txt(code), lecturer: name, at: Date.now() };
-    }
-    else list.splice(i, 1);
-    if (list.length) ranked[code] = list;
+      runtime.popRank = { code: txt(code), kind: txt(kind), lecturer: name, at: Date.now() };
+    } else list.splice(i, 1);
+    if (list.length) per[kind] = list;
+    else delete per[kind];
+    if (Object.keys(per).length) ranked[code] = per;
     else delete ranked[code];
     setState({ ranked: ranked, activeSchedule: 0 });
   }
 
-  function togglePin(code, kind, groupId) {
-    var pinned = deepCopy(state.pinned);
-    var byKind = pinned[code] || {};
-    if (txt(byKind[kind]) === txt(groupId)) delete byKind[kind];
-    else byKind[kind] = txt(groupId);
-    if (Object.keys(byKind).length) pinned[code] = byKind;
-    else delete pinned[code];
-    setState({ pinned: pinned, activeSchedule: 0 });
-  }
-
   function renderLecturersStep() {
     if (ui.btnClearRanking) {
-      ui.btnClearRanking.disabled = rankedCount() === 0 && pinCount() === 0;
+      ui.btnClearRanking.disabled = rankedCount() === 0;
     }
 
     if (ui.lectCourses) {
@@ -6491,7 +6485,6 @@
     if (ui.lectNote) {
       var bits = [];
       if (rankedCount()) bits.push(Tf("app.lecturers.note.ranked", { count: rankedCount() }));
-      if (pinCount()) bits.push(Tf("app.lecturers.note.pinned", { count: pinCount() }));
       setText(
         ui.lectNote,
         bits.length
@@ -6566,29 +6559,25 @@
     return codes.length ? codes[0] : "";
   }
 
-  /** הסיכום החי שבסוף כותרת הקורס: נעוץ, או סדר העדיפות, או "לא דורג". */
+  /**
+   * הסיכום החי שבסוף כותרת הקורס: הדירוג של כל סוג מדורג, או "לא דורג".
+   * קורס עם סוג אחד בלבד נשאר "עדיפות: A ← B".
+   */
   function courseChoiceText(course) {
-    var code = course.code;
-    var pinned = [];
-    kindsOf(course).forEach(function (kind) {
-      var gid = pinnedGroup(code, kind);
-      if (!gid) return;
-      var group = course.groups.filter(function (g) {
-        return txt(g.kind) === txt(kind) && txt(g.group_id) === txt(gid);
-      })[0];
-      var name = group && txt(group.lecturer)
-        ? txt(group.lecturer)
-        : T("app.lecturers.row.unknownLecturer");
-      if (pinned.indexOf(name) === -1) pinned.push(name);
+    var kinds = kindsOf(course);
+    var per = rankingByKind(course.code);
+    var ranked = kinds.filter(function (kind) {
+      return per[kind] && per[kind].length;
     });
-    if (pinned.length) {
-      return Tf("app.lecturers.choice.pinned", { list: pinned.join(" · ") });
+    if (!ranked.length) return T("app.lecturers.choice.none");
+    if (kinds.length === 1) {
+      return Tf("app.lecturers.choice.ranked", { list: per[ranked[0]].join(" ← ") });
     }
-    var ranked = state.ranked[code] || [];
-    if (ranked.length) {
-      return Tf("app.lecturers.choice.ranked", { list: ranked.join(" ← ") });
-    }
-    return T("app.lecturers.choice.none");
+    return ranked
+      .map(function (kind) {
+        return Tf("app.lecturers.choice.byKind", { kind: kind, list: per[kind].join(" ← ") });
+      })
+      .join(T("app.lecturers.choice.sep"));
   }
 
   /**
@@ -6677,11 +6666,6 @@
           // רק הרחיבו את הטבלה.
           el("th", { text: T("app.lecturers.table.when") }),
           el("th", { text: T("app.lecturers.table.room") }),
-          el("th", {
-            class: "th-pin",
-            text: T("app.lecturers.table.pin"),
-            attrs: { title: T("app.lecturers.pinHelp") },
-          }),
         ]),
       ]),
     ]);
@@ -6770,39 +6754,29 @@
     return box;
   }
 
-  /** נעץ: מתאר כשהקבוצה פתוחה, מלא בצבע הקורס כשהיא נעוצה (‏CSS). */
-  var PIN_SVG =
-    '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
-    '<path d="M9 3h6l-1.2 6.2L17 12.5V14h-4.2v6L12 21l-.8-1v-6H7v-1.5l3.2-3.3z"/>' +
-    "</svg>";
-
   function groupRow(course, group) {
     var code = course.code;
     var gid = group.group_id;
     var kind = group.kind;
-    var isPinned = pinnedGroup(code, kind) === gid;
     var via = viabilityOf(code, kind, gid);
     // ‏קבוצה בלי מועד ברכיב שיש בו קבוצה עם מועד אינה נבחרת לעולם (DESIGN.md,
     // שלב המרצים, 2026-10-03; ‏scheduler.CONSTRAINT_NO_TIME). נקבע כאן מנתוני
     // הקורס עצמם, כדי שהשורה תיחסם גם כשה-viability דולג או ריק.
     var noTime = noTimeExcluded(course, group);
-    var dead = (via.ok === false || noTime) && !isPinned;
+    var dead = via.ok === false || noTime;
     var deadReason = noTime ? T("app.lecturers.row.noTimeLine") : txt(via.reason);
-    var rank = rankOf(code, group.lecturer);
+    var rank = rankOf(code, kind, group.lecturer);
 
     var cls = "";
     if (rank) cls += " is-ranked";
-    if (isPinned) cls += " is-pinned";
     if (dead) cls += " is-dead";
 
     // ‏מספר הקבוצה אינו עמודה מאז שלב 4 של העיצוב — הוא הראשון ב-title של
-    // השורה, ובשם הנגיש של כפתור הנעיצה.
+    // השורה.
     var title = [
       Tf("app.lecturers.row.groupTitle", { gid: gid }),
       dead
         ? deadReason
-        : isPinned
-        ? T("app.lecturers.row.pinnedTitle")
         : txt(group.lecturer)
         ? Tf(rank ? "app.lecturers.row.rankRemove" : "app.lecturers.row.rankAdd", {
             lecturer: group.lecturer,
@@ -6819,7 +6793,7 @@
       on: {
         click: function () {
           if (dead) return;
-          toggleLecturer(code, group.lecturer);
+          toggleLecturer(code, kind, group.lecturer);
         },
       },
     });
@@ -6834,7 +6808,13 @@
       text: rank ? String(rank) : "",
     });
     var pop = runtime.popRank;
-    if (rank && pop && pop.code === txt(code) && pop.lecturer === txt(group.lecturer)) {
+    if (
+      rank &&
+      pop &&
+      pop.code === txt(code) &&
+      pop.kind === txt(kind) &&
+      pop.lecturer === txt(group.lecturer)
+    ) {
       var age = Date.now() - pop.at;
       if (age < 250) {
         circle.classList.add("is-pop");
@@ -6902,32 +6882,6 @@
     });
     tr.appendChild(whenCell);
     tr.appendChild(roomCell);
-
-    // נעיצה — כפתור נפרד; הלחיצה עליו לא מדרגת מרצה. ‏aria-label נושא את
-    // המשמעות המלאה, כולל מספר הקבוצה.
-    var pinLabel = dead
-      ? Tf("app.lecturers.row.pinDead", { gid: gid, reason: deadReason })
-      : Tf(isPinned ? "app.lecturers.row.pinRelease" : "app.lecturers.row.pinAdd", { gid: gid });
-    var pinBtn = el("button", {
-      class: "pin-btn",
-      attrs: {
-        type: "button",
-        "aria-pressed": isPinned ? "true" : "false",
-        "aria-label": pinLabel,
-        title: pinLabel,
-      },
-      data: { fk: "pin-" + code + "-" + kind + "-" + gid },
-      on: {
-        click: function (ev) {
-          ev.stopPropagation();
-          if (dead) return;
-          togglePin(code, kind, gid);
-        },
-      },
-    });
-    pinBtn.innerHTML = PIN_SVG;
-    pinBtn.disabled = dead;
-    tr.appendChild(el("td", { class: "cell-pin" }, [pinBtn]));
 
     return tr;
   }
@@ -7532,7 +7486,6 @@
    */
   function differentiators(list) {
     var facts = list.map(scheduleFacts);
-    var fits = fitScores(list);
 
     function uniqueBest(key, better) {
       var best = null;
@@ -7605,18 +7558,19 @@
 
     // ומה שנשאר: אם מספר הימים בכלל משתנה בין המערכות, הוא ההבדל
     // הקריא ביותר. אחרת — ההתאמה הגבוהה ביותר, או מספר הימים כגיבוי.
+    // ‏"הגבוהה ביותר" היא **המקום בסדר**, לא אחוז (2026-10-09): ‏``list`` מגיע
+    // כאן תמיד בסדר השרת, ומקום 0 הוא הראשונה בסדר העדיפויות.
     var daysVary =
       uniq(
         facts.map(function (f) {
           return f.days;
         })
       ).length > 1;
-    var bestFit = fits.length ? Math.max.apply(null, fits) : 0;
     facts.forEach(function (f, i) {
       if (labels[i]) return;
       if (daysVary) {
         labels[i] = Tf("app.compare.daysLabel", { days: f.days });
-      } else if (fits[i] === bestFit) {
+      } else if (i === 0) {
         labels[i] = T("app.compare.bestOverall");
       } else {
         labels[i] = Tf("app.compare.daysLabel", { days: f.days });
@@ -7638,36 +7592,10 @@
   /* --- שלב 5: התאמה, קנסות ומרצים -------------------------------- */
 
   /**
-   * ‏0..100 ביחס לחמש המערכות המוצגות בלבד, כשהטובה מביניהן היא 100.
-   *
-   * זה ציון **יחסי** ולא מוחלט, ואי אפשר שיהיה אחרת: ``lecturer`` הוא בונוס
-   * ללא תקרה ידועה וכל השאר קנסות, כך שאין ציון מרבי לנרמל אליו. לכן גם
-   * התיאור אומר במפורש "ביחס לחמש המוצגות", והניקוד הגולמי נשאר זמין
-   * במצב ניפוי.
-   *
-   * כשכל המערכות שקולות — וזה המצב הרגיל כשהן נבדלות בקבוצת תרגול אחת —
-   * כולן מקבלות 100, במקום לפרוש הפרש של נקודה על פני 0..100 ולהמציא
-   * הבדל שאינו קיים.
+   * רכיבי הניקוד ששוללים נקודות, מהמשפיע ביותר ומטה. אלה רק החורים, הסיום
+   * המאוחר, אורך היום והחפיפות — ימי הלימוד והמרצים אינם נקודות מאז
+   * 2026-10-09, והם באים מ-``days_over_target`` ומ-``lecturer_misses``.
    */
-  function fitScores(list) {
-    var scores = list.map(function (sch) {
-      return num(sch && sch.score, 0);
-    });
-    if (!scores.length) return [];
-    var best = Math.max.apply(null, scores);
-
-    // הפער נמדד ביחס ל**גודל** הניקוד של הטובה, ולא ביחס לטווח שבין
-    // הטובה לגרועה. מתיחה על פני הטווח נשמעת נכונה עד שמסתכלים במספרים:
-    // חמש מערכות בטווח ‎-75.3..-83.2‎ — הפרש של כ-10% — היו נפרשות ל-
-    // ‎100, 100, 5, 5, 1‎, כלומר מערכת סבירה לגמרי הייתה נקראת "1 מתוך 100".
-    // כאן אותן חמש יוצאות ‎100, 100, 90, 90, 90‎: דומות, וזו האמת.
-    var scale = Math.max(Math.abs(best), 1);
-    return scores.map(function (v) {
-      return clamp(Math.round(100 * (1 - (best - v) / scale)), 0, 100);
-    });
-  }
-
-  /** רק המרכיבים ששוללים נקודות, מהמשפיע ביותר ומטה. */
   function penaltyList(sch) {
     var breakdown = (sch && sch.breakdown) || {};
     var rows = [];
@@ -7683,49 +7611,15 @@
   }
 
   /**
-   * המרצים המועדפים שלא נכנסו למערכת הזו — **אותו כלל בדיוק** שבו השרת סופר
-   * את ``lecturer_hits`` (scheduler._lecturer_component), כדי ששבב "N מתוך M
-   * מרצים מועדפים" והמשפט "בלי המרצה שבחרת" לא יוכלו לסתור זה את זה:
-   *
-   *   * קורס נספר רק אם יש לו דירוג (אחרי ניקוי) והוא במערכת הזו.
-   *   * "מועדף" = השם **הראשון** בדירוג — פגיעה אצל השרת היא דירוג 0.
-   *   * כל קבוצה שנבחרה בקורס נבדקת, **כולל קבוצה בלי מפגשים**. עד 2026-10-02
-   *     הרשימה נבנתה מ-scheduleMeetings(), שאין בה קבוצה בלי מועד — ולכן
-   *     מרצה של שו"ת בלי מועד נאמר "חסר" כשהשרת ספר אותו כפגיעה (11069).
-   *   * השמות מושווים אחרי אותו ניקוי: ‏strip של _clean_ranked, ואז הנרמול
-   *     של _norm_name — רווחים מצטמצמים לאחד, ובלי הבדל בין אותיות גדולות
-   *     לקטנות.
-   *
-   * מחזיר רשומה לכל קורס שבו המועדף חסר: ‏{code, name}.
+   * המרצים בדירוג 1 שאינם במערכת הזו, כפי שהשרת החזיר אותם
+   * ‏(``lecturer_misses``: ‏{code, kind, name}) — "X (תרגול)", בלי כפילויות.
+   * השרת סופר באותו כלל את ``lecturer_hits``, ולכן השבב והמשפט לא יכולים
+   * לסתור זה את זה.
    */
-  function lecturerMisses(sch) {
-    if (!sch) return [];
-    var present = Object.create(null);
-    var chosen = Object.create(null);
-    pickList(sch, ["picks"], null).forEach(function (p) {
-      var code = txt(p.code);
-      present[code] = true;
-      var key = normLecturer(p.lecturer);
-      if (key) (chosen[code] = chosen[code] || Object.create(null))[key] = true;
-    });
-    var misses = [];
-    var ranked = pickedFor(state.ranked);
-    Object.keys(ranked).forEach(function (code) {
-      var names = rankingNames(ranked[code]);
-      if (!names.length || !present[code]) return;
-      var first = names[0];
-      if (!(chosen[code] && chosen[code][normLecturer(first)])) {
-        misses.push({ code: code, name: first });
-      }
-    });
-    return misses;
-  }
-
-  /** השמות להצגה: המועדף של כל קורס שחסר בו, בלי כפילויות. */
   function missingLecturers(sch) {
     return uniq(
-      lecturerMisses(sch).map(function (m) {
-        return m.name;
+      pickList(sch || {}, ["lecturer_misses"], null).map(function (m) {
+        return Tf("app.schedule.lostLecturer", { name: txt(m.name), kind: txt(m.kind) });
       })
     );
   }
@@ -7733,31 +7627,6 @@
   /** ‏scheduler._norm_name: רווחים מצטמצמים לאחד, ובלי הבדל רישיות. */
   function normLecturer(name) {
     return txt(name).split(/\s+/).filter(Boolean).join(" ").toLowerCase();
-  }
-
-  /**
-   * ‏הדירוג של קורס כפי שהשרת קורא אותו: _clean_ranked מנקה רווחים בקצוות
-   * ומשמיט שמות ריקים, ו-_ranking_for מקבל גם מילון לפי סוג רכיב (ומאחד אותו
-   * לפי הסדר). הדף שולח היום רשימה; המילון נתמך כדי שהכלל לא יתפצל אם זה ישתנה.
-   */
-  function rankingNames(ranking) {
-    var list = [];
-    if (Array.isArray(ranking)) {
-      list = ranking.slice();
-    } else if (ranking && typeof ranking === "object") {
-      Object.keys(ranking).forEach(function (kind) {
-        (ranking[kind] || []).forEach(function (name) {
-          if (list.indexOf(name) === -1) list.push(name);
-        });
-      });
-    } else if (ranking) {
-      list = [ranking];
-    }
-    return list
-      .map(function (name) {
-        return txt(name).trim();
-      })
-      .filter(Boolean);
   }
 
   /* --- שלב 5: המערכת ------------------------------------------------- */
@@ -7911,24 +7780,6 @@
                 el("li", { text: txt(typeof r === "object" ? r.text || r.tip : r) })
               );
             });
-            if (pinCount() > 0) {
-              box.appendChild(
-                el("li", {}, [
-                  el("button", {
-                    class: "btn btn-ghost btn-sm",
-                    attrs: { type: "button" },
-                    data: { fk: "unpin-all" },
-                    text: T("app.schedule.unpinAll"),
-                    on: {
-                      click: function () {
-                        setState({ pinned: {}, activeSchedule: 0 });
-                        toast(T("app.schedule.unpinAllToast"), "ok");
-                      },
-                    },
-                  }),
-                ])
-              );
-            }
           });
         }
       }
@@ -7987,28 +7838,20 @@
   /**
    * שבבי הנתונים של המערכת שנבחרה, ומתחתם משפט אחד: מה פחות טוב במערכת הזו.
    *
-   * ‏DESIGN.md, "Results page", פריט 4 (2026-09-30). הם מחליפים שלושה
-   * דברים — כותרת ההתאמה, פאנל העובדות ופסי הקנסות — וכל מה שהשלושה אמרו
-   * נשאר: ההתאמה, הימים ואותיותיהם, שעת הסיום, זמן ההמתנה, הנ"ז (כולל
-   * קורסים בלי נתון), כל קנס ומה שהוא מודד, מי מהמרצים המועדפים חסר, וכמה
-   * מהם נכנסו. רק משפט ההסבר שליד ההתאמה ("ביחס לחמש המוצגות", "כולן
-   * שקולות") עובר לתווית ההצפה של השבב.
+   * ‏DESIGN.md, "Results page", פריט 4 (2026-09-30; ההתאמה — 2026-10-09).
+   * הימים ואותיותיהם, שעת הסיום, זמן ההמתנה, הנ"ז (כולל קורסים בלי נתון),
+   * כל קנס ומה שהוא מודד, מי מהמרצים המועדפים חסר, וכמה מהם נכנסו.
    *
-   * ‏הסדר קבוע: התאמה, ימים, סיום, חלונות, נ"ז — ואחריהם, כשיש העדפות
+   * ‏**אין אחוז התאמה** (2026-10-09). הסדר הוא לפי עדיפות — ימים, מרצים,
+   * חפיפות, ורק אז הניקוד — ולכן אחוז מהניקוד היה יכול להציב חלופה נמוכה
+   * מעל גבוהה. "ההתאמה הגבוהה ביותר" נאמר רק על הראשונה בסדר השרת, ולשאר
+   * אין שבב התאמה.
+   *
+   * ‏הסדר קבוע: (התאמה,) ימים, סיום, חלונות, נ"ז — ואחריהם, כשיש העדפות
    * מרצים, כמה מהם נכנסו.
    */
   function buildStats(box, sch, list) {
-    var fits = fitScores(list);
     var idx = clamp(state.activeSchedule, 0, Math.max(0, list.length - 1));
-    var fit = fits.length ? fits[idx] : 100;
-    var allTied = fits.length > 1 && fits.every(function (v) {
-      return v === fits[0];
-    });
-    var bestFit = fits.length ? Math.max.apply(null, fits) : 0;
-    // ‏המערכת המדורגת ראשונה מקבלת תווית במקום "100%". הרף נקבע על ידה —
-    // ‏fitScores() נותן 100 לטובה מבין המוצגות — ולכן המספר שם נשמע מוחלט
-    // הרבה יותר ממה שהוא. כשכולן שקולות אין "ראשונה", והמספר נשאר.
-    var isBest = fits.length > 0 && !allTied && fit === bestFit;
     var missing = num(sch.lecturer_total, 0) > 0 ? missingLecturers(sch) : [];
     var hits = Tf("app.schedule.lecturersHits", {
       hits: num(sch.lecturer_hits, 0),
@@ -8033,26 +7876,22 @@
       );
     };
 
-    // ‏1. ההתאמה. ‏"התאמה" אומר מה המספר מודד; ליד התווית של המובילה הוא
-    // היה נקרא "התאמה · ההתאמה הגבוהה ביותר", ולכן הוא יורד שם. ‏class="ltr"
-    // רק על המספר — על משפט עברי הוא היה כופה כיוון שגוי.
-    var fitTitle = allTied ? T("app.schedule.fitTied") : T("app.schedule.fitTitle");
-    add(
-      "fit",
-      isBest
-        ? [el("strong", { class: "fit-value fit-value--best", text: T("app.compare.bestOverall") })]
-        : [
-            el("span", { class: "fit-label", text: T("app.schedule.fitLabel") }),
-            el("strong", { class: "fit-value ltr", text: fmtFit(fit) }),
-            DEBUG
-              ? el("span", {
-                  class: "fit-note ltr",
-                  text: Tf("app.schedule.rawScore", { score: fmtNumber(sch.score) }),
-                })
-              : null,
-          ],
-      fitTitle
-    );
+    // ‏1. ההתאמה — רק לראשונה בסדר השרת, ובלי מספר.
+    if (idx === 0) {
+      add(
+        "fit",
+        [
+          el("strong", { class: "fit-value fit-value--best", text: T("app.compare.bestOverall") }),
+          DEBUG
+            ? el("span", {
+                class: "fit-note ltr",
+                text: Tf("app.schedule.rawScore", { score: fmtNumber(sch.score) }),
+              })
+            : null,
+        ],
+        T("app.schedule.fitBestTitle")
+      );
+    }
 
     // ‏2. ימים, עם האותיות — "4 ימים" לבד אינו אומר אם יום ו׳ פנוי.
     var days = Array.isArray(sch.days)
@@ -8105,26 +7944,24 @@
     box.appendChild(pills);
     appendFreeDaysLine(box, sch);
 
-    // ---- מה פחות טוב במערכת הזו: משפט אחד, מהמשפיע ביותר ומטה ----
+    // ---- מה פחות טוב במערכת הזו: משפט אחד, בסדר העדיפויות ----
     // ‏במילים של הסטודנט/ית ולא במונחי הניקוד (DESIGN.md, פריט 4, 2026-10-01):
-    // ‏"מסתיימת מאוחר" ולא "סיום מאוחר". רכיב שמוצג כאפס בכל החלופות אינו
-    // אומר דבר, ולכן הוא לא נמנה. מה שכל רכיב מודד, ומי מהם הגדול, בתווית ההצפה.
-    var items = penaltyList(sch)
-      .filter(function (row) {
-        return !breakdownAlwaysZero(list, row.key);
-      })
-      .map(function (row, i) {
-        var label = T("app.schedule.lost." + row.key, T("app.score.breakdown." + row.key, row.key));
-        var explain = T("app.score.explain." + row.key, "");
-        return {
-          key: row.key,
-          text: label,
-          title: i === 0
-            ? Tf("app.schedule.topPenalty", { label: label }) + (explain ? "\n" + explain : "")
-            : explain,
-        };
+    // ‏"מסתיימת מאוחר" ולא "סיום מאוחר". הסדר (2026-10-09) הוא סדר ההכרעה:
+    // ימים מעל היעד, המרצים, החפיפות, ורק אז חלונות, סיום מאוחר ואורך היום
+    // — מהמשפיע ביותר ומטה. רכיב שמוצג כאפס בכל החלופות אינו אומר דבר,
+    // ולכן הוא לא נמנה. מה שכל רכיב מודד בתווית ההצפה.
+    var penalties = penaltyList(sch).filter(function (row) {
+      return !breakdownAlwaysZero(list, row.key);
+    });
+    var items = [];
+    if (num(sch.days_over_target, 0) > 0) {
+      items.push({
+        key: "days",
+        text: T("app.schedule.lost.days"),
+        title: T("app.score.explain.days", ""),
       });
-    // ‏המרצים המועדפים שלא נכנסו, בשמם: לפי השם מחליטים אם לוותר.
+    }
+    // ‏המרצים המועדפים שלא נכנסו, בשמם ובסוג: לפי השם מחליטים אם לוותר.
     if (missing.length) {
       items.push({
         key: "lecturer",
@@ -8133,6 +7970,28 @@
         }),
         title: T("app.score.explain.lecturer", ""),
       });
+    }
+    penalties
+      .filter(function (row) {
+        return row.key === "soft_conflict";
+      })
+      .concat(
+        penalties.filter(function (row) {
+          return row.key !== "soft_conflict";
+        })
+      )
+      .forEach(function (row) {
+        items.push({
+          key: row.key,
+          text: T("app.schedule.lost." + row.key, T("app.score.breakdown." + row.key, row.key)),
+          title: T("app.score.explain." + row.key, ""),
+        });
+      });
+    // ‏הראשון ברשימה הוא מה שהכריע — אותה תווית הצפה כמו קודם.
+    if (items.length) {
+      items[0].title =
+        Tf("app.schedule.topPenalty", { label: items[0].text }) +
+        (items[0].title ? "\n" + items[0].title : "");
     }
     if (!items.length) {
       appendFullGroupsLine(box, sch);
@@ -10008,8 +9867,6 @@
       conflict =
         pickList(s || {}, ["tied_missing"], null).length > 0 ||
         runtime.notOffered.length > 0;
-    } else if (key === "lecturers") {
-      conflict = pinCount() > 0 && !!s && schedules().length === 0;
     }
     if (conflict) return "conflict";
     return sectionIsDefault(key) ? "default" : "chosen";
@@ -10063,13 +9920,8 @@
           return byKind[k] === false;
         });
       });
-      var ranked = hasAnyEntry(state.ranked, function (list) {
-        return Array.isArray(list) && list.length > 0;
-      });
-      var pinned = hasAnyEntry(state.pinned, function (byKind) {
-        return Object.keys(byKind || {}).length > 0;
-      });
-      return !waived && !ranked && !pinned;
+      var ranked = hasAnyEntry(state.ranked, rankingHasNames);
+      return !waived && !ranked;
     }
     return true;
   }
@@ -10162,9 +10014,8 @@
       {
         key: "lecturers",
         locked: lecturersLocked,
-        complete: hasData && (rankedCount() > 0 || pinCount() > 0 || list.length > 0),
-        // שני החלקים נאמרים תמיד, גם כשהם אפס: כשהשלב מקופל זו כל האמירה
-        // שנשארת עליו, ו"ללא נעיצות" הוא מידע — היעדרו אינו.
+        complete: hasData && (rankedCount() > 0 || list.length > 0),
+        // נאמר תמיד, גם כשהוא אפס: כשהשלב מקופל זו כל האמירה שנשארת עליו.
         text: !hasData
           ? lecturersLocked
             ? T("app.steps.lecturers.waitingForData")
@@ -10176,12 +10027,6 @@
                   : rankedCount() === 1
                   ? T("app.steps.lecturers.ranked.one")
                   : Tf("app.steps.lecturers.ranked.many", { count: rankedCount() }),
-              pins:
-                pinCount() === 0
-                  ? T("app.steps.lecturers.pins.none")
-                  : pinCount() === 1
-                  ? T("app.steps.lecturers.pins.one")
-                  : Tf("app.steps.lecturers.pins.many", { count: pinCount() }),
             }),
       },
       {

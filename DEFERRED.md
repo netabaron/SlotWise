@@ -64,78 +64,6 @@ correct.
 with no meetings when its (course, kind) has a timed group, so the brute force
 stays independent of the engine but agrees with it.
 
-### The pinned no-solution diagnosis reads links on a trimmed copy — **found 2026-10-03, not fixed**
-**Decided 2026-10-09: goes away with pinning.** `docs/DESIGN.md` → Lecturers removes
-pins from the step and from `/api/solve` (phase 10, "Lecturer order"), and
-`_pin_filtered` goes with them. Moves to Closed when that phase lands.
-**Where:** `api._pin_filtered` (`src/web/api.py:2507-2524`). Its copy feeds
-`diagnose_infeasibility`, `relax_suggestions` and `_relaxations_json` when a
-request with pins has no schedule (api.py:5310-5335; also :2637 and :5359).
-**Owner:** unassigned.
-**What:** to diagnose, `_pin_filtered` deletes the other groups of each pinned
-kind. The `linked_to` rule reads which kind an id names from the groups that are
-present (`scheduler._kind_index`). So deleting groups changes how a link is read,
-and the copy's schedules differ from what the real solve allows with that pin.
-* **Before the 2026-10-03 `linked_to` fix**, deleted ids became unknown and were
-  not enforced, so the copy was too loose.
-* **Since the fix**, deleting groups can also change which kind an id names, so
-  the copy can be too strict as well.
-
-`_relaxations_json` counts schedules on this copy, and those counts reach the page.
-The `_pin_filtered` docstring says the copy is never used for counting.
-**Measured:** every single pin of every linked semester-א course, 919 pins, real
-solve compared with the copy.
-* **Before the fix:** 90 pins in 36 courses differ, all of them looser.
-* **Now:** 62 pins in 27 courses differ. In 29 the copy misses real schedules; in
-  33 it adds schedules the real solve forbids.
-
-**Example:** 11232 with tutorial 271030210/1 pinned.
-* The real solve allows labs /1, /2, /3, /4, /6 and /8.
-* The copy allows only /1–/3. With tutorials /2 and /3 deleted, ids /2 and /3 look
-  like labs only, and the lecture's list reads as labs again.
-
-**Same cause, second rule (2026-10-03):** the copy also decides "groups with no
-meeting time" from the trimmed component.
-* A pin on a no-time group that the rule excludes leaves that group alone in its
-  copy, so the copy allows it while the real solve does not.
-* `/api/solve` then has no schedule and blames "combinatorial exhaustion". Its
-  first suggestion, to release a pin, is the right action.
-* With personal constraints set, the relaxation counts are false too. With 11232
-  lab /8 pinned, `forbid_friday` and an earliest hour, it reports "earliest → 5
-  schedules" when nothing opens.
-* Viability puts the stale pin into every trial, so every other group shows as
-  dead.
-* The pinned row itself stays live (`isPinned`), so it can be unpinned.
-* The simplest fix is for `resolve_pins` to drop such a pin through
-  `dropped_pins`, which the page already clears and reports.
-* Only a pin saved before 2026-10-03 could do this, because the lecturers step no
-  longer lets anyone pin such a group (11232 lab /8, for example).
-* **Since 2026-10-03, `resolve_pins` drops such a pin before solving**, so the
-  copy is never built for it. What remains open here is the `linked_to` reading on
-  the copy.
-
-**Fix direction:** either build the copy's kind index from the untrimmed courses,
-or narrow by filtering selections, as the real solve does, instead of deleting
-groups. Either one also covers the no-time rule.
-**How to reproduce** (shipped catalog only):
-```
-SLOTWISE_DB_ROOT="$(mktemp -d)" python - <<'EOF'
-import sys
-sys.path[:0] = ["src", "."]
-from src.web import api
-S = api.scheduler_mod
-with api.create_app({"allow_network": False}).app_context():
-    courses, _, _ = api._build_courses(["11232"], semester="א")
-pins = {"11232": {"תרגול": "271030210/1"}}
-real = {sel.group_for("11232", "מעבדה").group_id
-        for sel in S.enumerate_selections(courses, S.Preferences()) if api.pins_satisfied(sel, pins)}
-copy = {sel.group_for("11232", "מעבדה").group_id
-        for sel in S.enumerate_selections(api._pin_filtered(courses, pins), S.Preferences())}
-print("real solve:", sorted(real))      # /1 /2 /3 /4 /6 /8
-print("diagnosis copy:", sorted(copy))  # /1 /2 /3 only
-EOF
-```
-
 ### Excluding full groups from schedules — **deferred 2026-10-02**
 **Where:** proposed, not built. The full record, with every measurement, is
 `docs/PROPOSAL_FULL_GROUPS.md`.
@@ -331,21 +259,6 @@ twice.
 12.5px and 11px are now both 13px, so the relationship between them is gone. The
 scale that restores it arrives with whichever palette direction is chosen.
 
-### `.pin-btn` sits at 45% opacity as its resting state
-**Decided 2026-10-09: the button is removed** (`docs/DESIGN.md` → Lecturers, ranking
-is the only control). Moves to Closed when phase 10 lands; the `.pin-btn` entries in
-`tests/test_no_opacity_on_text.py`'s `ALLOWED` then match nothing.
-**Where:** `src/web/static/style.css`, `.pin-btn`.
-**Owner:** unassigned — re-owned 2026-10-05: "Phase 7" here was an earlier plan's numbering, not DESIGN.md's Phase 7 (wide layout).
-**Why it survived the opacity sweep:** the sweep removed multipliers from *text*.
-`.pin-btn` is a control, and its `:disabled` state at `.2` is covered by WCAG
-1.4.3's exemption for inactive components — but `.45` is its **enabled** resting
-state, which is not exempt. It is left alone because Phase 7 replaces the emoji
-pin with an inline SVG button carrying `aria-label` and `aria-pressed`, and
-re-tuning the opacity of a control that is about to be deleted is wasted work.
-Recorded so it is a decision and not an oversight.
-`tests/test_no_opacity_on_text.py` lists it in `ALLOWED` with this reason.
-
 ### A missing string used to be invisible
 **Where:** `T()` in `app.js`, Jinja rendering in `api.py`, `strings.py:load()`.
 **Owner:** closed — fixed the moment it was found, not deferred.
@@ -390,29 +303,6 @@ lines it means, or it grows in the retelling.
 **Why not now:** the brief asks for "one refresh button" *and* specifies a button
 inside the banner. Both are implemented; the banner is now rare enough that the
 common screen has exactly one. Flagged so it is a decision and not an oversight.
-
-### The fit score is relative to the five shown, not absolute
-**Superseded 2026-10-09: the percentage is removed** (`docs/DESIGN.md` → Results page,
-item 4). Schedules are ordered by priority, not by one sum, so a percentage of the
-remaining points could put a lower alternative above a higher one. Only "ההתאמה
-הגבוהה ביותר" on the first alternative stays. Moves to Closed when phase 10 lands.
-**Where:** `fitScores()` in `src/web/static/app.js`.
-**Owner:** unassigned — needs a product call, possibly never.
-**Why:** there is no absolute maximum to normalise against — `lecturer` is an
-unbounded positive bonus and every other component is a penalty — so 100 can
-only mean "the best of the five returned". The label says so and the tooltip
-spells it out, but two different course selections can both show 100 while being
-nothing alike. If an absolute scale is ever wanted, the scheduler would have to
-expose a theoretical best for the chosen courses.
-
-### The fit number is not the thing to choose on
-**Superseded 2026-10-09** with the entry above: there is no fit number any more.
-**Where:** `fitScores()` / the `.fit` block in `src/web/static/app.js`.
-**Owner:** informational — Phase 3 worked around it, no action pending.
-**Why:** with five schedules inside a few points the score is honest but useless
-as a decision aid. Phase 3 leads with the differentiating label and demotes the
-number whenever the spread across the shown set is 5 points or less. The number
-is still there, and still relative — see the entry above.
 
 ### Colour-blind distinguishability of the ten course colours — **measured 2026-09-08, and it is worse than this entry used to say**
 **Where:** `--course-0..9` in `src/web/static/style.css`.
@@ -905,6 +795,117 @@ settled-page signal the entry above proposes.
 protected test file.
 
 ## Closed
+
+### The pinned no-solution diagnosis reads links on a trimmed copy — **closed 2026-10-09, pinning removed**
+**Decided 2026-10-09: goes away with pinning.** `docs/DESIGN.md` → Lecturers removes
+pins from the step and from `/api/solve` (phase 10, "Lecturer order"), and
+`_pin_filtered` went with them: a request with no schedule is now diagnosed on the
+full course list, the same one the solve used.
+**Where:** `api._pin_filtered` (`src/web/api.py:2507-2524`). Its copy feeds
+`diagnose_infeasibility`, `relax_suggestions` and `_relaxations_json` when a
+request with pins has no schedule (api.py:5310-5335; also :2637 and :5359).
+**Owner:** unassigned.
+**What:** to diagnose, `_pin_filtered` deletes the other groups of each pinned
+kind. The `linked_to` rule reads which kind an id names from the groups that are
+present (`scheduler._kind_index`). So deleting groups changes how a link is read,
+and the copy's schedules differ from what the real solve allows with that pin.
+* **Before the 2026-10-03 `linked_to` fix**, deleted ids became unknown and were
+  not enforced, so the copy was too loose.
+* **Since the fix**, deleting groups can also change which kind an id names, so
+  the copy can be too strict as well.
+
+`_relaxations_json` counts schedules on this copy, and those counts reach the page.
+The `_pin_filtered` docstring says the copy is never used for counting.
+**Measured:** every single pin of every linked semester-א course, 919 pins, real
+solve compared with the copy.
+* **Before the fix:** 90 pins in 36 courses differ, all of them looser.
+* **Now:** 62 pins in 27 courses differ. In 29 the copy misses real schedules; in
+  33 it adds schedules the real solve forbids.
+
+**Example:** 11232 with tutorial 271030210/1 pinned.
+* The real solve allows labs /1, /2, /3, /4, /6 and /8.
+* The copy allows only /1–/3. With tutorials /2 and /3 deleted, ids /2 and /3 look
+  like labs only, and the lecture's list reads as labs again.
+
+**Same cause, second rule (2026-10-03):** the copy also decides "groups with no
+meeting time" from the trimmed component.
+* A pin on a no-time group that the rule excludes leaves that group alone in its
+  copy, so the copy allows it while the real solve does not.
+* `/api/solve` then has no schedule and blames "combinatorial exhaustion". Its
+  first suggestion, to release a pin, is the right action.
+* With personal constraints set, the relaxation counts are false too. With 11232
+  lab /8 pinned, `forbid_friday` and an earliest hour, it reports "earliest → 5
+  schedules" when nothing opens.
+* Viability puts the stale pin into every trial, so every other group shows as
+  dead.
+* The pinned row itself stays live (`isPinned`), so it can be unpinned.
+* The simplest fix is for `resolve_pins` to drop such a pin through
+  `dropped_pins`, which the page already clears and reports.
+* Only a pin saved before 2026-10-03 could do this, because the lecturers step no
+  longer lets anyone pin such a group (11232 lab /8, for example).
+* **Since 2026-10-03, `resolve_pins` drops such a pin before solving**, so the
+  copy is never built for it. What remains open here is the `linked_to` reading on
+  the copy.
+
+**Fix direction:** either build the copy's kind index from the untrimmed courses,
+or narrow by filtering selections, as the real solve does, instead of deleting
+groups. Either one also covers the no-time rule.
+**How to reproduce** (shipped catalog only):
+```
+SLOTWISE_DB_ROOT="$(mktemp -d)" python - <<'EOF'
+import sys
+sys.path[:0] = ["src", "."]
+from src.web import api
+S = api.scheduler_mod
+with api.create_app({"allow_network": False}).app_context():
+    courses, _, _ = api._build_courses(["11232"], semester="א")
+pins = {"11232": {"תרגול": "271030210/1"}}
+real = {sel.group_for("11232", "מעבדה").group_id
+        for sel in S.enumerate_selections(courses, S.Preferences()) if api.pins_satisfied(sel, pins)}
+copy = {sel.group_for("11232", "מעבדה").group_id
+        for sel in S.enumerate_selections(api._pin_filtered(courses, pins), S.Preferences())}
+print("real solve:", sorted(real))      # /1 /2 /3 /4 /6 /8
+print("diagnosis copy:", sorted(copy))  # /1 /2 /3 only
+EOF
+```
+
+### `.pin-btn` sits at 45% opacity as its resting state — **closed 2026-10-09, the button is removed**
+**Decided 2026-10-09: the button is removed** (`docs/DESIGN.md` → Lecturers, ranking
+is the only control). The `.pin-btn` entries in
+`tests/test_no_opacity_on_text.py`'s `ALLOWED` now match nothing; the file is protected, so they stay.
+**Where:** `src/web/static/style.css`, `.pin-btn`.
+**Owner:** unassigned — re-owned 2026-10-05: "Phase 7" here was an earlier plan's numbering, not DESIGN.md's Phase 7 (wide layout).
+**Why it survived the opacity sweep:** the sweep removed multipliers from *text*.
+`.pin-btn` is a control, and its `:disabled` state at `.2` is covered by WCAG
+1.4.3's exemption for inactive components — but `.45` is its **enabled** resting
+state, which is not exempt. It is left alone because Phase 7 replaces the emoji
+pin with an inline SVG button carrying `aria-label` and `aria-pressed`, and
+re-tuning the opacity of a control that is about to be deleted is wasted work.
+Recorded so it is a decision and not an oversight.
+`tests/test_no_opacity_on_text.py` lists it in `ALLOWED` with this reason.
+
+### The fit score is relative to the five shown, not absolute — **closed 2026-10-09, no percentage**
+**Superseded 2026-10-09: the percentage is removed** (`docs/DESIGN.md` → Results page,
+item 4). Schedules are ordered by priority, not by one sum, so a percentage of the
+remaining points could put a lower alternative above a higher one. Only "ההתאמה
+הגבוהה ביותר" on the first alternative stays.
+**Where:** `fitScores()` in `src/web/static/app.js`.
+**Owner:** unassigned — needs a product call, possibly never.
+**Why:** there is no absolute maximum to normalise against — `lecturer` is an
+unbounded positive bonus and every other component is a penalty — so 100 can
+only mean "the best of the five returned". The label says so and the tooltip
+spells it out, but two different course selections can both show 100 while being
+nothing alike. If an absolute scale is ever wanted, the scheduler would have to
+expose a theoretical best for the chosen courses.
+
+### The fit number is not the thing to choose on — **closed 2026-10-09, no fit number**
+**Superseded 2026-10-09** with the entry above: there is no fit number any more.
+**Where:** `fitScores()` / the `.fit` block in `src/web/static/app.js`.
+**Owner:** informational — Phase 3 worked around it, no action pending.
+**Why:** with five schedules inside a few points the score is honest but useless
+as a decision aid. Phase 3 leads with the differentiating label and demotes the
+number whenever the spread across the shown set is 5 points or less. The number
+is still there, and still relative — see the entry above.
 
 ### The course code runs into the course name in the lesson details — closed 2026-10-05
 **Where:** `.detail-code` in `src/web/static/style.css`, and the "קורס" row that

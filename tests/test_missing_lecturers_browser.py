@@ -7,7 +7,9 @@
 בלי מועד שכן הייתה במערכת.
 
 הבדיקות כאן משחזרות את הכלל של השרת בפייתון, בנפרד מהדף, ובודקות את הדף מולו
-ומול ``lecturer_total - lecturer_hits`` שהשרת החזיר.
+ומול ``lecturer_total - lecturer_hits`` שהשרת החזיר. מאז 2026-10-09 הדירוג הוא
+לכל סוג רכיב בנפרד, והשרת עצמו מחזיר את החסרים (``lecturer_misses``); הדף רק
+כותב אותם, "X (סוג)".
 
 **אף בדיקה כאן אינה תלויה ב-data/db המקומי** (DEFERRED.md): השמות נלקחים מהמערכת
 שהשרת החזיר, ומקרה ה-11069 נבנה בתשובת ‎/api/solve‎ מיורטת — בקטלוג הקפוא לכל
@@ -38,6 +40,7 @@ from src.web.api import create_app  # noqa: E402
 
 STRINGS = json.loads((ROOT / "src" / "strings.json").read_text(encoding="utf-8"))
 LOST = STRINGS["app"]["schedule"]["lost"]
+LOST_ONE = STRINGS["app"]["schedule"]["lostLecturer"]
 HITS = STRINGS["app"]["schedule"]["lecturersHits"]
 STORAGE_KEY = "braude_schedule_builder_v1"  # אין לשנותו — ראו CLAUDE.md
 
@@ -55,20 +58,21 @@ def norm(name: str) -> str:
 
 
 def expected_missing(schedule: dict, ranked: dict) -> list[str]:
-    """הכלל של השרת, בנפרד מהדף: לכל קורס מדורג שבמערכת, המועדף הוא השם הראשון
-    (אחרי strip והשמטת ריקים), והוא "חסר" אם אף קבוצה שנבחרה בקורס — כולל
-    קבוצה בלי מפגשים — אינה שלו."""
-    by_code: dict[str, set[str]] = {}
-    for p in schedule["picks"]:
-        by_code.setdefault(p["code"], set()).add(norm(p.get("lecturer", "")))
+    """הכלל של השרת, בנפרד מהשרת: לכל (קורס, סוג) מדורג שבמערכת, המועדף הוא
+    השם הראשון (אחרי strip והשמטת ריקים), והוא "חסר" אם הקבוצה שנבחרה באותו
+    סוג — כולל קבוצה בלי מפגשים — אינה שלו. ‏2026-10-09: לכל סוג בנפרד, כי
+    הדירוג הוא לכל סוג בנפרד. מוחזר כפי שהדף כותב אותו: "X (סוג)"."""
+    picked = {(p["code"], p["kind"]): norm(p.get("lecturer", "")) for p in schedule["picks"]}
     missing = []
-    for code, names in ranked.items():
-        names = [str(n).strip() for n in names if str(n).strip()]
-        if not names or code not in by_code:
-            continue
-        if norm(names[0]) not in by_code[code]:
-            if names[0] not in missing:
-                missing.append(names[0])
+    for code, by_kind in ranked.items():
+        for kind, names in by_kind.items():
+            names = [str(n).strip() for n in names if str(n).strip()]
+            if not names or (code, kind) not in picked:
+                continue
+            if norm(names[0]) != picked[(code, kind)]:
+                shown = fill(LOST_ONE, name=names[0], kind=kind)
+                if shown not in missing:
+                    missing.append(shown)
     return missing
 
 
@@ -158,11 +162,12 @@ SHOWN = """() => {
 }"""
 
 
-def _lecturer(page, code):
+def _lecturer(page, code, kind):
     return page.evaluate(
-        """(code) => { const s = window.slotwise.getRuntime().solve.schedules[0];
-                       return (s.picks.find(p => p.code === code && p.lecturer) || {}).lecturer || ''; }""",
-        code,
+        """(a) => { const s = window.slotwise.getRuntime().solve.schedules[0];
+                    return (s.picks.find(p => p.code === a.code && p.kind === a.kind && p.lecturer)
+                            || {}).lecturer || ''; }""",
+        {"code": code, "kind": kind},
     )
 
 
@@ -181,9 +186,9 @@ def test_a_preferred_lecturer_in_a_group_without_meetings_is_not_missing(browser
     """המקרה של 11069: המרצה המועדף בקבוצה בלי מועד שכן במערכת."""
     ctx, pg = _open(browser, server, route=_strip_meetings("11069"))
     try:
-        name = _lecturer(pg, "11069")
+        name = _lecturer(pg, "11069", 'שו"ת')
         assert name, "ל-11069 אין מרצה במערכת הראשונה"
-        ranked = {"11069": [name]}
+        ranked = {"11069": {'שו"ת': [name]}}
         _rank(pg, ranked)
         got = pg.evaluate(SHOWN)
         pick = next(p for p in got["schedule"]["picks"] if p["code"] == "11069")
@@ -199,12 +204,13 @@ def test_a_second_choice_in_the_schedule_still_leaves_the_first_missing(browser,
     """המועדף הוא הראשון בדירוג — כמו אצל השרת. השני במערכת אינו פגיעה."""
     ctx, pg = _open(browser, server)
     try:
-        present = _lecturer(pg, "61759")
-        ranked = {"61759": ["מרצה מועדף שאינו בקטלוג", present]}
+        present = _lecturer(pg, "61759", "הרצאה")
+        ranked = {"61759": {"הרצאה": ["מרצה מועדף שאינו בקטלוג", present]}}
         _rank(pg, ranked)
         got = pg.evaluate(SHOWN)
         assert (got["hits"], got["total"]) == (0, 1), got
-        assert got["item"] == fill(LOST["lecturer"], names="מרצה מועדף שאינו בקטלוג"), got
+        want = fill(LOST_ONE, name="מרצה מועדף שאינו בקטלוג", kind="הרצאה")
+        assert got["item"] == fill(LOST["lecturer"], names=want), got
         _assert_consistent(got, ranked)
     finally:
         ctx.close()
@@ -214,9 +220,9 @@ def test_names_are_compared_like_the_server_compares_them(browser, server):
     """רווחים מיותרים בדירוג אינם הופכים מרצה שבמערכת לחסר."""
     ctx, pg = _open(browser, server)
     try:
-        present = _lecturer(pg, "61759")
+        present = _lecturer(pg, "61759", "הרצאה")
         spaced = "  " + "  ".join(present.split()) + " "
-        ranked = {"61759": [spaced]}
+        ranked = {"61759": {"הרצאה": [spaced]}}
         _rank(pg, ranked)
         got = pg.evaluate(SHOWN)
         assert (got["hits"], got["total"]) == (1, 1), got
@@ -231,9 +237,9 @@ def test_the_pill_and_the_sentence_agree_on_every_alternative(browser, server):
     ctx, pg = _open(browser, server, route=_strip_meetings("11069"))
     try:
         ranked = {
-            "11069": [_lecturer(pg, "11069")],
-            "61759": ["מרצה מועדף שאינו בקטלוג", _lecturer(pg, "61759")],
-            "61757": [_lecturer(pg, "61757")],
+            "11069": {'שו"ת': [_lecturer(pg, "11069", 'שו"ת')]},
+            "61759": {"הרצאה": ["מרצה מועדף שאינו בקטלוג", _lecturer(pg, "61759", "הרצאה")]},
+            "61757": {"הרצאה": [_lecturer(pg, "61757", "הרצאה")]},
         }
         _rank(pg, ranked)
         cards = pg.locator("#alt-cards .alt-card").count()

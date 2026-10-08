@@ -61,6 +61,7 @@ from scheduler import (  # noqa: E402
     TiedCoursesError,
     diagnose_infeasibility,
     enumerate_selections,
+    _sort_key,
     score,
     solve,
 )
@@ -717,15 +718,20 @@ def _lecturer_prefs() -> Preferences:
 
 
 def test_rank_zero_lecturer_scores_higher_than_rank_one():
-    """המרצה המועדפת (דירוג 0) שווה יותר מהשנייה (דירוג 1), ושתיהן חיוביות."""
+    """המרצה המועדפת (דירוג 1) קודמת לשנייה (דירוג 2).
+
+    מאז 2026-10-09 הדירוג הוא רמה בסדר ולא נקודות (docs/DESIGN.md →
+    Lecturers, "How a ranking chooses"): שתי המערכות זהות בכל השאר, ולכן
+    הניקוד שלהן שווה והדירוג הוא שמכריע.
+    """
     prefs = _lecturer_prefs()
     best = score(Selection([mk_group("90040", "11", KIND_LECTURE, LEVI, SLOT)]), prefs)
     second = score(Selection([mk_group("90040", "12", KIND_LECTURE, MILLER, SLOT)]), prefs)
 
-    assert best.breakdown["lecturer"] > second.breakdown["lecturer"] > 0.0
-    assert best.score > second.score
-    assert best.breakdown["lecturer"] == pytest.approx(10.0)  # 10.0 * 1/(0+1)
-    assert second.breakdown["lecturer"] == pytest.approx(5.0)  # 10.0 * 1/(1+1)
+    assert [r["rank"] for r in best.lecturer_ranks] == [1]
+    assert [r["rank"] for r in second.lecturer_ranks] == [2]
+    assert best.score == pytest.approx(second.score)
+    assert _sort_key(best) < _sort_key(second)
 
 
 def test_unranked_lecturer_scores_zero():
@@ -734,7 +740,8 @@ def test_unranked_lecturer_scores_zero():
     unranked = score(
         Selection([mk_group("90040", "13", KIND_LECTURE, VOLKOVICH, SLOT)]), prefs
     )
-    assert unranked.breakdown["lecturer"] == pytest.approx(0.0)
+    assert "lecturer" not in unranked.breakdown
+    assert [r["rank"] for r in unranked.lecturer_ranks] == [3]  # מתחת לשני השמות
     assert unranked.score == pytest.approx(0.0)
     assert unranked.lecturer_hits == 0
 
@@ -786,13 +793,14 @@ def test_lecturer_preference_steers_the_winning_schedule(course_list):
     assert any(
         g.lecturer == VOLKOVICH for g in best.selection.groups if g.course_code == "61832"
     )
+    # ‏3 רכיבים מדורגים ולא 2 (2026-10-09): הדירוג נספר לכל סוג בנפרד,
+    # ‏וולקוביץ' מלמד ב-61832 גם הרצאה וגם תרגול. ההרצאה שלו חופפת לזו של
+    # ‏לוי, ולכן לכל היותר שניים מהשלושה בדירוג 1.
     assert best.lecturer_hits == 2
-    assert best.lecturer_total == 2
-    # ‏14.0 ולא 20.0: התאמה בהרצאה שווה מלוא המשקל (10.0), והתאמה בתרגול
-    # שווה 0.4 ממנו (4.0). זו בקשה מפורשת — "הרצאה חשובה יותר, ובתרגול
-    # אפשר להתפשר אם זה מקצר את היום". המרצות עצמן עדיין נבחרות: שתי
-    # הבדיקות שמעל (lecturer_hits/​total) עוברות ללא שינוי.
-    assert best.score == pytest.approx(14.0)
+    assert best.lecturer_total == 3
+    ranks = {(r["code"], r["kind"]): r["rank"] for r in best.lecturer_ranks}
+    assert ranks[("62027", KIND_LECTURE)] == 1
+    assert ranks[("61832", KIND_TUTORIAL)] == 1
 
 
 # ==========================================================================
@@ -818,7 +826,7 @@ def test_target_days_penalty_is_zero_at_or_below_target(n_days):
     """יעד 4 ימים: 1, 2, 3 או 4 ימים — קנס אפס. אין 'פרס' על פחות ימים."""
     sched = score(_selection_over_n_days(n_days), _days_only_prefs(4))
     assert sched.days_count == n_days
-    assert sched.breakdown["days"] == pytest.approx(0.0)
+    assert sched.days_over_target == 0
     assert sched.score == pytest.approx(0.0)
 
 
@@ -828,16 +836,17 @@ def test_fewer_days_than_target_gives_no_bonus():
     two = score(_selection_over_n_days(2), prefs)
     four = score(_selection_over_n_days(4), prefs)
     assert two.score == pytest.approx(four.score)
-    assert two.breakdown["days"] == pytest.approx(four.breakdown["days"])
+    assert two.days_over_target == four.days_over_target == 0
 
 
-@pytest.mark.parametrize("n_days, expected", [(5, -8.0), (6, -16.0)])
+@pytest.mark.parametrize("n_days, expected", [(5, 1), (6, 2)])
 def test_target_days_penalty_grows_only_above_the_target(n_days, expected):
-    """מעל היעד הקנס לינארי: 8 נקודות לכל יום עודף."""
+    """מעל היעד נספר כל יום עודף. מאז 2026-10-09 זו רמה בסדר ולא נקודות,
+    ולכן הניקוד עצמו אינו זז."""
     sched = score(_selection_over_n_days(n_days), _days_only_prefs(4))
     assert sched.days_count == n_days
-    assert sched.breakdown["days"] == pytest.approx(expected)
-    assert sched.score == pytest.approx(expected)
+    assert sched.days_over_target == expected
+    assert sched.score == pytest.approx(0.0)
 
 
 def test_days_count_matches_days_used_for_a_split_lecture(courses):
@@ -856,12 +865,11 @@ def test_score_breakdown_has_exactly_the_five_components():
     גלוי הוא בדיוק מה ש-breakdown נועד למנוע.
     """
     sched = score(_selection_over_n_days(5), Preferences(target_days=4))
-    assert set(sched.breakdown) == {
-        "lecturer", "days", "gaps", "compactness", "late_finish"
-    }
+    # ‏ימים ומרצים אינם נקודות מאז 2026-10-09 — הם רמות שקודמות לניקוד.
+    assert set(sched.breakdown) == {"gaps", "compactness", "late_finish"}
     assert sched.breakdown["late_finish"] <= 0.0
     assert sched.score == pytest.approx(sum(sched.breakdown.values()))
-    assert sched.breakdown["days"] <= 0.0
+    assert sched.days_over_target == 1
     assert sched.breakdown["gaps"] <= 0.0
     assert sched.breakdown["compactness"] <= 0.0
 
@@ -910,8 +918,7 @@ def test_gaps_and_compactness_have_exact_numeric_values():
 
     sched = score(sel, Preferences(target_days=6))  # יום אחד => אין קנס ימים
     assert sched.gap_minutes == 105
-    assert sched.breakdown["lecturer"] == pytest.approx(0.0)
-    assert sched.breakdown["days"] == pytest.approx(0.0)
+    assert "lecturer" not in sched.breakdown and "days" not in sched.breakdown
     assert sched.breakdown["gaps"] == pytest.approx(-7.0)  # -4.0 * 105/60
     assert sched.breakdown["compactness"] == pytest.approx(-5.25)  # -1.0 * 315/60
     assert sched.score == pytest.approx(-12.25)
@@ -1133,7 +1140,7 @@ def test_solve_end_to_end_returns_a_schedule_of_four_days_or_fewer(course_list):
     assert best.selection.course_codes() == EXPECTED_CODES
     assert best.days_count == len(best.selection.days_used())
     assert best.gap_minutes == best.selection.gap_minutes()
-    assert best.breakdown["days"] == pytest.approx(0.0)  # 4 ימים = בדיוק היעד
+    assert best.days_over_target == 0  # 4 ימים = בדיוק היעד
 
 
 def test_solve_returns_results_sorted_by_score_descending(course_list):

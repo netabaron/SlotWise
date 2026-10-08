@@ -35,7 +35,11 @@ from src.web.api import create_app  # noqa: E402
 
 ENGLISH = "11069"
 AUTOMATA = "61759"
-PIN_LECTURE = f"pin-{AUTOMATA}-הרצאה-271060310/1"
+STORAGE_KEY = "braude_schedule_builder_v1"  # אין לשנותו — ראו CLAUDE.md
+#: ‏ב׳ 08:30–10:30 חסום: הרצאה 271060310/2 של 61759 נפסלת, ולכן 271070310/1
+#: ‏של 11069 (א׳ 10:30, חופפת להרצאה 271060310/1) לא משאירה מערכת. עד
+#: ‏2026-10-09 אותה שורה נוצרה מנעיצה, ונעיצה כבר אין.
+DEAD_BLOCK = [[2, 510, 630]]
 MUT = {"light": "rgb(163, 163, 168)", "dark": "rgb(93, 94, 100)"}
 
 
@@ -125,8 +129,8 @@ def test_no_legend_and_reset_is_a_link_in_the_header(browser, server):
         ctx.close()
     assert got["legend"] == 0 and got["oldNotes"] == [], got
     assert got["resetInHead"] and got["resetText"] == "איפוס" and not got["resetIsBtn"], got
-    assert got["resetName"] == "איפוס הדירוג והנעיצות", got
-    assert got["helper"] == "לחצו על מרצים לפי סדר העדפה. הנעץ קובע קבוצה.", got
+    assert got["resetName"] == "איפוס הדירוג", got
+    assert got["helper"] == "לחצו על מרצים לפי סדר העדפה, בכל סוג שיעור בנפרד.", got
 
 
 # --------------------------------------------------------------------------
@@ -190,15 +194,13 @@ def test_group_number_is_not_a_column_but_is_still_there(browser, server):
                  const tr = c.querySelector('tbody tr');
                  return {heads: [...c.querySelectorAll('thead th')].map(th => th.textContent.trim()),
                          cells: tr.children.length, title: tr.title,
-                         pinName: tr.querySelector('.pin-btn').getAttribute('aria-label'),
                          rowText: tr.innerText}; }""",
             AUTOMATA)
     finally:
         ctx.close()
-    assert got["heads"] == ["דירוג", "מרצה", "סוג", "יום ושעה", "חדר", "נעיצה"], got
-    assert got["cells"] == 6, got
+    assert got["heads"] == ["דירוג", "מרצה", "סוג", "יום ושעה", "חדר"], got
+    assert got["cells"] == 5, got
     assert "קבוצה 271060310/1" in got["title"], got["title"]
-    assert "271060310/1" in got["pinName"], got
     assert "271060310" not in got["rowText"], "מספר הקבוצה אינו טקסט גלוי בשורה"
 
 
@@ -207,6 +209,7 @@ RANKS = """(code) => { const c = document.querySelector('[data-fk="lect-course-'
           rows: [...c.querySelectorAll('tbody tr')].map(tr => {
             const r = tr.querySelector('.rank-circle');
             return {lect: tr.querySelector('.cell-lect > span').textContent, rank: r.textContent,
+                    kind: tr.cells[2].textContent.trim(),
                     filled: r.classList.contains('is-ranked'), pop: r.classList.contains('is-pop'),
                     border: getComputedStyle(r).borderTopStyle,
                     anim: getComputedStyle(r).animationName + ' ' + getComputedStyle(r).animationDuration};
@@ -232,6 +235,8 @@ def test_click_ranks_the_next_and_click_again_renumbers(browser, server):
         ctx.close()
 
     first, second = before["rows"][0]["lect"], before["rows"][1]["lect"]
+    kind = before["rows"][0]["kind"]
+    assert kind == "הרצאה" and before["rows"][1]["kind"] == kind, before
     assert all(not r["filled"] and r["border"] == "dashed" and r["rank"] == "" for r in before["rows"]), before
     assert before["choice"] == "לא דורג"
 
@@ -239,38 +244,32 @@ def test_click_ranks_the_next_and_click_again_renumbers(browser, server):
     assert top["filled"] and top["rank"] == "1" and top["pop"], top
     assert top["anim"] == "rank-pop 0.25s", top
 
-    assert two["choice"] == f"עדיפות: {first} ← {second}", two["choice"]
-    by = {r["lect"]: r["rank"] for r in two["rows"]}
+    # ‏הדירוג הוא לכל סוג בנפרד (2026-10-09): אותם שני מרצים מלמדים ב-61759
+    # ‏גם את התרגול, והוא נשאר לא מדורג.
+    assert two["choice"] == f"{kind}: {first} ← {second}", two["choice"]
+    by = {r["lect"]: r["rank"] for r in two["rows"] if r["kind"] == kind}
     assert by[first] == "1" and by[second] == "2", two
+    assert all(r["rank"] == "" for r in two["rows"] if r["kind"] != kind), two
 
-    by = {r["lect"]: r["rank"] for r in renumbered["rows"]}
+    by = {r["lect"]: r["rank"] for r in renumbered["rows"] if r["kind"] == kind}
     assert by[first] == "" and by[second] == "1", renumbered
-    assert renumbered["choice"] == f"עדיפות: {second}", renumbered["choice"]
+    assert renumbered["choice"] == f"{kind}: {second}", renumbered["choice"]
 
 
 # --------------------------------------------------------------------------
-# 4. נעיצה, ושורה שלא משאירה מערכת אפשרית
+# 4. שורה שלא משאירה מערכת אפשרית
 # --------------------------------------------------------------------------
 @pytest.mark.parametrize("scheme", ["light", "dark"])
-def test_pinned_row_is_course_tinted_and_dead_row_is_dimmed_without_opacity(browser, server, scheme):
+def test_dead_row_is_dimmed_without_opacity(browser, server, scheme):
     ctx, pg = _ready(browser, server, scheme)
     try:
-        _open(pg, AUTOMATA)
-        _fk(pg, PIN_LECTURE)
-        pg.wait_for_timeout(4000)
-        pinned = pg.evaluate(
-            """(fk) => { const btn = document.querySelector('[data-fk="' + fk + '"]');
-                 const tr = btn.closest('tr'); const card = tr.closest('.lect-course');
-                 const probe = document.createElement('span');
-                 probe.style.color = 'var(--ev-bd)'; probe.style.backgroundColor = 'var(--ev-bg)';
-                 card.appendChild(probe); const p = getComputedStyle(probe);
-                 const out = {cls: tr.className, bg: getComputedStyle(tr.cells[1]).backgroundColor,
-                              tint: p.backgroundColor, bd: p.color,
-                              fill: getComputedStyle(btn.querySelector('path')).fill,
-                              pressed: btn.getAttribute('aria-pressed'),
-                              choice: card.querySelector('.lect-course-choice').textContent};
-                 probe.remove(); return out; }""",
-            PIN_LECTURE)
+        pg.evaluate(
+            """(a) => { const s = JSON.parse(localStorage.getItem(a.key) || '{}');
+                        s.blocked = a.blocked; localStorage.setItem(a.key, JSON.stringify(s)); }""",
+            {"key": STORAGE_KEY, "blocked": DEAD_BLOCK},
+        )
+        pg.reload()
+        pg.wait_for_timeout(5000)
         _open(pg, ENGLISH)
         dead = pg.evaluate(
             """(code) => { const c = document.querySelector('[data-fk="lect-course-' + code + '"]').closest('.lect-course');
@@ -279,7 +278,6 @@ def test_pinned_row_is_course_tinted_and_dead_row_is_dimmed_without_opacity(brow
                  return {disabled: tr.getAttribute('aria-disabled'), text: tr.innerText,
                          color: getComputedStyle(tr.cells[1]).color,
                          opacities: [tr, ...tr.cells].map(e => getComputedStyle(e).opacity),
-                         pinDisabled: tr.querySelector('.pin-btn').disabled,
                          title: tr.title}; }""",
             ENGLISH)
         pg.locator(".lect-course.is-open tbody tr.is-dead").click(force=True)
@@ -291,13 +289,8 @@ def test_pinned_row_is_course_tinted_and_dead_row_is_dimmed_without_opacity(brow
     finally:
         ctx.close()
 
-    assert "is-pinned" in pinned["cls"] and pinned["pressed"] == "true", pinned
-    assert pinned["bg"] == pinned["tint"], "שורה נעוצה ברקע גוון הקורס"
-    assert pinned["fill"] == pinned["bd"], "נעץ מלא בצבע הקורס"
-    assert pinned["choice"].startswith("נעוץ: "), pinned["choice"]
-
-    assert dead, "נעיצת הרצאה 1 של 61759 אמורה להשאיר שורה בלי מערכת ב-11069"
-    assert dead["disabled"] == "true" and dead["pinDisabled"], dead
+    assert dead, "חסימת ב׳ 08:30–10:30 אמורה להשאיר שורה בלי מערכת ב-11069"
+    assert dead["disabled"] == "true", dead
     assert "לא משאיר מערכת אפשרית" in dead["text"], dead["text"]
     assert "קבוצה" in dead["title"], dead["title"]
     assert set(dead["opacities"]) == {"1"}, f"בלי opacity: {dead['opacities']}"

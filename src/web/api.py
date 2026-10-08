@@ -729,6 +729,22 @@ def schedule_to_json(
         "span_minutes": int(sched.selection.span_minutes()),
         "lecturer_hits": int(sched.lecturer_hits),
         "lecturer_total": int(sched.lecturer_total),
+        # ‏שתי הרמות שקודמות לניקוד (docs/DESIGN.md → Lecturers, "How a ranking
+        # chooses", 2026-10-09). הן אינן ב-``breakdown`` כי אינן נקודות.
+        "days_over_target": scheduler_mod.days_over_target_of(sched),
+        "lecturer_ranks": [
+            {
+                "code": r["code"],
+                "kind": r["kind"],
+                "names": list(r["names"]),
+                "got": r["got"],
+                "rank": int(r["rank"]),
+            }
+            for r in scheduler_mod.lecturer_ranks_of(sched)
+        ],
+        # ‏"בלי המרצה שבחרת: X (תרגול)" — מחושב כאן, לא בדפדפן, כדי שהשבב
+        # והמשפט לא יוכלו לסתור את הספירה.
+        "lecturer_misses": scheduler_mod.lecturer_misses_of(sched),
         "breakdown": {k: round(float(v), 4) for k, v in (sched.breakdown or {}).items()},
         # סכום של מה שידוע בלבד, ולצידו כמה קורסים לא נספרו ולמה.
         "credits": credits_total,
@@ -1006,8 +1022,26 @@ def _clean_blocked(value: Any) -> list[tuple[int, int, int]]:
     return windows
 
 
-def _clean_ranked(value: Any) -> dict[str, list[str]]:
-    """‏{קוד: [מרצה, ...]} — דירוג המרצים לפי סדר העדפה."""
+def _clean_names_list(names: Any, *, code: str, where: str) -> list[str]:
+    """רשימת שמות אחרי strip, בלי ריקים. מחרוזת בודדת = רשימה של אחד."""
+    if isinstance(names, str):
+        names = [names]
+    if not isinstance(names, (list, tuple)):
+        raise ApiError(
+            400,
+            "דירוג המרצים של כל קורס צריך להיות רשימת שמות.",
+            f"ranked[{code}]{where}: expected a list, got {type(names).__name__}",
+        )
+    return [str(n).strip() for n in names if str(n).strip()]
+
+
+def _clean_ranked(value: Any) -> dict[str, Any]:
+    """‏{קוד: {סוג רכיב: [מרצה, ...]}} — דירוג המרצים, לכל סוג בנפרד.
+
+    רשימה שטוחה ‏{קוד: [מרצה, ...]} — כך נשמר הדירוג לפני 2026-10-09 —
+    עדיין מתקבלת כפי שהיא; ‏``scheduler.rankings_by_kind`` פורש אותה לכל סוג
+    שהמרצים שבה מלמדים בו.
+    """
     if value in (None, ""):
         return {}
     if not isinstance(value, dict):
@@ -1016,53 +1050,26 @@ def _clean_ranked(value: Any) -> dict[str, list[str]]:
             "דירוג המרצים אינו בפורמט הנכון.",
             f"ranked: expected an object, got {type(value).__name__}",
         )
-    out: dict[str, list[str]] = {}
+    out: dict[str, Any] = {}
     for raw_code, names in value.items():
         code = clean_code(raw_code, field="ranked")
         if names in (None, ""):
             continue
-        if isinstance(names, str):
-            names = [names]
-        if not isinstance(names, (list, tuple)):
-            raise ApiError(
-                400,
-                "דירוג המרצים של כל קורס צריך להיות רשימת שמות.",
-                f"ranked[{code}]: expected a list, got {type(names).__name__}",
-            )
-        cleaned = [str(n).strip() for n in names if str(n).strip()]
+        if isinstance(names, dict):
+            per_kind: dict[str, list[str]] = {}
+            for raw_kind, kind_names in names.items():
+                kind = str(raw_kind).strip()
+                if not kind or kind_names in (None, ""):
+                    continue
+                cleaned = _clean_names_list(kind_names, code=code, where=f"[{kind}]")
+                if cleaned:
+                    per_kind[kind] = cleaned
+            if per_kind:
+                out[code] = per_kind
+            continue
+        cleaned = _clean_names_list(names, code=code, where="")
         if cleaned:
             out[code] = cleaned
-    return out
-
-
-def _clean_pinned(value: Any) -> dict[str, dict[str, str]]:
-    """‏{קוד: {סוג רכיב: מספר קבוצה}} — הנעיצות שהמשתמש/ת ביקש/ה."""
-    if value in (None, ""):
-        return {}
-    if not isinstance(value, dict):
-        raise ApiError(
-            400,
-            "רשימת הנעיצות אינה בפורמט הנכון.",
-            f"pinned: expected an object, got {type(value).__name__}",
-        )
-    out: dict[str, dict[str, str]] = {}
-    for raw_code, by_kind in value.items():
-        code = clean_code(raw_code, field="pinned")
-        if by_kind in (None, ""):
-            continue
-        if not isinstance(by_kind, dict):
-            raise ApiError(
-                400,
-                "הנעיצות של כל קורס צריכות להיות מילון של {סוג השיעור: מספר קבוצה} — "
-                "למשל {הרצאה: 271060310}.",
-                f"pinned[{code}]: expected an object, got {type(by_kind).__name__}",
-            )
-        for raw_kind, group_id in by_kind.items():
-            kind = str(raw_kind).strip()
-            gid = str(group_id).strip() if group_id is not None else ""
-            if not kind or not gid:
-                continue  # נעיצה ריקה = "בלי נעיצה", לא שגיאה
-            out.setdefault(code, {})[kind] = gid
     return out
 
 
@@ -2264,7 +2271,7 @@ def _curriculum_available(curr: dict | None = None, program: Any = None) -> bool
 
 
 # ===========================================================================
-# 6. בניית הקורסים לשיבוץ — deepcopy, tied_with, נ"ז, נעיצות
+# 6. בניית הקורסים לשיבוץ — deepcopy, tied_with, נ"ז
 # ===========================================================================
 def _norm_year(value: Any) -> str:
     """מנרמל תווית שנה להשוואה: מסיר רווחים וגרשיים ('תשפ"ז' ≡ 'תשפז')."""
@@ -2433,120 +2440,21 @@ def _build_courses(
     return courses, problems, metas
 
 
-def resolve_pins(
-    courses: list[models.Course], pinned: dict[str, dict[str, str]]
-) -> tuple[dict[str, dict[str, str]], list[dict[str, str]]]:
-    """‏מאמת נעיצות מול הקורסים שנטענו — ומחזיר אותן. **בלי לגעת בקורסים.**
-
-    ‏SPEC_WEB מציע לנעוץ בעזרת ``course.groups = [g for g in ... ]``, אבל מחיקה
-    כזו מוציאה את הקבוצות האחיות גם מהאינדקס ‏(קורס, קבוצה) → סוג שהמנוע בונה
-    ב-``scheduler._kind_index``. מזהה ש-``linked_to`` מצביע עליו הופך אז
-    ל"לא מוכר", ו-``scheduler._link_allows`` מפסיק לאכוף אותו — כלומר נעיצה
-    הייתה **מכבה בשקט** את אילוצי הקישור ומחזירה מערכות שאי אפשר להירשם אליהן.
-    לכן הנעיצה כאן היא *מסננת על הבחירות* (``pins_satisfied``), והקורסים
-    מגיעים למנוע שלמים.
-
-    Returns:
-        ``(applied, dropped)``. ``dropped`` הן נעיצות שאי אפשר לכבד — קבוצה
-        שאינה קיימת עוד (נתונים שהתעדכנו, או ‏localStorage ישן), כל אחת עם
-        סיבה בעברית. הן **אינן** נבלעות בשקט: הקורא/ת חייב/ת להחזיר אותן
-        ללקוח, אחרת נוצר בדיוק השקט שהאפליקציה נועדה למנוע.
-    """
-    by_code = {c.code: c for c in courses}
-    applied: dict[str, dict[str, str]] = {}
-    dropped: list[dict[str, str]] = []
-
-    for code, by_kind in (pinned or {}).items():
-        course = by_code.get(code)
-        if course is None:
-            # קורס שלא נבחר (או שאין לו נתונים) — הנעיצה פשוט לא רלוונטית.
-            continue
-        for kind, group_id in by_kind.items():
-            candidates = course.groups_of(kind)
-            if not candidates:
-                dropped.append(
-                    {
-                        "code": code,
-                        "kind": kind,
-                        "group_id": group_id,
-                        "reason": strings_mod.fmt(
-                            "server.pins.kindMissing", code=code, kind=kind
-                        ),
-                    }
-                )
-                continue
-            if not any(g.group_id == group_id for g in candidates):
-                dropped.append(
-                    {
-                        "code": code,
-                        "kind": kind,
-                        "group_id": group_id,
-                        "reason": strings_mod.fmt(
-                            "server.pins.groupMissing",
-                            group=group_id,
-                            kind=kind,
-                            code=code,
-                        ),
-                    }
-                )
-                continue
-            # ‏קבוצה בלי מועד ברכיב שיש בו קבוצה עם מועד אינה נבחרת לעולם
-            # ‏(scheduler.CONSTRAINT_NO_TIME, 2026-10-03), ושלב המרצים אינו נותן
-            # לנעוץ אותה. נעיצה כזו יכולה להגיע רק מ-localStorage שנשמר לפני כן —
-            # ונשארת, היא הייתה מחזירה "אין מערכת" עם אבחון של העתק המקוצץ
-            # ‏(DEFERRED.md). משחררים אותה כאן, והלקוח מוחק אותה ומודיע.
-            pinned_group = next(g for g in candidates if g.group_id == group_id)
-            if not pinned_group.meetings and any(g.meetings for g in candidates):
-                dropped.append(
-                    {
-                        "code": code,
-                        "kind": kind,
-                        "group_id": group_id,
-                        "reason": strings_mod.fmt(
-                            "server.pins.noTime",
-                            group=group_id,
-                            kind=kind,
-                            code=code,
-                        ),
-                    }
-                )
-                continue
-            applied.setdefault(code, {})[kind] = group_id
-
-    return applied, dropped
-
-
 def pins_satisfied(
     selection: models.Selection, applied: dict[str, dict[str, str]]
 ) -> bool:
-    """האם הבחירה מכבדת את כל הנעיצות. **זו** הנעיצה בפועל — מסננת, לא מחיקה."""
+    """האם הבחירה בחרה בדיוק את הקבוצות האלה ‏{קוד: {סוג: קבוצה}}.
+
+    הסטודנט/ית כבר לא נועצים (2026-10-09, docs/DESIGN.md → Lecturers). זה
+    כלי פנימי של ``compute_viability`` בלבד: "האם נשארת מערכת כשהקבוצה הזו
+    נבחרת". מסננת על הבחירות ולא מחיקת קבוצות, כדי ש-linked_to ייאכף כרגיל.
+    """
     for code, by_kind in (applied or {}).items():
         for kind, group_id in by_kind.items():
             group = selection.group_for(code, kind)
             if group is None or group.group_id != group_id:
                 return False
     return True
-
-
-def _pin_filtered(
-    courses: list[models.Course], applied: dict[str, dict[str, str]]
-) -> list[models.Course]:
-    """עותק מסונן לפי הנעיצות — **לאבחון בלבד**, אף פעם לא לספירה או לפתרון.
-
-    ``diagnose_infeasibility``/``relax_suggestions`` מסבירות למה אין פתרון,
-    ולשם כך הן צריכות לראות את המרחב המצומצם. הן לא סופרות ולא בונות מערכות,
-    ולכן עיוות ה-linked_to שהמחיקה גורמת אינו נוגע באף מספר שמוחזר ללקוח.
-    """
-    if not applied:
-        return courses
-    trimmed = copy.deepcopy(courses)
-    for course in trimmed:
-        for kind, group_id in (applied.get(course.code) or {}).items():
-            course.groups = [
-                g for g in course.groups if g.kind != kind or g.group_id == group_id
-            ]
-    return trimmed
-
 
 
 def _node_budget(courses: list[models.Course], prefs: scheduler_mod.Preferences) -> int:
@@ -2560,16 +2468,11 @@ def _node_budget(courses: list[models.Course], prefs: scheduler_mod.Preferences)
 def _count_and_min_days(
     courses: list[models.Course],
     prefs: scheduler_mod.Preferences,
-    pins: dict[str, dict[str, str]] | None = None,
 ) -> tuple[int, int | None, bool]:
     """מעבר **אחד** על ``enumerate_selections``: כמה צירופים, ומה מינימום הימים.
 
     זה מה שמאפשר לממשק לומר את האמת — "4 ימים אינם אפשריים, המינימום הוא 5" —
     במקום להחזיר בשקט מערכת בת 5 ימים ולתת לחשוב שזה מה שביקשו.
-
-    ``pins`` מסננות את **הזרם** (``pins_satisfied``), לא את הקורסים: מחיקת
-    קבוצות הייתה מכבה את אילוצי ה-linked_to ומנפחת את הספירה (ראי
-    ``resolve_pins``).
 
     Returns:
         ``(feasible_count, min_days, truncated)``. ``min_days`` הוא ``None``
@@ -2581,8 +2484,6 @@ def _count_and_min_days(
     budget = _node_budget(courses, prefs)
     try:
         for selection in scheduler_mod.enumerate_selections(courses, prefs, limit=budget):
-            if pins and not pins_satisfied(selection, pins):
-                continue
             count += 1
             days = len(selection.days_used())
             if min_days is None or days < min_days:
@@ -2626,47 +2527,13 @@ def _top_schedules(
     courses: list[models.Course],
     prefs: scheduler_mod.Preferences,
     top_n: int,
-    pins: dict[str, dict[str, str]] | None = None,
 ) -> list[models.ScoredSchedule]:
-    """‏``top_n`` המערכות הטובות ביותר **שמכבדות את הנעיצות**.
-
-    בלי נעיצות זה בדיוק ``scheduler.solve``. עם נעיצות זו אותה מנייה ואותו
-    ``scheduler.score`` ואותו סדר — רק עם מסננת על הבחירות, כי הקורסים
-    חייבים להגיע למנוע שלמים (ראי ``resolve_pins``).
+    """‏``top_n`` המערכות הטובות ביותר — בדיוק ``scheduler.solve``.
 
     Raises:
-        scheduler.Infeasible: אין אף מערכת שמכבדת את הנעיצות.
+        scheduler.Infeasible: אין אף מערכת.
     """
-    if not pins:
-        return scheduler_mod.solve(courses, prefs, top_n=top_n)
-
-    keep = max(1, int(top_n))
-    prune_at = max(200, keep * 20)
-    budget = _node_budget(courses, prefs)
-    kept: list[models.ScoredSchedule] = []
-    hit_limit = False
-    try:
-        for selection in scheduler_mod.enumerate_selections(courses, prefs, limit=budget):
-            if not pins_satisfied(selection, pins):
-                continue
-            kept.append(scheduler_mod.score(selection, prefs))
-            if len(kept) >= prune_at:
-                kept.sort(key=_schedule_sort_key)
-                del kept[keep:]
-    except scheduler_mod.SearchExhausted:
-        hit_limit = True
-
-    if not kept:
-        raise scheduler_mod.Infeasible(
-            scheduler_mod.diagnose_infeasibility(_pin_filtered(courses, pins), prefs)
-        )
-
-    kept.sort(key=_schedule_sort_key)
-    best = kept[:keep]
-    for sched in best:
-        sched.truncated = hit_limit  # type: ignore[attr-defined]
-    return best
-
+    return scheduler_mod.solve(courses, prefs, top_n=top_n)
 
 
 def _dead_end_reason(group: models.Group, prefs: scheduler_mod.Preferences) -> str:
@@ -2682,7 +2549,6 @@ def _dead_end_reason(group: models.Group, prefs: scheduler_mod.Preferences) -> s
 
 def compute_viability(
     codes: Iterable[str],
-    pinned: dict[str, dict[str, str]],
     prefs: scheduler_mod.Preferences,
     *,
     semester: str = "",
@@ -2690,8 +2556,8 @@ def compute_viability(
 ) -> tuple[dict[str, dict[str, dict[str, dict[str, Any]]]], bool, bool]:
     """‏**ההתנהגות החשובה ביותר באפליקציה.**
 
-    לכל קבוצה של כל קורס נבחר: לפתור מחדש כשהקבוצה הזו נעוצה **בנוסף**
-    לנעיצות הקיימות, ולרשום אם נשאר פתרון. ‏~27 פתרונות × ~1ms ≈ 40ms.
+    לכל קבוצה של כל קורס נבחר: לפתור מחדש כשהקבוצה הזו נבחרת בכוח, ולרשום
+    אם נשאר פתרון. ‏~27 פתרונות × ~1ms ≈ 40ms.
 
     בלי זה, אפשר ללחוץ על אפשרות שמשאירה את הסמסטר בלי פתרון ולגלות את זה
     רק אחר כך — וזה בדיוק הכישלון שהאפליקציה הזו נועדה למנוע.
@@ -2712,16 +2578,11 @@ def compute_viability(
     viability: dict[str, dict[str, dict[str, dict[str, Any]]]] = {}
     truncated = False
 
-    # הנעיצות הקיימות מאומתות פעם אחת. נעיצה שכבר אינה תקפה פשוט אינה
-    # משתתפת — הקורא/ת (``solve``) הוא זה שמדווח עליה ללקוח.
-    base_pins, _dropped = resolve_pins(base, pinned or {})
-
     for course in base:
         for group in course.groups:
             # ‏``base`` אינו משתנה יותר (הנעיצה היא מסננת), ולכן אין צורך
             # לטעון עותק חדש מהמסד לכל קבוצה.
-            trial_pins = {c: dict(k) for c, k in base_pins.items()}
-            trial_pins.setdefault(course.code, {})[group.kind] = group.group_id
+            trial_pins = {course.code: {group.kind: group.group_id}}
 
             alive, hit_limit = _has_solution(base, prefs, trial_pins)
             truncated = truncated or hit_limit
@@ -5150,7 +5011,6 @@ def solve():
             f"earliest={earliest} >= latest={latest}",
         )
 
-    pinned_request = _clean_pinned(body.get("pinned"))
     attendance_request = _clean_attendance(body.get("attendance"))
     # ברירת מחדל True: הסימון של חובת הנוכחות הוא הפקד היחיד שקובע.
     allow_soft_conflicts = _as_bool(body.get("allow_soft_conflicts"), True)
@@ -5234,11 +5094,12 @@ def solve():
 
     started = time.perf_counter()
 
-    # ── 2. נעיצות: **מסננת על הבחירות**, לא מחיקת קבוצות. המנוע לא משתנה
-    #      ומקבל את הקורסים שלמים — אחרת linked_to היה מפסיק להיאכף. ──
-    applied_pins, dropped_pins = resolve_pins(built, pinned_request)
-    base_common["pinned"] = applied_pins
-    base_common["dropped_pins"] = dropped_pins
+    # ── 2. הדירוג לכל סוג רכיב בנפרד (2026-10-09). רשימה שטוחה שנשמרה לפני
+    #      כן נפרשת לפי מי שמלמד בכל סוג — כאן, כשהקורסים כבר ידועים. אין
+    #      נעיצות: ``pinned`` מבקשה ישנה פשוט אינו נקרא. ──
+    prefs.preferred_lecturers = scheduler_mod.rankings_by_kind(
+        built, prefs.preferred_lecturers
+    )
 
     # ── 3. חבילת קורסים צמודים — נבדק *לפני* הספירה, אחרת התשובה סותרת את
     #      עצמה ("יש 12 צירופים" לצד "אין אף מערכת"). זו תשובה, לא תקלה.
@@ -5262,39 +5123,8 @@ def solve():
         )
         return _ok(base_common)
 
-    # ── 3.5 נעיצה שאי אפשר לכבד: קבוצה שכבר אינה קיימת בנתונים ──
-    #      זו לא שגיאת HTTP. הממשק שומר את הנעיצות ב-localStorage ומשחזר
-    #      אותן בכל טעינה, ולכן 400 היה נועל את שלב 5 לתמיד ו"לרענן את
-    #      הדף" לא היה עוזר. במקום זה: 200 שאומר **במפורש** איזו נעיצה
-    #      שוחררה (``dropped_pins``), כדי שהממשק ימחק אותה מהאחסון —
-    #      ובלי להעמיד פנים שנבנתה מערכת שמכבדת אותה.
-    if dropped_pins:
-        viability, via_truncated, via_skipped = compute_viability(
-            [c.code for c in built], applied_pins, prefs, semester=semester, year=year
-        )
-        base_common.update(
-            {
-                "viability": viability,
-                "viability_truncated": via_truncated,
-                "viability_skipped": via_skipped,
-                "feasible_count": 0,
-                "min_days": None,
-                "target_reachable": False,
-                "target_message": "",
-                "schedules": [],
-                "reasons": [d["reason"] for d in dropped_pins],
-                "suggestions": [
-                    strings_mod.get("server.infeasible.pinSuggestion", "")
-                ],
-                "elapsed_ms": int((time.perf_counter() - started) * 1000),
-            }
-        )
-        return _ok(base_common)
-
     # ── 4. מעבר אחד למניית הצירופים ומינימום הימים ──
-    feasible_count, min_days, counts_truncated = _count_and_min_days(
-        built, prefs, applied_pins
-    )
+    feasible_count, min_days, counts_truncated = _count_and_min_days(built, prefs)
     target_reachable = bool(min_days is not None and min_days <= target_days)
 
     base_common.update(
@@ -5324,7 +5154,7 @@ def solve():
     #      רק בזכות חפיפה מכוונת הייתה מסומנת כמבוי סתום ולהפך — כלומר
     #      הממשק היה חוסם בדיוק את האפשרות שהתכונה הזו נועדה לפתוח.
     viability, via_truncated, via_skipped = compute_viability(
-        [c.code for c in built], applied_pins, prefs, semester=semester, year=year
+        [c.code for c in built], prefs, semester=semester, year=year
     )
     base_common["viability"] = viability
     base_common["viability_truncated"] = via_truncated
@@ -5333,8 +5163,7 @@ def solve():
     # ── 6. המערכות עצמן ──
     if feasible_count == 0:
         # אין פתרון — זו תשובה, לא שגיאה. 200 עם הסבר ועם צעדים מעשיים.
-        # לאבחון בלבד — שם מותר לצמצם את המרחב לפי הנעיצות (ראי _pin_filtered).
-        diag = _pin_filtered(built, applied_pins)
+        diag = built
         try:
             reasons = scheduler_mod.diagnose_infeasibility(diag, prefs)
         except Exception as exc:  # noqa: BLE001
@@ -5345,10 +5174,6 @@ def solve():
         except Exception as exc:  # noqa: BLE001
             LOG.exception("relax_suggestions נכשל")
             suggestions = []
-        if applied_pins:
-            suggestions.insert(
-                0, strings_mod.get("server.infeasible.releasePin", "")
-            )
         base_common["reasons"] = reasons
         base_common["suggestions"] = suggestions
         # ויתורים **נמדדים**: לכל אילוץ שהוגדר בפועל, כמה מערכות ייפתחו אם
@@ -5359,7 +5184,7 @@ def solve():
         return _ok(base_common)
 
     try:
-        found = _top_schedules(built, prefs, top_n, applied_pins)
+        found = _top_schedules(built, prefs, top_n)
     except scheduler_mod.TiedCoursesError as exc:  # pragma: no cover - נתפס כבר בשלב 3
         base_common.update(
             {
@@ -5380,9 +5205,7 @@ def solve():
         return _ok(base_common)
     except scheduler_mod.Infeasible as exc:  # pragma: no cover - נתפס כבר בשלב 3
         base_common["reasons"] = list(exc.reasons)
-        base_common["suggestions"] = scheduler_mod.relax_suggestions(
-            _pin_filtered(built, applied_pins), prefs
-        )
+        base_common["suggestions"] = scheduler_mod.relax_suggestions(built, prefs)
         base_common["feasible_count"] = 0
         base_common["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
         return _ok(base_common)
@@ -5761,14 +5584,6 @@ def _smoke_test() -> int:  # pragma: no cover - כלי דיבוג ידני
     check("target_reachable=False עבור 4 ימים", data.get("target_reachable") is False, data.get("target_message", ""))
     dead = ((data.get("viability") or {}).get("61753") or {}).get("הרצאה", {}).get("271070330", {})
     check("viability מסמן מבוי סתום", dead.get("ok") is False, dead.get("reason", ""))
-
-    res = client.post("/api/solve", json={"codes": codes, "semester": "א", "pinned": {"61753": {"הרצאה": "271070330"}}})
-    data = res.get_json()
-    check(
-        "נעיצה למבוי סתום -> 200 עם הסבר",
-        res.status_code == 200 and data.get("ok") and data.get("feasible_count") == 0 and data.get("reasons"),
-        f"{len(data.get('reasons', []))} סיבות, {len(data.get('suggestions', []))} הצעות",
-    )
 
     res = client.post("/api/solve", data=b"{not json", content_type="application/json")
     data = res.get_json()
