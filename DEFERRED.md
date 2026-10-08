@@ -33,6 +33,22 @@ On the fixture store: מר זלדנר איליה teaches 61756 תרגול in /1 
 this. Blocked times still exclude a group by its hours, which covers the common
 case of "not that day".
 
+### On the recommended SE year 3 courses an overlap never saves a day — **accepted 2026-10-09**
+**Where:** `scheduler.score()`; `docs/DESIGN.md` → Lecturers, "How a ranking chooses", items 1 and 3.
+**Owner:** none — a consequence of a decision, not a defect.
+**What:** since every day with a lesson counts toward the target (2026-10-09), an
+intentional overlap saves a day only when it removes a day from the timetable.
+Measured on the fixture store, SE year 3 semester א, the six recommended courses:
+no waiver of one or two components lets an overlap reach fewer days than the
+4 that a schedule without one already reaches. Before, a waived lesson alone on a
+day made that day not count, and that was the whole of what overlaps saved here:
+with the 61759 lecture waived at target 3, the first overlap ranked #9; it now
+ranks #88. An overlap still enters the order when it honours a ranked lecturer
+(item 3): with 11069 שו"ת ranked ד"ר סוקולובסקי איזבלה it is #6.
+**Why accepted:** the user chose to count every day (2026-10-09), so that a day
+the timetable puts on campus is a day on campus. The overlap tests in
+`tests/test_rendered_copy_browser.py` rank that lecturer to get an overlap.
+
 ### `docs/SPEC.md` still gives the additive score formula
 **Where:** `docs/SPEC.md:198`, `Final score = w.lecturer*L - w.days*D - ...`.
 **Owner:** unassigned.
