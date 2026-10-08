@@ -2664,6 +2664,15 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
   cursor: help;
 }
 
+/* ---- יום בלי חובת נוכחות בחלופה הנבחרת: שורה אחת מיד מתחת לנתונים ----
+   מידע, לא אזהרה — באותו צבע כמו "מה פחות טוב". */
+.fit-free-days {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 /* ---- קבוצות מלאות בחלופה הנבחרת: שורה אחת מתחת לנתונים ----
    ‏--warn-ink, כמו מצב הקבוצה בשלב המרצים (.group-status): זו אותה עובדה. */
 .fit-full {

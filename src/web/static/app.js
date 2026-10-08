@@ -8093,6 +8093,7 @@
     // אין תווית הצפה, ו-"3 מתוך 3" הוא מידע גם כששום דבר לא חסר.
     if (num(sch.lecturer_total, 0) > 0) add("lecturers", [el("span", { text: hits })]);
     box.appendChild(pills);
+    appendFreeDaysLine(box, sch);
 
     // ---- מה פחות טוב במערכת הזו: משפט אחד, מהמשפיע ביותר ומטה ----
     // ‏במילים של הסטודנט/ית ולא במונחי הניקוד (DESIGN.md, פריט 4, 2026-10-01):
@@ -8147,6 +8148,40 @@
     line.appendChild(document.createTextNode(parts[1] || ""));
     box.appendChild(line);
     appendFullGroupsLine(box, sch);
+  }
+
+  /**
+   * ‏"ביום ה׳ אין שיעורים עם חובת נוכחות…" — שורה אחת מיד מתחת לנתונים, כשבחלופה
+   * הנבחרת יש יום שכל השיעורים בו בלי חובת נוכחות (DESIGN.md, פריט 4,
+   * 2026-10-08). ‏score() לא סופר יום כזה ביעד הימים, ולכן מערכת "של 5 ימים"
+   * יכולה לעמוד ביעד של 4; שבב הימים ממשיך לספור כל יום שבמערכת. הימים מגיעים
+   * מהשרת (‏``skippable_days``) ולא מחושבים כאן שוב.
+   */
+  function appendFreeDaysLine(box, sch) {
+    var days = (Array.isArray(sch.skippable_days) ? sch.skippable_days : [])
+      .map(function (d) {
+        return num(d, null);
+      })
+      .filter(function (d) {
+        return d !== null;
+      })
+      .sort(function (a, b) {
+        return a - b;
+      });
+    if (!days.length) return;
+    var marks = days.map(function (d) {
+      return Tf("app.schedule.freeDay", { day: dayLetter(d) });
+    });
+    var text =
+      marks.length === 1
+        ? Tf("app.schedule.freeDayLine", { day: marks[0] })
+        : Tf("app.schedule.freeDaysLine", {
+            days:
+              marks.slice(0, -1).join(T("app.schedule.freeDaysSep")) +
+              T("app.schedule.freeDaysLast") +
+              marks[marks.length - 1],
+          });
+    box.appendChild(el("p", { class: "fit-free-days", text: text }));
   }
 
   /**
