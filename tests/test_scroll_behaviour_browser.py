@@ -290,6 +290,7 @@ COURSE = """() => {
   const mid = document.elementFromPoint(hr.left + hr.width / 2, hr.top + hr.height / 2);
   return {
     headTop: hr.top, headBottom: hr.bottom, cardTop: cr.top + scrollY, cardBottom: cr.bottom,
+    cardTopOnScreen: cr.top, scrollY,
     firstRowTop: rows.length ? rows[0].getBoundingClientRect().top : null,
     firstRowAbs: rows.length ? rows[0].getBoundingClientRect().top + scrollY : null,
     lastRowBottom: rows.length ? rows[rows.length - 1].getBoundingClientRect().bottom : null,
@@ -297,6 +298,38 @@ COURSE = """() => {
     headOnTop: !!mid && h.contains(mid),
   };
 }"""
+
+#: ‏מוסיף מסך שלם של מקום בסוף העמוד. ברחב שלב המרצים הוא כמעט סוף העמוד,
+#: ‏ומה שיש מתחתיו תלוי בגופנים: ב-CI (‏Linux) הגלילה המקסימלית היא 520
+#: ‏והיעד 587, כך ש-‏scrollTo נחתך בשקט והשורה הראשונה נשארה 18px מתחת
+#: ‏לתחתית הראש. מקומית (‏Windows) היו 541 — ועבר בהפרש של 2.75px, במקרה. הבדיקה
+#: ‏היא על ה-sticky, לא על אורך העמוד, ולכן היא דואגת לעצמה למקום לגלול.
+ROOM_BELOW = """() => {
+  const s = document.createElement('div');
+  s.id = 'test-room-below';
+  s.style.blockSize = innerHeight + 'px';
+  document.body.append(s);
+}"""
+
+#: ‏אמת כשהכרטיס הפתוח, השורות שלו והגלילה לא זזו חמש פריימים ברצף —
+#: ‏במקום שינה קבועה ולקוות שהפריסה כבר נרגעה.
+COURSE_SETTLED = """() => {
+  const c = document.querySelector('#lecturer-courses .lect-course.is-open');
+  const rows = c ? c.querySelectorAll('tbody tr') : [];
+  if (!rows.length) return false;
+  const top = el => Math.round(el.getBoundingClientRect().top * 4);
+  const key = [scrollY, document.documentElement.scrollHeight, top(c),
+               top(c.querySelector(':scope > .lect-course-h')), top(rows[0]),
+               top(rows[rows.length - 1])].join();
+  window.__courseSame = key === window.__courseKey ? (window.__courseSame || 0) + 1 : 0;
+  window.__courseKey = key;
+  return window.__courseSame >= 5;
+}"""
+
+
+def _course_settled(pg):
+    pg.evaluate("() => { window.__courseKey = null; window.__courseSame = 0; }")
+    pg.wait_for_function(COURSE_SETTLED, polling="raf", timeout=10000)
 
 
 @pytest.mark.parametrize("size", [NARROW, WIDE], ids=["390", "1440"])
@@ -307,16 +340,23 @@ def test_the_open_course_header_stays_visible_while_its_rows_scroll(browser, ser
         _next(pg, "courses")
         _next(pg, "days")
         pg.evaluate(OPEN_BIGGEST_COURSE)
-        pg.wait_for_timeout(600)
+        pg.evaluate(ROOM_BELOW)
+        _course_settled(pg)
         start = pg.evaluate(COURSE)
         # ‏גוללים עד שהשורה הראשונה עוברת אל מתחת לראש המסך: אם הראש
         # ‏לא היה נדבק, הוא היה כבר מעל המסך.
         cover = 48 if size == NARROW else 0
-        _scroll(pg, start["firstRowAbs"] - cover - 10, wait=600)
+        target = round(start["firstRowAbs"] - cover - 10)
+        pg.evaluate(f"() => window.scrollTo(0, {target})")
+        _course_settled(pg)
         got = pg.evaluate(COURSE)
     finally:
         ctx.close()
     assert start["rows"] >= 3, start
+    # ‏אם זה נכשל, העמוד קצר מכדי לגלול אל היעד — וכל השאר היה נמדד במקום הלא נכון.
+    assert abs(got["scrollY"] - target) <= 1, f"הגלילה נחתכה לפני היעד {target}: {got}"
+    # ‏הכרטיס כבר יצא מעל הראש; הראש נשאר — זה ה-sticky.
+    assert got["cardTopOnScreen"] < got["headTop"] - 20, got
     assert abs(got["headTop"] - cover) <= 1, f"ראש הקורס לא נדבק מתחת לכותרת: {got}"
     assert got["headOnTop"], f"ראש הקורס מוסתר מתחת למשהו: {got}"
     # ‏השורות ממשיכות להיגלל מתחתיו.
