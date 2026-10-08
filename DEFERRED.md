@@ -22,6 +22,25 @@ which then has to be kept in step with the real one. "הדפסה / PDF" in the l
 covers it for now: on phones the system print dialog offers saving as PDF, and a
 PDF shares in WhatsApp as well.
 
+### No way to choose between two groups of the same lecturer — **accepted 2026-10-09**
+**Where:** the lecturers step (`docs/DESIGN.md` → Lecturers, "Ranking is the only control").
+**Owner:** none — a decision, not a defect.
+**What:** pinning could fix one group; ranking names a lecturer for a kind. When the
+same lecturer teaches two groups of the same kind, the student cannot say which one.
+On the fixture store: מר זלדנר איליה teaches 61756 תרגול in /1 (ג׳ 14:50) and /4
+(ד׳ 08:30), and 61757 מעבדה in /2, /4 and 271070310/1.
+**Why accepted:** the user chose ranking as the only control (2026-10-09), knowing
+this. Blocked times still exclude a group by its hours, which covers the common
+case of "not that day".
+
+### `docs/SPEC.md` still gives the additive score formula
+**Where:** `docs/SPEC.md:198`, `Final score = w.lecturer*L - w.days*D - ...`.
+**Owner:** unassigned.
+**What:** since 2026-10-09 the order is by priority (`docs/DESIGN.md` → Lecturers,
+"How a ranking chooses"); only gaps, late finish and compactness are still weighted.
+SPEC.md is the original specification and is left as written; this entry records
+that its formula no longer describes the engine.
+
 ### A protected test will break at the next fixture refresh — **found 2026-10-03, needs permission then**
 **Where:** `tests/test_attendance.py` (protected; `SPEC_WEB.md:230`, CLAUDE.md).
 * Its brute-force check `legal_combinations` is at :142-158.
@@ -46,6 +65,9 @@ with no meetings when its (course, kind) has a timed group, so the brute force
 stays independent of the engine but agrees with it.
 
 ### The pinned no-solution diagnosis reads links on a trimmed copy — **found 2026-10-03, not fixed**
+**Decided 2026-10-09: goes away with pinning.** `docs/DESIGN.md` → Lecturers removes
+pins from the step and from `/api/solve` (phase 10, "Lecturer order"), and
+`_pin_filtered` goes with them. Moves to Closed when that phase lands.
 **Where:** `api._pin_filtered` (`src/web/api.py:2507-2524`). Its copy feeds
 `diagnose_infeasibility`, `relax_suggestions` and `_relaxations_json` when a
 request with pins has no schedule (api.py:5310-5335; also :2637 and :5359).
@@ -310,6 +332,9 @@ twice.
 scale that restores it arrives with whichever palette direction is chosen.
 
 ### `.pin-btn` sits at 45% opacity as its resting state
+**Decided 2026-10-09: the button is removed** (`docs/DESIGN.md` → Lecturers, ranking
+is the only control). Moves to Closed when phase 10 lands; the `.pin-btn` entries in
+`tests/test_no_opacity_on_text.py`'s `ALLOWED` then match nothing.
 **Where:** `src/web/static/style.css`, `.pin-btn`.
 **Owner:** unassigned — re-owned 2026-10-05: "Phase 7" here was an earlier plan's numbering, not DESIGN.md's Phase 7 (wide layout).
 **Why it survived the opacity sweep:** the sweep removed multipliers from *text*.
@@ -367,6 +392,10 @@ inside the banner. Both are implemented; the banner is now rare enough that the
 common screen has exactly one. Flagged so it is a decision and not an oversight.
 
 ### The fit score is relative to the five shown, not absolute
+**Superseded 2026-10-09: the percentage is removed** (`docs/DESIGN.md` → Results page,
+item 4). Schedules are ordered by priority, not by one sum, so a percentage of the
+remaining points could put a lower alternative above a higher one. Only "ההתאמה
+הגבוהה ביותר" on the first alternative stays. Moves to Closed when phase 10 lands.
 **Where:** `fitScores()` in `src/web/static/app.js`.
 **Owner:** unassigned — needs a product call, possibly never.
 **Why:** there is no absolute maximum to normalise against — `lecturer` is an
@@ -377,6 +406,7 @@ nothing alike. If an absolute scale is ever wanted, the scheduler would have to
 expose a theoretical best for the chosen courses.
 
 ### The fit number is not the thing to choose on
+**Superseded 2026-10-09** with the entry above: there is no fit number any more.
 **Where:** `fitScores()` / the `.fit` block in `src/web/static/app.js`.
 **Owner:** informational — Phase 3 worked around it, no action pending.
 **Why:** with five schedules inside a few points the score is honest but useless
