@@ -188,7 +188,12 @@
                   ושורה "לא משאיר מערכת אפשרית" מתחת לשם המרצה).
                   כפתור הנעיצה: class "pin-btn".
   5 המערכת        #settings-pills, #alt-head > #alt-title #alt-updating #alt-sort #alt-prev
-                  #alt-pos #alt-next #btn-print, #alt-cards (כרטיס לכל חלופה)
+                  #alt-pos #alt-pos-label #alt-next, .alt-actions > #btn-print #btn-full,
+                  #alt-cards (כרטיס לכל חלופה)
+                  #alt-pos       "1/5", ‏aria-hidden; ‏#alt-pos-label הוא השם הנגיש
+                                 המלא ("מערכת 1 מתוך 5") וה-aria-live.
+                  #btn-full      "צפייה במערכת המלאה ⤢": פותח את #sheet-layer
+                                 (‎.is-zoomed‎ אחרי "הגדלה", ‏#sheet-zoom[aria-pressed]).
                   #alt-updating  "מעדכן…" בזמן חישוב. ‏hidden כשאין חישוב, ובמסך
                                  צר מוסתר תמיד (שם יש את כפתור הבנייה).
                   #alt-label     התווית המבדילה של הנבחרת. מוצגת רק ב-is-strip.
@@ -633,14 +638,26 @@
             <option value="days">{{ S.app.alts.sort.days }}</option>
           </select>
         </label>
-        <div class="alt-nav">
+        <!-- ‏על המסך "1/5"; השם הנגיש נשאר מלא — "מערכת 1 מתוך 5" — בטקסט
+             מוסתר שהוא גם מה שמוכרז כשהמיקום משתנה (DESIGN.md, "Results page", 2). -->
+        <div class="alt-nav" role="group" aria-labelledby="alt-pos-label">
           <button type="button" class="alt-step" id="alt-prev"
                   aria-label="{{ S.app.alts.prevLabel }}" title="{{ S.app.alts.prevLabel }}">{{ S.app.alts.prev }}</button>
-          <span class="alt-pos" id="alt-pos" aria-live="polite"></span>
+          <span class="alt-pos" id="alt-pos" aria-hidden="true"></span>
+          <span class="visually-hidden" id="alt-pos-label" aria-live="polite"></span>
           <button type="button" class="alt-step" id="alt-next"
                   aria-label="{{ S.app.alts.nextLabel }}" title="{{ S.app.alts.nextLabel }}">{{ S.app.alts.next }}</button>
         </div>
-        <button type="button" class="btn btn-ghost btn-sm" id="btn-print">{{ S.ui.schedule.btnPrint }}</button>
+        <!-- ‏בטלפון שני הכפתורים בשורה משלהם מתחת; ברחב הם בשורת הכותרת.
+             ‏"צפייה במערכת המלאה" מוצג תמיד במסך צר, וברחב רק בצעד 4 של סדר
+             ההתאמה, כשהרשת נגללת בתוך התיבה שלה (fitScreenGrid). -->
+        <div class="alt-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-print">{{ S.ui.schedule.btnPrint }}</button>
+          <button type="button" class="btn btn-ghost btn-sm btn-full" id="btn-full"
+                  aria-haspopup="dialog" aria-controls="sheet-layer">{{ S.ui.schedule.btnFull }}<svg
+               class="btn-full-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"
+               focusable="false"><path d="M9.5 2.5h4v4M13.5 2.5 8.5 7.5M6.5 13.5h-4v-4M2.5 13.5l5-5"/></svg></button>
+        </div>
       </div>
 
       <!-- ‏כרטיס לכל חלופה (פריט 3): מערכת שבועית מוקטנת, "N ימים, עד HH:MM",
@@ -739,6 +756,35 @@
 <footer class="app-footer">
   <p class="app-footer-line" id="app-footer-line"></p>
 </footer>
+
+<!-- ‏המערכת המלאה (DESIGN.md, "Results page", 2, "צפייה במערכת המלאה ⤢"):
+     שכבה בגודל החלון שמראה את השבוע כולו בלי גלילה — ‏#sheet-fit-grid, שגופן
+     הבלוקים שלו מותאם לגובה החלון, ולעולם לא מעל גודל ההדפסה. ‏"הגדלה"
+     (aria-pressed) מראה במקומו את גיליון ה-A4 (‎#sheet‎) בגודל ההדפסה, ונגלל.
+     שתי הרשתות נבנות ב-buildGrid() ומותאמות ב-fitFontToPage(), אותן פונקציות
+     שההדפסה משתמשת בהן. דיאלוג אמיתי: ‏aria-modal, הפוקוס כלוא בו, ‏Esc סוגר
+     ומחזיר את הפוקוס לכפתור. מחוץ ל-‎.steps‎, ולכן אינו מגיע לנייר — "הדפסה /
+     PDF" מדפיס את הגיליון של הדף. -->
+<div class="sheet-layer" id="sheet-layer" role="dialog" aria-modal="true"
+     aria-labelledby="sheet-title" hidden>
+  <div class="sheet-bar">
+    <h2 class="sheet-title" id="sheet-title"></h2>
+    <button type="button" class="btn btn-ghost btn-sm" id="sheet-zoom" aria-pressed="false">{{ S.app.sheet.zoom }}</button>
+    <button type="button" class="btn btn-ghost btn-sm" id="sheet-print">{{ S.app.sheet.print }}</button>
+    <button type="button" class="btn btn-ghost btn-sm" id="sheet-close">{{ S.app.sheet.close }}</button>
+  </div>
+  <div class="sheet-scroll" id="sheet-scroll" tabindex="0" role="group" aria-label="{{ S.ui.schedule.gridLabel }}">
+    <div class="sheet-fit" id="sheet-fit">
+      <div class="grid" id="sheet-fit-grid"></div>
+    </div>
+    <div class="sheet" id="sheet">
+      <p class="sheet-head" id="sheet-head"></p>
+      <div class="sheet-grid-box">
+        <div class="grid" id="sheet-grid"></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ‏הסרגל התחתון (DESIGN.md, Scroll behaviour, 4): מסך צר בלבד. ‏visibility
      ‏ולא display כשהוא מוסתר, כדי שההחלקה תרוץ — וגם כך הוא יוצא מסדר

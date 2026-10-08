@@ -3416,3 +3416,150 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
     z-index: 3;
   }
 }
+
+/* ==========================================================================
+   24. שורת הכותרת בטלפון, ו"צפייה במערכת המלאה ⤢"
+   (DESIGN.md, "Results page", 2; שלב 8, חלק ג׳, 2026-10-07/08)
+   ========================================================================== */
+
+/* ‏"הדפסה" ו"צפייה במערכת המלאה" יחד. ברחב — בשורת הכותרת. */
+.alt-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.btn-full { display: inline-flex; align-items: center; gap: 6px; }
+.btn-full-icon {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ‏מסך צר: "5 מערכות מובילות", המיון ו-‹ 1/5 › בשורה אחת; שני הכפתורים
+   בשורה משלהם מתחתיה. נמדד ב-2026-10-08: ‏334.6px מתוך 340px ב-390px.
+   ‏max-width ‏1199.98px — המשלים המדויק של הפריסה הרחבה (‎min-width: 1200px‎). */
+@media screen and (max-width: 1199.98px) {
+  .alt-head { column-gap: 8px; }
+  .alt-title { flex: none; font-size: 15px; white-space: nowrap; }
+  .alt-sort { margin-inline-start: auto; }
+  /* ‏התווית נשארת השם הנגיש של ה-select (הוא בתוך ה-<label>). */
+  .alt-sort-label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .alt-pos { min-inline-size: 0; }
+  .alt-actions { flex-basis: 100%; }
+}
+
+/* ‏מתחת ל-385px רק המיון יורד לשורה שנייה; הכותרת והדפדוף נשארים יחד
+   בראשונה, ושום דבר אחר אינו מוקטן. ‏385 ולא 380: השורה צריכה 334.6px,
+   ועם שוליים של 25px מכל צד היא נכנסת רק מ-384.6px. ב-380–384 הדפדוף
+   לבדו היה גולש לשורה שנייה. */
+@media screen and (max-width: 384.98px) {
+  .alt-nav { order: 1; margin-inline-start: auto; }
+  .alt-sort { order: 2; flex-basis: 100%; margin-inline-start: 0; }
+  .alt-actions { order: 3; }
+}
+
+/* ---- השכבה ---- */
+html.has-sheet { overflow: hidden; }
+
+.sheet-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.sheet-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px clamp(12px, 3vw, 28px);
+  background: var(--sf);
+  border-block-end: 1px solid var(--bd);
+}
+
+.sheet-title { margin: 0; margin-inline-end: auto; font-size: 17px; font-weight: 800; }
+
+#sheet-zoom[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--sf); }
+
+.sheet-scroll {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--sf);
+}
+
+.sheet-scroll:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+/* ‏שתי הרשתות של השכבה מקבלות מה שגוש ההדפסה (פרק 15) משנה ברשת, באותם
+   ערכים: עמודת שעות של ‎4rem‎, ימים בלי רוחב מזערי, יום ו׳ ריק כעמודה הצרה,
+   כותרות שאינן דביקות, וגופן הבלוקים ‎--ev-font-print‎ שקובע fitFontToPage().
+   את הצבעים השכבה לוקחת מהמצב הנוכחי, בהיר או כהה. */
+.sheet-fit,
+.sheet {
+  --time-col: 4rem;
+  --day-min: 0;
+  --day-empty-fri: var(--day-empty);
+}
+
+:is(.sheet-fit, .sheet) .hd,
+:is(.sheet-fit, .sheet) .tl { position: static; }
+
+:is(.sheet-fit, .sheet) .grid .ev,
+:is(.sheet-fit, .sheet) .grid .ev * { font-size: var(--ev-font-print, 13px); }
+
+:is(.sheet-fit, .sheet) .ev { cursor: default; }
+:is(.sheet-fit, .sheet) .ev:hover { filter: none; }
+
+/* ‏התאמה (ברירת המחדל): השבוע ממלא את החלון שמתחת לסרגל, בלי שוליים של
+   דף ובלי שורת כותרת. ‏fitSheetToWindow() מודד את הגובה של ‎.sheet-fit‎. */
+.sheet-fit { border-block-end: 1px solid var(--line-strong); }
+
+/* ‏בגובה שעה נמוך תווית השעה גבוהה מהמשבצת שלה (כמו בצעד 3 של הפריסה
+   הרחבה). השעה כולה מכילה אותה — fitSheetToWindow() מבטיח — ולכן היא
+   נצבעת מעל המשבצות הריקות שמתחתיה במקום להיחתך ברקע שלהן. */
+.sheet-fit .tl.hour {
+  position: relative;
+  z-index: 3;
+  overflow: visible;
+}
+
+/* ‏גיליון ה-A4: אותה פריסה שגוש ההדפסה נותן לדף — רוחב 210mm, ריפוד 8mm,
+   שורת כותרת אחת. בהתאמה הוא קיים רק למדידה (גודל ההדפסה): מוסתר ב-
+   visibility ולא ב-display, ו-fixed — כדי שלא ייצור גלילה בשכבה. */
+.sheet {
+  box-sizing: border-box;
+  inline-size: 210mm;
+  padding: 8mm;
+  font-size: 11.5px;
+  background: var(--sf);
+}
+
+.sheet-layer:not(.is-zoomed) .sheet {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ‏"הגדלה": הגיליון בגודל ההדפסה, בגודלו האמיתי, ונגלל; הרשת המותאמת יוצאת. */
+.sheet-layer.is-zoomed .sheet-fit { display: none; }
+.sheet-layer.is-zoomed .sheet { margin-inline: auto; }
+.sheet-layer.is-zoomed .sheet-scroll { background: var(--bg); }
+
+/* ‏גובה עמוד רק אחרי ההתאמה: בזמן המדידה הגיליון בגובה התוכן שלו. */
+.sheet.is-fitted { min-block-size: 297mm; }
+
+.sheet-head { margin: 0 0 6px; font-size: 12px; font-weight: 700; color: var(--ink); }
+
+.sheet-grid-box { border: 1px solid var(--line-strong); }

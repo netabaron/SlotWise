@@ -3136,8 +3136,21 @@
     ui.altPrev = byId("alt-prev");
     ui.altNext = byId("alt-next");
     ui.altPos = byId("alt-pos");
+    ui.altPosLabel = byId("alt-pos-label");
     ui.altCards = byId("alt-cards");
     ui.btnPrint = byId("btn-print");
+    ui.btnFull = byId("btn-full");
+    ui.sheetLayer = byId("sheet-layer");
+    ui.sheetTitle = byId("sheet-title");
+    ui.sheetPrint = byId("sheet-print");
+    ui.sheetClose = byId("sheet-close");
+    ui.sheetScroll = byId("sheet-scroll");
+    ui.sheet = byId("sheet");
+    ui.sheetHead = byId("sheet-head");
+    ui.sheetGrid = byId("sheet-grid");
+    ui.sheetZoom = byId("sheet-zoom");
+    ui.sheetFit = byId("sheet-fit");
+    ui.sheetFitGrid = byId("sheet-fit-grid");
     ui.settingsPills = byId("settings-pills");
     ui.summary = byId("schedule-summary");
     ui.legend = byId("schedule-legend");
@@ -3383,15 +3396,8 @@
       });
     }
 
-    if (ui.btnPrint) {
-      ui.btnPrint.addEventListener("click", function () {
-        try {
-          window.print();
-        } catch (e) {
-          /* דפדפן בלי הדפסה — לא נורא */
-        }
-      });
-    }
+    if (ui.btnPrint) ui.btnPrint.addEventListener("click", printSheet);
+    wireSheetLayer();
 
     // ‏המיון אינו נשמר: ‏runtime ולא state, ובלי setState — אין מה לחשב מחדש
     // ואין מה לשמור. אותה חלופה נשארת בחורה; רק הסדר משתנה.
@@ -7024,6 +7030,7 @@
       else ui.altLabel.removeAttribute("title");
     }
     setText(ui.altPos, Tf("app.alts.position", { pos: pos + 1, total: list.length }));
+    setText(ui.altPosLabel, Tf("app.alts.positionLabel", { pos: pos + 1, total: list.length }));
     if (ui.altPrev) ui.altPrev.disabled = pos <= 0;
     if (ui.altNext) ui.altNext.disabled = pos >= order.length - 1;
 
@@ -7852,6 +7859,9 @@
           })
         : "";
     }
+
+    // ‏השכבה פתוחה והמערכת צוירה מחדש (חישוב חי): היא מציגה את מה שנבחר עכשיו.
+    if (sheetOpen()) renderSheet();
 
     // אין פתרון
     if (ui.empty) {
@@ -9134,7 +9144,7 @@
   //: השעה נוגעות זו בזו.
   var SLOT_H_FLOOR = 12;
 
-  function sizeGrid(root) {
+  function sizeGrid(root, floor) {
     if (!root) return;
     var blocks = root.querySelectorAll(".ev");
     // ‏רשת ריקה או מוסתרת: אין מה למדוד, ומדידה של אפס הייתה קובעת גובה
@@ -9171,7 +9181,9 @@
       }
     }
     setClass(root, "is-measuring", true);
-    var need = SLOT_H_FLOOR;
+    // ‏floor: רק השכבה "צפייה במערכת המלאה" מורידה אותו, כדי שהשבוע כולו
+    // ייכנס לגובה החלון (fitSheetToWindow). כל השאר — 12px.
+    var need = floor === undefined ? SLOT_H_FLOOR : floor;
     for (var i = 0; i < blocks.length; i++) {
       var b = blocks[i];
       var rows = Math.max(1, num(b.dataset.rows, 1));
@@ -9251,9 +9263,15 @@
     }
     clearShortLines(grid);
     if (col) setClass(col, "is-strip", false);
+    // ‏"צפייה במערכת המלאה": במסך צר תמיד, ברחב רק בצעד 4. ברחב הכפתור
+    // מוסתר לאורך כל המדידה ומוצג רק בסופה, כדי שהצעד ייקבע תמיד באותו
+    // מצב של שורת הכותרת — אחרת כפתור שנשאר מהמדידה הקודמת היה יכול
+    // לגלוש לשורה שנייה, להקטין את התיבה, ולהשאיר את הרשת בצעד 4.
+    var wide = isWide();
+    setHidden(ui.btnFull, wide);
     var measured = sizeGrid(grid);
     if (!col) return;
-    if (!isWide() || !measured || !box || box.hidden) {
+    if (!wide || !measured || !box || box.hidden) {
       col.removeAttribute("data-fit");
       return;
     }
@@ -9264,6 +9282,7 @@
     clearShortLines(grid);
     sizeGrid(grid);
     col.setAttribute("data-fit", "4");
+    setHidden(ui.btnFull, false);
   }
 
   function gridFits(box) {
@@ -9444,14 +9463,236 @@
     if (!grid) return;
     grid.style.removeProperty("--ev-font-print");
     if (!window.matchMedia || !window.matchMedia("print").matches) return;
-    if (!grid.querySelector(".ev")) return;
-    for (var f = PRINT_FONT_MAX; f >= PRINT_FONT_MIN; f -= PRINT_FONT_STEP) {
+    fitFontToPage(grid, function () {
+      return document.body.scrollHeight;
+    });
+  }
+
+  /**
+   * ההתאמה עצמה: גופן הבלוקים יורד בצעדים של 0.5px, ואחרי כל צעד גובה השעה
+   * נמדד מחדש מהתוכן, עד שהגובה נכנס. שלוש השורות נשארות בכל בלוק.
+   *
+   * ‏בלי opts — ההדפסה, בדיוק כמו תמיד: מ-13px עד 10px, ואם גם 10px אינו
+   * מספיק, חזרה ל-13px ושני עמודים. אותה פונקציה משמשת את גיליון ה-A4 של
+   * השכבה (כך שהוא מראה בדיוק את מה שיודפס) ואת התאמת השכבה לגובה החלון
+   * (opts: limit, max, min, floor, ‏keepMin — להישאר בגופן הקטן ביותר).
+   * מחזירה את הגופן שנקבע, ב-px.
+   */
+  function fitFontToPage(grid, pageHeight, opts) {
+    opts = opts || {};
+    var limit = opts.limit === undefined ? PRINT_PAGE_PX : opts.limit;
+    var max = opts.max === undefined ? PRINT_FONT_MAX : opts.max;
+    var min = opts.min === undefined ? PRINT_FONT_MIN : opts.min;
+    if (!grid.querySelector(".ev")) return max;
+    for (var f = max; f >= min; f -= PRINT_FONT_STEP) {
       grid.style.setProperty("--ev-font-print", f + "px");
-      sizeGrid(grid);
-      if (document.body.scrollHeight <= PRINT_PAGE_PX) return;
+      sizeGrid(grid, opts.floor);
+      if (pageHeight() <= limit) return f;
     }
+    if (opts.keepMin) return min;
     grid.style.removeProperty("--ev-font-print");
-    sizeGrid(grid);
+    sizeGrid(grid, opts.floor);
+    return PRINT_FONT_MAX;
+  }
+
+  /* --- המערכת המלאה (DESIGN.md, "Results page", 2) ----------------------- */
+
+  //: ‏הרצפה של ההתאמה לחלון. אין לה משמעות של קריאות — "הגדלה" היא התשובה
+  //: לזה — רק גבול ללולאה. מתחת לה השכבה נשארת בגופן הזה ונגללת.
+  var SHEET_FIT_MIN = 3;
+
+  function printSheet() {
+    try {
+      window.print();
+    } catch (e) {
+      /* דפדפן בלי הדפסה — לא נורא */
+    }
+  }
+
+  function sheetOpen() {
+    return !!ui.sheetLayer && !ui.sheetLayer.hidden;
+  }
+
+  function wireSheetLayer() {
+    if (!ui.btnFull || !ui.sheetLayer) return;
+    ui.btnFull.addEventListener("click", openSheet);
+    if (ui.sheetClose) ui.sheetClose.addEventListener("click", closeSheet);
+    if (ui.sheetPrint) ui.sheetPrint.addEventListener("click", printSheet);
+    if (ui.sheetZoom) {
+      ui.sheetZoom.addEventListener("click", function () {
+        setSheetZoom(!runtime.sheetZoom);
+      });
+    }
+    // ‏הבלוקים בשכבה נבנים ב-buildGrid, ולכן נושאים את פתיחת פרטי השיעור.
+    // הפאנל שייך לדף שמתחת לשכבה; כאן לחיצה אינה עושה דבר.
+    [ui.sheetGrid, ui.sheetFitGrid].forEach(function (grid) {
+      if (!grid) return;
+      grid.addEventListener(
+        "click",
+        function (ev) {
+          ev.stopPropagation();
+        },
+        true
+      );
+    });
+    // ‏על המסמך ולא על השכבה: לחיצה על רקע הסרגל מעבירה את הפוקוס ל-body,
+    // ‏ו-Esc משם עדיין צריך לסגור.
+    document.addEventListener("keydown", function (ev) {
+      if (!sheetOpen()) return;
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        closeSheet();
+      } else if (ev.key === "Tab") {
+        trapSheetFocus(ev);
+      }
+    });
+    // ‏חלון שמשנה גודל (סיבוב טלפון) מתאים את השבוע מחדש לגובה החדש.
+    var frame = 0;
+    window.addEventListener("resize", function () {
+      if (!sheetOpen() || frame) return;
+      frame = window.requestAnimationFrame(function () {
+        frame = 0;
+        fitSheetToWindow();
+      });
+    });
+  }
+
+  /** ‏Tab ו-Shift+Tab מסתובבים בתוך השכבה בלבד. */
+  function trapSheetFocus(ev) {
+    var items = [ui.sheetZoom, ui.sheetPrint, ui.sheetClose, ui.sheetScroll].filter(Boolean);
+    if (!items.length) return;
+    var first = items[0];
+    var last = items[items.length - 1];
+    var at = document.activeElement;
+    var inside = ui.sheetLayer.contains(at);
+    if (ev.shiftKey && (at === first || !inside)) {
+      ev.preventDefault();
+      last.focus();
+    } else if (!ev.shiftKey && (at === last || !inside)) {
+      ev.preventDefault();
+      first.focus();
+    }
+  }
+
+  function openSheet() {
+    if (!ui.sheetLayer || sheetOpen() || !activeSchedule()) return;
+    runtime.sheetReturn = document.activeElement;
+    // ‏כל מה שמחוץ לשכבה יוצא מסדר ה-Tab ומעץ הנגישות. מה שכבר היה inert
+    // נשאר כך גם אחרי הסגירה.
+    runtime.sheetInert = [];
+    [].slice.call(document.body.children).forEach(function (node) {
+      if (node === ui.sheetLayer || node.inert || node.tagName === "SCRIPT") return;
+      node.inert = true;
+      runtime.sheetInert.push(node);
+    });
+    setClass(document.documentElement, "has-sheet", true);
+    setHidden(ui.sheetLayer, false);
+    // ‏כל פתיחה מתחילה בהתאמה לחלון.
+    setSheetZoom(false, true);
+    renderSheet();
+    if (ui.sheetClose) ui.sheetClose.focus();
+  }
+
+  function closeSheet() {
+    if (!sheetOpen()) return;
+    setHidden(ui.sheetLayer, true);
+    setClass(document.documentElement, "has-sheet", false);
+    (runtime.sheetInert || []).forEach(function (node) {
+      node.inert = false;
+    });
+    runtime.sheetInert = [];
+    if (ui.sheetGrid) clear(ui.sheetGrid);
+    if (ui.sheetFitGrid) clear(ui.sheetFitGrid);
+    var back = runtime.sheetReturn;
+    runtime.sheetReturn = null;
+    // ‏הכפתור שפתח; ואם הוא כבר אינו על המסך (החלון הורחב ויצא מצעד 4),
+    // ‏"הדפסה" שלידו.
+    if (!back || !back.isConnected || !back.getClientRects().length) back = ui.btnPrint;
+    if (back) back.focus();
+  }
+
+  /**
+   * החלופה שנבחרה, פעמיים, ושתיהן מ-buildGrid():
+   *  - **גיליון ה-A4** (‎#sheet-grid‎) — פריסת הנייר, מותאם בדיוק כמו בהדפסה.
+   *    הגופן שלו הוא "גודל ההדפסה", והוא מה ש"הגדלה" מראה, בגודלו האמיתי.
+   *  - **השבוע בגודל החלון** (‎#sheet-fit-grid‎) — מה שמוצג בפתיחה.
+   *    ‏fitSheetToWindow() מתאים את הגופן שלו לגובה החלון, ולעולם לא מעל
+   *    גודל ההדפסה.
+   * נקרא בפתיחה, ושוב בכל ציור של המערכת כשהשכבה פתוחה.
+   */
+  function renderSheet() {
+    if (!sheetOpen() || !ui.sheet || !ui.sheetGrid) return;
+    var sch = activeSchedule();
+    if (!sch) return closeSheet();
+    setText(ui.sheetTitle, Tf("app.sheet.title", { n: num(state.activeSchedule, 0) + 1 }));
+    setText(ui.sheetHead, ui.printHead ? ui.printHead.textContent : "");
+    var soft = softConflictInfo(sch);
+    // ‏הגיליון נמדד גם כשהוא מוסתר (visibility, לא display) — זה גודל ההדפסה.
+    setClass(ui.sheet, "is-fitted", false);
+    clear(ui.sheetGrid);
+    buildGrid(ui.sheetGrid, sch, soft);
+    runtime.sheetPrintFont = fitFontToPage(ui.sheetGrid, function () {
+      return ui.sheet.scrollHeight;
+    });
+    setClass(ui.sheet, "is-fitted", true);
+    if (ui.sheetFitGrid) {
+      clear(ui.sheetFitGrid);
+      buildGrid(ui.sheetFitGrid, sch, soft);
+    }
+    // ‏השכבה היא תמונה: הבלוקים נקראים בשמם המלא, אבל אינם עצירות Tab —
+    // הפרטים שלהם שייכים לרשת שבדף.
+    [].slice.call(ui.sheetLayer.querySelectorAll(".ev")).forEach(function (b) {
+      b.tabIndex = -1;
+    });
+    fitSheetToWindow();
+  }
+
+  /**
+   * השבוע כולו בגובה החלון, בלי גלילה: אותה לולאה של ההדפסה
+   * (fitFontToPage), כשהגבול הוא גובה האזור שמתחת לסרגל במקום גובה העמוד.
+   * מתחילה בגודל ההדפסה ויורדת ככל שצריך; שלוש השורות נשארות בכל בלוק.
+   * רצפת המשבצת היא תווית השעה (רבע ממנה), לא 12px — אחרת שבוע של 12 שעות
+   * לא היה נכנס לחלון נמוך בשום גופן.
+   */
+  function fitSheetToWindow() {
+    var grid = ui.sheetFitGrid;
+    var box = ui.sheetScroll;
+    if (!grid || !box || !sheetOpen() || runtime.sheetZoom) return;
+    if (!grid.querySelector(".ev")) return;
+    var floor = 1;
+    var hour = grid.querySelector(".tl.hour");
+    if (hour) {
+      var range = document.createRange();
+      range.selectNodeContents(hour);
+      floor = Math.ceil((range.getBoundingClientRect().height + 2) / SLOTS_PER_HOUR);
+    }
+    var frame = ui.sheetFit || grid;
+    runtime.sheetFitFont = fitFontToPage(
+      grid,
+      function () {
+        return frame.getBoundingClientRect().height;
+      },
+      {
+        limit: box.clientHeight,
+        max: num(runtime.sheetPrintFont, PRINT_FONT_MAX),
+        min: SHEET_FIT_MIN,
+        floor: floor,
+        keepMin: true,
+      }
+    );
+  }
+
+  /** ‏"הגדלה": הגיליון בגודל ההדפסה ונגלל; לחיצה נוספת — חזרה להתאמה. */
+  function setSheetZoom(on, quiet) {
+    runtime.sheetZoom = !!on;
+    setClass(ui.sheetLayer, "is-zoomed", runtime.sheetZoom);
+    if (ui.sheetZoom) ui.sheetZoom.setAttribute("aria-pressed", runtime.sheetZoom ? "true" : "false");
+    if (ui.sheetScroll) {
+      ui.sheetScroll.scrollTop = 0;
+      ui.sheetScroll.scrollLeft = 0;
+    }
+    if (!quiet && !runtime.sheetZoom) fitSheetToWindow();
   }
 
   /**

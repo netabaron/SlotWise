@@ -96,6 +96,7 @@
     },
     "schedule": {
       "btnPrint": "הדפסה",
+      "btnFull": "צפייה במערכת המלאה",
       "softTitle": "חפיפות מכוונות במערכת הזו",
       "gridLabel": "מערכת שבועית",
       "emptyTitle": "אין מערכת אפשרית עם הבחירות האלה",
@@ -744,22 +745,29 @@
       "titleOne": "מערכת אחת",
       "sortLabel": "מיון",
       "sort": {
-        "fit": "התאמה להעדפות",
-        "gaps": "הכי פחות חלונות",
-        "finish": "מסיים הכי מוקדם",
-        "days": "הכי פחות ימים"
+        "fit": "התאמה",
+        "gaps": "פחות חלונות",
+        "finish": "סיום מוקדם",
+        "days": "פחות ימים"
       },
       "prev": "›",
       "next": "‹",
       "prevLabel": "המערכת הקודמת",
       "nextLabel": "המערכת הבאה",
-      "position": "{pos} מתוך {total}",
+      "position": "{pos}/{total}",
+      "positionLabel": "מערכת {pos} מתוך {total}",
       "cardsLabel": "המערכות המובילות",
       "cardFacts": "{days} ימים, עד {time}",
       "cardFactsOneDay": "יום אחד, עד {time}",
       "cardName": "מערכת {n}",
       "cardLabel": "מערכת {n}: {facts}. {label}",
       "updating": "מעדכן…"
+    },
+    "sheet": {
+      "title": "מערכת {n}",
+      "zoom": "הגדלה",
+      "print": "הדפסה / PDF",
+      "close": "סגירה"
     },
     "detail": {
       "title": "פרטי השיעור",
