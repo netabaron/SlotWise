@@ -10,6 +10,18 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
+### Save the timetable as an image — **deferred 2026-10-07**
+**Where:** proposed, not built. Would sit in the full-view layer's top bar
+(`docs/DESIGN.md`, "Results page", item 2, "צפייה במערכת המלאה ⤢").
+**Owner:** unassigned.
+**What:** the idea (2026-10-07) is a button that saves the selected timetable as
+an image, because students share their timetable in WhatsApp.
+**Why deferred:** a page cannot screenshot itself without a library, so it needs
+the sheet redrawn in code (canvas or SVG) — a second copy of the print layout,
+which then has to be kept in step with the real one. "הדפסה / PDF" in the layer
+covers it for now: on phones the system print dialog offers saving as PDF, and a
+PDF shares in WhatsApp as well.
+
 ### A protected test will break at the next fixture refresh — **found 2026-10-03, needs permission then**
 **Where:** `tests/test_attendance.py` (protected; `SPEC_WEB.md:230`, CLAUDE.md).
 * Its brute-force check `legal_combinations` is at :142-158.
