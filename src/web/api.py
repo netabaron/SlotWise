@@ -722,9 +722,6 @@ def schedule_to_json(
         "days_count": int(sched.days_count),
         "days": days,
         "day_letters": [models.DAY_LETTERS_HE.get(d, "?") for d in days],
-        # ימים שכל השיעורים בהם בלי חובת נוכחות — ``score()`` כבר חישב אותם ולא
-        # ספר אותם ביעד הימים. דף התוצאה מסביר את זה במקום לחשב מחדש בדפדפן.
-        "skippable_days": [int(d) for d in getattr(sched, "skippable_days", None) or []],
         "gap_minutes": int(sched.gap_minutes),
         "span_minutes": int(sched.selection.span_minutes()),
         "lecturer_hits": int(sched.lecturer_hits),

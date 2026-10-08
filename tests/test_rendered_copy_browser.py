@@ -731,6 +731,9 @@ STORAGE_KEY = "braude_schedule_builder_v1"
 #: ולכן אין טעם לבקש יותר: מערכת מעבר לזה לא תקבל לשונית ואי אפשר להציג אותה.
 SOFT_PROBE_TOP_N = 20
 
+#: המרצה שמדורג/ת ראשון/ה ב-11069 שו"ת כדי שתהיה חפיפה בין 20 הראשונות.
+RANKED_FOR_OVERLAP = 'ד"ר סוקולובסקי איזבלה'
+
 #: ה-JS שמאתר את הדירוג של המערכת הראשונה עם חפיפה מכוונת. הוא רץ **בתוך
 #: הדף** ומקבל את גוף הבקשה שהדף עצמו שלח — לא שחזור שלו — כדי שהדירוג
 #: שיתקבל יהיה הדירוג שהדף באמת יצייר.
@@ -789,11 +792,32 @@ def _overlap_on(page):
     page.click("#step-courses-next")
     # ‏מאז 2026-10-09 חפיפה נכנסת לסדר רק כשהיא קונה משהו — יום, או מרצה
     # מדורג/ת (docs/DESIGN.md → Lecturers, "How a ranking chooses"). בלי יעד
-    # ימים היא אחרי כל 742 המערכות הנקיות. ביעד 3 היא בין 20 הראשונות.
+    # ימים היא אחרי כל 742 המערכות הנקיות.
+    #
+    # ‏ועוד מ-2026-10-09, כל יום שיש בו שיעור נספר ביעד. ביעד 3 החפיפה הייתה
+    # תשיעית רק משום שההרצאה שוויתרו עליה נשארה לבד ביום א׳, והיום הזה לא
+    # נספר; עכשיו היא במקום 88. על ששת הקורסים האלה חפיפה כבר אינה חוסכת יום
+    # (DEFERRED.md, "On the recommended SE year 3 courses an overlap never saves
+    # a day"), ולכן מה שמכניס אותה לסדר הוא מרצה מדורג/ת: עם ד"ר סוקולובסקי
+    # איזבלה בדירוג 1 ב-11069 שו"ת, החפיפה שישית (נמדד 2026-10-09).
     page.click('.day-btn[data-days="3"]')
     page.wait_for_timeout(500)
     page.click("#step-days-next")
     page.wait_for_timeout(500)
+    rank_head = page.locator('[data-fk="lect-course-11069"]')
+    if rank_head.get_attribute("aria-expanded") != "true":
+        rank_head.click()
+        page.wait_for_timeout(300)
+    page.evaluate(
+        """(name) => {
+          const box = document.querySelector('[data-fk="lect-course-11069"]').closest('.lect-course');
+          const row = [...box.querySelectorAll('tbody tr')]
+            .find(tr => tr.querySelector('.cell-lect > span').textContent === name);
+          row.click();
+        }""",
+        RANKED_FOR_OVERLAP,
+    )
+    page.wait_for_timeout(1500)
     head = page.locator('[data-fk="lect-course-61759"]')
     if head.get_attribute("aria-expanded") != "true":
         head.click()

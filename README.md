@@ -92,9 +92,10 @@ score = 10.0 × preferred_lecturers      (rank 0 = 1.0, rank i = 1/(i+1), unrank
 
 Lecturer preference is weighted by component: a lecture counts full, a tutorial
 or lab 0.4 — you can compromise on a tutor to shorten a day, not on who gives the
-lecture. A day holding no attendance-required component is not counted as a
-campus day at all. The day target is **soft**: if four days is impossible you get
-the best five-day timetable with a penalty, not a failure. If nothing is
+lecture. Every day with a lesson counts toward the day target, including a day
+whose lessons are all marked as not requiring attendance. The day target is
+**soft**: if four days is impossible you get the best five-day timetable with a
+penalty, not a failure. If nothing is
 feasible, the solver raises with a concrete explanation — which course, which
 group, which day and hour collide — plus suggested relaxations.
 

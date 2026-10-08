@@ -303,23 +303,6 @@ def late_finish_minutes(sel: "models.Selection") -> int:
     return sum(max(0, end - LATE_BASELINE_MIN) for end in day_end_times(sel).values())
 
 
-def attendance_free_days(sel: "models.Selection", prefs: "Preferences") -> set[int]:
-    """ימים שבהם **כל** המפגשים פטורים מחובת נוכחות.
-
-    יום כזה אינו באמת יום לימודים: אפשר פשוט לא להגיע. ספירתו כיום קמפוס
-    היא בדיוק מה שגרם למערכת לפתוח יום שלם עבור תרגול יחיד שממילא לא חובה.
-    """
-    by_day: dict[int, list] = {}
-    for group in sel.groups:
-        for meeting in group.meetings:
-            by_day.setdefault(meeting.day, []).append(group)
-    return {
-        day
-        for day, groups in by_day.items()
-        if groups and not any(attendance_required(prefs, g) for g in groups)
-    }
-
-
 def _weight(prefs: Preferences, key: str) -> float:
     """משקל בודד, עם נפילה לברירת המחדל אם המפתח חסר במילון של המשתמשת."""
     try:
@@ -1196,7 +1179,8 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
 
     ‏**מאז 2026-10-09 הסדר הוא לפי עדיפות, לא לפי סכום** (docs/DESIGN.md →
     Lecturers, "How a ranking chooses"; ‏_sort_key):
-        1. ‏``days_over_target`` — ימים מעל היעד (ימים בלי חובת נוכחות לא נספרים);
+        1. ‏``days_over_target`` — ימים מעל היעד. כל יום שיש בו שיעור נספר,
+           גם יום שכל השיעורים בו בלי חובת נוכחות (2026-10-09);
         2. ‏``lecturer_ranks`` — הדירוג שהושג בכל (קורס, סוג) מדורג;
         3. מספר החפיפות המכוונות;
         4. ‏``score`` — רק הרמה האחרונה, בסכום משוקלל:
@@ -1223,12 +1207,10 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
     ranks = _lecturer_ranks(sel, prefs)
 
     days_used = sel.days_used()
-    # יום שכולו רכיבים בלי חובת נוכחות אינו יום קמפוס — פשוט לא מגיעים.
-    # בלי ההבחנה הזאת המערכת "פותחת" יום שלם עבור תרגול יחיד שממילא אפשר
-    # לוותר עליו, ואז סופרת אותו כאילו הוא מחייב הגעה.
-    skippable = attendance_free_days(sel, prefs)
-    effective_days = days_used - skippable
-    days_over = max(0, len(effective_days) - prefs.target_days)
+    # כל יום שיש בו שיעור נספר ביעד, גם כשאף שיעור בו אינו מחייב נוכחות
+    # (docs/DESIGN.md → "How a ranking chooses", ‏2026-10-09). חובת הנוכחות
+    # קובעת רק אילו שיעורים מותר לחפוף — לא אילו ימים נחשבים.
+    days_over = max(0, len(days_used) - prefs.target_days)
 
     gap_min = sel.gap_minutes()  # מ-models — לא ממציאים מחדש
     # מה שנספר לחובה: אותה המתנה, בלי הפסקת הצהריים הקבועה. המספר המוצג
@@ -1269,8 +1251,6 @@ def score(sel: Selection, prefs: Preferences) -> ScoredSchedule:
     # כפי שהוא. הקוראים שאינם בטוחים ישתמשו ב-soft_conflicts_of() /
     # days_over_target_of() / lecturer_ranks_of(), שאף פעם לא נופלים.
     sched.late_finish_minutes = late_min  # type: ignore[attr-defined]
-    sched.skippable_days = sorted(skippable)  # type: ignore[attr-defined]
-    sched.effective_days = len(effective_days)  # type: ignore[attr-defined]
     sched.soft_conflicts = soft_count  # type: ignore[attr-defined]
     sched.soft_conflict_minutes = soft_minutes  # type: ignore[attr-defined]
     sched.days_over_target = days_over  # type: ignore[attr-defined]
