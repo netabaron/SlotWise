@@ -34,6 +34,9 @@ from src.web.api import create_app  # noqa: E402
 
 NARROW = (390, 844)
 WIDE = (1440, 900)
+#: ‏התנהגות של הרשת בפריסה הצרה. מתחת ל-1000px המערכת שבדף היא רשימת ימים
+#: ‏(DESIGN.md, "Results page", 5; ‏2026-10-10), ולכן הרשת הצרה נבדקת כאן.
+NARROW_GRID = (1024, 844)
 
 #: ‏מונה קריאות ל-Element.animate, לפני שהעמוד נטען. הנחיתה מזוהה לפי
 #: ‏הצורה שלה: ‎500ms‎ של ‏clip-path שמתחיל סגור.
@@ -125,7 +128,8 @@ def _with_schedule(pg):
     _identity(pg)
     _next(pg, "year")
     pg.click("#btn-restore-recommended")
-    pg.wait_for_selector("#schedule-grid .ev", timeout=20000)
+    # ‏התוצאה, ולא הרשת: מתחת ל-1000px הרשת אינה על המסך (2026-10-10).
+    pg.wait_for_selector("#alt-cards .alt-card", timeout=20000)
     pg.wait_for_timeout(1000)
 
 
@@ -505,7 +509,7 @@ DAYS_ROW = """() => {
 
 
 def test_the_weekday_row_stays_pinned_below_the_thin_header_on_narrow(browser, server):
-    ctx, pg = _page(browser, server)
+    ctx, pg = _page(browser, server, NARROW_GRID)
     try:
         _all_steps_done(pg)
         start = pg.evaluate(DAYS_ROW)
@@ -527,7 +531,7 @@ def test_the_weekday_row_stays_pinned_below_the_thin_header_on_narrow(browser, s
 # 6. רגע הנחיתה
 # ==========================================================================
 def test_blocks_land_once_per_build_and_not_on_an_alternative_switch(browser, server):
-    ctx, pg = _page(browser, server, reduced=False, hook=True)
+    ctx, pg = _page(browser, server, NARROW_GRID, reduced=False, hook=True)
     try:
         _with_schedule(pg)
         pg.wait_for_timeout(2500)
@@ -599,7 +603,7 @@ def test_the_landing_never_moves_a_block(browser, server):
 
 
 def test_reduced_motion_makes_the_landing_instant(browser, server):
-    ctx, pg = _page(browser, server, reduced=True, hook=True)
+    ctx, pg = _page(browser, server, NARROW_GRID, reduced=True, hook=True)
     try:
         _with_schedule(pg)
         pg.wait_for_timeout(300)

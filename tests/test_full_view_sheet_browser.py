@@ -112,9 +112,16 @@ def _open(browser, server, size):
     page.wait_for_timeout(2500)
     page.click("#step-year-next")
     page.click("#btn-restore-recommended")
-    page.wait_for_selector("#schedule-grid .ev", timeout=20000)
+    # ‏התוצאה, ולא הרשת: מתחת ל-1000px המערכת שבדף היא רשימת ימים
+    # ‏(DESIGN.md, "Results page", 5; ‏2026-10-10). כשהרשת על המסך — גובה השעה.
     page.wait_for_function(
-        "() => !!document.getElementById('schedule-grid').style.getPropertyValue('--slot-h')",
+        "() => [...document.querySelectorAll('#schedule-grid .ev, #schedule-days .dl-lesson')]"
+        ".some(e => e.getClientRects().length > 0)",
+        timeout=20000,
+    )
+    page.wait_for_function(
+        "() => !!document.getElementById('schedule-grid').style.getPropertyValue('--slot-h')"
+        " || getComputedStyle(document.getElementById('grid-scroll')).display === 'none'",
         timeout=15000,
     )
     page.wait_for_timeout(900)
@@ -170,6 +177,13 @@ SHEET_STATE = """() => {
           fitShown: getComputedStyle(document.getElementById('sheet-fit')).display !== 'none',
           printFont: font('sheet-grid'), fitFont: font('sheet-fit-grid'),
           sheet: blocks('#sheet-fit-grid .ev'), a4: blocks('#sheet-grid .ev'), page: blocks('#schedule-grid .ev'),
+          listShown: getComputedStyle(document.getElementById('schedule-days')).display !== 'none',
+          list: [...document.querySelectorAll('#schedule-days .dl-lesson')].map(e => ({
+            key: e.dataset.lesson + '@' + e.dataset.slot,
+            name: e.querySelector('.dl-name').textContent.trim(),
+            kind: (e.querySelector('.dl-kind') || {textContent: ''}).textContent.trim(),
+            room: (e.querySelector('.ev-room') || {textContent: ''}).textContent.trim(),
+            label: e.getAttribute('aria-label')})),
           active: document.activeElement ? document.activeElement.id : null,
           inert: [...document.body.children].filter(n => n !== L && n.tagName !== 'SCRIPT')
                    .every(n => n.inert),
@@ -179,6 +193,24 @@ SHEET_STATE = """() => {
 
 def _content(blocks):
     return sorted((b["key"], tuple(ln["text"] for ln in b["lines"])) for b in blocks)
+
+
+def _in_page(st):
+    """המערכת שבדף: רשימת הימים מתחת ל-1000px, הרשת מעליו (2026-10-10)."""
+    return st["list"] if st["listShown"] else st["page"]
+
+
+def _same_as_list(sheet, items):
+    """אותם שיעורים, באותם מקומות ובאותו תוכן כמו רשימת הימים שבדף: שם,
+    סוג וחדר בשורות, והמרצה — שאינו שורה ברשימה — בשם הנגיש."""
+    assert sorted(b["key"] for b in sheet) == sorted(i["key"] for i in items)
+    by_key = {i["key"]: i for i in items}
+    for b in sheet:
+        item = by_key[b["key"]]
+        name, when, who = (ln["text"] for ln in b["lines"])
+        assert item["name"] == name, (b["key"], item, name)
+        assert when.startswith(item["kind"]), (b["key"], item, when)
+        assert item["room"] in who and who.split(" · ")[0] in item["label"], (b["key"], item, who)
 
 
 def _assert_full_blocks(blocks, where):
@@ -245,7 +277,7 @@ def test_layer_fits_the_whole_week_in_the_window_with_every_block_in_full(browse
         # ‏השבוע כולו, בלי גלילה.
         assert not st["vScroll"] and not st["hScroll"], (size, st["vScroll"], st["hScroll"])
         # כל בלוק של החלופה שנבחרה, ואותו מקום — לא פחות, לא יותר.
-        assert sorted(b["key"] for b in st["sheet"]) == sorted(b["key"] for b in st["page"])
+        assert sorted(b["key"] for b in st["sheet"]) == sorted(b["key"] for b in _in_page(st))
         _assert_full_blocks(st["sheet"], f"השכבה ב-{size}")
         fonts = {b["font"] for b in st["sheet"]}
         assert fonts == {st["fitFont"]}, (fonts, st["fitFont"])
@@ -373,7 +405,7 @@ def test_layer_follows_the_selected_alternative(browser, server):
         # ‏אותם שיעורים, באותם מקומות ובאותו תוכן כמו הרשת שבדף. החלופה הבאה
         # יכולה להיבדל רק בקבוצה (מרצה או חדר) באותה שעה, ולכן ההשוואה
         # לקודמת היא על התוכן, לא רק על המקום.
-        assert _content(second["sheet"]) == _content(second["page"])
+        _same_as_list(second["sheet"], second["list"])
         assert _content(second["sheet"]) != _content(first["sheet"])
         _assert_full_blocks(second["sheet"], "אחרי הבאה")
         assert pg.errors == []  # type: ignore[attr-defined]

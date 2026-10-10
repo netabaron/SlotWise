@@ -895,7 +895,9 @@ def test_narrow_window_keeps_every_line(fresh):
     כאן אחרי הציור, ולכן זו גם הבדיקה שהמדידה חוזרת בשינוי רוחב.
     """
     _with_schedule(fresh)
-    fresh.set_viewport_size({"width": 760, "height": 900})
+    # ‏1000 ולא 760: מתחת ל-1000px המערכת שבדף היא רשימת ימים (DESIGN.md,
+    # ‏"Results page", 5; ‏2026-10-10), ו-1000 הוא החלון הצר ביותר עם רשת.
+    fresh.set_viewport_size({"width": 1000, "height": 900})
     fresh.wait_for_timeout(1200)  # ‏refit רץ אחרי השהיה קצרה
     _assert_lines_intact(fresh.evaluate(LINES, "#schedule-grid"), "חלון צר")
 

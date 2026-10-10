@@ -689,6 +689,13 @@
         <div class="grid" id="schedule-grid"></div>
       </div>
 
+      <!-- ‏מתחת ל-1000px המערכת שבדף היא רשימה לפי ימים ולא רשת (DESIGN.md,
+           "Results page", 5): כותרת לכל יום, ושיעוריו ברשימה — כל שיעור כפתור
+           שפותח את פרטיו כמו בלוק ברשת. מ-1000px ומעלה, ועל הנייר תמיד, הרשת
+           במקומה. נבנית ב-renderDayList() מאותם מפגשים. -->
+      <div class="day-list" id="schedule-days" role="group" tabindex="-1"
+           aria-label="{{ S.app.dayList.label }}" hidden></div>
+
       <!-- ‏המקרא מתחת לרשת (DESIGN.md, "Layout": timetable, legend, details),
            ומתחתיו קורס שאין לו מועד קבוע — אין לו בלוק ברשת, ולכן זה המקום
            היחיד שבו הוא מופיע. -->

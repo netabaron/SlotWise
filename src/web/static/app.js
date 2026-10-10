@@ -3144,6 +3144,7 @@
     ui.unscheduled = byId("schedule-unscheduled");
     ui.gridScroll = byId("grid-scroll");
     ui.grid = byId("schedule-grid");
+    ui.dayList = byId("schedule-days");
     ui.empty = byId("schedule-empty");
     ui.placeholder = byId("schedule-placeholder");
     ui.placeholderDays = byId("schedule-placeholder-days");
@@ -3890,7 +3891,8 @@
     if (!fromBar) return;
     // ‏הסרגל ייעלם כשהתוצאה תגיע למסך, ולכן הפוקוס עובר אליה ולא נשאר על
     // ‏כפתור שאינו מוצג עוד.
-    var focus = ui.gridScroll && !ui.gridScroll.hidden ? ui.gridScroll : ui.btnBuild;
+    var results = isListMode() ? ui.dayList : ui.gridScroll;
+    var focus = results && !results.hidden ? results : ui.btnBuild;
     if (focus && focus.focus) {
       try {
         focus.focus({ preventScroll: true });
@@ -7185,7 +7187,7 @@
    */
   function markSelectedBlock() {
     if (!ui.grid) return;
-    var blocks = ui.grid.querySelectorAll(".ev");
+    var blocks = lessonButtons();
     for (var i = 0; i < blocks.length; i++) {
       var on = blocks[i] === runtime.detailEl;
       setClass(blocks[i], "is-selected", on);
@@ -7194,11 +7196,18 @@
     }
   }
 
+  /** בלוקי הרשת וכפתורי רשימת הימים — שתי התצוגות של אותם שיעורים. */
+  function lessonButtons() {
+    var out = [].slice.call(ui.grid ? ui.grid.querySelectorAll(".ev") : []);
+    return out.concat([].slice.call(ui.dayList ? ui.dayList.querySelectorAll(".dl-lesson") : []));
+  }
+
   /** אחרי כל ציור: השיעור שנבחר נפתח שוב בחלופה הנוכחית, או נסגר. */
   function syncMeetingDetail() {
     var block = runtime.detailEl;
     if (!block) return;
-    if (block.isConnected && ui.grid && ui.grid.contains(block) && block._open) block._open();
+    var shown = (ui.grid && ui.grid.contains(block)) || (ui.dayList && ui.dayList.contains(block));
+    if (block.isConnected && shown && block._open) block._open();
     else closeMeetingDetail();
   }
 
@@ -7375,7 +7384,7 @@
     }
     var focus = runtime.legendHover || runtime.legendPinned;
     if (ui.grid) {
-      var blocks = ui.grid.querySelectorAll(".ev");
+      var blocks = lessonButtons();
       for (var i = 0; i < blocks.length; i++) {
         setClass(blocks[i], "is-muted", !!focus && blocks[i].dataset.code !== focus);
       }
@@ -7667,8 +7676,11 @@
     // הם זזים מהמקום הקודם אל החדש (DESIGN.md, "Results page", 6). רק החלפת
     // חלופה מאותה תשובה של השרת זזה; חישוב חדש מצייר במקום.
     var shownIdx = clamp(state.activeSchedule, 0, Math.max(0, list.length - 1));
+    // ‏מתחת ל-1000px הרשת אינה על המסך, ורשימת הימים מתחלפת בלי תנועה:
+    // ‏התנועה והנחיתה שייכות לרשת בלבד (DESIGN.md, "Results page", 5).
+    var listMode = isListMode();
     var switching =
-      !!sch && runtime.gridShown.solve === s && runtime.gridShown.idx !== shownIdx;
+      !listMode && !!sch && runtime.gridShown.solve === s && runtime.gridShown.idx !== shownIdx;
     // ‏נחיתה שעוד רצה מסתיימת מיד: בלוק חשוף למחצה אינו נקודת מוצא לתנועה.
     if (switching) cancelLanding(ui.grid);
     var before = switching ? blockRects(ui.grid) : null;
@@ -7684,10 +7696,11 @@
       runtime.landPending = true;
     } else if (runtime.landPending && runtime.gridShown.solve !== s) {
       runtime.landPending = false;
-      playLanding(ui.grid);
+      if (!listMode) playLanding(ui.grid);
     }
     runtime.gridShown = { solve: s, idx: sch ? shownIdx : -1 };
     setHidden(ui.gridScroll, !sch);
+    renderDayList(sch, soft, shownIdx);
     renderPlaceholderWeek();
     applyLegendFocus();
     syncMeetingDetail();
@@ -8731,22 +8744,7 @@
         to: fmtTime(to),
         room: room || T("app.detail.noRoom"),
       });
-      if (lecturer) label += " · " + Tf("app.grid.labelLecturer", { lecturer: lecturer });
-      if (isFullGroup(m)) label += " · " + T("app.grid.groupFull");
-      if (clash) {
-        var others = overlapPartners(m, meetings, marks)
-          .slice(1)
-          .map(function (o) {
-            return txt(o.name) || nameOf(o.code);
-          });
-        // הצד השני בשם ולא בקוד: מי שמאזין לדף שומע את אותו מידע שמי
-        // שרואה אותו מקבל משני הבלוקים זה לצד זה.
-        label +=
-          " · " +
-          Tf("app.grid.clashSummary", {
-            list: others.length ? others.join(", ") : clash,
-          });
-      }
+      label += lessonLabelTail(m, meetings, marks);
 
       // ‏שלוש שורות, ואף אחת אינה יורדת (DESIGN.md, "Results page", 5):
       // ‏(1) שם הקורס, (2) סוג · שעה, (3) מרצה · חדר. גובה השעה נמדד כך
@@ -8833,6 +8831,218 @@
         focused.focus({ preventScroll: true });
       } catch (e) {
         focused.focus();
+      }
+    }
+  }
+
+  /**
+   * סוף השם הנגיש של שיעור — מרצה, קבוצה מלאה וחפיפה — זהה ברשת וברשימת
+   * הימים, כדי שמי שמאזין לדף ישמע את אותו מידע בשתי התצוגות.
+   */
+  function lessonLabelTail(m, meetings, marks) {
+    var tail = "";
+    var lecturer = txt(m.lecturer);
+    var clash = txt(marks[meetingKey(m)]);
+    if (lecturer) tail += " · " + Tf("app.grid.labelLecturer", { lecturer: lecturer });
+    if (isFullGroup(m)) tail += " · " + T("app.grid.groupFull");
+    if (clash) {
+      var others = overlapPartners(m, meetings, marks)
+        .slice(1)
+        .map(function (o) {
+          return txt(o.name) || nameOf(o.code);
+        });
+      // הצד השני בשם ולא בקוד: מי שמאזין לדף שומע את אותו מידע שמי
+      // שרואה אותו מקבל משני הבלוקים זה לצד זה.
+      tail +=
+        " · " +
+        Tf("app.grid.clashSummary", {
+          list: others.length ? others.join(", ") : clash,
+        });
+    }
+    return tail;
+  }
+
+  /* --- רשימת הימים: המערכת מתחת ל-1000px (DESIGN.md, "Results page", 5) --- */
+
+  //: ‏מתחת לזה המערכת שבדף היא רשימה לפי ימים, ומ-1000px ומעלה — הרשת.
+  //: ‏מסך בלבד: הנייר הוא תמיד הרשת. אותו קו כמו ב-style.css.
+  var LIST_QUERY = "screen and (max-width: 999.98px)";
+
+  function isListMode() {
+    return !!(window.matchMedia && window.matchMedia(LIST_QUERY).matches);
+  }
+
+  /**
+   * ‏"חלון 2 שעות", "חלון שעה וחצי", "חלון 40 דקות" — אורך החלון במילים.
+   */
+  function gapText(minutes) {
+    var total = Math.max(0, Math.round(num(minutes, 0)));
+    var h = Math.floor(total / 60);
+    var m = total % 60;
+    var key;
+    if (!h) key = m === 30 ? "half" : "minutes";
+    else if (h === 1) key = !m ? "hour" : m === 30 ? "hourHalf" : "hourMinutes";
+    else key = !m ? "hours" : m === 30 ? "hoursHalf" : "hoursMinutes";
+    return Tf("app.dayList.gap." + key, { h: h, m: m });
+  }
+
+  /**
+   * המפגשים של יום אחד לפי שעת ההתחלה, וכל חלון לפני המפגש שאחריו.
+   *
+   * ‏חלון הוא בדיוק מה ש-``Selection.gap_intervals()`` (src/models.py) סופר:
+   * התחלה אחרי הסוף המאוחר ביותר עד כה. כך שורות החלון של מערכת מסתכמות
+   * ב-``gap_minutes`` שהשרת מחזיר עליה, ולא בהגדרה שנייה של "חלון".
+   */
+  function dayLessons(meetings, day) {
+    var list = meetings
+      .filter(function (m) {
+        return m.day === day;
+      })
+      .sort(function (a, b) {
+        return a.start - b.start || a.end - b.end;
+      });
+    var cursor = null;
+    return list.map(function (m) {
+      var gap = cursor !== null && m.start > cursor ? m.start - cursor : 0;
+      cursor = cursor === null ? m.end : Math.max(cursor, m.end);
+      return { m: m, gap: gap };
+    });
+  }
+
+  /**
+   * רשימת הימים: כותרת לכל יום ומתחתיה שיעוריו, כל שיעור כפתור שפותח את
+   * פרטיו בדיוק כמו בלוק ברשת. נבנית מאותם מפגשים ומאותו סימון חפיפה
+   * שהרשת נבנית מהם. מתחלפת בלי תנועה — התנועה והנחיתה שייכות לרשת.
+   */
+  function buildDayList(root, sch, soft) {
+    var meetings = scheduleMeetings(sch);
+    var marks = (soft && soft.marks) || {};
+    var blank = Object.create(null);
+    emptyDays(meetings).forEach(function (d) {
+      blank[d] = true;
+    });
+    var ordinals = Object.create(null);
+    var lessonOf = new Map();
+    meetings.forEach(function (m) {
+      lessonOf.set(m, lessonKey(m, ordinals));
+    });
+    DAYS.forEach(function (d) {
+      // יום ו׳ ריק אינו מופיע, כמו ברשת.
+      if (blank[d] && d === FRIDAY) return;
+      if (blank[d]) {
+        root.appendChild(
+          el("section", { class: "dl-day is-empty", data: { day: d } }, [
+            el("h4", {
+              class: "dl-day-title",
+              text: Tf("app.dayList.emptyDay", { day: dayName(d) }),
+            }),
+          ])
+        );
+        return;
+      }
+      var ul = el("ul", { class: "dl-lessons" });
+      dayLessons(meetings, d).forEach(function (row) {
+        var m = row.m;
+        var name = txt(m.name) || nameOf(m.code);
+        var room = roomOf(m);
+        var kind = txt(m.kind);
+        var clash = txt(marks[meetingKey(m)]);
+        var hours = fmtTime(m.start) + "–" + fmtTime(m.end);
+        var label =
+          Tf(kind ? "app.dayList.lessonLabel" : "app.dayList.lessonLabelNoKind", {
+            day: dayName(d),
+            from: fmtTime(m.start),
+            to: fmtTime(m.end),
+            name: name,
+            kind: kind,
+            room: room || T("app.detail.noRoom"),
+          }) + lessonLabelTail(m, meetings, marks);
+        var kindEl = kind ? el("span", { class: "dl-kind", text: kind }) : null;
+        var roomEl = room ? roomNode(m) : null;
+        var fullEl = isFullGroup(m)
+          ? el("span", { class: "dl-full", text: T("app.grid.groupFull") })
+          : null;
+        var sep = function (a, b) {
+          return a && b ? document.createTextNode(" · ") : null;
+        };
+        var button = el(
+          "button",
+          {
+            class: "dl-lesson c" + colorOf(m.code) + (clash ? " is-soft" : ""),
+            attrs: { type: "button", "aria-label": label, title: label },
+            data: {
+              lesson: lessonOf.get(m),
+              slot: m.day + "|" + m.start + "|" + m.end,
+              code: m.code,
+              fk: "dl-" + lessonOf.get(m),
+            },
+          },
+          [
+            el("span", { class: "dl-line dl-hours" }, [
+              el("span", { class: "cell-time", text: hours }),
+              clash ? el("span", { class: "ev-badge", text: T("app.grid.clashBadge") }) : null,
+            ]),
+            el("b", { class: "dl-line dl-name", text: name }),
+            kindEl || roomEl || fullEl
+              ? el("span", { class: "dl-line dl-where" }, [
+                  kindEl,
+                  sep(kindEl, roomEl),
+                  roomEl,
+                  sep(kindEl || roomEl, fullEl),
+                  fullEl,
+                ])
+              : null,
+          ]
+        );
+        button._open = function () {
+          openMeetingDetail(overlapPartners(m, meetings, marks), !!clash, button);
+        };
+        button.addEventListener("click", function () {
+          button._open();
+        });
+        ul.appendChild(
+          el("li", { class: "dl-item" }, [
+            row.gap ? el("p", { class: "dl-gap", text: gapText(row.gap) }) : null,
+            button,
+          ])
+        );
+      });
+      root.appendChild(
+        el("section", { class: "dl-day", data: { day: d } }, [
+          el("h4", { class: "dl-day-title", text: dayName(d) }),
+          ul,
+        ])
+      );
+    });
+  }
+
+  /**
+   * ‏מצייר את הרשימה רק כשהמערכת שמוצגת התחלפה — לא בכל render(). בנייה
+   * מחדש בכל ציור הייתה מפילה את הפוקוס מהכפתור ומנתקת את השיעור שפרטיו
+   * פתוחים. כשהיא מתחלפת, השיעור שהיה פתוח (לפי מפתח השיעור, כמו בלוק
+   * שנשמר ברשת) נשאר פתוח בחלופה החדשה, והפוקוס עובר אליו.
+   */
+  function renderDayList(sch, soft, shownIdx) {
+    var root = ui.dayList;
+    if (!root) return;
+    setHidden(root, !sch);
+    var s = runtime.solve;
+    var shown = runtime.listShown || {};
+    if (sch && shown.solve === s && shown.idx === shownIdx && root.firstChild) return;
+    var open = runtime.detailEl && root.contains(runtime.detailEl) ? runtime.detailEl : null;
+    var hadFocus = !!open && document.activeElement === open;
+    clear(root);
+    runtime.listShown = { solve: s, idx: sch ? shownIdx : -1 };
+    if (!sch) return;
+    buildDayList(root, sch, soft);
+    if (!open) return;
+    var again = root.querySelector('.dl-lesson[data-lesson="' + open.dataset.lesson + '"]');
+    runtime.detailEl = again || open;
+    if (again && hadFocus) {
+      try {
+        again.focus({ preventScroll: true });
+      } catch (e) {
+        again.focus();
       }
     }
   }

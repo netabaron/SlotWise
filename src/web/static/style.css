@@ -3520,3 +3520,93 @@ html.has-sheet { overflow: hidden; }
 .sheet-head { margin: 0 0 6px; font-size: 12px; font-weight: 700; color: var(--ink); }
 
 .sheet-grid-box { border: 1px solid var(--line-strong); }
+
+/* ==========================================================================
+   25. רשימת הימים — המערכת שבדף מתחת ל-1000px (DESIGN.md, "Results page", 5)
+   ========================================================================== */
+.day-list { display: flex; flex-direction: column; gap: 14px; }
+.day-list:focus { outline: none; }
+
+.dl-day-title { margin: 0 0 6px; font-size: 14px; font-weight: 700; color: var(--ink); }
+
+/* יום בלי שיעורים: שורה אחת, "שני · אין שיעורים". */
+.dl-day.is-empty .dl-day-title { margin: 0; font-weight: 500; color: var(--muted); }
+
+.dl-lessons { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dl-item { display: flex; flex-direction: column; gap: 6px; }
+
+/* ‏החלון בין שני שיעורים: שורה דקה ושקטה, ואחריה קו שיער. */
+.dl-gap {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-inline-start: 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.dl-gap::after { content: ""; flex: 1; border-block-start: 1px solid var(--line); }
+
+/* ‏השיעור: פס בצבע הקורס בצד ההתחלה ומילוי הקורס כרקע — אותם ‎--course-N‎
+   של השבבים ושל בלוקי הרשת (‎.cN‎ קובע את ‎--ev-*‎). ‏<button>, ולכן הגופן
+   והיישור מאופסים כמו ב-‎.ev‎. */
+.dl-lesson {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  inline-size: 100%;
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: start;
+  cursor: pointer;
+  border: 1px solid var(--ev-bd, var(--line-strong));
+  border-inline-start-width: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--ev-bg, var(--chip));
+  color: var(--ev-fg, var(--ink));
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.dl-lesson:hover { filter: brightness(1.06); }
+
+.dl-line { display: block; overflow-wrap: anywhere; }
+.dl-hours { font-weight: 600; }
+.dl-name { font-size: 14px; font-weight: 700; }
+.dl-kind { font-weight: 600; }
+.dl-full { font-weight: 700; }
+.dl-lesson .ev-room .code--id { white-space: nowrap; overflow-wrap: normal; }
+
+/* ‏אותו סימון חפיפה כמו בבלוק (‎.ev.is-soft‎ ותג "חפיפה"), אותו קו בחירה
+   ואותה טבעת פוקוס — ובאותו סדר, כדי שהבחירה והפוקוס יגברו על הקו המקווקו. */
+.dl-lesson.is-soft { outline: 2px dashed var(--warn-line); outline-offset: -3px; }
+.dl-lesson.is-selected { outline: 2px solid var(--ev-bd); outline-offset: 1px; }
+.dl-lesson:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* ‏הדגשה מהמקרא (פריט 7) — בצבע, לא ב-opacity, כמו ‎.ev.is-muted‎. */
+.dl-lesson.is-muted {
+  background: var(--chip);
+  border-color: var(--bd);
+  color: var(--mut);
+  filter: none;
+}
+
+.dl-lesson.is-muted .ev-badge { background: var(--chip); border-color: var(--bd); color: var(--mut); }
+
+/* ‏מתחת ל-1000px הרשת אינה על המסך, ומ-1000px ומעלה הרשימה אינה —
+   אחרי ‎.day-list‎ שלמעלה, שאחרת גובר עליהם בסדר הקובץ. ‎@media
+   screen‎ בשני הכיוונים: הנייר הוא תמיד הרשת, מכל רוחב מסך. אותו קו כמו
+   ‏LIST_QUERY ב-app.js. */
+@media screen and (max-width: 999.98px) {
+  .grid-scroll { display: none; }
+}
+
+@media screen and (min-width: 1000px) {
+  .day-list { display: none; }
+}
+
+@media print {
+  .day-list { display: none !important; }
+}

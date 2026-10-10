@@ -113,7 +113,13 @@ def _open_semester_5(browser, server, width=1440, height=1000):
     page.wait_for_timeout(2500)
     page.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
     page.click("#btn-restore-recommended")
-    page.wait_for_selector("#schedule-grid .ev", timeout=20000)
+    # ‏התוצאה, ולא הרשת: מתחת ל-1000px המערכת שבדף היא רשימת ימים
+    # ‏(DESIGN.md, "Results page", 5; ‏2026-10-10). ההדפסה היא תמיד הרשת.
+    page.wait_for_function(
+        "() => [...document.querySelectorAll('#schedule-grid .ev, #schedule-days .dl-lesson')]"
+        ".some(e => e.getClientRects().length > 0)",
+        timeout=20000,
+    )
     _settle(page)
     return ctx, page
 
@@ -121,7 +127,8 @@ def _open_semester_5(browser, server, width=1440, height=1000):
 def _settle(page):
     """הגובה נקבע בפריים שאחרי הציור; מחכים שיהיה, ועוד רגע לגופנים."""
     page.wait_for_function(
-        "() => !!document.getElementById('schedule-grid').style.getPropertyValue('--slot-h')",
+        "() => !!document.getElementById('schedule-grid').style.getPropertyValue('--slot-h')"
+        " || getComputedStyle(document.getElementById('grid-scroll')).display === 'none'",
         timeout=15000,
     )
     page.wait_for_timeout(600)
@@ -265,10 +272,11 @@ def test_a_narrow_window_refits_without_dropping(browser, server):
     ctx, pg = _open_semester_5(browser, server, width=1440)
     try:
         before = pg.evaluate("parseFloat(document.getElementById('schedule-grid').style.getPropertyValue('--slot-h'))")
-        pg.set_viewport_size({"width": 900, "height": 1000})
+        # ‏1000 ולא 900: מתחת ל-1000px הרשת אינה על המסך (2026-10-10).
+        pg.set_viewport_size({"width": 1000, "height": 1000})
         pg.wait_for_timeout(800)
         after = pg.evaluate("parseFloat(document.getElementById('schedule-grid').style.getPropertyValue('--slot-h'))")
-        _assert_three_full_lines(pg.evaluate(BLOCKS), "900px אחרי שינוי רוחב")
+        _assert_three_full_lines(pg.evaluate(BLOCKS), "1000px אחרי שינוי רוחב")
         assert after >= before, (before, after)
     finally:
         ctx.close()
@@ -276,7 +284,9 @@ def test_a_narrow_window_refits_without_dropping(browser, server):
 
 def test_room_codes_do_not_break_mid_code_at_phone_width(browser, server):
     """‏"L 706" בשורה אחת גם בעמודה צרה; רק מה שאחרי הקוד רשאי להישבר."""
-    ctx, pg = _open_semester_5(browser, server, width=390, height=900)
+    # ‏1000 ולא 390: מתחת ל-1000px המערכת שבדף היא רשימת ימים (2026-10-10),
+    # ‏ו-1000 הוא הרוחב הצר ביותר שבו הרשת על המסך.
+    ctx, pg = _open_semester_5(browser, server, width=1000, height=900)
     try:
         split = pg.evaluate(
             """() => [...document.querySelectorAll('#schedule-grid .ev .code--id')]
@@ -285,7 +295,7 @@ def test_room_codes_do_not_break_mid_code_at_phone_width(browser, server):
         count = pg.evaluate("document.querySelectorAll('#schedule-grid .ev .code--id').length")
         assert count > 0
         assert split == [], f"קודי חדר שנשברו באמצע: {split}"
-        _assert_three_full_lines(pg.evaluate(BLOCKS), "390px")
+        _assert_three_full_lines(pg.evaluate(BLOCKS), "1000px")
     finally:
         ctx.close()
 

@@ -739,6 +739,22 @@
       "cardLabel": "מערכת {n}: {facts}. {label}",
       "updating": "מעדכן…"
     },
+    "dayList": {
+      "label": "המערכת לפי ימים",
+      "emptyDay": "{day} · אין שיעורים",
+      "lessonLabel": "{day}, {from}–{to}, {name}, {kind}, חדר {room}",
+      "lessonLabelNoKind": "{day}, {from}–{to}, {name}, חדר {room}",
+      "gap": {
+        "minutes": "חלון {m} דקות",
+        "half": "חלון חצי שעה",
+        "hour": "חלון שעה",
+        "hourHalf": "חלון שעה וחצי",
+        "hourMinutes": "חלון שעה ו-{m} דקות",
+        "hours": "חלון {h} שעות",
+        "hoursHalf": "חלון {h} שעות וחצי",
+        "hoursMinutes": "חלון {h} שעות ו-{m} דקות"
+      }
+    },
     "sheet": {
       "title": "מערכת {n}",
       "zoom": "הגדלה",
