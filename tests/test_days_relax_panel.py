@@ -46,6 +46,22 @@ def server():
         thread.join(timeout=5)
 
 
+STORAGE_KEY = "braude_schedule_builder_v1"  # אין לשנותו — ראו CLAUDE.md
+
+#: ‏כל מתגי חובת הנוכחות דלוקים, כמו שהיו לפני 2026-10-10. מאז המתג כבוי בכל
+#: ‏רכיב שהידיעון אינו מחייב בו נוכחות (docs/DESIGN.md, "The switch starts off"),
+#: ‏וחפיפות מגיעות ל-2 ימים בוויתור על 61759 — כלומר הפאנל של יעד 2 כבר אינו
+#: ‏"אין ויתור". עם המתגים דלוקים שני הפאנלים בודקים את מה שבדקו קודם.
+ALL_ON = {
+    "11069": {'שו"ת': True},
+    "61756": {"הרצאה": True, "תרגול": True, "פרויקט": True},
+    "61757": {"הרצאה": True, "מעבדה": True},
+    "62027": {"הרצאה": True, "תרגול": True},
+    "61759": {"הרצאה": True, "תרגול": True},
+    "61832": {"הרצאה": True, "תרגול": True},
+}
+
+
 PANEL = """() => {
   const r = document.getElementById('days-relax');
   const vis = e => !e.hidden && getComputedStyle(e).display !== 'none';
@@ -67,6 +83,13 @@ def panels(server):
         try:
             pg = b.new_page()
             pg.goto(server)
+            pg.wait_for_timeout(3500)
+            pg.evaluate(
+                """(a) => { const s = JSON.parse(localStorage.getItem(a.key) || '{}');
+                            s.attendance = a.attendance; localStorage.setItem(a.key, JSON.stringify(s)); }""",
+                {"key": STORAGE_KEY, "attendance": ALL_ON},
+            )
+            pg.reload()
             pg.wait_for_timeout(3500)
             pg.select_option("#select-program", "הנדסת תוכנה")
             pg.select_option("#select-year", "3")
