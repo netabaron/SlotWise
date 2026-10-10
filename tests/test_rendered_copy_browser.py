@@ -761,7 +761,11 @@ RAISE_TOP_N = """(args) => {
 
 
 def _overlap_on(page):
-    """מכבה חובת נוכחות ברכיב אחד, ועובר ללשונית שבה יש חפיפה מכוונת.
+    """מדרג מרצה, ועובר ללשונית שבה יש חפיפה מכוונת.
+
+    ‏מאז 2026-10-10 המתג של חובת הנוכחות כבוי מההתחלה בכל רכיב שהידיעון אינו
+    מחייב בו נוכחות (docs/DESIGN.md, "The switch starts off"), ובהם הרצאת
+    61759. הכיבוי הידני שעמד כאן לא היה עושה דבר, ולכן הוסר.
 
     בלי זה בדיקות החפיפה ריקות מתוכן: המערכת שנבנית בברירת המחדל אינה
     מכילה חפיפה כלל, וכל תנאי ``if softCount`` היה עובר בלי לבדוק דבר.
@@ -808,30 +812,24 @@ def _overlap_on(page):
     if rank_head.get_attribute("aria-expanded") != "true":
         rank_head.click()
         page.wait_for_timeout(300)
-    page.evaluate(
-        """(name) => {
-          const box = document.querySelector('[data-fk="lect-course-11069"]').closest('.lect-course');
-          const row = [...box.querySelectorAll('tbody tr')]
-            .find(tr => tr.querySelector('.cell-lect > span').textContent === name);
-          row.click();
-        }""",
-        RANKED_FOR_OVERLAP,
-    )
-    page.wait_for_timeout(1500)
-    head = page.locator('[data-fk="lect-course-61759"]')
-    if head.get_attribute("aria-expanded") != "true":
-        head.click()
-        page.wait_for_timeout(300)
 
     page.on("request", _grab)
     try:
-        page.uncheck('input[data-fk="att-61759-הרצאה"]', force=True)
+        page.evaluate(
+            """(name) => {
+              const box = document.querySelector('[data-fk="lect-course-11069"]').closest('.lect-course');
+              const row = [...box.querySelectorAll('tbody tr')]
+                .find(tr => tr.querySelector('.cell-lect > span').textContent === name);
+              row.click();
+            }""",
+            RANKED_FOR_OVERLAP,
+        )
         page.wait_for_timeout(3000)
     finally:
         page.remove_listener("request", _grab)
 
     body = captured.get("body")
-    assert body, "הדף לא שלח /api/solve אחרי כיבוי חובת הנוכחות"
+    assert body, "הדף לא שלח /api/solve אחרי הדירוג"
     # אם הכיבוי לא הגיע לשרת, אין ולא תהיה חפיפה — ועדיף לומר זאת כאן
     # מאשר להיכשל אחר כך על "לא נמצאה חפיפה" ולחפש אותה במקום הלא נכון.
     assert ((body.get("attendance") or {}).get("61759") or {}).get("הרצאה") is False, (

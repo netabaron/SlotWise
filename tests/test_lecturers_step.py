@@ -265,8 +265,11 @@ def test_dead_row_is_dimmed_without_opacity(browser, server, scheme):
     try:
         pg.evaluate(
             """(a) => { const s = JSON.parse(localStorage.getItem(a.key) || '{}');
-                        s.blocked = a.blocked; localStorage.setItem(a.key, JSON.stringify(s)); }""",
-            {"key": STORAGE_KEY, "blocked": DEAD_BLOCK},
+                        s.blocked = a.blocked; s.attendance = a.attendance;
+                        localStorage.setItem(a.key, JSON.stringify(s)); }""",
+            # ‏מאז 2026-10-10 הרצאת 61759 מתחילה בלי חובת נוכחות, וכך החפיפה עם
+            # ‏11069 מותרת; המתג שלה דלוק כדי שהשורה תישאר בלי מערכת אפשרית.
+            {"key": STORAGE_KEY, "blocked": DEAD_BLOCK, "attendance": {AUTOMATA: {"הרצאה": True}}},
         )
         pg.reload()
         pg.wait_for_timeout(5000)
@@ -334,6 +337,13 @@ def test_attendance_switches_one_info_and_the_note_once(browser, server):
 def test_sessions_without_attendance_collapse_into_one_pill(browser, server):
     ctx, pg = _ready(browser, server)
     try:
+        # ‏מאז 2026-10-10 המתג כבוי בכל רכיב שהידיעון אינו מחייב בו נוכחות
+        # ‏(docs/DESIGN.md, "The switch starts off"). מתחילים מכל המתגים דלוקים.
+        pg.evaluate(
+            """() => { for (let i = 0; i < 50; i++) {
+                   const off = document.querySelector('input[role="switch"]:not(:checked)');
+                   if (!off) return; off.click(); } }""")
+        pg.wait_for_timeout(1500)
         before = pg.evaluate("() => document.getElementById('attendance-off').hidden")
         _open(pg, AUTOMATA)
         pg.uncheck(f'input[data-fk="att-{AUTOMATA}-תרגול"]', force=True)

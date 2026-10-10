@@ -216,13 +216,6 @@
    */
   var TIED_FALLBACK = [["61756", "61757", "62027"]];
 
-  /**
-   * סימן בהערת הידיעון שקובע את ברירת המחדל של חובת נוכחות.
-   * ‏SPEC_V2 §2: הערה כזו רק *מסמנת מקור* — ברירת המחדל היא חובה בכל מקרה,
-   * והוויתור עליה הוא תמיד בחירה מפורשת של הסטודנט/ית.
-   */
-  var ATTENDANCE_NOTE_RE = /חובת\s*ה?נוכחות|חובה\s*להשתתף|נוכחות\s*חובה/;
-
   var PALETTE_SIZE = 10; // ‏c0..c9, בדיוק כמו הפלטה ב-render.py
 
   /**
@@ -775,6 +768,8 @@
     fetchSkipped: [],
     // ‏attendance_info מהשרת: {קוד: {סוג: {required, from_yedion, note, source, text}}}
     attendanceInfo: Object.create(null),
+    // ‏ה-attendance של הבקשה האחרונה ל-/api/solve, כ-JSON; ‏null = טרם נשלחה.
+    solvedAttendance: null,
   };
 
   function saveState() {
@@ -1906,49 +1901,70 @@
 
   /* --- חובת נוכחות (SPEC_V2 §2) ------------------------------------- */
 
-  /** ברירת המחדל היא תמיד "יש חובת נוכחות". הוויתור הוא בחירה מפורשת. */
-  function attendanceRequired(code, kind) {
-    var byCourse = state.attendance[txt(code)];
-    if (!byCourse) return true;
-    var value = byCourse[txt(kind)];
-    if (value === undefined || value === null) return true;
-    return value !== false;
+  /**
+   * ברירת המחדל של המתג (docs/DESIGN.md, Lecturers, "The switch starts off"):
+   * דלוק רק כשהשרת אומר שהידיעון כותב שיש חובת נוכחות (``from_yedion`` של
+   * ‏``attendance_info``). זה המקור היחיד לכלל — לדף אין עותק משלו.
+   */
+  function attendanceDefault(code, kind) {
+    var info = attendanceInfoFor(code, kind);
+    return !!info && info.from_yedion === true;
   }
 
-  /** מפתח חסר = חובה, בדיוק כמו בשרת — ולכן "חובה" נשמר כמחיקה. */
+  /** בחירה שמורה גוברת; מפתח חסר = ברירת המחדל של הרכיב. */
+  function attendanceRequired(code, kind) {
+    var byCourse = state.attendance[txt(code)];
+    var value = byCourse ? byCourse[txt(kind)] : undefined;
+    if (value === true || value === false) return value;
+    return attendanceDefault(code, kind);
+  }
+
+  /** מפתח חסר = ברירת המחדל, ולכן בחירה ששווה לה נשמרת כמחיקה. */
   function setAttendance(code, kind, required) {
     var att = deepCopy(state.attendance) || {};
     var c = txt(code);
     var k = txt(kind);
     var byKind = att[c] || {};
-    if (required) delete byKind[k];
-    else byKind[k] = false;
+    if (required === attendanceDefault(c, k)) delete byKind[k];
+    else byKind[k] = required;
     if (Object.keys(byKind).length) att[c] = byKind;
     else delete att[c];
     setState({ attendance: att, activeSchedule: 0 });
   }
 
-  /** מה שנשלח ל-/api/solve: רק קורסים שנבחרו, רק ערכים מפורשים. */
+  /**
+   * מה שנשלח ל-/api/solve: רק קורסים שנבחרו. בשרת מפתח חסר = חובה, ולכן כל
+   * רכיב שהמתג שלו כבוי נשלח כ-``false`` מפורש — גם כשזו רק ברירת המחדל.
+   * קורס שהנתונים שלו טרם הגיעו שולח רק את מה שנשמר, והשאר נחשב חובה.
+   */
   function attendanceBody() {
     var out = {};
     var selected = selectedSet();
+    function put(code, kind, required) {
+      if (!out[code]) out[code] = {};
+      out[code][kind] = required;
+    }
     Object.keys(state.attendance).forEach(function (code) {
       if (!selected[code]) return;
       var byKind = state.attendance[code] || {};
-      var copy = {};
       Object.keys(byKind).forEach(function (kind) {
-        copy[kind] = byKind[kind] !== false;
+        put(code, kind, byKind[kind] !== false);
       });
-      if (Object.keys(copy).length) out[code] = copy;
+    });
+    runtime.courses.forEach(function (course) {
+      var code = txt(course.code);
+      if (!selected[code]) return;
+      kindsOf(course).forEach(function (kind) {
+        if (!attendanceRequired(code, kind)) put(code, kind, false);
+      });
     });
     return out;
   }
 
-  /** סוגי הרכיבים שבהם כובתה חובת הנוכחות בקורס אחד. */
-  function optionalKindsOf(code) {
-    var byKind = state.attendance[txt(code)] || {};
-    return Object.keys(byKind).filter(function (kind) {
-      return byKind[kind] === false;
+  /** סוגי הרכיבים של קורס שהמתג שלהם כבוי — בבחירה או בברירת המחדל. */
+  function optionalKindsOf(course) {
+    return kindsOf(course).filter(function (kind) {
+      return !attendanceRequired(course.code, kind);
     });
   }
 
@@ -1969,43 +1985,12 @@
     });
   }
 
-  /**
-   * האם הידיעון עצמו אמר משהו על נוכחות ברכיב הזה, ומה בדיוק.
-   * מחזירה את נוסח ההערה, או "" אם אין. הערך לא משנה את ברירת המחדל —
-   * הוא רק מאפשר לומר בממשק מאיפה היא הגיעה, ושאפשר לשנות אותה בכל זאת.
-   */
   /** רשומת ה-attendance_info של השרת לרכיב אחד, אם הגיעה. */
   function attendanceInfoFor(code, kind) {
     var byCourse = runtime.attendanceInfo[txt(code)];
     if (!byCourse) return null;
     var rec = byCourse[txt(kind)];
     return rec && typeof rec === "object" ? rec : null;
-  }
-
-  function attendanceNoteFor(course, kind) {
-    var found = "";
-    // השרת הוא המקור הסמכותי; הסריקה של ההערות שמתחת היא רק רשת ביטחון.
-    var info = attendanceInfoFor(course.code, kind);
-    if (info && info.from_yedion === true) {
-      return txt(info.note) || txt(info.text);
-    }
-    (course.groups || []).forEach(function (g) {
-      if (found || txt(g.kind) !== txt(kind)) return;
-      if (txt(g.attendance_source) === "yedion") {
-        found = txt(g.attendance_note) || txt(g.note);
-        return;
-      }
-      if (ATTENDANCE_NOTE_RE.test(txt(g.note))) found = txt(g.note);
-    });
-    if (!found && course.attendance) {
-      var rec = course.attendance[txt(kind)];
-      if (rec && typeof rec === "object") {
-        if (txt(rec.source) === "yedion" || rec.from_yedion === true) {
-          found = txt(rec.note) || txt(rec.text);
-        }
-      }
-    }
-    return txt(found).trim();
   }
 
   function viabilityOf(code, kind, groupId) {
@@ -2565,7 +2550,17 @@
         });
         // נעיצה ישנה שהפכה לדירוג משנה את גוף הבקשה לפותר. בלי חישוב מחדש
         // המסך היה נשאר עם תשובה שנבנתה בלי הדירוג החדש.
-        if (migratePins()) scheduleSolve(0);
+        var resolve = migratePins();
+        // ‏ברירת המחדל של חובת הנוכחות מגיעה עם הקורסים (attendanceDefault).
+        // ‏/api/solve יוצא במקביל ל-/api/courses, ובקשה שיצאה לפני התשובה
+        // הזו נשלחה בלי ה-``false`` של הרכיבים הכבויים — כלומר הכול חובה.
+        if (
+          runtime.solvedAttendance !== null &&
+          JSON.stringify(attendanceBody()) !== runtime.solvedAttendance
+        ) {
+          resolve = true;
+        }
+        if (resolve) scheduleSolve(0);
         refreshColorMap();
         render();
       })
@@ -2594,8 +2589,6 @@
       curriculum_semester: txt(rec.curriculum_semester),
       // ‏"db" | "fetched" | "unavailable" — מאיפה הגיעו הנתונים בבקשה הזו.
       source: txt(rec.source),
-      attendance:
-        rec.attendance && typeof rec.attendance === "object" ? rec.attendance : null,
       groups: pickList(rec, ["groups"], "group_id").map(normalizeGroup),
     };
   }
@@ -2610,13 +2603,6 @@
       // הערות שיוך וחובת נוכחות — ראו ``models.Group``.
       status_note: txt(rec.status_note),
       linked_to: Array.isArray(rec.linked_to) ? rec.linked_to.map(txt) : [],
-      // ברירת המחדל של חובת הנוכחות אינה נקבעת כאן — היא תמיד "חובה".
-      // השדות האלה משמשים רק כדי לומר *מאיפה* הגיעה ברירת המחדל.
-      attendance_source: txt(
-        rec.attendance_source ||
-          (rec.attendance_from_yedion === true ? "yedion" : "")
-      ),
-      attendance_note: txt(rec.attendance_note),
       meetings: pickList(rec, ["meetings"], null).map(normalizeMeeting),
     };
   }
@@ -2812,7 +2798,7 @@
       allow_soft_conflicts: state.allowSoftConflicts === true,
     };
     var attendance = attendanceBody();
-    // נשלח רק כשיש מה לומר. מפתח חסר = חובת נוכחות, כמו בשרת.
+    // נשלח רק כשיש מה לומר. בשרת מפתח חסר = חובת נוכחות.
     if (Object.keys(attendance).length) body.attendance = attendance;
     if (state.earliest !== null && state.earliest !== undefined) {
       body.earliest = state.earliest;
@@ -2847,9 +2833,11 @@
     runtime.solveBusy = true;
     runtime.solveCancelled = false;
     render();
+    var body = buildSolveBody();
+    runtime.solvedAttendance = JSON.stringify(body.attendance || {});
     return postJSON(
       "/api/solve",
-      buildSolveBody(),
+      body,
       runtime.solveAbort ? runtime.solveAbort.signal : undefined
     )
       .then(function (data) {
@@ -6504,9 +6492,7 @@
     if (!ui.attendanceOff) return;
     var rows = [];
     runtime.courses.forEach(function (course) {
-      var kinds = kindsOf(course);
-      optionalKindsOf(course.code).forEach(function (kind) {
-        if (kinds.indexOf(kind) === -1) return;
+      optionalKindsOf(course).forEach(function (kind) {
         rows.push(
           Tf("app.lecturers.attendance.offRow", {
             course: txt(course.name) || nameOf(course.code),
@@ -6684,9 +6670,10 @@
 
   /**
    * מתג "חובת נוכחות" לכל סוג רכיב בקורס, ו-ⓘ אחד שפותח את ההסבר במקום.
-   * ברירת המחדל דלוקה תמיד; כיבוי מרשה למנוע לשבץ את הרכיב במקביל לרכיב
-   * אחר. ההסבר — מה המתג עושה, ולמה ברירת המחדל כאן היא מה שהיא — עבר
-   * מאחורי ה-ⓘ; המשפט של הידיעון עצמו נשאר גלוי, פעם אחת.
+   * המתג דלוק בהתחלה רק כשהשרת אומר שיש חובת נוכחות (attendanceDefault);
+   * כבוי מרשה למנוע לשבץ את הרכיב במקביל לרכיב אחר. ליד המתגים שורה אחת
+   * שאומרת מתי להדליק, ומתחתיה הערות הקבוצות של הקורס (courseNotes), כל
+   * הערה פעם אחת; ההסבר המלא עבר מאחורי ה-ⓘ.
    */
   function attendanceBox(course) {
     var code = course.code;
@@ -6694,7 +6681,6 @@
     var infoOpen = runtime.attInfoOpen[txt(code)] === true;
     var box = el("div", { class: "lect-attendance" });
     var row = el("div", { class: "att-row" });
-    var hints = [];
 
     kindsOf(course).forEach(function (kind) {
       var input = el("input", {
@@ -6714,8 +6700,6 @@
           el("span", { text: Tf("app.lecturers.attendance.label", { kind: kind }) }),
         ])
       );
-      var note = attendanceNoteFor(course, kind);
-      if (note) hints.push(Tf("app.lecturers.attendance.hint", { kind: kind, note: note }));
     });
 
     row.appendChild(
@@ -6739,15 +6723,13 @@
       })
     );
     box.appendChild(row);
+    box.appendChild(el("p", { class: "note att-hint", text: T("app.lecturers.attendance.hint") }));
 
     courseNotes(course).forEach(function (note) {
       box.appendChild(el("p", { class: "note lect-course-note", text: note }));
     });
 
     var info = el("div", { class: "att-info", attrs: { id: infoId } });
-    hints.forEach(function (hint) {
-      info.appendChild(el("p", { text: hint }));
-    });
     info.appendChild(el("p", { text: T("ui.lecturers.attendanceWhatBody") }));
     info.hidden = !infoOpen;
     box.appendChild(info);
@@ -7157,7 +7139,11 @@
         }
         dl.appendChild(dd);
       });
-      content.appendChild(el("section", { class: "detail-item c" + colorOf(m.code) }, [dl]));
+      var item = el("section", { class: "detail-item c" + colorOf(m.code) }, [dl]);
+      if (isOverlap && !attendanceRequired(m.code, m.kind)) {
+        item.appendChild(el("p", { class: "note detail-att-off", text: T("app.detail.overlapOff") }));
+      }
+      content.appendChild(item);
     });
     var fill = function () {
       if (runtime.detailSig !== sig) return; // נבחר משהו אחר בינתיים
@@ -8280,7 +8266,7 @@
       optional.push(txt(b.name) || nameOf(b.code));
     }
     var why = optional.length
-      ? Tf("app.overlap.whyOptional", {
+      ? Tf(optional.length === 1 ? "app.overlap.whyOptional" : "app.overlap.whyOptionalMany", {
           names: optional.join(T("app.overlap.whyJoin")),
         })
       : T("app.overlap.whyUnknown");
@@ -9879,10 +9865,12 @@
       );
     }
     if (key === "lecturers") {
-      // ‏מפתח חסר = חובת נוכחות, ולכן רק ``false`` מפורש הוא ויתור.
-      var waived = hasAnyEntry(state.attendance, function (byKind) {
-        return Object.keys(byKind || {}).some(function (k) {
-          return byKind[k] === false;
+      // ‏מפתח חסר = ברירת המחדל, ולכן רק ערך ששונה ממנה הוא בחירה.
+      var waived = Object.keys(state.attendance || {}).some(function (code) {
+        var byKind = state.attendance[code] || {};
+        return Object.keys(byKind).some(function (k) {
+          var v = byKind[k];
+          return (v === true || v === false) && v !== attendanceDefault(code, k);
         });
       });
       var ranked = hasAnyEntry(state.ranked, rankingHasNames);

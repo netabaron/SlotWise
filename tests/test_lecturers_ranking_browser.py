@@ -46,6 +46,19 @@ LECTURE, TUTORIAL = "הרצאה", "תרגול"
 #: ‏61756 של מר זלדנר בדירוג 1. בסדר הישן המובילה ויתרה על ההרצאה.
 CASE_1 = {"61832": {LECTURE: ['ד"ר יהלום אורלי']}, "61756": {TUTORIAL: ["מר זלדנר איליה"]}}
 
+#: ‏כל מתגי חובת הנוכחות דלוקים, כמו שהיו לפני 2026-10-10. מאז המתג כבוי בכל
+#: ‏רכיב שהידיעון אינו מחייב בו נוכחות (docs/DESIGN.md, "The switch starts off"),
+#: ‏וחפיפות נותנות לכל חמש המובילות את שני הדירוגים — בכל צירוף של שני
+#: ‏דירוגים ביעד 3 (נמדד 2026-10-10). כשהמתגים דלוקים, החמישית עדיין מחמיצה מרצה.
+ALL_ON = {
+    "11069": {'שו"ת': True},
+    "61756": {LECTURE: True, TUTORIAL: True, "פרויקט": True},
+    "61757": {LECTURE: True, "מעבדה": True},
+    "62027": {LECTURE: True, TUTORIAL: True},
+    "61759": {LECTURE: True, TUTORIAL: True},
+    "61832": {LECTURE: True, TUTORIAL: True},
+}
+
 #: אוסף כל טקסט של טוסט, גם אחרי שהטוסט נעלם.
 TOAST_SPY = """
 window.__toasts = [];
@@ -265,7 +278,7 @@ def test_with_a_days_target_the_page_follows_the_priority_order(browser, server)
         pg.click("#step-courses-next")
         pg.click('.day-btn[data-days="3"]')
         pg.wait_for_timeout(1500)
-        _seed(pg, ranked=CASE_1)
+        _seed(pg, ranked=CASE_1, attendance=ALL_ON)
         sch = _schedules(pg)
         seen = []
         for rank in range(1, len(sch) + 1):
