@@ -180,8 +180,11 @@ def _open(browser, server, width=1440, height=1000, craft=None, **ctx_opts):
     page.click("#step-year-next")  # "המשך" אל שלב הקורסים (Phase 8, באישור 2026-10-06)
     page.click("#btn-restore-recommended")
     page.wait_for_selector("#alt-cards .alt-card", timeout=20000)
+    # ‏גובה השעה רק כשהרשת על המסך: מתחת ל-1000px המערכת שבדף היא רשימת
+    # ‏ימים (DESIGN.md, "Results page", 5; ‏2026-10-10), ו-‎--slot-h‎ אינו נקבע.
     page.wait_for_function(
-        "() => !!document.getElementById('schedule-grid').style.getPropertyValue('--slot-h')",
+        "() => !!document.getElementById('schedule-grid').style.getPropertyValue('--slot-h')"
+        " || getComputedStyle(document.getElementById('grid-scroll')).display === 'none'",
         timeout=15000,
     )
     page.wait_for_timeout(800)
@@ -700,12 +703,17 @@ def test_tapping_a_legend_chip_toggles_the_greying(browser, server):
 
 def test_greying_and_selection_stay_off_the_printed_sheet(browser, server):
     """שבב נעוץ ופאנל פתוח, ואז הדפסה: על הנייר כל קורס בצבעו, ובלי קו בחירה."""
-    ctx, pg = _open(browser, server, width=794, height=1123)
+    # ‏נפתח ב-1000 ולא ב-794: מתחת ל-1000px הרשת אינה על המסך (DESIGN.md,
+    # ‏"Results page", 5; ‏2026-10-10), ולכן הנעיצה והלחיצה על הבלוק קורות
+    # ‏ברשת, ורק לפני ההדפסה החלון עובר לרוחב A4.
+    ctx, pg = _open(browser, server, width=1000, height=1123)
     try:
         pg.locator("#schedule-legend button.legend-chip").first.click()
         pg.click("#schedule-grid .ev >> nth=2")
         pg.wait_for_timeout(400)
         assert pg.evaluate("document.querySelectorAll('#schedule-grid .ev.is-muted').length") > 0
+        pg.set_viewport_size({"width": 794, "height": 1123})
+        pg.wait_for_timeout(400)
         pg.emulate_media(media="print")
         pg.wait_for_timeout(900)
         got = pg.evaluate(

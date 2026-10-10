@@ -1005,7 +1005,9 @@ def test_overlap_halves_stay_readable_at_half_width(fresh):
     """
     _with_schedule(fresh)
     _overlap_on(fresh)
-    fresh.set_viewport_size({"width": 900, "height": 900})
+    # ‏1000 ולא 900: מתחת ל-1000px הרשת אינה על המסך (2026-10-10), וב-900 הבדיקה
+    # ‏עברה בלי למדוד דבר — כל שורה ברשת המוסתרת היא 0x0.
+    fresh.set_viewport_size({"width": 1000, "height": 900})
     fresh.wait_for_timeout(1200)
     rows = fresh.evaluate(LINES, "#schedule-grid")
     _assert_lines_intact(rows, "חצי רוחב")
