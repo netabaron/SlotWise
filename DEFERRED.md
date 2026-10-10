@@ -10,6 +10,17 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
+### `scheduler.py` keeps its own yedion attendance rule — **noted 2026-10-10**
+**Where:** `scheduler.note_requires_attendance`, `seed_attendance_defaults`,
+`seed_attendance_from_notes`.
+**Owner:** none unless the solver is in scope.
+**What:** since 2026-10-10 the page reads the yedion rule only from `from_yedion`
+in `api.attendance_info()` (`api.ATTENDANCE_NOTE_RE`). The scheduler's seed
+functions keep a second regex, which does not match "חובת השתתפות" as the API's
+does. Nothing in the app calls them; they agree on the fixture store.
+**Why not changed:** the solver is out of scope unless asked, and the decision
+kept the seeding.
+
 ### Save the timetable as an image — **deferred 2026-10-07**
 **Where:** proposed, not built. Would sit in the full-view layer's top bar
 (`docs/DESIGN.md`, "Results page", item 2, "צפייה במערכת המלאה ⤢").
@@ -40,7 +51,9 @@ case of "not that day".
 intentional overlap saves a day only when it removes a day from the timetable.
 Measured on the fixture store, SE year 3 semester א, the six recommended courses:
 no waiver of one or two components lets an overlap reach fewer days than the
-4 that a schedule without one already reaches. Before, a waived lesson alone on a
+4 that a schedule without one already reaches. Re-measured 2026-10-10 with the
+attendance switch starting off (11 of the 12 kinds off): still none, at target 4
+or 3, with no ranking. Before, a waived lesson alone on a
 day made that day not count, and that was the whole of what overlaps saved here:
 with the 61759 lecture waived at target 3, the first overlap ranked #9; it now
 ranks #88. An overlap still enters the order when it honours a ranked lecturer
