@@ -39,6 +39,23 @@ not after.
 
 ---
 
+# Deleting things: only inside this repository. No WSL.
+
+* **Never delete anything outside this repository or the session
+  scratchpad.**
+* **Never run `rm` — or any other delete — with a path built from a
+  variable or a glob** that could expand to a home or root directory.
+  Write the path out literally.
+* **Do not use WSL at all.** No `wsl.exe`, no `wsl -e`, not even for a
+  one-line reproduction.
+* If something outside the repository needs deleting or changing, stop
+  and ask first.
+
+Why: on **2026-10-12** a reproduction run through `wsl.exe` expanded an
+empty loop variable and ran `rm -rf ~/`, wiping the WSL home directory.
+
+---
+
 ## Before committing
 
 * Show the diff and wait for a go-ahead. Never commit unprompted.
