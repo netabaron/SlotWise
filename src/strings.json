@@ -289,7 +289,8 @@
         "lecturer": "מרצה",
         "when": "יום ושעה",
         "room": "חדר",
-        "rank": "דירוג"
+        "rank": "דירוג",
+        "regionLabel": "הקבוצות של {course}"
       },
       "attendance": {
         "label": "חובת נוכחות · {kind}",
@@ -309,7 +310,12 @@
         "unknownLecturer": "מרצה לא ידוע",
         "noMeetings": "ללא מפגשים",
         "deadLine": "לא משאיר מערכת אפשרית",
-        "noTimeLine": "אין לקבוצה מועד קבוע"
+        "noTimeLine": "אין לקבוצה מועד קבוע",
+        "rankButton": "דירוג {lecturer}, {kind}, {when}: {state}",
+        "rankState": {
+          "ranked": "מדורג/ת {rank}",
+          "none": "לא מדורג/ת"
+        }
       },
       "deadEndReason": "בחירה זו משאירה את המערכת בלי פתרון",
       "dayCell": "{day}׳",
@@ -737,7 +743,8 @@
       "cardFactsOneDay": "יום אחד, עד {time}",
       "cardName": "מערכת {n}",
       "cardLabel": "מערכת {n}: {facts}. {label}",
-      "updating": "מעדכן…"
+      "updating": "מעדכן…",
+      "updatedStatus": "המערכת עודכנה: {facts}"
     },
     "dayList": {
       "label": "המערכת לפי ימים",

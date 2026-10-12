@@ -78,6 +78,7 @@
   הודעות / messages
     #banners             באנרים מתמשכים (נתונים ישנים, יעד ימים בלתי אפשרי)
     #toasts              הודעות חולפות
+    #results-status      שורת מצב נסתרת (‏role=status): "מעדכן…" / "המערכת עודכנה: …"
     tpl-banner / tpl-toast   שלד מוכן לשכפול (בתחתית העמוד)
       המחלקה על השורש קובעת גוון:
       banner--info | banner--warn | banner--error | banner--ok
@@ -528,7 +529,7 @@
              תוצאה של פתירה מחדש בלי הקורס. כשאין ויתור בודד שמספיק,
              ‏#days-relax-intro הוא השורה היחידה, והשאר מוסתר. -->
         <div class="days-relax" id="days-relax" hidden>
-          <h4 class="days-relax-title" id="days-relax-title"></h4>
+          <h3 class="days-relax-title" id="days-relax-title"></h3>
           <p class="days-relax-intro" id="days-relax-intro"></p>
           <ul class="days-relax-list" id="days-relax-list"></ul>
           <p class="days-relax-note" id="days-relax-note"></p>
@@ -802,6 +803,11 @@
 </div>
 
 <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<!-- ‏שורת המצב של התוצאה, לקורא מסך בלבד (DESIGN.md, Quality floor, 9C):
+     ‏"מעדכן…" כשחישוב מתחיל, ו"המערכת עודכנה: N ימים, עד HH:MM" כשהוא נגמר.
+     ‏app.js ממלא אותה (announceResults). -->
+<p class="visually-hidden" id="results-status" role="status" aria-live="polite"></p>
 
 <template id="tpl-banner">
   <div class="banner banner--info" role="note">

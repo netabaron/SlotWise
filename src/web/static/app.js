@@ -691,6 +691,9 @@
     catalogResults: [],
     catalogError: null,
     catalogBusy: false,
+    // ‏התוצאה שהחצים סימנו בשדה החיפוש (‏-1: אף אחת), ולאיזה חיפוש היא שייכת.
+    searchActive: -1,
+    searchActiveQuery: "",
     // ‏features.fetch_on_demand מ-/api/bootstrap: האם לשרת הזה מותר בכלל
     // לפנות לידיעון. ‏false הוא המצב המאורח — שם כל הנתונים באים מהקטלוג
     // שנבנה בלילה, ולכן "ניסיון חוזר מהידיעון" הוא כפתור שאין מאחוריו
@@ -2832,6 +2835,7 @@
       typeof AbortController === "function" ? new AbortController() : null;
     runtime.solveBusy = true;
     runtime.solveCancelled = false;
+    announceResults(T("app.alts.updating"));
     render();
     var body = buildSolveBody();
     runtime.solvedAttendance = JSON.stringify(body.attendance || {});
@@ -2850,10 +2854,13 @@
           saveState();
         }
         render();
+        announceResults(solvedStatus());
       })
       .catch(function (err) {
         if (my !== seq.solve) return;
         runtime.solveBusy = false;
+        // ‏"מעדכן…" אינו נשאר תלוי; הבאנר או ההודעה אומרים מה קרה.
+        announceResults("");
         if (err && err.name === "AbortError") {
           // ביטול אינו תקלה: אין באנר אדום, רק הודעה שקטה.
           runtime.solveError = null;
@@ -2864,6 +2871,29 @@
         }
         render();
       });
+  }
+
+  /**
+   * ‏שורת המצב הנסתרת (#results-status, ‏role=status): "מעדכן…" כשחישוב מתחיל,
+   * ‏ושורה אחת על התוצאה כשהוא נגמר (DESIGN.md, Quality floor, 9C). ‏שורה
+   * ‏שאינה משתנה אינה מוכרזת שוב — וזה בדיוק המצב שבו לא השתנה דבר.
+   */
+  function announceResults(text) {
+    if (ui.resultsStatus) setText(ui.resultsStatus, text || "");
+  }
+
+  function solvedStatus() {
+    var list = schedules();
+    if (!list.length) return T("ui.schedule.emptyTitle");
+    var sch = list[clamp(state.activeSchedule, 0, list.length - 1)];
+    var dayCount = num(sch.days_count, 0);
+    var finish = lastFinishOf(sch);
+    return Tf("app.alts.updatedStatus", {
+      facts: Tf(dayCount === 1 ? "app.alts.cardFactsOneDay" : "app.alts.cardFacts", {
+        days: dayCount,
+        time: finish === null ? "—" : fmtTime(finish),
+      }),
+    });
   }
 
   /** עוצר חישוב שרץ. הבחירות נשמרות — רק החישוב מפסיק. */
@@ -3145,6 +3175,8 @@
     ui.gridScroll = byId("grid-scroll");
     ui.grid = byId("schedule-grid");
     ui.dayList = byId("schedule-days");
+    ui.scheduleTitle = byId("step-schedule-title");
+    ui.resultsStatus = byId("results-status");
     ui.empty = byId("schedule-empty");
     ui.placeholder = byId("schedule-placeholder");
     ui.placeholderDays = byId("schedule-placeholder-days");
@@ -3311,7 +3343,14 @@
     if (ui.selTerm) ui.selTerm.addEventListener("change", onYearTermChange);
 
     if (ui.btnRestoreRecommended) {
-      ui.btnRestoreRecommended.addEventListener("click", restoreRecommended);
+      ui.btnRestoreRecommended.addEventListener("click", function () {
+        var hadFocus = document.activeElement === ui.btnRestoreRecommended;
+        restoreRecommended();
+        // ‏"סמנו הכל" מסתיר את עצמו כשאין עוד מה לסמן. בלי זה הפוקוס נפל
+        // ‏לעמוד; הכותרת "מומלצים" היא המקום שבו הוא היה (DESIGN.md, Quality
+        // ‏floor, 9C).
+        if (hadFocus && ui.btnRestoreRecommended.hidden) focusQuietly(ui.recommendedTitle);
+      });
     }
 
     if (ui.search) {
@@ -3328,12 +3367,29 @@
         if (ev.key === "Escape") {
           ui.search.value = "";
           driveSearchBox("");
+        } else if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && !browseDrivesSearchBox()) {
+          // ‏החצים עוברים בין התוצאות והפוקוס נשאר בשדה (‏aria-activedescendant;
+          // ‏DESIGN.md, Quality floor, 9C).
+          var count = searchOptions().length;
+          if (!count || ui.searchResults.hidden) return;
+          ev.preventDefault();
+          var at = runtime.searchActive;
+          if (ev.key === "ArrowDown") at = at < count - 1 ? at + 1 : 0;
+          else at = at > 0 ? at - 1 : count - 1;
+          runtime.searchActive = at;
+          markSearchActive(true);
         } else if (ev.key === "Enter") {
           ev.preventDefault();
           if (browseDrivesSearchBox()) {
             var hit = runtime.browseResults[0];
             // במצב קטלוג הרשימה נשארת פתוחה — בוחרים כמה קורסים ברצף.
             if (hit) addCourse(hit.code, hit.name, hit.credits, { keepQuery: true });
+            return;
+          }
+          var picked = runtime.catalogResults[runtime.searchActive];
+          if (picked) {
+            // ‏התוצאה שהחצים סימנו; כבר נבחרה — אין מה להוסיף, כמו בלחיצה.
+            if (selectedSet()[picked.code] !== true) addCourse(picked.code, picked.name, picked.credits);
             return;
           }
           var first = runtime.catalogResults[0];
@@ -3349,6 +3405,7 @@
         setState({ targetDays: n, activeSchedule: 0 });
       });
     });
+    wireRadioKeys(ui.dayButtons);
 
     if (ui.chkFriday) {
       ui.chkFriday.addEventListener("change", function () {
@@ -3428,6 +3485,7 @@
         applyTheme(txt(btn.dataset.themeChoice));
       });
     });
+    wireRadioKeys(ui.themeButtons);
     renderThemeToggle();
 
     if (ui.btnDetailClose) {
@@ -3441,15 +3499,17 @@
         }
       });
     }
-    // ‏הפוקוס נשאר על הבלוק כשהפרטים נפתחים, ולכן Esc נשמע גם על הרשת.
-    if (ui.grid) {
-      ui.grid.addEventListener("keydown", function (ev) {
+    // ‏הפוקוס נשאר על הבלוק כשהפרטים נפתחים, ולכן Esc נשמע גם על הרשת —
+    // ‏ועל רשימת הימים, שבה הפוקוס נשאר על השיעור באותו אופן (9C).
+    [ui.grid, ui.dayList].forEach(function (root) {
+      if (!root) return;
+      root.addEventListener("keydown", function (ev) {
         if (ev.key === "Escape" && runtime.detailEl) {
           ev.preventDefault();
           closeMeetingDetail();
         }
       });
-    }
+    });
     if (ui.btnBuild) {
       // הכפתור עושה בדיוק את מה שכתוב עליו: מחשב מחדש, ואז לוקח אל התוצאה.
       ui.btnBuild.addEventListener("click", function () {
@@ -3605,6 +3665,10 @@
     if (!isWide()) {
       afterFold(section, function () {
         scrollBelowHeader(ui.steps && ui.steps.schedule);
+        // ‏הפוקוס עובר לאן שהעמוד נגלל — לכותרת התוצאה. אחרת הוא נשאר על
+        // ‏השלב המקופל, מאות פיקסלים מעל, ו-Tab הבא חוזר לשלבים (DESIGN.md,
+        // ‏Quality floor, 9C).
+        focusQuietly(ui.scheduleTitle);
       });
     }
   }
@@ -3629,6 +3693,20 @@
 
   //: כמה זמן השלב שנפתח ב"שינוי" נשאר ממוסגר (style.css, ‎.is-flash‎).
   var STEP_FLASH_MS = 1200;
+
+  /**
+   * ‏פוקוס בלי גלילה, גם על אלמנט שאינו פקד (כותרת): ‏tabindex=-1 נותן לו
+   * ‏פוקוס מהקוד בלי להכניס אותו לסדר ה-Tab.
+   */
+  function focusQuietly(node) {
+    if (!node || !node.focus) return;
+    if (!node.hasAttribute("tabindex") && node.tabIndex < 0) node.setAttribute("tabindex", "-1");
+    try {
+      node.focus({ preventScroll: true });
+    } catch (e) {
+      node.focus();
+    }
+  }
 
   function focusStepToggle(key) {
     var toggle = ui.stepToggles && ui.stepToggles[key];
@@ -3761,6 +3839,46 @@
     ui.themeButtons.forEach(function (btn) {
       var mine = txt(btn.dataset.themeChoice);
       btn.setAttribute("aria-checked", mine === current ? "true" : "false");
+    });
+    syncRadioTabStop(ui.themeButtons);
+  }
+
+  /**
+   * ‏קבוצת רדיו (‏role=radio) מתנהגת כמו שקורא מסך מכריז עליה (DESIGN.md,
+   * ‏Quality floor, 9C): עצירת Tab אחת — הנבחר, או הראשון כשאין — והחצים
+   * ‏עוברים ובוחרים. ‏RTL: ← הוא "הבא" בסדר המסמך, ‏→ "הקודם"; ‏↓/↑ בכל כיוון.
+   * ‏הבחירה עצמה היא click() — אותו מטפל בדיוק כמו לחיצה.
+   */
+  function wireRadioKeys(buttons) {
+    (buttons || []).forEach(function (btn, i) {
+      btn.addEventListener("keydown", function (ev) {
+        var rtl = document.documentElement.getAttribute("dir") !== "ltr";
+        var to = null;
+        if (ev.key === "ArrowDown" || ev.key === (rtl ? "ArrowLeft" : "ArrowRight")) {
+          to = buttons[(i + 1) % buttons.length];
+        } else if (ev.key === "ArrowUp" || ev.key === (rtl ? "ArrowRight" : "ArrowLeft")) {
+          to = buttons[(i - 1 + buttons.length) % buttons.length];
+        } else if (ev.key === "Home") {
+          to = buttons[0];
+        } else if (ev.key === "End") {
+          to = buttons[buttons.length - 1];
+        }
+        if (!to) return;
+        ev.preventDefault();
+        to.focus();
+        to.click();
+      });
+    });
+    syncRadioTabStop(buttons);
+  }
+
+  function syncRadioTabStop(buttons) {
+    if (!buttons || !buttons.length) return;
+    var stop = buttons.filter(function (b) {
+      return b.getAttribute("aria-checked") === "true";
+    })[0] || buttons[0];
+    buttons.forEach(function (b) {
+      b.tabIndex = b === stop ? 0 : -1;
     });
   }
 
@@ -5598,6 +5716,7 @@
           "li",
           {
             attrs: {
+              id: "search-opt-" + rec.code,
               role: "option",
               "aria-selected": already ? "true" : "false",
               tabindex: "0",
@@ -5611,6 +5730,8 @@
                 if (ev.key === "Enter" || ev.key === " ") {
                   ev.preventDefault();
                   if (!already) addCourse(rec.code, rec.name, rec.credits);
+                  // ‏הרשימה נסגרת עם ההוספה; הפוקוס חוזר לשדה ולא נופל לעמוד.
+                  if (ui.searchResults.hidden) focusQuietly(ui.search);
                 }
               },
             },
@@ -5636,6 +5757,35 @@
     setHidden(ui.searchResults, !show);
     if (ui.search) {
       ui.search.setAttribute("aria-expanded", show ? "true" : "false");
+    }
+    // ‏חיפוש חדש מתחיל בלי תוצאה מסומנת.
+    if (runtime.searchActiveQuery !== runtime.catalogQuery || !show) {
+      runtime.searchActiveQuery = runtime.catalogQuery;
+      runtime.searchActive = -1;
+    }
+    markSearchActive(false);
+  }
+
+  function searchOptions() {
+    return ui.searchResults
+      ? [].slice.call(ui.searchResults.querySelectorAll("li[role='option']"))
+      : [];
+  }
+
+  /** ‏מסמן את התוצאה שהחצים הגיעו אליה, ומודיע עליה דרך aria-activedescendant. */
+  function markSearchActive(reveal) {
+    var opts = searchOptions();
+    if (runtime.searchActive >= opts.length) runtime.searchActive = -1;
+    var active = opts[runtime.searchActive] || null;
+    opts.forEach(function (li) {
+      setClass(li, "is-active", li === active);
+    });
+    if (!ui.search) return;
+    if (active) {
+      ui.search.setAttribute("aria-activedescendant", active.id);
+      if (reveal && active.scrollIntoView) active.scrollIntoView({ block: "nearest" });
+    } else {
+      ui.search.removeAttribute("aria-activedescendant");
     }
   }
 
@@ -5861,7 +6011,8 @@
         var head = el("button", {
           class: "elective-cluster-head",
           attrs: { type: "button", "aria-expanded": "false", "aria-controls": bodyId },
-          data: { key: key },
+          // ‏‎fk‎: ‏rebuild() מחזיר אליו את הפוקוס כשהרשימה נבנית מחדש באמצע.
+          data: { key: key, fk: "cluster-" + key },
           on: {
             click: function () {
               toggleCluster(key);
@@ -5948,7 +6099,8 @@
                     ? Tf("app.courses.creditsUnit", { credits: fmtCredits(course.credits) })
                     : "",
                 },
-                data: { code: code },
+                // ‏‎fk‎: בחירה בונה את הרשימה מחדש, ובלעדיו הפוקוס נפל לעמוד.
+                data: { code: code, fk: "chip-" + key + "-" + code },
                 on: {
                   click: function () {
                     if (chosen) toggleCourse(code, false);
@@ -6279,6 +6431,7 @@
           : ""
       );
     });
+    syncRadioTabStop(ui.dayButtons);
 
     renderDaysRelax(s);
     setClass(ui.daysRow, "has-min", minDays !== null);
@@ -6662,7 +6815,23 @@
       tbody.appendChild(groupRow(course, group));
     });
     table.appendChild(tbody);
-    body.appendChild(el("div", { class: "lect-table-wrap" }, [table]));
+    // ‏אזור עם שם: כשהטבלה רחבה מהמסך היא נגללת בתוך העטיפה, וקורא מסך
+    // ‏צריך לדעת איזו טבלה זו (DESIGN.md, Quality floor, 9C).
+    body.appendChild(
+      el(
+        "div",
+        {
+          class: "lect-table-wrap",
+          attrs: {
+            role: "region",
+            "aria-label": Tf("app.lecturers.table.regionLabel", {
+              course: txt(course.name) || nameOf(code),
+            }),
+          },
+        },
+        [table]
+      )
+    );
 
     return el("section", { class: "lect-course c" + idx + (open ? " is-open" : "") }, [
       el("h3", { class: "lect-course-h" }, [head]),
@@ -6805,7 +6974,52 @@
         circle.style.animationDelay = -age + "ms";
       }
     }
-    tr.appendChild(el("td", { class: "cell-rank" }, [circle]));
+    // ‏העיגול יושב בתוך כפתור, כדי שהדירוג יעבוד גם במקלדת (DESIGN.md, Quality
+    // ‏floor, 9C): Tab מגיע אליו, ו-Enter או רווח עושים בדיוק מה שלחיצה על
+    // ‏השורה עושה. השם הנגיש אומר מי, איזה סוג, מתי ובאיזה דירוג; שורה מתה
+    // ‏נשארת בסדר ה-Tab — אחרת אי אפשר לשמוע למה אי אפשר לבחור בה.
+    var when = group.meetings.length
+      ? group.meetings
+          .map(function (m) {
+            return (
+              Tf("app.lecturers.dayCell", { day: dayLetter(m.day) }) +
+              " " + fmtTime(m.start) + "–" + fmtTime(m.end)
+            );
+          })
+          .join(", ")
+      : T("app.lecturers.row.noMeetings");
+    var rankBtn = el(
+      "button",
+      {
+        class: "rank-btn",
+        attrs: {
+          type: "button",
+          "aria-pressed": rank ? "true" : "false",
+          "aria-disabled": dead ? "true" : null,
+          "aria-label": Tf("app.lecturers.row.rankButton", {
+            lecturer: txt(group.lecturer) || T("app.lecturers.row.unknownLecturer"),
+            kind: kind,
+            when: when,
+            state: dead
+              ? deadReason || T("app.lecturers.row.deadLine")
+              : rank
+              ? Tf("app.lecturers.row.rankState.ranked", { rank: rank })
+              : T("app.lecturers.row.rankState.none"),
+          }),
+        },
+        data: { fk: "rank-" + code + "-" + kind + "-" + gid },
+        on: {
+          click: function (ev) {
+            // ‏השורה כולה לחיצה; בלי זה הלחיצה הייתה מדרגת ומבטלת מיד.
+            ev.stopPropagation();
+            if (dead) return;
+            toggleLecturer(code, kind, group.lecturer);
+          },
+        },
+      },
+      [circle]
+    );
+    tr.appendChild(el("td", { class: "cell-rank" }, [rankBtn]));
 
     // מרצה, ומתחתיו מה שנאמר על השורה הזאת: הודעת הידיעון ("הקורס מלא")
     // ולמה אי אפשר לבחור בה.
@@ -10253,6 +10467,8 @@
       var toggle = ui.stepToggles[step.key];
       if (toggle) {
         toggle.setAttribute("aria-expanded", isActive ? "true" : "false");
+        if (isActive) toggle.setAttribute("aria-current", "step");
+        else toggle.removeAttribute("aria-current");
         // ‏שלב נעול אינו לחיץ ואינו בסדר ה-Tab.
         if (locked) {
           toggle.setAttribute("aria-disabled", "true");

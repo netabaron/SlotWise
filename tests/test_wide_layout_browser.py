@@ -434,7 +434,7 @@ def test_updating_shows_next_to_the_title_while_a_solve_runs(browser, server):
                        return {hidden: u.hidden, display: getComputedStyle(u).display, text: u.textContent.trim(),
                                color: getComputedStyle(u).color,
                                mut: (() => { const p = document.createElement('span');
-                                             p.style.color = 'var(--mut)'; document.body.appendChild(p);
+                                             p.style.color = 'var(--sec)'; document.body.appendChild(p);
                                              const c = getComputedStyle(p).color; p.remove(); return c; })(),
                                sameRow: Math.abs(u.getBoundingClientRect().top
                                         - document.getElementById('alt-title').getBoundingClientRect().top) < 12}; }"""

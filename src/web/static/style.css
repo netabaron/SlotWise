@@ -85,7 +85,10 @@
   --panel: var(--sf);
   --muted: var(--sec);
   --line: var(--bd);
-  --line-strong: var(--mut);
+  /* ‏מסגרת של פקד שהיא הקצה היחיד שלו (שדות, תיבות בחירה, כפתורי רפאים,
+     ‏כפתורי הימים): ‎--sec‎ ולא ‎--mut‎ — ‏3:1 לפחות מול המשטח (DESIGN.md,
+     ‏Quality floor, 9C). ‎--mut‎ נתן 2.51:1 בבהיר ו-2.75:1 בכהה. */
+  --line-strong: var(--sec);
 
   --accent: var(--ink);
   --accent-ink: var(--sf);
@@ -110,14 +113,19 @@
   --err-bg:  #fbe3e8;  --err-line:  #ad2c48;  --err-ink:  #8a1030;
 
   /* ---- פתק הזהב של שלב הקורסים (docs/DESIGN.md, "Semester notes") ---- */
-  --gold-ink: #9a7a32;
+  /* ‏‎#876b2c‎ ולא ‎#9a7a32‎ (‏2026-10-12): ‏5.04:1 על ‎--sf‎ ו-4.56:1 על ‎--gold-bg‎;
+     ‏הקודם נתן 4.04:1 ו-3.65:1 (DESIGN.md, Quality floor, 9C). */
+  --gold-ink: #876b2c;
   --gold-bg: #faf3e3;
   --gold-line: #e8d6ab;
 
   /* ---- סימוני טבלת המרצים ---- */
   --pin-bg: #e7f0dc;
   --pin-line: #366e2b;
-  --tie-line: #6d4fa6;
+  /* ‏‎#5e4490‎ ולא ‎#6d4fa6‎ (‏2026-10-12): התג "קורס צמוד" שקוף, ולכן יושב
+     ‏על גוון הקורס בכרטיס נבחר — ‏5.06:1 לפחות על כל עשרת הגוונים (הקודם
+     ‏ירד ל-4.12:1 על ‎--course-6‎). */
+  --tie-line: #5e4490;
   --dead-line: #7d1533;
 
   /* ---- מידות ---- */
@@ -175,7 +183,7 @@
   --dark-chip: var(--dark-ln);
   --dark-muted: var(--dark-sec);
   --dark-line: var(--dark-bd);
-  --dark-line-strong: var(--dark-mut);
+  --dark-line-strong: var(--dark-sec);
 
   /* ‏הזוג מתהפך: מה שיושב על רקע ‎--ink‎ כתוב ב-‎--sf‎. */
   --dark-accent: var(--dark-ink);
@@ -716,6 +724,9 @@ html[data-theme="dark"] .brand-icon-dark { display: inline; }
 }
 
 .input:hover { border-color: var(--accent); }
+/* ‏בלי הכלל הזה הדפדפן צובע את הרמז באפור משלו — ‏3.85:1 בכהה (DESIGN.md,
+   ‏Quality floor, 9C). */
+.input::placeholder { color: var(--sec); }
 
 input[type="checkbox"] { accent-color: var(--accent); inline-size: 1.05rem; block-size: 1.05rem; }
 input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
@@ -1014,6 +1025,9 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
    תוכן — והודעות חולפות עולות מעליו. מסך בלבד: בהדפסה אין סרגל. */
 @media screen {
   body.has-bottom-bar { padding-block-end: var(--bottom-bar-h, 0px); }
+  /* ‏וגם ריפוד גלילה: פקד שמקבל פוקוס נגלל אל מעל הסרגל ולא אל מתחתיו
+     ‏(DESIGN.md, Quality floor, 9C). ‏‎--bottom-bar-h‎ יושב על ‎<html>‎. */
+  html:has(> body.has-bottom-bar) { scroll-padding-block-end: var(--bottom-bar-h, 0px); }
   body.has-bottom-bar .toasts { inset-block-end: calc(16px + var(--bottom-bar-h, 0px)); }
 }
 
@@ -1456,6 +1470,9 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .search-results > li:last-child { border-block-end: 0; }
 .search-results > li:hover,
 .search-results > li[aria-selected="true"] { background: var(--accent-soft); }
+/* ‏התוצאה שהחצים מסמנים (‏aria-activedescendant): הפוקוס נשאר בשדה, ולכן
+   ‏הסימון הוא מסגרת דיו בתוך השורה ולא טבעת הפוקוס. */
+.search-results > li.is-active { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--focus); }
 
 .course-list {
   display: grid;
@@ -1555,7 +1572,7 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 #electives-needs-spec[hidden] { display: none; }
 .electives-head-notes { display: grid; gap: 4px; }
 .electives-head-notes:empty { display: none; }
-.elective-chip .tag--spec { font-size: 11px; }
+.elective-chip .tag--spec { font-size: 12px; }
 .elective-chip.is-selected .tag--spec { border-color: var(--ev-fg); color: var(--ev-fg); }
 
 .electives-groups { display: grid; gap: 6px; }
@@ -1730,7 +1747,9 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
    נבחר, מצב הבחירה גובר: מילוי דיו, והקונפליקט נאמר באזהרה ובסימן השלב. */
 .day-btn.is-impossible {
   border-style: dashed;
-  border-color: var(--mut);
+  /* ‏גם המסגרת היא הקצה היחיד של הפקד: ‎--line-strong‎ (‏--sec), ‏3:1 לפחות
+     ‏(DESIGN.md, Quality floor, 9C). המקווקו הוא מה שמבדיל אותו. */
+  border-color: var(--line-strong);
   color: var(--sec);
 }
 
@@ -1746,7 +1765,7 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   inset-block-start: calc(100% + 3px);
   inset-inline-start: 50%;
   transform: translateX(50%);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1;
   color: var(--sec);
@@ -1796,7 +1815,7 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   font-weight: 600;
   cursor: pointer;
 }
-.att-off-pill::after { content: "\25BE"; font-size: 11px; color: var(--sec); }
+.att-off-pill::after { content: "\25BE"; font-size: 12px; color: var(--sec); }
 .att-off[open] > .att-off-pill::after { content: "\25B4"; }
 .attendance-off-list {
   display: flex;
@@ -1849,8 +1868,12 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   cursor: pointer;
 }
 .lect-course-head:hover { background: var(--panel-2); }
+/* ‏‎.lect-course‎ הוא ‎overflow: clip‎, והטבעת הרגילה (‏2px מחוץ לכפתור) נחתכה
+   ‏בו כולה. בפנים היא נשארת גלויה (DESIGN.md, Quality floor, 9C). */
+.lect-course-head:focus-visible { outline-offset: -2px; }
 .lect-course-title { font-size: 14px; font-weight: 600; }
-.lect-course-meta { font-size: 13px; color: var(--mut); }
+/* ‏‎--sec‎ ולא ‎--mut‎ (‏2026-10-12): קוד ונ"ז הם טקסט, ו-‎--mut‎ נתן 2.51:1. */
+.lect-course-meta { font-size: 13px; color: var(--sec); }
 /* ‏הסיכום החי — "לא דורג" / "עדיפות: A ← B" / "הרצאה: A ← B · תרגול: C" — בסוף השורה. */
 .lect-course-end {
   display: inline-flex;
@@ -1988,13 +2011,32 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   inline-size: 22px;
   block-size: 22px;
   border-radius: 50%;
-  border: 1px dashed var(--mut);
+  /* ‏‎--line-strong‎ (‏--sec) מאז 9C: המקווקו הוא הקצה היחיד של העיגול הריק. */
+  border: 1px dashed var(--line-strong);
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--sf);
 }
 .rank-circle.is-ranked { border: 1px solid var(--ink); background: var(--ink); }
+/* ‏כפתור הדירוג סביב העיגול (DESIGN.md, Quality floor, 9C): השורה עדיין
+   ‏לחיצה כולה, והכפתור הוא מה שמגיעים אליו במקלדת. 24px לפחות, והטבעת עגולה. */
+.rank-btn {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 24px;
+  min-block-size: 24px;
+  margin: -1px;
+  padding: 1px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.rank-btn[aria-disabled="true"] { cursor: default; }
+.rank-btn:focus-visible { outline-offset: 1px; border-radius: 50%; }
 /* ‏קפיצה קצרה כשדירוג ניתן: 250ms, ל-1.2 וחזרה. תנועה מופחתת — פרק 14. */
 .rank-circle.is-pop { animation: rank-pop 250ms ease-out; }
 @keyframes rank-pop {
@@ -3046,7 +3088,8 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
 
 /* ---- שלב 3: מה יאפשר את יעד הימים ---- */
 .days-relax { margin-block-start: 10px; }
-.days-relax-title { margin: 0 0 3px; font-size: 13px; font-weight: 700; }
+/* ‏h3 מאז 9C (היה h4 ישר מתחת ל-h2); ‏line-height נשאר של הגוף, כמו קודם. */
+.days-relax-title { margin: 0 0 3px; font-size: 13px; font-weight: 700; line-height: inherit; }
 .days-relax-intro { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
 .days-relax-list { margin: 0; padding: 0; list-style: none; }
 .days-relax-row {
@@ -3221,7 +3264,8 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
 
   /* ‏שורת הכותרת: "5 מערכות מובילות", ולידה "מעדכן…" בזמן חישוב. */
   .alt-title { flex: none; }
-  .alt-updating:not([hidden]) { display: inline; font-size: 13px; color: var(--mut); }
+  /* ‏‎--sec‎ ולא ‎--mut‎ מאז 9C (‏2026-10-12): ‏--mut נתן 2.51:1. */
+  .alt-updating:not([hidden]) { display: inline; font-size: 13px; color: var(--sec); }
   .alt-sort { margin-inline-start: auto; }
 
   /* ‏פרטי השיעור במקום המקרא, בגובה שלו, והשדות זה לצד זה (פריט 8). הפאנל

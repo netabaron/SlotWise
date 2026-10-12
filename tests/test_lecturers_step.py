@@ -177,7 +177,8 @@ def test_course_header_carries_stripe_code_credits_and_no_age(browser, server):
     assert got["w"] == "4px" and got["color"] == got["bd"], got
     assert got["titleWeight"] == "600", got
     assert AUTOMATA in got["meta"] and 'נ"ז' in got["meta"], got
-    assert got["metaColor"] == MUT["light"], got
+    # ‏‎--sec‎ מאז 9C (‏2026-10-12, באישור): ‎--mut‎ נתן 2.51:1, מתחת ל-AA.
+    assert got["metaColor"] == "rgb(110, 110, 115)", got
     assert got["choice"] == "לא דורג", got
     assert "עודכן" not in got["all"], "גיל הנתונים נאמר פעם אחת, בכותרת העמוד"
 
