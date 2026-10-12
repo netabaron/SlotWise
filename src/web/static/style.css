@@ -1381,6 +1381,9 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   position: absolute !important;
   inline-size: 1px;
   block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
