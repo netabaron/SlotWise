@@ -5,7 +5,7 @@ This document is the source of truth for the SlotWise redesign. Implement it in 
 ## Principles
 
 1. **All content stays; presentation changes.** Nothing a student can learn today disappears. Every piece of information appears once, in the place where it is used.
-2. **Color belongs to the courses and the logo.** The interface uses a single ink color (the logo navy in light mode) on neutral surfaces. Saturated color is reserved for the course colors, each used identically in the steps and in the timetable, and for the logo (see Logo and favicon).
+2. **Color belongs to the courses and the logo.** The interface uses a single ink color (the logo navy in light mode) on neutral surfaces. Saturated color is reserved for the course colors, each used identically in the steps and in the timetable, and for the logo (see Logo and favicon). One approved exception: the full-group warning sign (Tokens, Color, "Warning sign").
 3. **Motion explains, it does not decorate.** Motion is used only in response to the user's action: a step or course opening and closing, a rank being assigned, timetable blocks moving between alternatives. No scroll-triggered entrances, no glow, no gradients, no ambient animation.
 4. **The active step is the only loud thing.** Completed steps collapse to one summary line, upcoming steps are muted.
 5. **Nothing to offer is one line.** When a feature has nothing to offer, it says so in one line instead of explaining what it checked. For example, when no single-course drop reaches the study-days target, the "מה יאפשר N ימים" panel is only "אי אפשר להגיע ל-N ימים, גם בוויתור על קורס אחד."
@@ -44,6 +44,16 @@ In dark mode, elements that use `--ink` as a background use `--sf` as their text
 **Course palette** (decided 2026-09-30; **supersedes** the earlier 8-colour palette and the "tint = `color-mix` 13%" rule). Course colors are the site's existing ten: `--course-0` … `--course-9`, each with `-bd` and `-fg` (light), and `--dark-course-*` (dark), in `style.css`. They are assigned by `buildColorMap()` in `app.js`, unchanged. Wherever this document says a course's "tint" or "course color", it means that course's `--course-N` fill and `--course-N-bd` border. No hex values are listed here: `style.css` is the single source for them (see CLAUDE.md).
 
 The existing light/dark/system toggle stays and drives these tokens.
+
+**Warning sign** (decided 2026-10-13; an approved exception to principle 2). Every place that says a group is full shows a small warning sign next to the text: a yellow triangle with a black "!" inside and a thin black outline. The outline is what gives the yellow its contrast on a light page. A sign does not change colour, so it is the same in light mode, in dark mode and in print. Two tokens, defined once in `:root` and not themed: `--warn-sign-fill` (the yellow) and `--warn-sign-ink` (near-black, for the "!" and the outline). They are separate from `--warn-ink`, which is the themed text colour of banners and notes and turns light in dark mode. The sign is one inline SVG built by one helper in `app.js` (no image file, no CDN, no opacity), about 1em tall, aligned with the text, with a small gap on the side facing the text that works in RTL. It is `aria-hidden`; the text next to it ("קבוצה מלאה", "הקורס מלא", or the full-groups line) stays and carries the meaning. Contrast: the "!" on the yellow at least 4.5:1, and the outline at least 3:1 against the page background in both modes.
+
+Where it appears, always and only for a full group (`isFullGroup()`, `status_note` exactly "הקורס מלא"):
+
+1. The timetable block's "קבוצה מלאה" (`.ev-full`), and the same marker in the day list below 1000px.
+2. The lecturers step: the group row's status line (`.group-status`), when the group is full.
+3. The results line "חלק מהקבוצות במערכת הזו מלאות, ואי אפשר להירשם אליהן." (`.fit-full`).
+4. The lesson details: the status row, when the status is "הקורס מלא". The other statuses get no sign.
+5. The no-fixed-time line: its "קבוצה מלאה" ("ללא מועד קבוע: <name> (<type>, N נ״ז) · קבוצה מלאה").
 
 ### Type
 
@@ -324,3 +334,4 @@ Each phase is its own commit, keeps all existing tests green, adds tests where b
 10. **Lecturer order** (decided 2026-10-09): the priority order (Lecturers, "How a ranking chooses"), ranking per kind, pinning removed from the step and from `/api/solve`, saved pins converted to ranks, the fit percentage removed, and "מה פחות טוב במערכת הזו" in priority order. Unlike the phases above it changes protected tests, each one listed and approved before it is edited.
 11. **Every day counts** (decided 2026-10-09): every day with a lesson counts toward the study-days target (Lecturers, "How a ranking chooses", item 1), and the line about a day without mandatory attendance is removed from the results page together with `skippable_days` in `/api/solve`. The test of that line is deleted (approved 2026-10-09) and replaced by one that the line is gone.
 12. **Attendance starts off** (decided 2026-10-10): the switch starts on only where the yedion says attendance is required (Lecturers, "The switch starts off"), the page sends an explicit `false` for every other kind, and the copy next to the switch and to an overlap says so without mentioning the yedion. Three protected tests change (approved 2026-10-10): the pill test starts from every switch on, the dead-row test turns the 61759 lecture on, and the priority-order test keeps its case with every switch on, so that an alternative still misses a lecturer.
+13. **Full-group warning sign** (decided 2026-10-13): the sign in Tokens, Color, "Warning sign", in its five places, with a new browser test. No protected test changes.
