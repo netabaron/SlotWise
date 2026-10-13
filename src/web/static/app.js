@@ -3820,9 +3820,13 @@
    */
   function holdDuringFold(section, node, top) {
     if (!node || typeof top !== "number") return;
+    // ‏רק גלילה שבאמת מזיזה את העמוד: בראש העמוד אין לאן לעלות, ובתחתיתו
+    // ‏אין לאן לרדת (Scroll behaviour, 2: שלב שלא זז אינו גולל).
     var hold = function () {
-      var drift = node.getBoundingClientRect().top - top;
-      if (Math.abs(drift) >= 0.5) window.scrollBy(0, drift);
+      var y = window.pageYOffset;
+      var max = document.documentElement.scrollHeight - window.innerHeight;
+      var to = Math.min(Math.max(0, y + node.getBoundingClientRect().top - top), Math.max(0, max));
+      if (Math.abs(to - y) >= 0.5) window.scrollBy(0, to - y);
     };
     hold();
     var holding = true;
