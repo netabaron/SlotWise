@@ -535,8 +535,12 @@
     if (active && container.contains && container.contains(active)) {
       key = active.dataset ? active.dataset.fk || null : null;
     }
+    // ‏מכולה ריקה מקצרת את העמוד, והדפדפן מצמיד את הגלילה ל-0 ונשאר שם גם
+    // ‏אחרי הבנייה (Scroll behaviour, 3). הגובה נשמר עד שהתוכן חוזר.
+    container.style.minHeight = container.offsetHeight + "px";
     clear(container);
     build(container);
+    container.style.minHeight = "";
     if (!key) return;
     var candidates = container.querySelectorAll("[data-fk]");
     for (var i = 0; i < candidates.length; i++) {
@@ -6835,6 +6839,26 @@
     return seen;
   }
 
+  /**
+   * ‏פתיחת קורס בשלב המרצים: הקורס הפתוח שמעליו נסגר, וראש הקורס שנלחץ
+   * ‏עולה איתו. גוללים בכמה שהוא זז, כדי שיישאר במקומו על המסך (DESIGN.md,
+   * ‏Scroll behaviour, 3). ‏‎rebuild()‎ החליף את האלמנט, ולכן מחפשים לפי
+   * ‏‏data-fk. בראש העמוד אין לאן לעלות: שם הראש עשוי לזוז, וזה מקובל.
+   */
+  function keepHeadInPlace(fk, before) {
+    if (!ui.lectCourses || typeof before !== "number") return;
+    var heads = ui.lectCourses.querySelectorAll(".lect-course-head[data-fk]");
+    for (var i = 0; i < heads.length; i++) {
+      if (heads[i].dataset.fk !== fk) continue;
+      // ‏רק גלילה שבאמת מזיזה את העמוד, כמו ב-‏holdDuringFold.
+      var y = window.pageYOffset;
+      var max = document.documentElement.scrollHeight - window.innerHeight;
+      var to = Math.min(Math.max(0, y + heads[i].getBoundingClientRect().top - before), Math.max(0, max));
+      if (Math.abs(to - y) >= 0.5) window.scrollBy(0, to - y);
+      return;
+    }
+  }
+
   function coursePanel(course, open) {
     var code = course.code;
     var idx = colorOf(code);
@@ -6858,7 +6882,9 @@
         on: {
           click: function () {
             runtime.openCourse = open ? "" : txt(code);
+            var before = head.getBoundingClientRect().top;
             render();
+            keepHeadInPlace("lect-course-" + code, before);
           },
         },
       },
