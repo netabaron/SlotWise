@@ -3698,6 +3698,8 @@
   function completeStep(key) {
     if (!stepValid(key)) return;
     var section = ui.steps[key];
+    // ‏לפני הציור: הציור מקפל את השלב, ומה שמתחתיו כבר זז.
+    var heads = stepHeadTops();
     state.completed[key] = true;
     runtime.openStep = null;
     setState({ completed: state.completed }, { solve: false });
@@ -3705,6 +3707,7 @@
     var next = flow && flow.open;
     if (next) {
       focusStepToggle(next);
+      holdDuringFold(section, ui.steps[next], heads[next]);
       scrollStepIntoView(next, section);
       return;
     }
@@ -3712,6 +3715,7 @@
     // ‏התוצאה; ברחב — המערכת כבר לצד השלבים, ושום דבר לא זז.
     focusStepToggle(key);
     if (!isWide()) {
+      holdDuringFold(section, ui.steps.schedule, heads.schedule);
       afterFold(section, function () {
         scrollBelowHeader(ui.steps && ui.steps.schedule);
         // ‏הפוקוס עובר לאן שהעמוד נגלל — לכותרת התוצאה. אחרת הוא נשאר על
@@ -3796,6 +3800,45 @@
 
   //: קצת יותר מ-‎--fold-time‎ (350ms, style.css).
   var STEP_FOLD_WAIT_MS = 450;
+
+  /** ראש כל שלב ושל התוצאה על המסך, ברגע הקריאה. */
+  function stepHeadTops() {
+    var tops = {};
+    Object.keys(ui.steps || {}).forEach(function (k) {
+      if (ui.steps[k]) tops[k] = ui.steps[k].getBoundingClientRect().top;
+    });
+    return tops;
+  }
+
+  /**
+   * ‏"המשך": השלב שנסגר מתקפל, לעתים מעל המסך, ובלי תיקון ראש השלב הבא
+   * ‏קופץ למעלה בפריים אחד ורק אחר כך נגלל חזרה (DESIGN.md, Scroll
+   * ‏behaviour, 2). לכן עד סוף הקיפול גוללים בכל פריים בדיוק בכמה שהוא
+   * ‏זז, מיד ולא בגלילה חלקה. לא סומכים על ‏scroll anchoring של הדפדפן —
+   * ‏Safari באייפון לא בהכרח עושה אותו. תיקון ראשון כבר עכשיו, לפני
+   * ‏שהציור מגיע למסך; בלי תנועה זה גם התיקון היחיד.
+   */
+  function holdDuringFold(section, node, top) {
+    if (!node || typeof top !== "number") return;
+    var hold = function () {
+      var drift = node.getBoundingClientRect().top - top;
+      if (Math.abs(drift) >= 0.5) window.scrollBy(0, drift);
+    };
+    hold();
+    var holding = true;
+    var tick = function () {
+      if (!holding) return;
+      hold();
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    // ‏‎transitionend‎ מגיע לפני ה-rAF של אותו פריים: תיקון אחרון כאן,
+    // ‏ורק אחריו הגלילה אל מתחת לכותרת.
+    afterFold(section, function () {
+      hold();
+      holding = false;
+    });
+  }
 
   //: שלב שראשו כבר בחלק הזה של המסך, מתחת לכותרת, אינו נגלל.
   var STEP_IN_VIEW_FRACTION = 0.4;
