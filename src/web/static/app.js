@@ -195,6 +195,55 @@
     return txt(rec && rec.status_note) === FULL_STATUS;
   }
 
+  /**
+   * ‏תמרור האזהרה שליד כל "קבוצה מלאה" (DESIGN.md, Tokens, Color, "Warning
+   * sign"): משולש צהוב, "!" שחור וקו מתאר שחור דק. הצבעים ב-style.css
+   * ‏(‎--warn-sign-*‎), זהים בכל ערכה ובהדפסה. ‏aria-hidden — הטקסט שלידו נושא
+   * את המשמעות. אין בו ‎<title>‎ ואין רווח: ה-textContent של מה שמכיל אותו
+   * נשאר בדיוק כפי שהיה, והמרווח הוא margin ב-CSS.
+   */
+  var SVG_NS = "http://www.w3.org/2000/svg";
+
+  function warnSign() {
+    var svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "warn-sign");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    [
+      ["path", { class: "warn-sign-tri", d: "M8 1.6 15.2 14.4H.8z" }],
+      ["path", { class: "warn-sign-mark", d: "M7.05 5.4h1.9l-.4 5H7.45z" }],
+      ["circle", { class: "warn-sign-mark", cx: "8", cy: "12.2", r: "1" }],
+    ].forEach(function (spec) {
+      var node = document.createElementNS(SVG_NS, spec[0]);
+      Object.keys(spec[1]).forEach(function (k) {
+        node.setAttribute(k, spec[1][k]);
+      });
+      svg.appendChild(node);
+    });
+    return svg;
+  }
+
+  /**
+   * ‏מוסיף את התמרור בתחילת node — בצד הימני ב-RTL, לפני הטקסט. התמרור והמילה
+   * ‏הראשונה יושבים יחד ב-span עם nowrap: אחרת השורה נשברה ביניהם, והתמרור נשאר
+   * ‏לבד בסוף שורה (נמדד בבלוק של 151px). שאר הטקסט נשבר כרגיל, וה-textContent
+   * ‏אינו משתנה — רק מתפצל צומת הטקסט.
+   */
+  function withWarnSign(node) {
+    var join = el("span", { class: "warn-sign-join" }, [warnSign()]);
+    var text = document.createTreeWalker(node, NodeFilter.SHOW_TEXT).nextNode();
+    if (!text) {
+      node.insertBefore(join, node.firstChild);
+      return node;
+    }
+    var word = /^\s*\S+/.exec(text.data);
+    if (word && word[0].length < text.data.length) text.splitText(word[0].length);
+    text.parentNode.insertBefore(join, text);
+    join.appendChild(text);
+    return node;
+  }
+
   var TERMS_FALLBACK = [
     { value: "א", label: T("app.terms.fallbackTerms.winter", "") },
     { value: "ב", label: T("app.terms.fallbackTerms.spring", "") },
@@ -7041,7 +7090,8 @@
       );
     }
     if (group.status_note) {
-      lectCell.appendChild(el("div", { class: "row-sub group-status", text: group.status_note }));
+      var statusEl = el("div", { class: "row-sub group-status", text: group.status_note });
+      lectCell.appendChild(isFullGroup(group) ? withWarnSign(statusEl) : statusEl);
     }
     if (dead) {
       lectCell.appendChild(
@@ -7324,7 +7374,10 @@
         [T("app.detail.room"), roomOf(m) || T("app.detail.noRoom"), "", true],
         // ‏המצב שהידיעון סימן לקבוצה, כפי שהוא — "הקורס מלא", "מיועד לחוזרים",
         // "בקורס זה קיימת רשימת המתנה". שורה רק כשיש מצב.
-        txt(m.status_note) ? [T("app.detail.status"), txt(m.status_note), "", false] : null,
+        // ‏התמרור (האיבר החמישי) רק ל"הקורס מלא" — לשני האחרים אין סימון.
+        txt(m.status_note)
+          ? [T("app.detail.status"), txt(m.status_note), "", false, isFullGroup(m)]
+          : null,
         [
           T("app.detail.when"),
           Tf("app.detail.whenValue", {
@@ -7344,6 +7397,7 @@
         var dd = el("dd", {}, [
           row[3] ? ltrCode(row[1]) : el("span", { text: row[1] }),
         ]);
+        if (row[4]) withWarnSign(dd);
         if (row[2]) {
           // ‏הרווח יושב על השם, בצד שפונה אל הקוד (‎.detail-name‎ ב-style.css). על
           // ‏הקוד עצמו הוא לא יכול לשבת: זה ‎<bdi dir="ltr">‎, ו-inline-start שלו
@@ -7882,7 +7936,7 @@
       });
     }
     if (ui.unscheduled) {
-      setText(ui.unscheduled, unscheduled.length ? unscheduledLine(unscheduled) : "");
+      renderUnscheduled(ui.unscheduled, unscheduled);
       setHidden(ui.unscheduled, !unscheduled.length);
     }
 
@@ -8240,7 +8294,7 @@
    */
   function appendFullGroupsLine(box, sch) {
     if (!pickList(sch, ["picks"], null).some(isFullGroup)) return;
-    box.appendChild(el("p", { class: "fit-full", text: T("app.schedule.fullGroupsLine") }));
+    box.appendChild(withWarnSign(el("p", { class: "fit-full", text: T("app.schedule.fullGroupsLine") })));
   }
 
   /**
@@ -8344,26 +8398,41 @@
       });
   }
 
-  /** ‏"ללא מועד קבוע: <שם> (<סוג>, N נ"ז)", פריט לכל קורס כזה. */
-  function unscheduledLine(list) {
-    return Tf("app.grid.unscheduled", {
-      list: list
-        .map(function (rec) {
-          var kind = rec.kinds.join(", ");
-          var item = rec.credits === null
-            ? Tf("app.grid.unscheduledItemNoCredits", { name: rec.name, kind: kind })
-            : Tf("app.grid.unscheduledItem", {
-                name: rec.name,
-                kind: kind,
-                credits: Tf("app.credits.withUnit", { value: fmtNumber(rec.credits) }),
-              });
-          // ‏קבוצה מלאה נאמרת גם כאן — לקורס בלי מועד אין בלוק שיישא אותה.
-          return rec.full
-            ? Tf("app.grid.unscheduledFull", { item: item, status: T("app.grid.groupFull") })
-            : item;
-        })
-        .join(", "),
+  /**
+   * ‏"ללא מועד קבוע: <שם> (<סוג>, N נ"ז)", פריט לכל קורס כזה. נבנה כצמתים ולא
+   * כמחרוזת, כדי שהתמרור יישב לפני "קבוצה מלאה"; ה-textContent זהה למחרוזת.
+   */
+  function renderUnscheduled(box, list) {
+    clear(box);
+    if (!list.length) return;
+    var text = function (value) {
+      if (value) box.appendChild(document.createTextNode(value));
+    };
+    var outer = T("app.grid.unscheduled").split("{list}");
+    text(outer[0]);
+    list.forEach(function (rec, i) {
+      if (i) text(", ");
+      var kind = rec.kinds.join(", ");
+      var item = rec.credits === null
+        ? Tf("app.grid.unscheduledItemNoCredits", { name: rec.name, kind: kind })
+        : Tf("app.grid.unscheduledItem", {
+            name: rec.name,
+            kind: kind,
+            credits: Tf("app.credits.withUnit", { value: fmtNumber(rec.credits) }),
+          });
+      if (!rec.full) {
+        text(item);
+        return;
+      }
+      // ‏קבוצה מלאה נאמרת גם כאן — לקורס בלי מועד אין בלוק שיישא אותה.
+      var parts = Tf("app.grid.unscheduledFull", { item: item }).split("{status}");
+      text(parts[0]);
+      box.appendChild(
+        withWarnSign(el("span", { class: "unscheduled-full", text: T("app.grid.groupFull") }))
+      );
+      text(parts.slice(1).join("{status}"));
     });
+    text(outer.slice(1).join("{list}"));
   }
 
   /**
@@ -8978,7 +9047,7 @@
       var roomEl = room ? roomNode(m) : null;
       // ‏קבוצה מלאה — בסוף השורה השלישית (DESIGN.md, "Results page", 5).
       var fullEl = isFullGroup(m)
-        ? el("span", { class: "ev-full", text: T("app.grid.groupFull") })
+        ? withWarnSign(el("span", { class: "ev-full", text: T("app.grid.groupFull") }))
         : null;
 
       // ‏<button> ולא <div>: מספר הקבוצה נמצא רק בפאנל, ולכן חייבת להיות
@@ -9174,7 +9243,7 @@
         var kindEl = kind ? el("span", { class: "dl-kind", text: kind }) : null;
         var roomEl = room ? roomNode(m) : null;
         var fullEl = isFullGroup(m)
-          ? el("span", { class: "dl-full", text: T("app.grid.groupFull") })
+          ? withWarnSign(el("span", { class: "dl-full", text: T("app.grid.groupFull") }))
           : null;
         var sep = function (a, b) {
           return a && b ? document.createTextNode(" · ") : null;

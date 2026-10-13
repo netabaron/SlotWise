@@ -112,6 +112,12 @@
   --warn-bg: #fbf0d5;  --warn-line: #8a5a12;  --warn-ink: #5d3a05;
   --err-bg:  #fbe3e8;  --err-line:  #ad2c48;  --err-ink:  #8a1030;
 
+  /* ---- תמרור "קבוצה מלאה" (docs/DESIGN.md, Color, "Warning sign") ----
+     ‏תמרור אינו מחליף צבע: מוגדר כאן בלבד, לא ממופה בגושי הכהה ולא בהדפסה.
+     ‏נפרד מ-‎--warn-ink‎, שהוא צבע טקסט ומתבהר בכהה. */
+  --warn-sign-fill: #ffcc00;
+  --warn-sign-ink: #1a1a1a;
+
   /* ---- פתק הזהב של שלב הקורסים (docs/DESIGN.md, "Semester notes") ---- */
   /* ‏‎#876b2c‎ ולא ‎#9a7a32‎ (‏2026-10-12): ‏5.04:1 על ‎--sf‎ ו-4.56:1 על ‎--gold-bg‎;
      ‏הקודם נתן 4.04:1 ו-3.65:1 (DESIGN.md, Quality floor, 9C). */
@@ -2674,6 +2680,27 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
   text-underline-offset: 3px;
   cursor: help;
 }
+
+/* ---- תמרור "קבוצה מלאה", בכל מקום שאומר שקבוצה מלאה (app.js, warnSign) ----
+   ‏בגובה הטקסט, על קו הבסיס שלו, והמרווח בצד שפונה אל הטקסט (inline-end, כלומר
+   ‏משמאל ב-RTL). ‏overflow: visible — קו המתאר לא נחתך בקצה ה-viewBox. */
+.warn-sign {
+  display: inline-block;
+  width: 1.1em;
+  height: 1em;
+  vertical-align: -0.14em;
+  margin-inline-end: 0.3em;
+  overflow: visible;
+}
+.warn-sign-tri {
+  fill: var(--warn-sign-fill);
+  stroke: var(--warn-sign-ink);
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+}
+.warn-sign-mark { fill: var(--warn-sign-ink); }
+/* ‏התמרור והמילה הראשונה אינם נפרדים בשבירת שורה (app.js, withWarnSign). */
+.warn-sign-join { white-space: nowrap; }
 
 /* ---- קבוצות מלאות בחלופה הנבחרת: שורה אחת מתחת לנתונים ----
    ‏--warn-ink, כמו מצב הקבוצה בשלב המרצים (.group-status): זו אותה עובדה. */
