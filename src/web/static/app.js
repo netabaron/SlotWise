@@ -6839,24 +6839,93 @@
     return seen;
   }
 
+  //: משך הגלישה של ראש קורס בשלב המרצים (Scroll behaviour, 3).
+  var LECT_GLIDE_MS = 300;
+  //: ‏התזוזה הגדולה ביותר של הראש בפריים אחד. גלישה ארוכה מתארכת כדי
+  //: ‏להישאר מתחתיה ב-60Hz (‏ease-out מגיע בתחילתו לפי 2 מהמהירות
+  //: ‏הממוצעת), ופריים שהדפדפן דילג עליו לא מכפיל אותה.
+  var LECT_GLIDE_MAX_STEP = 45;
+
+  /** ‏עוצר גלישה שעוד רצה. */
+  function stopLectGlide() {
+    var box = ui.lectCourses;
+    if (box && box._glideEnd) box._glideEnd();
+  }
+
   /**
-   * ‏פתיחת קורס בשלב המרצים: הקורס הפתוח שמעליו נסגר, וראש הקורס שנלחץ
-   * ‏עולה איתו. גוללים בכמה שהוא זז, כדי שיישאר במקומו על המסך (DESIGN.md,
-   * ‏Scroll behaviour, 3). ‏‎rebuild()‎ החליף את האלמנט, ולכן מחפשים לפי
-   * ‏‏data-fk. בראש העמוד אין לאן לעלות: שם הראש עשוי לזוז, וזה מקובל.
+   * ‏פתיחת קורס בשלב המרצים (DESIGN.md, Scroll behaviour, 3): הקורס הפתוח
+   * ‏נסגר, וראש הקורס שנלחץ גולש בתנועה אחת ממקום הלחיצה אל מתחת לכותרת
+   * ‏העמוד, היכן שהוא נדבק — או עד כמה שהעמוד מאפשר. סגירה משאירה את הראש
+   * ‏במקומו, ככל שאפשר.
+   *
+   * ‏FLIP: ‎rebuild()‎ מחליף את האלמנטים, ולכן מעבר CSS עליהם לא יכול לרוץ.
+   * ‏גוללים מיד אל היעד, מזיזים את כל רשימת הקורסים בחזרה למקום שבו הראש
+   * ‏נראה לפני הלחיצה, ומורידים את ההזזה לאפס פריים אחר פריים. ‏rAF ולא
+   * ‏‎transition‎: מעבר רץ לפי השעון, ופריים שדולג הזיז את הראש פי שניים
+   * ‏(‏85px בפריים אחד, נמדד). ‎before‎ נמדד לפני ‎render()‎; הראש
+   * ‏נמצא מחדש לפי ‏data-fk.
    */
-  function keepHeadInPlace(fk, before) {
-    if (!ui.lectCourses || typeof before !== "number") return;
-    var heads = ui.lectCourses.querySelectorAll(".lect-course-head[data-fk]");
+  function glideHead(fk, before, opening) {
+    var box = ui.lectCourses;
+    if (!box || typeof before !== "number") return;
+    var head = null;
+    var heads = box.querySelectorAll(".lect-course-head[data-fk]");
     for (var i = 0; i < heads.length; i++) {
-      if (heads[i].dataset.fk !== fk) continue;
-      // ‏רק גלילה שבאמת מזיזה את העמוד, כמו ב-‏holdDuringFold.
-      var y = window.pageYOffset;
-      var max = document.documentElement.scrollHeight - window.innerHeight;
-      var to = Math.min(Math.max(0, y + heads[i].getBoundingClientRect().top - before), Math.max(0, max));
-      if (Math.abs(to - y) >= 0.5) window.scrollBy(0, to - y);
-      return;
+      if (heads[i].dataset.fk === fk) head = heads[i];
     }
+    if (!head) return;
+
+    // ‏היעד: ראש קורס פתוח נדבק ב-‎--sticky-top‎ (מתחת לכותרת הדקה בצר,
+    // ‏בראש המסך ברחב), וגלישה שנעצרת שם לא קופצת כשההדבקה נתפסת.
+    var target = before;
+    if (opening) {
+      target = parseFloat(getComputedStyle(head.parentNode).top);
+      if (!isFinite(target)) target = 0;
+    }
+    // ‏רק גלילה שבאמת מזיזה את העמוד, כמו ב-‏holdDuringFold.
+    var y = window.pageYOffset;
+    var max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    var to = Math.min(Math.max(0, y + head.getBoundingClientRect().top - target), max);
+    if (Math.abs(to - y) >= 0.5) window.scrollTo(0, to);
+
+    var shift = before - head.getBoundingClientRect().top;
+    if (Math.abs(shift) < 0.5 || reducedMotion()) return;
+
+    var ms = Math.max(LECT_GLIDE_MS, Math.ceil((Math.abs(shift) * 2 * (1000 / 60)) / LECT_GLIDE_MAX_STEP));
+    var at = shift;
+    var t0 = null;
+    var frame = 0;
+    var timer = 0;
+    var finish = function () {
+      if (box._glideEnd !== finish) return;
+      box._glideEnd = null;
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+      box.style.transform = "";
+      box.style.willChange = "";
+    };
+    var step = function (now) {
+      if (box._glideEnd !== finish) return;
+      if (t0 === null) t0 = now;
+      var p = Math.min(1, (now - t0) / ms);
+      var want = shift * (1 - p) * (1 - p); // ease-out
+      at = Math.min(Math.max(want, at - LECT_GLIDE_MAX_STEP), at + LECT_GLIDE_MAX_STEP);
+      if (Math.abs(at) < 0.5) {
+        finish();
+        return;
+      }
+      box.style.transform = "translateY(" + at + "px)";
+      frame = requestAnimationFrame(step);
+    };
+    box._glideEnd = finish;
+    // ‏שכבה משלה: בלעדיה כל פריים צייר את כל הרשימה מחדש (‏25ms לפריים
+    // ‏במקום 16.7, נמדד). הפריים הראשון כבר עם ההזזה המלאה: הראש במקום
+    // ‏שבו נלחץ.
+    box.style.willChange = "transform";
+    box.style.transform = "translateY(" + shift + "px)";
+    frame = requestAnimationFrame(step);
+    // ‏לשונית ברקע אינה מריצה ‏rAF; שם ההזזה פשוט יורדת.
+    timer = setTimeout(finish, ms * 3 + 500);
   }
 
   function coursePanel(course, open) {
@@ -6882,9 +6951,11 @@
         on: {
           click: function () {
             runtime.openCourse = open ? "" : txt(code);
+            // ‏איפה שהראש נראה עכשיו, גם באמצע גלישה קודמת.
             var before = head.getBoundingClientRect().top;
+            stopLectGlide();
             render();
-            keepHeadInPlace("lect-course-" + code, before);
+            glideHead("lect-course-" + code, before, !open);
           },
         },
       },
