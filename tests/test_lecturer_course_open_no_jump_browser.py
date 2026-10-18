@@ -48,32 +48,55 @@ LANDING_TOLERANCE = 2
 #: ‏במקרה האמיתי: ראש הקורס הבא כ-120px מעל תחתית המסך.
 FROM_BOTTOM = 120
 
-#: ‏דוגם את ראש הקורס בכל פריים, אחרי שהפריים צויר (‏rAF ואז ‏MessageChannel),
-#: ‏במשך ‎ms‎. הראש נמצא מחדש בכל דגימה לפי ‏data-fk: ‏``rebuild()`` מחליף
-#: ‏את האלמנט, ואלמנט שנשמר מראש כבר אינו במסמך.
+#: ‏דוגם את ראש הקורס פעם אחת בכל פריים, בתוך ‏requestAnimationFrame
+#: ‏ואחרי הקולבק של הגלישה באותו פריים — כלומר את המקום שהפריים הזה מצייר.
+#: ‏לא במשימה ולא ב-timeout: דגימה מ-MessageChannel פספסה בעומס פריימים
+#: ‏שרצו ברצף, וב-CI ראתה שני צעדים של 45px כאילו היו אחד (‏780 → 690).
+#:
+#: ‏הסדר: קולבקים של ‏rAF רצים לפי סדר הרישום. הלחיצה רושמת את הגלישה,
+#: ‏ומאזין ‏click על ‏window (אחרי המאזין של הכפתור) רושם את הדגימה מחדש
+#: ‏אחריה. משם כל אחד נרשם מחדש מתוך הקולבק שלו, והסדר נשמר.
+#:
+#: ‏דוגמים עד שהגלישה נגמרה — ‏will-change הוסר אחרי שהוצב, או שהראש לא
+#: ‏זז שלושה פריימים — ולכל היותר ‎ms‎. הראש נמצא מחדש בכל דגימה לפי
+#: ‏data-fk: ‏``rebuild()`` מחליף את האלמנט, ואלמנט שנשמר מראש כבר אינו
+#: ‏במסמך.
 SAMPLER = """([fk, ms]) => {
   const find = () => document.querySelector('[data-fk="' + fk + '"]');
+  const box = document.getElementById('lecturer-courses');
   window.__samples = [];
   window.__settled = false;
   const t0 = performance.now();
-  const ch = new MessageChannel();
-  ch.port1.onmessage = () => sample();
-  const tick = () => ch.port2.postMessage(0);
+  let clicked = false;
+  let glided = false;
+  let still = 0;
+  let last = null;
+  let id = 0;
   const sample = () => {
     const t = performance.now() - t0;
     const head = find();
-    window.__samples.push({
-      t,
-      top: head ? head.getBoundingClientRect().top : null,
-      y: window.scrollY,
-    });
-    if (t >= ms) {
-      window.__settled = true;
-      return;
+    const top = head ? head.getBoundingClientRect().top : null;
+    window.__samples.push({ t, top, y: window.scrollY });
+    if (clicked) {
+      if (box.style.willChange === 'transform') glided = true;
+      still = top !== null && last !== null && Math.abs(top - last) < 0.01 ? still + 1 : 0;
+      const ended = (glided && box.style.willChange === '') || still >= 3;
+      if (ended || t >= ms) {
+        window.removeEventListener('click', rearm);
+        window.__settled = true;
+        return;
+      }
     }
-    requestAnimationFrame(tick);
+    last = top;
+    id = requestAnimationFrame(sample);
   };
-  requestAnimationFrame(tick);
+  const rearm = () => {
+    clicked = true;
+    cancelAnimationFrame(id);
+    id = requestAnimationFrame(sample);
+  };
+  window.addEventListener('click', rearm);
+  id = requestAnimationFrame(sample);
 }"""
 
 #: ‏ראש הקורס הסגור הראשון אחרי הקורס הפתוח (או הראשון, אם אף אחד לא פתוח).
@@ -171,7 +194,7 @@ def _open_course_height(pg):
     )
 
 
-def _click_and_sample(pg, fk, ms=1500):
+def _click_and_sample(pg, fk, ms=5000):
     pg.evaluate(SAMPLER, [fk, ms])
     pg.click(f'[data-fk="{fk}"]')
     pg.wait_for_function("window.__settled === true", timeout=10000)
