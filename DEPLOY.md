@@ -604,7 +604,9 @@ empty. A probe that only checked the port would call that deployment healthy. It
 reports which path it looked at, because "empty" without "empty *where*" is not
 enough to fix a deployment.
 
-Both `railway.json` and the Dockerfile's `HEALTHCHECK` use it.
+The Dockerfile's `HEALTHCHECK` uses it, and so did Railway (`railway.json`).
+**Cloud Run ignores the Dockerfile `HEALTHCHECK`**, so on the current host
+`/healthz` is the manual check — run it after every deploy that matters.
 
 For catalog detail:
 
@@ -625,7 +627,198 @@ and read the `[slotwise] catalog:` line the process prints at startup.
 
 ---
 
+## Google Cloud Run + Cloudflare DNS setup
+
+**Current host, as of 2026-10-18.** `slotwise.co.il` is served by Google Cloud
+Run from the Dockerfile. Cloudflare is **DNS only** — nothing is proxied, so
+Cloudflare is no longer in the request path. Everything below is console
+configuration that does not live in the repo.
+
+Project IDs, account emails, billing details and the domain verification token
+are deliberately not recorded here.
+
+### 1. Cloud Run service
+
+Create a service with these settings:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Service name | `slotwise` | |
+| Region | `europe-west1` | Chosen because it supports Cloud Run **domain mappings** (step 4). Not every region does. |
+| Authentication | **Allow unauthenticated** (public access) | It is a public site. |
+| Billing | **Request-based** | CPU is billed only while a request is being handled. |
+| Min instances | `0` | Scales to zero when idle — see *Cold start* below. |
+| Max instances | `2` | A ceiling on cost as much as on load. |
+| Container port | `8080` | Cloud Run injects `PORT` and `gunicorn.conf.py` binds `0.0.0.0:$PORT`, so the exact number does not matter as long as Cloud Run sets it. Do **not** also set `PORT` as an env var. |
+
+**Cold start.** With min instances `0`, the first request after an idle spell
+starts a container, and that request takes a few seconds (image start plus
+`preload_app` parsing the catalog). This is accepted on purpose, to stay in the
+free tier. Setting min instances to `1` removes it, at the price of an
+always-on instance.
+
+### 2. Environment variables
+
+| Name | Value | Why |
+| --- | --- | --- |
+| `WEB_CONCURRENCY` | `2` | **Set this.** The `2 × CPU + 1` default reads the CPUs the process can see, not what the service is allotted — see [Set `WEB_CONCURRENCY` in a container](#set-web_concurrency-in-a-container). |
+
+Nothing else is needed. `SLOTWISE_CATALOG_DIR` is already set in the
+Dockerfile, and the same "do not set" list as before applies: `HOST`, `PORT`,
+`SLOTWISE_DB_ROOT`, `SLOTWISE_CURRICULUM_PATH`, `SLOTWISE_CURRICULA_DIR`,
+`SLOTWISE_RAW_DIR`. `allow_network` is pinned `False` in `wsgi.py` and cannot
+be turned on by configuration.
+
+### 3. Continuous deploy
+
+A **Cloud Build trigger** connected to GitHub:
+
+| Setting | Value |
+| --- | --- |
+| Repository | `netabaron/SlotWise` |
+| Event | Push to a branch |
+| Branch | `^main$` |
+| Build type | Dockerfile, `/Dockerfile` |
+| Target | the `slotwise` Cloud Run service |
+
+**Every push to `main` deploys** — and that includes the nightly
+`catalog: nightly build …` commits from `.github/workflows/build-catalog.yml`.
+That is what gets a fresh catalog into production: the catalog is read once at
+startup (`preload_app`), and a new revision is a new startup. Pushes to other
+branches deploy nothing.
+
+### 4. Custom domains (Cloud Run domain mappings)
+
+1. **Verify the domain.** Cloud Run → *Manage custom domains* → *Add mapping*
+   asks for domain ownership through **Google Search Console**. Search Console
+   gives a TXT record; add it in Cloudflare's DNS tab and confirm. Leave the TXT
+   record in place — removing it can un-verify the domain.
+2. **Map both names** to the `slotwise` service: `slotwise.co.il` and
+   `www.slotwise.co.il`.
+3. **Add the DNS records Cloud Run shows** (step 5).
+4. Wait for the mapping to report the certificate as issued. Until then HTTPS
+   fails on the custom domain while the `*.run.app` URL already works.
+
+### 5. Cloudflare DNS
+
+The registrar is LiveDNS; the nameservers are Cloudflare. Records:
+
+| Type | Name | Value | Proxy |
+| --- | --- | --- | --- |
+| A | `@` | `216.239.32.21` | **DNS only** (grey cloud) |
+| A | `@` | `216.239.34.21` | **DNS only** |
+| A | `@` | `216.239.36.21` | **DNS only** |
+| A | `@` | `216.239.38.21` | **DNS only** |
+| AAAA | `@` | `2001:4860:4802:32::15` | **DNS only** |
+| AAAA | `@` | `2001:4860:4802:34::15` | **DNS only** |
+| AAAA | `@` | `2001:4860:4802:36::15` | **DNS only** |
+| AAAA | `@` | `2001:4860:4802:38::15` | **DNS only** |
+| CNAME | `www` | `ghs.googlehosted.com` | **DNS only** |
+| TXT | `@` | Search Console verification token | — |
+
+**Every record must be grey-cloud.** Google issues the certificate for a domain
+mapping itself, and it can only do that when the name resolves to Google. A
+proxied (orange-cloud) record resolves to Cloudflare instead, and the
+certificate is never issued.
+
+The typo domain **`slotwize.co.il`** is unchanged: a Cloudflare redirect rule
+sends it to `slotwise.co.il`. Unlike the records above, its DNS record has to
+stay proxied: a redirect rule only runs on traffic that passes through
+Cloudflare.
+
+### 6. TLS
+
+The certificate is **issued and renewed by Google** for the mapping. Cloudflare's
+SSL/TLS mode (*Full (strict)* in the Railway setup) **no longer applies** to
+`slotwise.co.il` or `www`: nothing is proxied, so Cloudflare never terminates or
+originates a TLS connection for them. Likewise *Always Use HTTPS* and Cache
+Rules no longer act on these two names.
+
+### 7. Caching
+
+The app's `Cache-Control` headers (table in the Railway section, step 5) are
+unchanged and still honoured by browsers. There is **no CDN cache** in front any
+more: Cloudflare is not proxying, and Cloud Run does not cache responses. The
+`?v=<hash>` on static URLs still guarantees a returning visitor picks up new
+JavaScript after a deploy.
+
+### 8. `ProxyFix`: still one hop
+
+`wsgi.py` keeps `ProxyFix(x_for=1, x_proto=1)`, unchanged. The chain is now:
+
+```
+client -> Google Frontend (TLS terminates here) -> container (gunicorn)
+```
+
+The **Google Frontend** is the one hop in front of gunicorn. It appends the
+address of whoever connected to it to `X-Forwarded-For` and sets
+`X-Forwarded-Proto: https`. Because Cloudflare is DNS only, whoever connected
+to it *is* the student's browser, so the rightmost `X-Forwarded-For` entry —
+the only one `x_for=1` believes — is the real client IP. Anything further left
+was supplied by the client and stays untrusted, which is the point of trusting
+exactly one.
+
+The comment in `wsgi.py` still names Cloudflare and Railway. The number it
+justifies is the same, so the code is right; only the names are out of date.
+
+### 9. Cost control
+
+- **Budget alert** in Google Cloud Billing: name `SlotWise`, amount **5 ILS**,
+  alerts at **50%, 90% and 100%**. A budget alert *notifies*; it does not stop
+  the service.
+- The billing account was upgraded from the free trial to **pay-as-you-go on
+  2026-10-18**. The remaining trial credit stays until it is used up or expires
+  on **2027-01-17**.
+- After that, usage is expected to stay inside the Cloud Run free tier — min
+  instances `0`, max `2`, request-based billing. The 5 ILS alert is the safety
+  net if that expectation turns out wrong.
+
+### 10. Smoke test
+
+```bash
+# 1. Health, through the whole chain. Expect 200 and course_count > 0.
+curl -si https://slotwise.co.il/healthz | head -20
+
+# 2. Google is serving it, not Cloudflare (expect server: Google Frontend, no cf-ray)
+curl -sI https://slotwise.co.il/healthz | grep -iE "^(server|cf-ray)"
+
+# 3. HTTP goes to HTTPS
+curl -sI http://slotwise.co.il/ | grep -iE "^(HTTP|location)"
+
+# 4. www resolves the same way
+curl -si https://www.slotwise.co.il/healthz | head -5
+
+# 5. The typo domain redirects
+curl -sI https://slotwize.co.il/ | grep -iE "^(HTTP|location)"
+
+# 6. A solve really runs end to end (expect ok:true and a schedules array)
+curl -s -X POST https://slotwise.co.il/api/solve -H 'content-type: application/json' -d '{"codes":["61753","61756"],"semester":"א","top_n":3}' | head -c 300
+
+# 7. The removed scrape surface is still gone (expect 404 on all three)
+for p in /api/scrape/start /api/scrape/status /api/reparse; do
+  echo -n "$p -> "; curl -s -o /dev/null -w '%{http_code}\n' "https://slotwise.co.il$p"
+done
+```
+
+Then, in the Cloud Run logs for the new revision, look for the startup line
+naming the catalog the process loaded:
+
+```
+[slotwise] catalog: /app/data/catalog/catalog.jsonl (572 courses, built 2026-09-09T22:35:44Z)
+```
+
+and confirm the access log shows **real, varying client IPs**. If every line
+shows the same Google address, `X-Forwarded-For` is not arriving the way step 8
+describes and the trust setting needs revisiting.
+
+---
+
 ## Railway + Cloudflare setup
+
+> **Retired 2026-10-18 (moved to Cloud Run).** Kept as a record of how the
+> previous host was configured. The current setup is
+> [Google Cloud Run + Cloudflare DNS setup](#google-cloud-run--cloudflare-dns-setup).
+> `railway.json` is removed in a separate commit once Railway is cancelled.
 
 Target: `slotwise.co.il`, served by Railway from the Dockerfile, with Cloudflare
 in front. `railway.json` pins the build and the health check; everything below is
