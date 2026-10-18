@@ -1,0 +1,111 @@
+# Load test against a running SlotWise, by hand only.
+#
+# Never on push, never on a schedule: every run is real traffic against the
+# live service, billed by Cloud Run, and it should happen at a quiet hour
+# chosen by a person. See DEPLOY.md, "Load testing".
+#
+# The simulated session is scripts/loadtest/locustfile.py. It is read-only:
+# GETs plus the two POSTs that only read (/api/courses, /api/solve).
+
+name: load test
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: "Base URL to test"
+        required: true
+        default: "https://slotwise.co.il"
+      users:
+        description: "Concurrent simulated students (at most 200)"
+        required: true
+        default: "50"
+      spawn_rate:
+        description: "Students started per second until all are up"
+        required: true
+        default: "5"
+      duration:
+        description: "Run time, Locust syntax (e.g. 5m, 90s, 1h)"
+        required: true
+        default: "5m"
+
+# One load test at a time: two at once would measure each other.
+concurrency:
+  group: loadtest
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  locust:
+    runs-on: ubuntu-24.04  # pinned; see ci.yml
+    # Longest sensible run plus install and report time.
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Locust
+        # Only the load-test requirements: the app itself is not run here.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-loadtest.txt
+
+      - name: Validate inputs
+        env:
+          USERS: ${{ inputs.users }}
+          SPAWN_RATE: ${{ inputs.spawn_rate }}
+        run: |
+          set -euo pipefail
+          # 200 is the planned margin over ~200 students in the peak hour.
+          # Going past it is a different test; change this line on purpose.
+          MAX_USERS=200
+          case "$USERS" in ''|*[!0-9]*) echo "::error::users must be a whole number"; exit 1 ;; esac
+          case "$SPAWN_RATE" in ''|*[!0-9.]*) echo "::error::spawn_rate must be a number"; exit 1 ;; esac
+          if [ "$USERS" -lt 1 ] || [ "$USERS" -gt "$MAX_USERS" ]; then
+            echo "::error::users must be between 1 and $MAX_USERS, got $USERS"
+            exit 1
+          fi
+
+      - name: Run Locust
+        # --exit-code-on-error 0: a single failed request must not end the job
+        # here. Pass/fail is decided by the thresholds step below, from the
+        # CSV, so the report is uploaded either way.
+        env:
+          HOST: ${{ inputs.host }}
+          USERS: ${{ inputs.users }}
+          SPAWN_RATE: ${{ inputs.spawn_rate }}
+          DURATION: ${{ inputs.duration }}
+        run: |
+          set -euo pipefail
+          mkdir -p loadtest-results
+          locust -f scripts/loadtest/locustfile.py \
+            --headless \
+            --host "$HOST" \
+            --users "$USERS" \
+            --spawn-rate "$SPAWN_RATE" \
+            --run-time "$DURATION" \
+            --stop-timeout 30 \
+            --only-summary \
+            --exit-code-on-error 0 \
+            --csv loadtest-results/stats \
+            --html loadtest-results/report.html
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: loadtest-${{ github.run_id }}
+          path: loadtest-results/
+          if-no-files-found: warn
+
+      - name: Check thresholds
+        # SOLVE_P95_MAX_MS and ERROR_RATE_MAX live in the script.
+        run: python scripts/loadtest/check_thresholds.py loadtest-results/stats_stats.csv

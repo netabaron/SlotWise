@@ -1,0 +1,10 @@
+# SlotWise — load-test dependencies.
+#
+# Only for .github/workflows/loadtest.yml, or a manual run from a laptop.
+# Separate from requirements.txt on purpose: the API image installs that file
+# and nothing else, and Locust (with gevent) has no business in it.
+#
+#     pip install -r requirements-loadtest.txt
+#
+# Locust pins its own dependencies' ranges; only Locust itself is pinned here.
+locust==2.46.7

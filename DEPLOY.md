@@ -811,6 +811,84 @@ and confirm the access log shows **real, varying client IPs**. If every line
 shows the same Google address, `X-Forwarded-For` is not arriving the way step 8
 describes and the trust setting needs revisiting.
 
+## Load testing
+
+`.github/workflows/loadtest.yml` runs Locust against a live URL. It is
+**manual only** (`workflow_dispatch`): no push or schedule ever triggers it,
+because every run is real, billed traffic against production.
+
+### Running it
+
+1. **Pick a quiet hour.** Students on the site during the run get slower
+   answers, and they show up in the numbers as load the test did not make.
+   Late night Israel time is the obvious window; check the Cloud Run
+   request graph first.
+2. GitHub → **Actions** → **load test** → **Run workflow**, and fill in:
+
+   | Input | Default | Meaning |
+   | --- | --- | --- |
+   | `host` | `https://slotwise.co.il` | Base URL. The `*.run.app` URL skips the domain mapping but is the same service. |
+   | `users` | `50` | Concurrent simulated students. Capped at **200** by the workflow. |
+   | `spawn_rate` | `5` | Students started per second until `users` are up. |
+   | `duration` | `5m` | Total run time (`90s`, `5m`, `1h`). |
+
+3. When it finishes, download the `loadtest-<run id>` artifact:
+   `report.html` (open it in a browser) and the `stats_*.csv` files.
+
+Each simulated student is one session from `scripts/loadtest/locustfile.py`:
+the page and its static files, `/api/bootstrap`, `/api/catalog/meta`, the
+semester's courses and the electives, then 10–15 `/api/solve` calls 2–5 s
+apart, as it ticks and unticks courses (each also sends `/api/courses`) and
+changes preferences. Programme, semester and course codes come from the
+server's own answers, so they are always real. It is read-only.
+
+### What the numbers mean
+
+- **`/api/solve` p95** — 95% of solves answered within this time. It is the
+  number that matters: the solver is the only expensive endpoint, and it is
+  what a student waits on after every change. Median hides the slow tail;
+  p95 is what one student in twenty sees.
+- **Error rate** — failed requests over all requests. A failure is a non-2xx
+  answer, `ok: false`, or a timeout. Under load on Cloud Run, look for
+  **429** (no instance free: max instances reached) and **5xx/timeouts**
+  (gunicorn workers all busy).
+- **RPS** — requests per second the service actually sustained.
+
+The job **fails** when `/api/solve` p95 is over **3000 ms** or the error rate
+is over **1%**. Those two numbers are `SOLVE_P95_MAX_MS` and `ERROR_RATE_MAX`
+in `scripts/loadtest/check_thresholds.py`; they are the maintainer's call, so
+change them there, on purpose. The report is uploaded even on a failed run.
+
+Read the result next to the Cloud Run metrics for the same window — instance
+count, CPU, request latency, container startup. A slow p95 with two instances
+pinned at 100% CPU is a capacity answer; a slow p95 with idle instances is
+something else.
+
+**First-year semesters are much heavier to solve.** Measured locally on
+2026-10-18 with the Flask test client: semester 1 of civil and of electrical
+engineering took **20–27 s per solve**, against 0.2–1 s for semesters 3–7, and
+semester 1 of mechanical engineering (its 10 offered courses, which is what
+the page ticks by default) had not finished after several minutes.
+Sessions are spread over every programme and odd semester, so roughly one in
+four simulated students is a first-year, and those alone can push p95 over
+the limit. That is the solver's cost, not the server's; check the per-request
+breakdown before reading a red run as "more instances needed". It is also
+close to gunicorn's `timeout = 30`: on a slower Cloud Run CPU such a solve can
+get its worker killed, which shows up as errors rather than as latency.
+
+### The plan
+
+1. **Baseline** with the current settings (section 1–2 above): max instances
+   `2`, default concurrency (80 requests per instance), `WEB_CONCURRENCY=2`.
+   Step up rather than jumping: 50 users, then 100, then 200, each at a quiet
+   hour, keeping each report.
+2. **Tune** from what the baseline shows — e.g. `WEB_CONCURRENCY`, Cloud Run
+   concurrency (with 2 sync workers, 80 requests queued per instance mostly
+   means waiting), CPU per instance, max instances. Change one thing at a time.
+3. **Run again** with the same inputs and compare the reports.
+
+Raising max instances also raises the cost ceiling; see section 9.
+
 ---
 
 ## Railway + Cloudflare setup
