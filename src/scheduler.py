@@ -985,6 +985,33 @@ def enumerate_selections(
 _BOUND_EPS: float = 1e-6
 
 
+def _pair_table(
+    slots: list[_Slot], kind_of: _KindIndex, prefs: Preferences
+) -> dict[tuple[int, int], tuple[bool, bool]]:
+    """‏``{(id(a), id(b)): (_pair_ok, חפיפה מכוונת)}`` לכל זוג מועמדים משני סלוטים.
+
+    ‏``_pair_ok`` תלוי רק בשתי הקבוצות, ב-``kind_of`` וב-``prefs`` — ולכן
+    מחשבים אותו פעם אחת לכל זוג במקום בכל צומת. בשנה א' של תעשייה וניהול
+    יש 57 מועמדים, כלומר כ-1,400 זוגות, מול 349,078 בדיקות זוג בחיפוש
+    (נמדד 2026-10-21). אותה פונקציה על אותם קלטים: העץ והתשובה זהים.
+
+    הערך השני הוא בדיוק מה ש-``soft_conflicts_in`` סופר לזוג: ‏שתי
+    קבוצות שחופפות בזמן, כשהחפיפה מותרת.
+    """
+    allow_soft = bool(getattr(prefs, "allow_soft_conflicts", False))
+    table: dict[tuple[int, int], tuple[bool, bool]] = {}
+    for i, first in enumerate(slots):
+        for second in slots[i + 1:]:
+            for a in first.candidates:
+                for b in second.candidates:
+                    ok = _pair_ok(a, b, kind_of, prefs)
+                    soft = bool(
+                        ok and allow_soft and a.conflicts_with(b) and _overlap_windows(a, b)
+                    )
+                    table[id(a), id(b)] = table[id(b), id(a)] = (ok, soft)
+    return table
+
+
 def has_selection_with(
     courses: list[Course],
     prefs: Preferences,
@@ -1151,8 +1178,8 @@ def _search_best(
     w_soft = _weight(prefs, WEIGHT_SOFT_CONFLICT)
     weights = (_weight(prefs, "gaps"), w_comp, w_late, w_soft)
     score_bound = all(math.isfinite(w) and w >= 0 for w in weights)
-    allow_soft = bool(getattr(prefs, "allow_soft_conflicts", False))
     target = prefs.target_days
+    pairs = _pair_table(slots, kind_of, prefs)
 
     # --- דירוג המרצים: רשומה לכל סלוט מדורג, ודירוג לכל מועמד בו
     ranked = _ranked_slots(slots, prefs)
@@ -1208,14 +1235,13 @@ def _search_best(
             budget.tick()
             soft = 0
             ok = True
+            cid = id(candidate)
             for already in chosen:
-                if not _pair_ok(already, candidate, kind_of, prefs):
+                pair_ok, pair_soft = pairs[id(already), cid]
+                if not pair_ok:
                     ok = False
                     break
-                if allow_soft and already.conflicts_with(candidate) and _overlap_windows(
-                    already, candidate
-                ):
-                    soft += 1  # בדיוק מה ש-soft_conflicts_in יספור לזוג הזה
+                soft += pair_soft  # בדיוק מה ש-soft_conflicts_in יספור לזוג הזה
             if not ok:
                 continue
 

@@ -116,8 +116,38 @@ and an access line `"POST /api/solve HTTP/1.1" 500 … 30.xs`.
 
 Industrial year 1 is the slowest remaining case. Most of its time is the top-5
 search (1.3–1.8 s) and, in required mode, viability (0.9 s). On the frozen
-fixture every first-year case from §1 finishes in 0.35–0.99 s; that is what
-`tests/test_solver_performance.py` holds, under 3 s.
+fixture every first-year case from §1 finishes in 0.35–0.99 s.
+
+**2026-10-21, after CI.** A 3 s wall-clock test failed on CI (`-n 4`): industrial
+year 1, page defaults, took 4.00 s, best of 3 attempts. Locally the same request
+had already measured 0.7, 2.3 and 8.4 s across runs of the same code. Profiled
+alone on the frozen fixture, the request took 0.43 s: top-5 search 0.34 s
+(30,831 nodes, 1,931 schedules scored), capped count 0.05 s, viability 0.02 s,
+no course-drop suggestions. Inside the search, 349,078 `_pair_ok` calls and
+850,152 `conflicts_with` calls were spent on about 1,400 distinct pairs.
+`_search_best` now computes each pair once per search (`_pair_table`), with the
+same function on the same inputs. The node count is unchanged and the exactness
+test still passes. Top-5 search: 0.34 → 0.23 s; request: 0.43 → 0.33 s.
+
+`tests/test_solver_performance.py` now checks the **number of search nodes**
+per request (every `_Budget.tick()`), which is deterministic, against a budget
+of about the measured count + 10%:
+
+| Fixture, year 1 | measured nodes | budget |
+|---|---|---|
+| Civil, page | 23,292 | 26,000 |
+| Biotech, page | 17,599 | 20,000 |
+| Electrical, page | 23,131 | 26,000 |
+| Mechanical, page | 19,415 | 22,000 |
+| Industrial, page | 43,159 | 48,000 |
+| Industrial, required | 101,981 | 113,000 |
+| Mechanical, required | 23,312 | 26,000 |
+| Civil, ranked, target 3 | 16,524 | 19,000 |
+
+For comparison, the old full enumeration's count pass alone was 960,944 nodes
+for civil year 1 on the real catalog. The clock stays only as a 10 s safety net:
+more than 5× the slowest request measured (industrial required, 0.84–1.8 s),
+and half of `SOLVE_DEADLINE_S`.
 
 None of these comes near the 20 s deadline (`SOLVE_DEADLINE_S`), which is a
 safety net only.

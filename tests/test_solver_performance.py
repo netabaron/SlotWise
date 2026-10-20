@@ -1,12 +1,27 @@
 # -*- coding: utf-8 -*-
-"""שנה א' נפתרת בפחות משלוש שניות.
+"""שנה א' נפתרת בכמות עבודה קבועה, ולא רק "מהר על המכונה הזו".
 
 ‏עד 2026-10-20 הבחירות שלמטה — מה שהדף מסמן לסמסטר 1, עם ברירת המחדל של
 הדף לנוכחות (כל רכיב בלי הערת ידיעון אינו חובה) — לא הסתיימו בתוך 60
 שניות מול הקטלוג הקפוא, ומעל 30 שניות gunicorn הורג את ה-worker ומחזיר
-‏500. מכונות היה 18 שניות. (docs/SOLVER_PERFORMANCE.md.) אחרי החיפוש הגוזם
-כל אחת מהן נמדדה מתחת לשנייה אחת על המכונה המקומית; הסף כאן — שלוש — משאיר
-מקום למחשב איטי יותר.
+‏500. מכונות היה 18 שניות. (docs/SOLVER_PERFORMANCE.md.)
+
+‏**מה נמדד — ולמה לא שעון בלבד.** סף של 3 שניות נפל ב-CI (‏-n 4) על 4.00
+שניות, ועל המכונה המקומית אותה בקשה נמדדה 0.7, ‏2.3 ו-8.4 שניות בהרצות
+שונות של אותו קוד. זמן מודד את המכונה; מספר הצמתים מודד את האלגוריתם.
+לכן הבדיקה העיקרית היא **מספר צמתי החיפוש** של הבקשה כולה — כל קריאה
+ל-``_Budget.tick()``, אותו מונה שמכסת הצמתים נשענת עליו — והוא דטרמיניסטי:
+אותו קוד ואותו קטלוג נותנים אותו מספר בכל הרצה ובכל מכונה.
+
+‏התקציבים הם המספרים שנמדדו ב-2026-10-21 ועוד כ-10%, מעוגלים כלפי מעלה
+לאלף. המנייה המלאה שלפני 2026-10-20 עברה על מאות אלפים עד מיליונים
+(אזרחית, מעבר הספירה לבדו: 960,944 צמתים בקטלוג האמיתי), ולכן כל חזרה אליה
+נתפסת מיד. שינוי מכוון באלגוריתם או בקטלוג הקפוא מעדכן את התקציבים כאן,
+באותו commit, עם המספרים החדשים.
+
+‏**השעון נשאר רק כרשת ביטחון**, נדיבה: ‏10 שניות — יותר מפי 5 מהמקרה האיטי
+ביותר שנמדד (1.8 ש'), וחצי ממגבלת הזמן של השרת (``SOLVE_DEADLINE_S`` = 20).
+בקשה שמגיעה למגבלה נתפסת ממילא ב-``timed_out``.
 """
 
 from __future__ import annotations
@@ -23,8 +38,11 @@ sys.path.insert(0, str(ROOT))
 
 from src.web import api  # noqa: E402
 
+sch = api.scheduler_mod
 TERM = "א"
-LIMIT_S = 3.0
+
+#: רשת הביטחון של השעון, בשניות. ראו למעלה.
+WALL_GUARD_S = 10.0
 
 #: ‏הקודים שהדף מסמן לשנה א' סמסטר א', מהקטלוג הקפוא (recommendedCodes ב-app.js),
 #: ‏ומשך ‏/api/solve לפני 2026-10-20.
@@ -35,6 +53,21 @@ FIRST_YEAR = {
     "mechanical": (["11001", "11003", "22112", "251961"], "18.1 s"),
     "industrial": (["11001", "11003", "11179", "51104", "61903", "251961"], "timeout >60 s"),
 }
+
+#: ‏תקציב הצמתים לבקשה אחת: ‏(נמדד ב-2026-10-21, תקציב). התקציב ≈ נמדד × 1.1,
+#: מעוגל כלפי מעלה לאלף.
+PAGE_NODES = {
+    "civil": (23_292, 26_000),
+    "biotech": (17_599, 20_000),
+    "electrical": (23_131, 26_000),
+    "mechanical": (19_415, 22_000),
+    "industrial": (43_159, 48_000),
+}
+REQUIRED_NODES = {
+    "industrial": (101_981, 113_000),
+    "mechanical": (23_312, 26_000),
+}
+RANKED_NODES = (16_524, 19_000)
 
 
 @pytest.fixture(scope="module")
@@ -50,6 +83,20 @@ def client(app):
     return c
 
 
+@pytest.fixture()
+def nodes(monkeypatch):
+    """סופר כל צומת חיפוש — כל ``_Budget.tick()`` — בכל השלבים של הבקשה."""
+    counter = {"n": 0}
+    tick = sch._Budget.tick  # noqa: SLF001
+
+    def counting(self):
+        counter["n"] += 1
+        return tick(self)
+
+    monkeypatch.setattr(sch._Budget, "tick", counting)  # noqa: SLF001
+    return counter
+
+
 def _page_attendance(app, codes):
     """מה ש-``attendanceBody()`` שולח: ‏False לכל רכיב שהידיעון אינו מחייב בו."""
     with app.app_context():
@@ -61,31 +108,27 @@ def _page_attendance(app, codes):
     }
 
 
-def _solve(client, body, attempts=3):
-    """התשובה, והזמן הקצר מבין עד ``attempts`` ניסיונות.
+def _solve(client, nodes, body):
+    """‏(התשובה, צמתי החיפוש, שניות) לבקשה אחת."""
+    nodes["n"] = 0
+    started = time.perf_counter()
+    res = client.post("/api/solve", json=body)
+    return res, nodes["n"], time.perf_counter() - started
 
-    ‏הטוב מבין שלושה ולא ניסיון יחיד: על המכונה המקומית אותה בקשה נמדדה
-    ‏0.7, ‏2.3 ו-8.4 שניות בשלוש הרצות שונות של אותו קוד (2026-10-20, אחרי
-    ריצת דפדפנים ארוכה). רגרסיה אמיתית — חזרה למנייה מלאה — איטית בכל
-    הניסיונות, ולכן היא עדיין נכשלת.
-    """
-    best, res = None, None
-    for _ in range(attempts):
-        started = time.perf_counter()
-        res = client.post("/api/solve", json=body)
-        elapsed = time.perf_counter() - started
-        best = elapsed if best is None else min(best, elapsed)
-        if res.status_code != 200 or best < LIMIT_S:
-            break
-    return res, best
+
+def _check_work(label, visited, measured, budget, elapsed):
+    assert visited <= budget, (
+        f"{label}: {visited:,} צמתים, מעל התקציב {budget:,} (נמדד {measured:,} ב-2026-10-21)"
+    )
+    assert elapsed < WALL_GUARD_S, f"{label}: {elapsed:.2f} s — מעל רשת הביטחון"
 
 
 @pytest.mark.parametrize("name", list(FIRST_YEAR))
-def test_first_year_page_defaults_solve_under_three_seconds(app, client, name):
+def test_first_year_page_defaults_stay_within_their_node_budget(app, client, nodes, name):
     codes, before = FIRST_YEAR[name]
     body = {"codes": codes, "semester": TERM, "target_days": 6, "top_n": 5,
             "allow_soft_conflicts": True, "attendance": _page_attendance(app, codes)}
-    res, elapsed = _solve(client, body)
+    res, visited, elapsed = _solve(client, nodes, body)
     assert res.status_code == 200, res.get_data(as_text=True)
     data = res.get_json()
     assert data["timed_out"] is False, "הגיע למגבלת הזמן — כלומר לא נפתר"
@@ -95,20 +138,23 @@ def test_first_year_page_defaults_solve_under_three_seconds(app, client, name):
     # עשרות-מאות אלפי צירופים: הספירה נעצרת במכסה ואומרת זאת.
     assert data["feasible_count"] == api.FEASIBLE_COUNT_CAP
     assert data["feasible_count_capped"] is True
-    assert elapsed < LIMIT_S, f"{name}: {elapsed:.2f} s (לפני 2026-10-20: {before})"
+    measured, budget = PAGE_NODES[name]
+    _check_work(f"{name} (לפני 2026-10-20: {before})", visited, measured, budget, elapsed)
 
 
-@pytest.mark.parametrize("name", ["industrial", "mechanical"])
-def test_first_year_with_every_component_required_is_fast_too(client, name):
+@pytest.mark.parametrize("name", list(REQUIRED_NODES))
+def test_first_year_with_every_component_required_stays_within_budget(client, nodes, name):
     """בלי ויתור על נוכחות כלל — הנתיב השני; תעשייה וניהול היה 12 שניות."""
     codes, _before = FIRST_YEAR[name]
-    res, elapsed = _solve(client, {"codes": codes, "semester": TERM, "target_days": 6})
+    res, visited, elapsed = _solve(client, nodes,
+                                   {"codes": codes, "semester": TERM, "target_days": 6})
     assert res.status_code == 200
     assert res.get_json()["timed_out"] is False
-    assert elapsed < LIMIT_S, f"{name}: {elapsed:.2f} s"
+    measured, budget = REQUIRED_NODES[name]
+    _check_work(name, visited, measured, budget, elapsed)
 
 
-def test_a_ranked_first_year_with_a_day_target_is_fast_too(app, client):
+def test_a_ranked_first_year_with_a_day_target_stays_within_budget(app, client, nodes):
     """דירוג מרצים ויעד ימים מפעילים את שתי הרמות הראשונות של החסם."""
     codes, _before = FIRST_YEAR["civil"]
     with app.app_context():
@@ -121,9 +167,20 @@ def test_a_ranked_first_year_with_a_day_target_is_fast_too(app, client):
                 ranked.setdefault(course.code, {})[kind] = [names[-1]]
     body = {"codes": codes, "semester": TERM, "target_days": 3, "ranked": ranked,
             "attendance": _page_attendance(app, codes)}
-    res, elapsed = _solve(client, body)
+    res, visited, elapsed = _solve(client, nodes, body)
     assert res.status_code == 200
     data = res.get_json()
     assert data["timed_out"] is False and data["schedules"]
     assert data["schedules"][0]["lecturer_total"] > 0
-    assert elapsed < LIMIT_S, f"{elapsed:.2f} s"
+    measured, budget = RANKED_NODES
+    _check_work("ranked civil", visited, measured, budget, elapsed)
+
+
+def test_the_node_count_is_deterministic(app, client, nodes):
+    """שתי הרצות של אותה בקשה: אותו מספר צמתים בדיוק — זה מה שמצדיק לבדוק אותו."""
+    codes, _before = FIRST_YEAR["industrial"]
+    body = {"codes": codes, "semester": TERM, "target_days": 6,
+            "attendance": _page_attendance(app, codes)}
+    _res, first, _t = _solve(client, nodes, body)
+    _res, second, _t = _solve(client, nodes, body)
+    assert first == second > 0
