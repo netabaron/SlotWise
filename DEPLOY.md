@@ -864,17 +864,16 @@ count, CPU, request latency, container startup. A slow p95 with two instances
 pinned at 100% CPU is a capacity answer; a slow p95 with idle instances is
 something else.
 
-**First-year semesters are much heavier to solve.** Measured locally on
-2026-10-18 with the Flask test client: semester 1 of civil and of electrical
-engineering took **20–27 s per solve**, against 0.2–1 s for semesters 3–7, and
-semester 1 of mechanical engineering (its 10 offered courses, which is what
-the page ticks by default) had not finished after several minutes.
-Sessions are spread over every programme and odd semester, so roughly one in
-four simulated students is a first-year, and those alone can push p95 over
-the limit. That is the solver's cost, not the server's; check the per-request
-breakdown before reading a red run as "more instances needed". It is also
-close to gunicorn's `timeout = 30`: on a slower Cloud Run CPU such a solve can
-get its worker killed, which shows up as errors rather than as latency.
+**First-year semesters used to be much heavier to solve.** Until 2026-10-20,
+semester 1 of five programmes took over 60 s with the page's defaults, and
+gunicorn's 30 s worker timeout turned that into an HTML 500. The exact pruned
+search brought every measured selection under 2.4 s (industrial year 1 is the
+slowest; most are under 1 s), and `/api/solve` now stops itself at
+`SOLVE_DEADLINE_S` = 20 s with `timed_out: true` instead of being killed.
+Measurements: docs/SOLVER_PERFORMANCE.md. If a load-test run shows `/api/solve`
+near 20 s, look for `timed_out` in the responses and for
+`/api/solve נעצר במגבלת הזמן` in the logs before reading it as a capacity
+problem.
 
 ### The plan
 

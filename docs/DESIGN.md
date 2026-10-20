@@ -312,9 +312,19 @@ No scroll-triggered entrance animations. Only these, each because it saves the u
 - **Choosing which alternative is shown** already exists and does not re-solve (`{ solve: false }`). The new alternatives UI replaces its presentation, not its logic.
 - **All existing settings stay**, including those not drawn in the mockups: no Friday, earliest and latest hour, allow soft conflicts, blocked time windows. They live in the study-days step under a collapsed "הגדרות נוספות" disclosure, closed by default, with a one-line summary of any non-default values when closed.
 
+## Solver: exact pruned search
+
+Decided 2026-10-20, after measuring first-year selections that ended in gunicorn's HTML 500 (measurements: docs/SOLVER_PERFORMANCE.md). **Same schedules in the same order, only faster**; scoring and the score order (Lecturers, "How a ranking chooses") are unchanged.
+
+- **Top schedules:** `solve()` searches the same tree in the same order and skips a branch only when a lower bound on every completion is strictly worse than the current `top_n`-th schedule, at the first level where they differ: days over target, lecturer ranks (an unchosen ranked kind counts as rank 1), intentional overlaps, then the score (span and late finish only grow, gaps count as 0; this last level is used only when every weight is non-negative). Ties are never cut.
+- **Viability:** each group is tested by fixing it in its own slot and stopping at the first complete schedule, not by enumerating every schedule and filtering. `linked_to` is enforced exactly as before.
+- **Minimum days** by branch-and-bound; **`feasible_count`** is counted up to 10,000 (`FEASIBLE_COUNT_CAP`) and above that returned as 10,000 with `feasible_count_capped: true`. It is not displayed (Results page, item 2).
+- **Deadline:** the whole `/api/solve` request stops after 20 s (`SOLVE_DEADLINE_S`), below gunicorn's 30 s worker timeout. It returns the best schedules found so far with `timed_out: true` and `truncated` on each one, and never a 500. The schedules are searched first, then viability, then the course-drop suggestions, so that a cut falls on what matters least. The page shows one warning banner: "החישוב ארך יותר מדי ונעצר לפני שהסתיים, ולכן ייתכן שיש מערכות טובות יותר ממה שמוצג כאן. אפשר לנסות שוב, או לצמצם את הבחירה — למשל להוריד קורס אחד." With no schedule found it does not show "no possible schedule", which was not proven. After the pruned search no measured selection comes near the deadline.
+- **Proof:** `tests/test_solver_exactness.py` compares against a full enumeration copied from the algorithm as it was: 10 selections × 8 preference sets (attendance on and off, per-kind and flat rankings, day targets 2–6, blocked windows, Friday, earliest/latest, custom and negative weights, `top_n` 1, 5 and 12). It checks the same schedules, order, scores and breakdowns, the same minimum days, and the same viability with its reasons. It passed against the old solver before the change and against the new one after.
+
 ## Out of scope for now
 
-- Server-side solve deadline (the server keeps computing after the browser cancels). A backend task for the load-test work, not part of this redesign.
+- Cancelling a solve in the browser does not stop the server's work. Since 2026-10-20 that work is capped by the 20 s deadline (Solver: exact pruned search).
 
 ## Implementation phases
 

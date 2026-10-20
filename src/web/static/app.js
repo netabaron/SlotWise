@@ -987,6 +987,17 @@
   }
 
   /**
+   * ‏האם העמוד מוגש מהאתר המתארח. ‏``mode`` מ-/api/bootstrap כשהוא ידוע; אחרת
+   * — למשל כש-bootstrap עצמו נכשל — לפי הכתובת: ‏webapp.py מאזין ל-127.0.0.1
+   * בלבד.
+   */
+  function isHostedPage() {
+    var boot = runtime.bootstrap;
+    if (boot && boot.mode) return boot.mode === "hosted";
+    return !/^(127\.0\.0\.1|localhost|\[::1\])$/.test(window.location.hostname || "");
+  }
+
+  /**
    * שגיאה בשפה של מי שקורא אותה: מה קרה, ומה אפשר לעשות עכשיו.
    *
    * ‏"טעינת נתוני הקורסים נכשלה: TypeError: Failed to fetch" אומר למי
@@ -997,8 +1008,9 @@
     if (!err) return T("app.errors.unknown", "");
     if (err.name === "AbortError") return T("app.schedule.solvingCancelled");
     var status = num(err.status, 0);
-    // ‏fetch נכשל בלי סטטוס = לא הגענו לשרת בכלל.
-    if (!status) return T("app.errors.network");
+    // ‏fetch נכשל בלי סטטוס = לא הגענו לשרת בכלל. מקומית זה כמעט תמיד שרת
+    // שנסגר, ולכן ההצעה היא להריץ אותו שוב; באתר המתארח אין מה להריץ.
+    if (!status) return T(isHostedPage() ? "app.errors.networkHosted" : "app.errors.network");
     if (status >= 500) return Tf("app.errors.serverFault", { status: status });
     if (status >= 400) {
       return Tf("app.errors.badRequest", {
@@ -2935,8 +2947,15 @@
     if (ui.resultsStatus) setText(ui.resultsStatus, text || "");
   }
 
+  /** ‏/api/solve נעצר במגבלת הזמן שלו (``SOLVE_DEADLINE_S``) והחזיר את מה שמצא. */
+  function solveTimedOut() {
+    return !!runtime.solve && runtime.solve.timed_out === true;
+  }
+
   function solvedStatus() {
     var list = schedules();
+    // ‏חיפוש שנעצר במגבלת הזמן לא הוכיח ש"אין מערכת" — רק שלא הספיק.
+    if (!list.length && solveTimedOut()) return T("app.banners.solveTimeout");
     if (!list.length) return T("ui.schedule.emptyTitle");
     var sch = list[clamp(state.activeSchedule, 0, list.length - 1)];
     var dayCount = num(sch.days_count, 0);
@@ -4504,6 +4523,15 @@
         key: "viability-partial",
         kind: "info",
         text: T("app.banners.viabilityPartial"),
+      });
+    }
+    // ‏משפט אחד, גם כשנמצאו מערכות וגם כשלא: החישוב לא הסתיים, ולכן ייתכן
+    // שיש טובות ממה שמוצג. לא "אין מערכת" — זה לא הוכח.
+    if (solveTimedOut()) {
+      wanted.push({
+        key: "solve-timeout",
+        kind: "warn",
+        text: T("app.banners.solveTimeout"),
       });
     }
 
@@ -8042,7 +8070,7 @@
     var s = runtime.solve;
     var list = schedules();
     var feasible = s ? num(s.feasible_count, list.length) : null;
-    var infeasible = !!s && list.length === 0;
+    var infeasible = !!s && list.length === 0 && !solveTimedOut();
 
     // אותן תוויות משמשות את כרטיסי החלופות ואת שורת הכותרת של ההדפסה:
     // הנייר צריך לומר איזו מערכת זו באותן מילים שבהן היא נבחרה.
