@@ -31,10 +31,15 @@
 
 from __future__ import annotations
 
+import bisect
+import contextlib
+import contextvars
 import functools
 import json
+import math
 import re
 import sys
+import time
 import warnings
 from collections.abc import Iterator
 import dataclasses
@@ -162,6 +167,9 @@ DEFAULT_NODE_LIMIT: int = 200_000
 #: מעליה החיפוש עלול לקחת דקות, ולכן עדיף להיעצר ולהזהיר מאשר להיתקע.
 MAX_SOLVE_NODES: int = 5_000_000
 
+#: כל כמה צמתים בודקים את השעון. בדיקה בכל צומת עולה בערך כמו הצומת עצמו.
+_CLOCK_EVERY: int = 256
+
 #: שמות האילוצים היחידניים (unary) — אילוץ שפוסל קבוצה בפני עצמה, בלי קשר לשאר.
 CONSTRAINT_EARLIEST = "earliest"
 CONSTRAINT_LATEST = "latest"
@@ -191,6 +199,24 @@ class SearchExhausted(Exception):
         super().__init__(
             f"החיפוש עבר את מכסת הצמתים ({self.visited:,} צמתים חלקיים) "
             f"(search node limit exceeded)"
+        )
+
+
+class SearchTimedOut(SearchExhausted):
+    """
+    נזרקת כשנגמר הזמן שהוקצב לחיפוש (``time_budget``), לא מכסת הצמתים.
+
+    תת-מחלקה של ``SearchExhausted`` בכוונה: כל מי שכבר יודע לטפל בחיפוש
+    שנקטע — מחזיר "הטוב ביותר שנמצא" עם ``truncated`` — מטפל גם בזה, בלי
+    שורה נוספת. מי שצריך להבחין (השרת, כדי לומר "נגמר הזמן") בודק את הסוג
+    או את ``time_budget_expired()``.
+    """
+
+    def __init__(self, visited: int) -> None:
+        super().__init__(visited)
+        self.args = (
+            f"החיפוש נעצר כשנגמר הזמן שהוקצב לו ({self.visited:,} צמתים) "
+            f"(search time budget exceeded)",
         )
 
 
@@ -746,6 +772,76 @@ def _norm_name(name: str) -> str:
 
 
 # ==========================================================================
+# מגבלת זמן — רשת ביטחון מעל מכסת הצמתים
+# ==========================================================================
+#: מועד הסיום (‏``time.monotonic()``) של החיפוש הנוכחי, או ``None``.
+#: ‏ContextVar ולא משתנה גלובלי: בקשה אחת לא תקצר את הזמן של אחרת.
+_DEADLINE: contextvars.ContextVar["float | None"] = contextvars.ContextVar(
+    "slotwise_search_deadline", default=None
+)
+#: האם החיפוש במסגרת הנוכחית כבר נעצר בגלל הזמן.
+_EXPIRED: contextvars.ContextVar["list[bool] | None"] = contextvars.ContextVar(
+    "slotwise_search_expired", default=None
+)
+
+
+@contextlib.contextmanager
+def time_budget(seconds: "float | None"):
+    """כל חיפוש בתוך הבלוק נעצר אחרי ``seconds`` שניות, יחד.
+
+    ‏הזמן משותף לכל הקריאות שבתוך הבלוק — ספירה, viability, הפתרון עצמו —
+    ולכן הוא חוסם את הבקשה כולה ולא כל שלב לחוד. חיפוש שנעצר זורק
+    ``SearchTimedOut``, ומשם הוא מתנהג בדיוק כמו חיפוש שמכסת הצמתים שלו
+    נגמרה: ‏``solve()`` מחזיר את הטוב ביותר שנמצא עם ``truncated``.
+    בלוק מקונן אינו מאריך מועד שכבר נקבע מבחוץ.
+    """
+    outer = _DEADLINE.get()
+    mine = None if seconds is None else time.monotonic() + float(seconds)
+    if outer is not None and (mine is None or outer < mine):
+        mine = outer
+    token = _DEADLINE.set(mine)
+    # בלוק מקונן חולק את הדגל של החיצוני, כדי שעצירה בפנים תיראה גם בחוץ.
+    flag = _EXPIRED.get()
+    flag_token = _EXPIRED.set(flag if flag is not None else [False])
+    try:
+        yield
+    finally:
+        _EXPIRED.reset(flag_token)
+        _DEADLINE.reset(token)
+
+
+def time_budget_expired() -> bool:
+    """האם חיפוש כלשהו בתוך ה-``time_budget`` הנוכחי נעצר בגלל הזמן."""
+    flag = _EXPIRED.get()
+    return bool(flag and flag[0])
+
+
+class _Budget:
+    """מונה הצמתים והשעון של חיפוש אחד: ``tick()`` לכל ניסיון השמה."""
+
+    __slots__ = ("limit", "visited", "deadline")
+
+    def __init__(self, limit: int) -> None:
+        self.limit = int(limit)
+        self.visited = 0
+        self.deadline = _DEADLINE.get()
+
+    def tick(self) -> None:
+        self.visited += 1
+        if self.visited > self.limit:
+            raise SearchExhausted(self.visited)
+        if (
+            self.deadline is not None
+            and not self.visited % _CLOCK_EVERY
+            and time.monotonic() > self.deadline
+        ):
+            flag = _EXPIRED.get()
+            if flag is not None:
+                flag[0] = True
+            raise SearchTimedOut(self.visited)
+
+
+# ==========================================================================
 # הסלוטים — (קורס, סוג רכיב) ומועמדיו
 # ==========================================================================
 @dataclass
@@ -844,17 +940,16 @@ def enumerate_selections(
 
     Raises:
         SearchExhausted: אם נבדקו יותר מ-`limit` צמתים חלקיים.
+        SearchTimedOut:  אם נגמר הזמן של ``time_budget`` שהחיפוש רץ בתוכו.
     """
     slots = _build_slots(courses, prefs)
     n_slots = len(slots)
     kind_of = _kind_index(courses)  # (קורס, קבוצה) -> הסוגים, עבור כלל linked_to
 
     chosen: list[Group] = []  # המצב החלקי הנוכחי
-    visited = 0  # מונה צמתים — כל ניסיון השמה הוא צומת
+    budget = _Budget(limit)  # מונה צמתים — כל ניסיון השמה הוא צומת — ושעון
 
     def backtrack(depth: int) -> Iterator[Selection]:
-        nonlocal visited
-
         if depth == n_slots:
             # הגענו לעלה: כל הסלוטים מולאו. זו מערכת שלמה ותקינה.
             yield Selection(list(chosen))
@@ -862,9 +957,7 @@ def enumerate_selections(
 
         slot = slots[depth]
         for candidate in slot.candidates:
-            visited += 1
-            if visited > limit:
-                raise SearchExhausted(visited)
+            budget.tick()
 
             # גיזום: האם המועמד סובל את כל מי שכבר בפנים?
             if any(not _pair_ok(already, candidate, kind_of, prefs) for already in chosen):
@@ -875,6 +968,302 @@ def enumerate_selections(
             chosen.pop()
 
     yield from backtrack(0)
+
+
+# ==========================================================================
+# 1א. חיפושים ממוקדים — אותו עץ, בלי לעבור על כולו (2026-10-20)
+# ==========================================================================
+# שלוש שאלות שעד 2026-10-20 נענו במנייה מלאה של כל הבחירות: "האם יש בחירה
+# עם הקבוצה הזו", "מה מינימום הימים", ו"מהן ה-top_n". כל אחת מהן עוברת
+# כאן על **אותו עץ** של ``enumerate_selections`` — אותם סלוטים, באותו סדר,
+# עם אותו ``_pair_ok`` — ומדלגת רק על ענפים שמוכח שאינם יכולים לשנות את
+# התשובה. התשובות זהות; ‏tests/test_solver_exactness.py מחזיק את זה מול
+# מנייה מלאה. ראו docs/DESIGN.md → "Solver: exact pruned search".
+
+#: מרווח הביטחון של הגיזום לפי ניקוד. ‏``_sort_key`` מעגל ל-6 ספרות, וסכום
+#: שמחושב בסדר אחר יכול להיבדל בשבריר; גוזמים רק כשהחסם גרוע במובהק.
+_BOUND_EPS: float = 1e-6
+
+
+def has_selection_with(
+    courses: list[Course],
+    prefs: Preferences,
+    fixed: "dict[str, dict[str, str]] | None" = None,
+    *,
+    limit: int = DEFAULT_NODE_LIMIT,
+) -> bool:
+    """האם קיימת בחירה שלמה שבה כל ‏(קורס, סוג) ב-``fixed`` הוא הקבוצה שצוינה.
+
+    ‏``fixed`` הוא ``{קוד: {סוג רכיב: מזהה קבוצה}}``. התשובה זהה למנייה מלאה
+    שמסננת עלים (``api.pins_satisfied``): הסלוט של הקבוצה מצומצם אליה,
+    ‏``kind_of`` נבנה מהקורסים **המלאים** — ולכן ``linked_to`` נאכף בדיוק כמו
+    קודם — והחיפוש נעצר בעלה הראשון. קבוצה שאינה בין המועמדים (נפסלה
+    באילוץ יחידני) פירושה ``False``, כמו שעלה שמכיל אותה מעולם לא נוצר.
+
+    Raises:
+        SearchExhausted / SearchTimedOut: מכסת הצמתים או הזמן נגמרו.
+    """
+    slots = _build_slots(courses, prefs)
+    kind_of = _kind_index(courses)
+    wanted = {
+        (code, kind): str(gid)
+        for code, by_kind in (fixed or {}).items()
+        for kind, gid in (by_kind or {}).items()
+    }
+    candidates: list[list[Group]] = []
+    found: set[tuple[str, str]] = set()
+    for slot in slots:
+        gid = wanted.get((slot.course.code, slot.kind))
+        if gid is None:
+            candidates.append(slot.candidates)
+            continue
+        found.add((slot.course.code, slot.kind))
+        candidates.append([g for g in slot.candidates if g.group_id == gid])
+    if set(wanted) - found:
+        return False  # אין סלוט כזה — אף בחירה אינה מכילה את הקבוצה
+
+    n = len(candidates)
+    chosen: list[Group] = []
+    budget = _Budget(limit)
+
+    def backtrack(depth: int) -> bool:
+        if depth == n:
+            return True
+        for candidate in candidates[depth]:
+            budget.tick()
+            if any(not _pair_ok(already, candidate, kind_of, prefs) for already in chosen):
+                continue
+            chosen.append(candidate)
+            if backtrack(depth + 1):
+                return True
+            chosen.pop()
+        return False
+
+    return backtrack(0)
+
+
+def min_days(
+    courses: list[Course], prefs: Preferences, *, limit: int = DEFAULT_NODE_LIMIT
+) -> "int | None":
+    """מינימום ימי הלימוד על פני כל הבחירות, או ``None`` כשאין אף בחירה.
+
+    ‏branch-and-bound: מספר הימים של בחירה חלקית רק גדל כשמוסיפים קבוצה,
+    ולכן ענף שכבר הגיע למינימום שנמצא אינו יכול לשפר אותו. התשובה זהה
+    ל-``min(len(s.days_used()) for s in enumerate_selections(...))``.
+
+    Raises:
+        SearchExhausted / SearchTimedOut: מכסת הצמתים או הזמן נגמרו.
+    """
+    slots = _build_slots(courses, prefs)
+    kind_of = _kind_index(courses)
+    n = len(slots)
+    day_sets = [[frozenset(m.day for m in g.meetings) for g in s.candidates] for s in slots]
+    chosen: list[Group] = []
+    best: list["int | None"] = [None]
+    budget = _Budget(limit)
+
+    def backtrack(depth: int, days: frozenset) -> None:
+        if depth == n:
+            if best[0] is None or len(days) < best[0]:
+                best[0] = len(days)
+            return
+        for candidate, cand_days in zip(slots[depth].candidates, day_sets[depth]):
+            budget.tick()
+            joined = days | cand_days
+            if best[0] is not None and len(joined) >= best[0]:
+                continue  # לא יכול לרדת מתחת למה שכבר נמצא
+            if any(not _pair_ok(already, candidate, kind_of, prefs) for already in chosen):
+                continue
+            chosen.append(candidate)
+            backtrack(depth + 1, joined)
+            chosen.pop()
+
+    backtrack(0, frozenset())
+    return best[0]
+
+
+def _ranked_slots(
+    slots: list[_Slot], prefs: Preferences
+) -> list[tuple[int, int, bool, dict[int, int]]]:
+    """הסלוטים שיש להם רשומת דירוג במערכת שלמה, בדיוק לפי ``_lecturer_ranks``.
+
+    לכל אחד: ‏(אינדקס הסלוט, אורך רשימת השמות, האם הוא הרצאה,
+    ‏{id(קבוצה): הדירוג שהיא תקבל}). בבחירה שלמה כל סלוט מלא, ולכן קבוצת
+    הרשומות קבועה מראש — ורק הדירוג שבכל אחת תלוי במה שנבחר.
+    """
+    out: list[tuple[int, int, bool, dict[int, int]]] = []
+    by_course: dict[str, list[int]] = {}
+    for i, slot in enumerate(slots):
+        by_course.setdefault(slot.course.code, []).append(i)
+    for code, ranking in (prefs.preferred_lecturers or {}).items():
+        indices = by_course.get(code)
+        if not indices:
+            continue
+        if isinstance(ranking, dict):
+            wanted = {str(k): _clean_names(v) for k, v in ranking.items()}
+        else:
+            flat = _clean_names(ranking)
+            wanted = {slots[i].kind: flat for i in indices}
+        for kind, names in wanted.items():
+            if not names:
+                continue
+            index = next((i for i in indices if slots[i].kind == kind), None)
+            if index is None:
+                continue
+            norm = [_norm_name(n) for n in names]
+            ranks = {}
+            for g in slots[index].candidates:
+                got = _norm_name(g.lecturer)
+                ranks[id(g)] = norm.index(got) + 1 if got in norm else len(names) + 1
+            out.append((index, len(names), kind in LECTURE_KINDS, ranks))
+    return out
+
+
+def _search_best(
+    courses: list[Course],
+    prefs: Preferences,
+    keep: int,
+    budget: _Budget,
+    kept: list[tuple[tuple, ScoredSchedule]],
+) -> None:
+    """ממלא את ``kept`` ב-``keep`` המערכות הטובות ביותר לפי ``_sort_key``.
+
+    אותו עץ כמו ``enumerate_selections``. ענף נגזם רק כשחסם תחתון על המפתח
+    של **כל** השלמה שלו גרוע במובהק מהמקום ה-``keep`` שכבר נמצא, ברמה
+    הראשונה שבה הם נבדלים (``_sort_key``):
+
+        1. ימים מעל היעד — מספר הימים רק גדל;
+        2. דירוג המרצים — כל רכיב מדורג שעוד לא נבחר נחשב כאילו קיבל
+           דירוג 1, וזה הכי טוב שהוא יכול לקבל;
+        3. חפיפות מכוונות — זוג שכבר חופף נשאר חופף;
+        4. הניקוד — ‏span וסיום מאוחר רק גדלים, חורים נחשבים 0. רק כשכל
+           המשקולות אי-שליליות; משקל שלילי מבטל את החסם הזה ולא את הנכונות.
+
+    שוויון לעולם אינו נגזם, ולכן שוברי השוויון שאחרי הניקוד ממשיכים לקבוע.
+    ‏``kept`` מתמלא תוך כדי, כך שאם החיפוש נקטע — הוא מחזיק את הטוב שנמצא.
+    """
+    slots = _build_slots(courses, prefs)
+    kind_of = _kind_index(courses)
+    n = len(slots)
+
+    w_comp = _weight(prefs, "compactness")
+    w_late = _weight(prefs, WEIGHT_LATE_FINISH)
+    w_soft = _weight(prefs, WEIGHT_SOFT_CONFLICT)
+    weights = (_weight(prefs, "gaps"), w_comp, w_late, w_soft)
+    score_bound = all(math.isfinite(w) and w >= 0 for w in weights)
+    allow_soft = bool(getattr(prefs, "allow_soft_conflicts", False))
+    target = prefs.target_days
+
+    # --- דירוג המרצים: רשומה לכל סלוט מדורג, ודירוג לכל מועמד בו
+    ranked = _ranked_slots(slots, prefs)
+    deepest = max((r[1] for r in ranked), default=0)
+    rank_at: dict[int, tuple[bool, dict[int, int]]] = {r[0]: (r[2], r[3]) for r in ranked}
+    count_at = [0] * (deepest + 2)  # כמה רכיבים מדורגים קיבלו כל דירוג
+    lect_at = [0] * (deepest + 2)  # וכמה מהם הרצאות
+    unfilled = [len(ranked), sum(1 for r in ranked if r[2])]
+
+    def lecturer_bound() -> tuple[int, ...]:
+        key: list[int] = []
+        for level in range(1, deepest + 1):
+            extra, extra_lect = (unfilled if level == 1 else (0, 0))
+            key.append(-(count_at[level] + extra))
+            key.append(-(lect_at[level] + extra_lect))
+        return tuple(key)
+
+    # --- מצב חלקי: ימים, ‏span, סיום מאוחר, חפיפות מכוונות
+    day_lo: dict[int, int] = {}
+    day_hi: dict[int, int] = {}
+    totals = [0, 0, 0]  # span, late, soft
+    chosen: list[Group] = []
+
+    def worse_than_kept() -> bool:
+        if len(kept) < keep:
+            return False
+        k = kept[-1][0]
+        days_over = max(0, len(day_hi) - target)
+        if days_over != k[0]:
+            return days_over > k[0]
+        lec = lecturer_bound()
+        if lec != k[1]:
+            return lec > k[1]
+        if totals[2] != k[2]:
+            return totals[2] > k[2]
+        if not score_bound:
+            return False
+        penalty = (w_comp * totals[0] + w_late * totals[1]) / 60.0
+        if totals[2]:
+            penalty += w_soft * totals[2]
+        return penalty > k[3] + _BOUND_EPS
+
+    def backtrack(depth: int) -> None:
+        if depth == n:
+            sched = score(Selection(list(chosen)), prefs)
+            key = _sort_key(sched)
+            if len(kept) < keep or key < kept[-1][0]:
+                bisect.insort(kept, (key, sched), key=lambda item: item[0])
+                del kept[keep:]
+            return
+        rank_info = rank_at.get(depth)
+        for candidate in slots[depth].candidates:
+            budget.tick()
+            soft = 0
+            ok = True
+            for already in chosen:
+                if not _pair_ok(already, candidate, kind_of, prefs):
+                    ok = False
+                    break
+                if allow_soft and already.conflicts_with(candidate) and _overlap_windows(
+                    already, candidate
+                ):
+                    soft += 1  # בדיוק מה ש-soft_conflicts_in יספור לזוג הזה
+            if not ok:
+                continue
+
+            # --- הוספה למצב החלקי
+            undo: list[tuple[int, "int | None", "int | None"]] = []
+            for m in candidate.meetings:
+                lo, hi = day_lo.get(m.day), day_hi.get(m.day)
+                undo.append((m.day, lo, hi))
+                new_lo = m.start if lo is None else min(lo, m.start)
+                new_hi = m.end if hi is None else max(hi, m.end)
+                old_span = 0 if lo is None else hi - lo
+                old_late = 0 if hi is None else max(0, hi - LATE_BASELINE_MIN)
+                totals[0] += (new_hi - new_lo) - old_span
+                totals[1] += max(0, new_hi - LATE_BASELINE_MIN) - old_late
+                day_lo[m.day], day_hi[m.day] = new_lo, new_hi
+            totals[2] += soft
+            if rank_info is not None:
+                is_lecture, ranks = rank_info
+                level = ranks[id(candidate)]
+                count_at[level] += 1
+                lect_at[level] += is_lecture
+                unfilled[0] -= 1
+                unfilled[1] -= is_lecture
+            chosen.append(candidate)
+
+            if not worse_than_kept():
+                backtrack(depth + 1)
+
+            # --- והסרה, בסדר הפוך
+            chosen.pop()
+            if rank_info is not None:
+                count_at[level] -= 1
+                lect_at[level] -= is_lecture
+                unfilled[0] += 1
+                unfilled[1] += is_lecture
+            totals[2] -= soft
+            for day, lo, hi in reversed(undo):
+                cur_lo, cur_hi = day_lo[day], day_hi[day]
+                totals[0] -= cur_hi - cur_lo
+                totals[1] -= max(0, cur_hi - LATE_BASELINE_MIN)
+                if lo is None:
+                    del day_lo[day], day_hi[day]
+                else:
+                    day_lo[day], day_hi[day] = lo, hi
+                    totals[0] += hi - lo
+                    totals[1] += max(0, hi - LATE_BASELINE_MIN)
+
+    backtrack(0)
 
 
 # ==========================================================================
@@ -1360,9 +1749,10 @@ def solve(
 
     השלבים:
         1. בדיקת קורסים צמודים (61756/61757/62027 — הכל או כלום).
-        2. מנייה של כל הצירופים התקינים (enumerate_selections).
-        3. ניקוד לכל אחד (score) ושמירת ה-top_n.
-        4. אם אין אף פתרון — אבחון והרמת Infeasible. לעולם לא מחזירים [].
+        2. חיפוש על עץ הצירופים התקינים (``_search_best``), עם ניקוד (score)
+           לכל עלה ושמירת ה-top_n. ענף שאינו יכול לנצח את המקום ה-top_n
+           נגזם — התוצאה זהה למנייה מלאה (2026-10-20).
+        3. אם אין אף פתרון — אבחון והרמת Infeasible. לעולם לא מחזירים [].
 
     Args:
         courses: הקורסים לשיבוץ.
@@ -1375,7 +1765,8 @@ def solve(
     Returns:
         רשימה ממוינת מהטובה לפחות טובה, באורך top_n לכל היותר.
         לכל מערכת מוצמדת התכונה .truncated — True רק אם החיפוש נקטע במכסת
-        הצמתים, כלומר ייתכן שקיימת מערכת טובה יותר שלא נבדקה.
+        הצמתים או בזמן (``time_budget``), כלומר ייתכן שקיימת מערכת טובה
+        יותר שלא נבדקה — ו-.timed_out, ‏True רק כשהזמן הוא שעצר אותו.
 
     Raises:
         TiedCoursesError: חבילת קורסים צמודים שבורה.
@@ -1389,25 +1780,20 @@ def solve(
     )
 
     keep = max(1, int(top_n))
-    # מגזמים את הרשימה מדי פעם כדי לא לאגור עשרות אלפי אובייקטים בזיכרון.
-    prune_at = max(200, keep * 20)
-
     budget = _node_budget(courses, prefs) if limit is None else max(1, int(limit))
 
-    kept: list[ScoredSchedule] = []
-    feasible_count = 0
+    # ‏(מפתח מיון, מערכת), ממוין תמיד. מתמלא תוך כדי החיפוש, ולכן חיפוש
+    # שנקטע משאיר כאן את הטוב שנמצא עד אז.
+    found: list[tuple[tuple, ScoredSchedule]] = []
     hit_limit = False
+    timed_out = False
 
     try:
-        for sel in enumerate_selections(courses, prefs, limit=budget):
-            feasible_count += 1
-            kept.append(score(sel, prefs))
-            if len(kept) >= prune_at:
-                kept.sort(key=_sort_key)
-                del kept[keep:]
+        _search_best(courses, prefs, keep, _Budget(budget), found)
     except SearchExhausted as exc:
         # לא מוותרים על מה שכבר נמצא — פשוט מסמנים שהחיפוש נקטע.
         hit_limit = True
+        timed_out = isinstance(exc, SearchTimedOut)
         warnings.warn(
             f"החיפוש נקטע אחרי {exc.visited:,} צמתים (מתוך מכסה של {budget:,}); "
             f"המערכות שיוחזרו הן הטובות ביותר *מבין אלה שנבדקו* בלבד, וייתכן "
@@ -1418,9 +1804,16 @@ def solve(
             stacklevel=2,
         )
 
-    if not kept:
-        reasons = diagnose_infeasibility(courses, prefs)
-        if hit_limit:
+    if not found:
+        if timed_out:
+            # הזמן נגמר — אבחון ארוך נוסף רק היה מאחר את התשובה עוד יותר.
+            reasons = [
+                "החיפוש נעצר כשנגמר הזמן שהוקצב לו, לפני שנמצא פתרון "
+                "(search time budget reached)."
+            ]
+        else:
+            reasons = diagnose_infeasibility(courses, prefs)
+        if hit_limit and not timed_out:
             reasons.append(
                 "החיפוש נעצר במכסת הצמתים לפני שנמצא פתרון — כדאי להעלות את "
                 "פרמטר limit או להקטין את מרחב החיפוש (search node limit reached)."
@@ -1430,14 +1823,15 @@ def solve(
         # בלי ההבחנה הזאת מי שסופר וריאנטים היה רושם 0 ("בדקתי, לא עוזר")
         # על חיפוש שפשוט נגמרה לו המכסה — כלומר ניחוש שנראה כמו מדידה.
         problem.truncated = hit_limit  # type: ignore[attr-defined]
+        problem.timed_out = timed_out  # type: ignore[attr-defined]
         raise problem
 
-    kept.sort(key=_sort_key)
-    best = kept[:keep]
+    best = [sched for _key, sched in found[:keep]]
     # מסמנים במפורש אם התוצאה חלקית — אזהרת RuntimeWarning לבדה נבלעת בקלות,
     # והקוראת חייבת דרך לדעת שהמערכת הזו היא "הטובה שנמצאה" ולא "הטובה ביותר".
     for sched in best:
         sched.truncated = hit_limit  # type: ignore[attr-defined]
+        sched.timed_out = timed_out  # type: ignore[attr-defined]
     return best
 
 

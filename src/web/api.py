@@ -114,6 +114,19 @@ MAX_VIABILITY_GROUPS = 300
 DEFAULT_TOP_N = 5
 MAX_TOP_N = 50
 
+#: מגבלת הזמן של ‏/api/solve כולה, בשניות. ‏**מתחת ל-``timeout = 30`` של
+#: ‏gunicorn.conf.py בכוונה**: מעליו gunicorn הורג את ה-worker באמצע החיפוש
+#: וכותב בעצמו ‏500 ב-HTML, שהאפליקציה אינה רואה כלל (נמדד 2026-10-20,
+#: ‏docs/SOLVER_PERFORMANCE.md). כשהמגבלה נגמרת מוחזרות המערכות הטובות ביותר
+#: שנמצאו, עם ``timed_out: true``. ‏רשת ביטחון בלבד: אחרי החיפוש הגוזם אף
+#: בחירה מדודה אינה מתקרבת אליה.
+SOLVE_DEADLINE_S: float = 20.0
+
+#: ‏``feasible_count`` נספר עד כאן ולא מעבר. הדף אינו מציג אותו מאז
+#: ‏2026-09-10 (DEFERRED.md); השרת צריך ממנו רק "יש או אין". מעל המכסה
+#: מוחזרת המכסה עם ``feasible_count_capped: true``.
+FEASIBLE_COUNT_CAP = 10_000
+
 #: תקרת קורסים בבקשה אחת — גדר נגד בקשה שתתקע את השרת.
 MAX_CODES = 20
 
@@ -2442,9 +2455,11 @@ def pins_satisfied(
 ) -> bool:
     """האם הבחירה בחרה בדיוק את הקבוצות האלה ‏{קוד: {סוג: קבוצה}}.
 
-    הסטודנט/ית כבר לא נועצים (2026-10-09, docs/DESIGN.md → Lecturers). זה
-    כלי פנימי של ``compute_viability`` בלבד: "האם נשארת מערכת כשהקבוצה הזו
-    נבחרת". מסננת על הבחירות ולא מחיקת קבוצות, כדי ש-linked_to ייאכף כרגיל.
+    הסטודנט/ית כבר לא נועצים (2026-10-09, docs/DESIGN.md → Lecturers). זו
+    ההגדרה של "האם נשארת מערכת כשהקבוצה הזו נבחרת": מסננת על הבחירות ולא
+    מחיקת קבוצות, כדי ש-linked_to ייאכף כרגיל. מאז 2026-10-20
+    ‏``compute_viability`` עונה על אותה שאלה ב-``scheduler.has_selection_with``,
+    בלי למנות את כל הבחירות; הפונקציה נשארת כהגדרה שמולה זה נבדק.
     """
     for code, by_kind in (applied or {}).items():
         for kind, group_id in by_kind.items():
@@ -2465,29 +2480,37 @@ def _node_budget(courses: list[models.Course], prefs: scheduler_mod.Preferences)
 def _count_and_min_days(
     courses: list[models.Course],
     prefs: scheduler_mod.Preferences,
-) -> tuple[int, int | None, bool]:
-    """מעבר **אחד** על ``enumerate_selections``: כמה צירופים, ומה מינימום הימים.
+) -> tuple[int, int | None, bool, bool]:
+    """כמה צירופים (עד ``FEASIBLE_COUNT_CAP``), ומה מינימום הימים.
 
     זה מה שמאפשר לממשק לומר את האמת — "4 ימים אינם אפשריים, המינימום הוא 5" —
     במקום להחזיר בשקט מערכת בת 5 ימים ולתת לחשוב שזה מה שביקשו.
 
+    ‏מינימום הימים נמצא ב-branch-and-bound (``scheduler.min_days``) ולא
+    במנייה; הספירה נעצרת במכסה. עד 2026-10-20 שניהם היו מנייה מלאה אחת,
+    ובשנה א' זה לבדו לקח 16–21 שניות (docs/SOLVER_PERFORMANCE.md).
+
     Returns:
-        ``(feasible_count, min_days, truncated)``. ``min_days`` הוא ``None``
-        כשאין אף צירוף.
+        ``(feasible_count, min_days, truncated, capped)``. ``min_days`` הוא
+        ``None`` כשאין אף צירוף; ``capped`` — הספירה נעצרה במכסה, והמספר
+        האמיתי גדול ממנה.
     """
-    count = 0
-    min_days: int | None = None
-    truncated = False
     budget = _node_budget(courses, prefs)
     try:
-        for selection in scheduler_mod.enumerate_selections(courses, prefs, limit=budget):
-            count += 1
-            days = len(selection.days_used())
-            if min_days is None or days < min_days:
-                min_days = days
+        min_days = scheduler_mod.min_days(courses, prefs, limit=budget)
     except scheduler_mod.SearchExhausted:
-        truncated = True
-    return count, min_days, truncated
+        return 0, None, True, False
+    if min_days is None:
+        return 0, None, False, False
+    count = 0
+    try:
+        for _selection in scheduler_mod.enumerate_selections(courses, prefs, limit=budget):
+            count += 1
+            if count > FEASIBLE_COUNT_CAP:
+                return FEASIBLE_COUNT_CAP, min_days, False, True
+    except scheduler_mod.SearchExhausted:
+        return count, min_days, True, False
+    return count, min_days, False, False
 
 
 def _has_solution(
@@ -2497,16 +2520,16 @@ def _has_solution(
 ) -> tuple[bool, bool]:
     """האם קיים ולו צירוף אחד שמכבד את הנעיצות. עוצר בראשון שנמצא.
 
+    ‏הקבוצה הנעוצה קבועה בסלוט שלה (``scheduler.has_selection_with``) — אותה
+    תשובה כמו מנייה שמסננת עלים ב-``pins_satisfied``, בלי לעבור על כל העלים
+    שאינם מכילים אותה.
+
     Returns:
         ``(has_solution, truncated)``.
     """
     budget = _node_budget(courses, prefs)
     try:
-        for selection in scheduler_mod.enumerate_selections(courses, prefs, limit=budget):
-            if pins and not pins_satisfied(selection, pins):
-                continue
-            return True, False
-        return False, False
+        return scheduler_mod.has_selection_with(courses, prefs, pins, limit=budget), False
     except scheduler_mod.SearchExhausted:
         # לא הוכח שאין — רק שלא הספקנו. לא נטען שזה מבוי סתום.
         return True, True
@@ -4977,6 +5000,16 @@ def _semester_notes(curr: dict, sem: str, choice: dict[str, str]) -> dict[str, l
 @bp.post("/solve")
 @_endpoint
 def solve():
+    """‏``/api/solve`` כולו, בתוך מגבלת זמן אחת (``SOLVE_DEADLINE_S``).
+
+    ‏המגבלה משותפת לכל השלבים — ספירה, מערכות, viability, ויתורים — ולכן
+    הבקשה כולה נגמרת לפני ה-timeout של gunicorn, ולא כל שלב לחוד.
+    """
+    with scheduler_mod.time_budget(SOLVE_DEADLINE_S):
+        return _solve_request()
+
+
+def _solve_request():
     """הלב: פותר, סופר, ומחשב viability לכל קבוצה של כל קורס נבחר.
 
     ‏``attendance`` (‏{קוד: {סוג רכיב: האם נדרשת נוכחות}}) ו-
@@ -5120,13 +5153,16 @@ def solve():
         )
         return _ok(base_common)
 
-    # ── 4. מעבר אחד למניית הצירופים ומינימום הימים ──
-    feasible_count, min_days, counts_truncated = _count_and_min_days(built, prefs)
+    # ── 4. כמה צירופים (עד המכסה), ומינימום הימים ──
+    feasible_count, min_days, counts_truncated, count_capped = _count_and_min_days(
+        built, prefs
+    )
     target_reachable = bool(min_days is not None and min_days <= target_days)
 
     base_common.update(
         {
             "feasible_count": feasible_count,
+            "feasible_count_capped": count_capped,
             "min_days": min_days,
             "target_reachable": target_reachable,
             "counts_truncated": counts_truncated,
@@ -5140,13 +5176,46 @@ def solve():
         base_common["target_message"] = (
             f"{target_days} ימים אינם אפשריים עם הקורסים האלה — המינימום הוא {min_days}"
         )
-        # לא רק לקרוא לקיר בשמו. איזה ויתור על קורס יפתח את היעד —
-        # נמדד, עם המחיר בנקודות זכות, ומסודר מהזול לנזק.
-        base_common["day_relaxations"] = _day_relaxations_json(
-            built, prefs, target_days
-        )
 
-    # ── 5. viability — לכל קבוצה, האם היא משאירה פתרון ──
+    # ── 5. המערכות עצמן — **לפני** ה-viability והוויתורים, כי זה מה שמחכים
+    #      לו: אם מגבלת הזמן נגמרת, עדיף שתיגמר על השלבים שאחריהן. ──
+    found: list = []
+    # ספירה שנקטעה לא הוכיחה ש"אין" — מנסים בכל זאת, ומקבלים את הטוב שנמצא.
+    if feasible_count > 0 or counts_truncated:
+        try:
+            found = _top_schedules(built, prefs, top_n)
+        except scheduler_mod.TiedCoursesError as exc:  # pragma: no cover - נתפס כבר בשלב 3
+            base_common.update(
+                {
+                    "reasons": [str(exc)],
+                    "suggestions": [
+                        "יש לסמן את כל הקורסים בחבילה הצמודה, או להוריד את כולם יחד."
+                    ],
+                    "tied_block": [exc.course_code, *exc.partners],
+                    "tied_missing": list(exc.missing),
+                    "feasible_count": 0,
+                    "min_days": None,
+                    "target_reachable": False,
+                    "target_message": "",
+                    "schedules": [],
+                    "elapsed_ms": int((time.perf_counter() - started) * 1000),
+                }
+            )
+            return _ok(base_common)
+        except scheduler_mod.Infeasible as exc:
+            if not (getattr(exc, "truncated", False) or counts_truncated):  # pragma: no cover
+                # נתפס כבר בשלב 4: ספירה שלמה שמצאה צירופים, ו-solve שלא מצא.
+                base_common["reasons"] = list(exc.reasons)
+                base_common["suggestions"] = scheduler_mod.relax_suggestions(built, prefs)
+                base_common["feasible_count"] = 0
+                base_common["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+                return _ok(base_common)
+            # החיפוש נקטע לפני שנמצאה מערכת — ראו שלבים 8–9 למטה.
+    if found and counts_truncated:
+        # הספירה נקטעה לפני שמצאה את מה ש-solve מצא אחריה.
+        base_common["feasible_count"] = max(feasible_count, len(found))
+
+    # ── 6. viability — לכל קבוצה, האם היא משאירה פתרון ──
     #      **אותן ``prefs`` בדיוק** שהפתרון עצמו רץ איתן. אחרת קבוצה שאפשרית
     #      רק בזכות חפיפה מכוונת הייתה מסומנת כמבוי סתום ולהפך — כלומר
     #      הממשק היה חוסם בדיוק את האפשרות שהתכונה הזו נועדה לפתוח.
@@ -5157,8 +5226,29 @@ def solve():
     base_common["viability_truncated"] = via_truncated
     base_common["viability_skipped"] = via_skipped
 
-    # ── 6. המערכות עצמן ──
-    if feasible_count == 0:
+    # ── 7. יעד ימים שאינו אפשרי: לא רק לקרוא לקיר בשמו. איזה ויתור על קורס
+    #      יפתח את היעד — נמדד, עם המחיר בנקודות זכות, ומסודר מהזול לנזק. ──
+    if min_days is not None and not target_reachable:
+        base_common["day_relaxations"] = _day_relaxations_json(
+            built, prefs, target_days
+        )
+
+    # ── 8. מגבלת הזמן. מה שנמצא עד כה מוחזר כפי שהוא, עם דגל; הדף אומר
+    #      זאת במשפט אחד (app.banners.solveTimeout). לעולם לא 500. ──
+    timed_out = scheduler_mod.time_budget_expired()
+    base_common["timed_out"] = timed_out
+    if timed_out:
+        LOG.warning(
+            "‏/api/solve נעצר במגבלת הזמן (%.0f ש') — %d קורסים, %d מערכות הוחזרו",
+            SOLVE_DEADLINE_S, len(built), len(found),
+        )
+
+    # ── 9. אין פתרון ──
+    if not found:
+        if timed_out:
+            # לא הוכח שאין — רק שלא הספקנו. אבחון "למה אין" היה טענה שקרית.
+            base_common["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+            return _ok(base_common)
         # אין פתרון — זו תשובה, לא שגיאה. 200 עם הסבר ועם צעדים מעשיים.
         diag = built
         try:
@@ -5180,36 +5270,9 @@ def solve():
         base_common["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
         return _ok(base_common)
 
-    try:
-        found = _top_schedules(built, prefs, top_n)
-    except scheduler_mod.TiedCoursesError as exc:  # pragma: no cover - נתפס כבר בשלב 3
-        base_common.update(
-            {
-                "reasons": [str(exc)],
-                "suggestions": [
-                    "יש לסמן את כל הקורסים בחבילה הצמודה, או להוריד את כולם יחד."
-                ],
-                "tied_block": [exc.course_code, *exc.partners],
-                "tied_missing": list(exc.missing),
-                "feasible_count": 0,
-                "min_days": None,
-                "target_reachable": False,
-                "target_message": "",
-                "schedules": [],
-                "elapsed_ms": int((time.perf_counter() - started) * 1000),
-            }
-        )
-        return _ok(base_common)
-    except scheduler_mod.Infeasible as exc:  # pragma: no cover - נתפס כבר בשלב 3
-        base_common["reasons"] = list(exc.reasons)
-        base_common["suggestions"] = scheduler_mod.relax_suggestions(built, prefs)
-        base_common["feasible_count"] = 0
-        base_common["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
-        return _ok(base_common)
-
     base_common["schedules"] = [schedule_to_json(s, built, prefs) for s in found]
     base_common["top_n"] = top_n
-    if not target_reachable:
+    if not target_reachable and min_days is not None:
         base_common["suggestions"] = [
             f"אפשר להעלות את יעד הימים ל-{min_days} — זו העדפה רכה בלבד, "
             f"והיא רק משפיעה על הניקוד."
