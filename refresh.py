@@ -1406,6 +1406,19 @@ def refresh_courses(
     return PASS_OK, ""
 
 
+def count_course_buttons(html: str) -> int:
+    """כמה כפתורי קורס יש בדף הקטלוג — בלי תלות במבנה השורות.
+
+    דף עם כפתורים ובלי אף שורה מפוענחת אינו "קטלוג ריק" אלא תבנית שהשתנתה.
+    כך נראו הריצות של 2026-10-19 ו-2026-10-20: ~576 כפתורים, 0 שורות. 0 אם
+    אין שולף HTTP לספור בו — אז נשארת ההודעה הרגילה.
+    """
+    try:
+        return int(import_yedion_http().count_catalog_rows(html))
+    except Exception:  # noqa: BLE001 - ספירה לאבחון בלבד
+        return 0
+
+
 def run_pass(
     backend,
     args: argparse.Namespace,
@@ -1442,8 +1455,20 @@ def run_pass(
                 log(f"הקטלוג נשמר: {len(catalog)} קורסים.")
             else:
                 # דף ריק לא דורס קטלוג טוב שכבר קיים.
-                log("אזהרה: הקטלוג חזר ריק — הקטלוג הקודם נשמר כמו שהוא.")
-                record["catalog"]["warnings"].append("empty catalog page; kept previous")
+                buttons = count_course_buttons(html)
+                if buttons:
+                    changed = (
+                        f"the yedion page structure changed ({buttons} course buttons, "
+                        "0 parsed rows)"
+                    )
+                    log(
+                        f"אזהרה: מבנה הדף בידיעון השתנה — {buttons} כפתורי קורס ו-0 שורות "
+                        f"שפוענחו. הקטלוג הקודם נשמר כמו שהוא. ({changed})"
+                    )
+                    record["catalog"]["warnings"].append(f"{changed}; kept previous")
+                else:
+                    log("אזהרה: הקטלוג חזר ריק — הקטלוג הקודם נשמר כמו שהוא.")
+                    record["catalog"]["warnings"].append("empty catalog page; kept previous")
         except SessionExpired as exc:
             return PASS_NEEDS_LOGIN, f"session expired during catalog fetch: {exc}", catalog
         except Exception as exc:  # noqa: BLE001 - קטלוג שנכשל לא עוצר קורסים

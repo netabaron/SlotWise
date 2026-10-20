@@ -281,11 +281,16 @@ def _course_button_code(row: Any) -> str | None:
 
 
 def _iter_rows(soup: BeautifulSoup) -> Iterator[Any]:
-    """כל ``div.row`` בדף, בלי שורות-מכולה שמכילות שורות אחרות בתוכן."""
-    for row in soup.select("div.row"):
+    """כל אלמנט עם class ``row`` בדף, בלי שורות-מכולה שמכילות שורות אחרות.
+
+    לפי ה-class ולא לפי התגית: ב-2026-10-19 הידיעון החליף את ``<div class="row">``
+    ב-``<article class="row">``, ו-``div.row`` מצא אפס שורות בדף של 576 קורסים.
+    הסינון האמיתי נשאר בתנאים של ``parse_catalog`` — קוד וכפתור.
+    """
+    for row in soup.select(".row"):
         # שורה שמכילה שורה אחרת היא מכולה, לא שורת נתונים — נדלג עליה
         # ונפגוש את הפנימית בסיבוב הבא. (בפיקסצ'ר אין כאלה, זו רשת ביטחון.)
-        if row.select_one("div.row") is not None:
+        if row.select_one(".row") is not None:
             continue
         yield row
 
@@ -293,8 +298,9 @@ def _iter_rows(soup: BeautifulSoup) -> Iterator[Any]:
 def parse_catalog(html: str) -> tuple[dict[str, dict], list[str]]:
     """מפענח דף "רשימת קורסים" של הידיעון.
 
-    מבנה הדף (GROUND_TRUTH §2): הכול ``div.row`` / ``div.col``, **אין**
-    ולו ``<table>`` אחד בעמוד. פרסר שמחפש טבלאות ימצא אפס שורות.
+    מבנה הדף (GROUND_TRUTH §2): הכול ``.row`` / ``div.col``, **אין**
+    ולו ``<table>`` אחד בעמוד. פרסר שמחפש טבלאות ימצא אפס שורות. השורות
+    היו ``div`` ומאז 2026-10-19 הן ``article``.
 
     שורה נחשבת שורת קורס אך ורק אם מתקיימים **שני** התנאים:
       1. התא הראשון הוא 4-7 ספרות (קוד קורס), וגם

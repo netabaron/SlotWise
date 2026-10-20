@@ -246,6 +246,16 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: build-log-${{ steps.inputs.outputs.date }}-${{ github.run_id }}
-          path: build.log
+          # The raw catalog listing rides along so the next markup change can
+          # be diagnosed from the artifact alone: on 2026-10-19 the yedion
+          # swapped <div class="row"> for <article class="row"> and the log
+          # alone could only say "empty". dump_html() writes the response
+          # BODY only; the session cookie lives in the Set-Cookie header and
+          # never reaches this file. Checked on a live copy on 2026-10-20: no
+          # cookie, session id or token in the page, only two empty hidden
+          # inputs.
+          path: |
+            build.log
+            data/raw/catalog_*.html
           if-no-files-found: warn
           retention-days: 14

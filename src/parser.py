@@ -1366,7 +1366,7 @@ def _rows_to_groups(
 # 5b. המבנה האמיתי של הידיעון: רשת DIV של Bootstrap — לא ``<table>``
 # ==========================================================================
 # ‏docs/GROUND_TRUTH.md סעיף 2 (שגובר על docs/SPEC.md סעיף 4): בדפי הידיעון האמיתיים
-# אין ולו ``<table>`` אחד. התוצאות בנויות מ-``div.row`` / ``div.col``, וכל
+# אין ולו ``<table>`` אחד. התוצאות בנויות מ-``.row`` / ``div.col``, וכל
 # קבוצה היא "בלוק" שמתחיל ב-``div.TextAlignRight`` ואחריו טבלת מערכת שעות.
 # פרסר שמחפש ``<table>`` בלבד מחזיר אפס קבוצות בכל אחד מחמשת ה-fixtures.
 #
@@ -1448,8 +1448,10 @@ def _classes(node: Any) -> list[str]:
     return raw.split() if isinstance(raw, str) else [str(c) for c in raw]
 
 
-def _is_div_row(node: Any) -> bool:
-    return getattr(node, "name", None) == "div" and "row" in _classes(node)
+def _is_row(node: Any) -> bool:
+    """שורה בגריד = כל תגית עם class ``row``. השורות היו ``div``; מ-2026-10-19
+    הידיעון מגיש ``<article class="row">``, ובדיקה לפי התגית איבדה כל מפגש."""
+    return getattr(node, "name", None) is not None and "row" in _classes(node)
 
 
 def _is_div_col(node: Any) -> bool:
@@ -1639,12 +1641,12 @@ def _find_group_label(scope: list[Any], block: Any = None) -> str:
 
 
 def _scope_rows(scope: list[Any]) -> list[Any]:
-    """שורות ה-``div.row`` הפנימיות ביותר שבתוך ה-scope."""
+    """שורות ה-``.row`` הפנימיות ביותר שבתוך ה-scope."""
     rows: list[Any] = []
-    for el in _scope_elements(scope, ["div"]):
-        if not _is_div_row(el):
+    for el in _scope_elements(scope):
+        if not _is_row(el):
             continue
-        if any(_is_div_row(d) for d in el.find_all("div")):
+        if any(_is_row(d) for d in el.find_all(True)):
             continue                      # שורה שעוטפת שורות אחרות אינה שורת נתונים
         rows.append(el)
     return rows
@@ -2747,7 +2749,7 @@ def _details_blobs(scope: Any) -> list[str]:
 
     # תא "עלה" = תא שאין בתוכו שורות נוספות. אלה התאים של "תווית : ערך".
     for cell in cells:
-        if not any(_is_div_row(d) for d in cell.find_all("div")):
+        if not any(_is_row(d) for d in cell.find_all(True)):
             add(_cell_text(cell))
     for cell in cells:
         add(_cell_text(cell))
@@ -2974,8 +2976,8 @@ def _details_prereq_container(scope: Any) -> Any:
         return inner if inner is not None else card
 
     # גיבוי: מיכל שיש בו שורת כותרת עם "סוג הקשר" ו-"נושא נקשר".
-    for row in scope.find_all("div"):
-        if not _is_div_row(row):
+    for row in scope.find_all(True):
+        if not _is_row(row):
             continue
         texts = [_cell_text(c) for c in _row_cols(row)]
         if any("סוג הקשר" in t for t in texts) and any("נושא נקשר" in t for t in texts):
@@ -3091,10 +3093,10 @@ def _details_prerequisites(scope: Any, warnings: list[str]) -> list[dict]:
         return []
 
     rows = [
-        r for r in container.find_all("div")
-        if _is_div_row(r) and not any(_is_div_row(d) for d in r.find_all("div"))
+        r for r in container.find_all(True)
+        if _is_row(r) and not any(_is_row(d) for d in r.find_all(True))
     ]
-    if _is_div_row(container) and not rows:
+    if _is_row(container) and not rows:
         rows = [container]
 
     # שורה ריקה לגמרי אינה נתון ואינה כותרת — הידיעון מדפיס שורת-מקום כזאת
