@@ -758,8 +758,7 @@ the only one `x_for=1` believes — is the real client IP. Anything further left
 was supplied by the client and stays untrusted, which is the point of trusting
 exactly one.
 
-The comment in `wsgi.py` still names Cloudflare and Railway. The number it
-justifies is the same, so the code is right; only the names are out of date.
+The comment in `wsgi.py` describes this chain (updated 2026-10-23).
 
 ### 9. Cost control
 
@@ -895,7 +894,8 @@ Raising max instances also raises the cost ceiling; see section 9.
 > **Retired 2026-10-18 (moved to Cloud Run).** Kept as a record of how the
 > previous host was configured. The current setup is
 > [Google Cloud Run + Cloudflare DNS setup](#google-cloud-run--cloudflare-dns-setup).
-> `railway.json` is removed in a separate commit once Railway is cancelled.
+> Railway was cancelled and `railway.json` was removed from the repo on
+> 2026-10-23; the config quoted below is as it stood before that.
 
 Target: `slotwise.co.il`, served by Railway from the Dockerfile, with Cloudflare
 in front. `railway.json` pins the build and the health check; everything below is
