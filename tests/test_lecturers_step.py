@@ -101,6 +101,7 @@ def _open(pg, code):
     if head.get_attribute("aria-expanded") != "true":
         head.click()
         pg.wait_for_timeout(300)
+        pg.wait_for_function("() => !document.getElementById('lecturer-courses').style.transform")
 
 
 def _card(code):
