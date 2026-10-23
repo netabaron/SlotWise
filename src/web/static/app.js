@@ -525,11 +525,27 @@
   }
 
   /**
+   * ‏הלחיצה שבתהליך: ‏pointerdown, או רווח על פקד, שעוד לא שוחררו. כל עוד
+   * ‏היא קיימת ‏rebuild() לא מחליף את המכולה שמכילה אותה (‏deferred = דולגה
+   * ‏בנייה, ו-render() יחזור אחרי השחרור). ‏timer: רשת ביטחון לשחרור שלא הגיע.
+   */
+  var press = { target: null, deferred: false, timer: 0 };
+  //: ‏לחיצה ארוכה מזה כבר אינה לחיצה; מעבר לה המסך חוזר להתעדכן.
+  var PRESS_HOLD_MAX_MS = 3000;
+
+  /**
    * בנייה מחדש של מכולה תוך שמירת הפוקוס.
    * לכל פקד אינטראקטיבי יש data-fk ייחודי; אחרי הבנייה מחזירים אליו פוקוס.
    */
   function rebuild(container, build) {
     if (!container) return;
+    // ‏לחיצה שעוד לא שוחררה בתוך המכולה: בנייה עכשיו מחליפה את הצומת שנלחץ,
+    // ‏והדפדפן לא שולח click כשהלחיצה והשחרור נפלו על צמתים שונים. הלחיצה
+    // ‏נבלעת בשקט. ‏render() חוזר כשהיא משתחררת (wirePressGuard).
+    if (press.target && container.contains && container.contains(press.target)) {
+      press.deferred = true;
+      return;
+    }
     var key = null;
     var active = document.activeElement;
     if (active && container.contains && container.contains(active)) {
@@ -4691,6 +4707,8 @@
    * ===================================================================== */
 
   function render() {
+    // ‏ציור מלא מכסה כל בנייה שדולגה; ‏rebuild() יסמן שוב אם עדיין לוחצים.
+    press.deferred = false;
     renderHeader();
     renderBanners();
     renderYearStep();
@@ -10808,6 +10826,63 @@
     else if (wide.addListener) wide.addListener(onWideChange);
   }
 
+  /**
+   * ‏רושם את הלחיצה שבתהליך בשביל ‏rebuild(). ‏נמדד 2026-10-23: שינוי מצב
+   * ‏בונה את שלב המרצים מחדש כשהחישוב מתחיל וכשתשובתו חוזרת, ומתג שנלחץ
+   * ‏באותו רגע לא השתנה — ‏mousedown על צומת אחד, ‏mouseup על מחליפו, ובלי
+   * ‏click. ‏ברווח זה אותו דבר: ‏keyup נוחת על צומת חדש שלא קיבל את ה-keydown.
+   *
+   * ‏השחרור מנקה מיד, בתוך pointerup/keyup עצמם: הדפדפן שולח את ה-click
+   * ‏אחריהם באותה משימה, והמטפל שלו כבר מצייר הכול כרגיל. מה שדולג ולא
+   * ‏צויר על ידו מצויר ב-setTimeout שאחרי ה-click — לא לפניו, כי ציור שם
+   * ‏היה מחליף את הצומת ובולע את הלחיצה בדיוק כמו קודם.
+   */
+  function wirePressGuard() {
+    var release = function () {
+      if (!press.target) return;
+      press.target = null;
+      clearTimeout(press.timer);
+      setTimeout(function () {
+        if (press.deferred && !press.target) render();
+      }, 0);
+    };
+    var hold = function (target) {
+      press.target = target;
+      clearTimeout(press.timer);
+      press.timer = setTimeout(release, PRESS_HOLD_MAX_MS);
+    };
+    var opts = { capture: true, passive: true };
+    document.addEventListener(
+      "pointerdown",
+      function (ev) {
+        if (ev.isPrimary !== false && ev.target && ev.target.nodeType === 1) hold(ev.target);
+      },
+      opts
+    );
+    document.addEventListener("pointerup", release, opts);
+    document.addEventListener("pointercancel", release, opts);
+    // ‏רווח מפעיל מתג או כפתור ב-keyup. בשדה טקסט הוא סתם תו.
+    document.addEventListener(
+      "keydown",
+      function (ev) {
+        var t = ev.target;
+        if (ev.key !== " " || !t || t.nodeType !== 1 || t.isContentEditable) return;
+        if (t.tagName === "TEXTAREA") return;
+        if (t.tagName === "INPUT" && !/^(checkbox|radio|button|submit|reset)$/.test(t.type)) return;
+        hold(t);
+      },
+      opts
+    );
+    document.addEventListener(
+      "keyup",
+      function (ev) {
+        if (ev.key === " ") release();
+      },
+      opts
+    );
+    window.addEventListener("blur", release);
+  }
+
   function boot() {
     runtime.restored = loadState();
     // לאיזה סמסטר הבחירה השמורה שייכת. האימוץ החד-פעמי ב-
@@ -10817,6 +10892,7 @@
     runtime.adoptSemester = runtime.restored ? txt(state.semester) : "";
     cacheElements();
     wireEvents();
+    wirePressGuard();
     wireRefit();
     watchFooterRoom();
     refreshColorMap();
