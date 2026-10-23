@@ -1158,6 +1158,48 @@ def _ranked_slots(
     return out
 
 
+def _stable_layout(
+    slots: list[_Slot],
+) -> "tuple[list[int], list[dict[int, str]], list[str]] | None":
+    """איך ``_stable_key`` של כל עלה בנוי מהסלוטים — או ``None`` כשאין מבנה קבוע.
+
+    ‏``_stable_key`` הוא ``"|".join(sorted(אסימונים))``, אסימון ‏``קוד~סוג~קבוצה``
+    לכל סלוט. כשלכל סלוט ‏``קוד~סוג`` משלו, ובקוד ובסוג אין ``~`` או ``|``, הסדר
+    בין אסימונים של שני סלוטים נקבע לפני מזהה הקבוצה — ולכן לכל סלוט **מקום
+    קבוע** במפתח של כל עלה. אז השוואת שני מפתחות היא השוואה מקום אחר מקום של
+    ‏``אסימון + "|"``, ובמקום האחרון של האסימון לבדו: ‏``"~10|"`` קודם ל-``"~1|"``,
+    אבל ``"~1"`` קודם ל-``"~10"`` בסוף המחרוזת.
+
+    Returns:
+        ‏(הסלוטים בסדר מקומם במפתח, ‏{id(קבוצה): אסימון} לכל סלוט, והאסימון
+        הקטן ביותר של כל סלוט כפי שהוא מושווה במקומו).
+    """
+    heads: list[str] = []
+    for slot in slots:
+        pairs = {(g.course_code, g.kind) for g in slot.candidates}
+        if len(pairs) != 1:
+            return None  # סלוט מת, או סלוט שמועמדיו אינם מאותו ‏(קורס, סוג)
+        ((code, kind),) = pairs
+        if any(ch in code or ch in kind for ch in "~|"):
+            return None
+        heads.append(f"{code}~{kind}~")
+    if len(set(heads)) != len(heads):
+        return None
+    tokens = [
+        {id(g): f"{g.course_code}~{g.kind}~{g.group_id}" for g in slot.candidates}
+        for slot in slots
+    ]
+    if any("|" in t for by_id in tokens for t in by_id.values()):
+        return None
+    order = sorted(range(len(slots)), key=heads.__getitem__)
+    last = order[-1] if order else None
+    low = [
+        min(by_id.values()) if i == last else min(by_id.values(), key=lambda t: t + "|")
+        for i, by_id in enumerate(tokens)
+    ]
+    return order, tokens, low
+
+
 def _search_best(
     courses: list[Course],
     prefs: Preferences,
@@ -1178,7 +1220,16 @@ def _search_best(
         4. הניקוד — ‏span וסיום מאוחר רק גדלים, חורים נחשבים 0. רק כשכל
            המשקולות אי-שליליות; משקל שלילי מבטל את החסם הזה ולא את הנכונות.
 
-    שוויון לעולם אינו נגזם, ולכן שוברי השוויון שאחרי הניקוד ממשיכים לקבוע.
+    מעבר לניקוד ממשיכים רק כשהוא **מדויק**: לאף מועמד בסלוטים שנותרו אין
+    מפגש, ולכן לכל השלמה אותו ניקוד, אותם ימים, חורים ואורך יום כמו לבחירה
+    החלקית — והם מחושבים עליה ב-``score``, בדיוק כמו בעלה (2026-10-24). אז:
+
+        5–7. ימים, חורים, אורך היום — הערכים עצמם;
+        8.   ‏``_stable_key`` — האסימונים שנבחרו, והקטן ביותר בכל סלוט פתוח
+             (``_stable_layout``).
+
+    בלי זה, כשלאף קבוצה אין מועד, כל העלים שווים בארבע הרמות והחיפוש עובר
+    על כולם. שוויון לעולם אינו נגזם.
     ‏``kept`` מתמלא תוך כדי, כך שאם החיפוש נקטע — הוא מחזיק את הטוב שנמצא.
     """
     slots = _build_slots(courses, prefs)
@@ -1215,6 +1266,24 @@ def _search_best(
     totals = [0, 0, 0]  # span, late, soft
     chosen: list[Group] = []
 
+    # --- הרמות שאחרי הניקוד: מאיזה עומק לאף מועמד אין מפגש, ומבנה המפתח
+    untimed_from = [True] * (n + 1)
+    for d in range(n - 1, -1, -1):
+        untimed_from[d] = untimed_from[d + 1] and not any(
+            g.meetings for g in slots[d].candidates
+        )
+    layout = _stable_layout(slots)
+    # תא לכל עומק שממנו הניקוד מדויק: ‏[None] עד שמחושב, ואז ‏(רמות 4–7).
+    # ילד שמוסיף קבוצה בלי מפגש חולק את התא של ההורה — הערכים אותם ערכים.
+    exact: list["list | None"] = []
+
+    def stable_bound() -> str:
+        order, tokens, low = layout  # type: ignore[misc]
+        filled = len(chosen)
+        return "|".join(
+            tokens[i][id(chosen[i])] if i < filled else low[i] for i in order
+        )
+
     def worse_than_kept() -> bool:
         if len(kept) < keep:
             return False
@@ -1229,10 +1298,27 @@ def _search_best(
             return totals[2] > k[2]
         if not score_bound:
             return False
-        penalty = (w_comp * totals[0] + w_late * totals[1]) / 60.0
-        if totals[2]:
-            penalty += w_soft * totals[2]
-        return penalty > k[3] + _BOUND_EPS
+        cell = exact[-1]
+        if cell is None or len(chosen) == n:
+            # חסם בלבד; בעלה עצמו ההשוואה המלאה נעשית ממילא.
+            penalty = (w_comp * totals[0] + w_late * totals[1]) / 60.0
+            if totals[2]:
+                penalty += w_soft * totals[2]
+            return penalty > k[3] + _BOUND_EPS
+        if cell[0] is None:
+            part = score(Selection(list(chosen)), prefs)
+            cell[0] = (
+                -round(part.score, _SCORE_PRECISION),
+                part.days_count,
+                part.gap_minutes,
+                part.selection.span_minutes(),
+            )
+        tie = cell[0]
+        if tie != k[3:7]:
+            return tie > k[3:7]
+        if layout is None:
+            return False
+        return stable_bound() > k[7]
 
     def backtrack(depth: int) -> None:
         if depth == n:
@@ -1278,11 +1364,17 @@ def _search_best(
                 unfilled[0] -= 1
                 unfilled[1] -= is_lecture
             chosen.append(candidate)
+            if untimed_from[depth + 1]:
+                parent = exact[-1] if exact else None
+                exact.append(parent if parent is not None else [None])
+            else:
+                exact.append(None)
 
             if not worse_than_kept():
                 backtrack(depth + 1)
 
             # --- והסרה, בסדר הפוך
+            exact.pop()
             chosen.pop()
             if rank_info is not None:
                 count_at[level] -= 1
