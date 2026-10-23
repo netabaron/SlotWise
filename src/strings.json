@@ -170,8 +170,6 @@
       "relaxOptionNoCredits": "ויתור על {name} יאפשר {days} ימים",
       "relaxPackage": "ויתור על {names} — חבילה אחת ({credits} נ\"ז) — יאפשר {days} ימים",
       "relaxUnreachable": "אי אפשר להגיע ל-{days} ימים, גם בוויתור על קורס אחד.",
-      "relaxUnmeasured": "לא נבדק עד הסוף",
-      "relaxSchedules": "{n} מערכות",
       "relaxNoRequiredInfo": "לא בדקנו אילו מהקורסים חובה לתואר שלך.",
       "minTag": "מינימום",
       "extras": {

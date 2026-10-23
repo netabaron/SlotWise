@@ -3134,8 +3134,6 @@ button.legend-chip:focus-visible { outline: 2px solid var(--focus); outline-offs
   margin-block-end: 4px;
   font-size: 13px;
 }
-.days-relax-count { font-weight: 600; white-space: nowrap; }
-.days-relax-count.is-quiet { font-weight: 400; color: var(--muted); }
 
 @media print { .days-relax { display: none !important; } }
 

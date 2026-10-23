@@ -1070,13 +1070,22 @@ def has_selection_with(
 
 
 def min_days(
-    courses: list[Course], prefs: Preferences, *, limit: int = DEFAULT_NODE_LIMIT
+    courses: list[Course],
+    prefs: Preferences,
+    *,
+    limit: int = DEFAULT_NODE_LIMIT,
+    at_most: "int | None" = None,
 ) -> "int | None":
     """מינימום ימי הלימוד על פני כל הבחירות, או ``None`` כשאין אף בחירה.
 
     ‏branch-and-bound: מספר הימים של בחירה חלקית רק גדל כשמוסיפים קבוצה,
     ולכן ענף שכבר הגיע למינימום שנמצא אינו יכול לשפר אותו. התשובה זהה
     ל-``min(len(s.days_used()) for s in enumerate_selections(...))``.
+
+    ‏``at_most``: רק בחירות של ``at_most`` ימים לכל היותר נחשבות, ו-``None``
+    פירושו שאין כזו. זה חסם התחלתי ולא קיצור: מינימום **שווה** ל-``at_most``
+    עדיין מוחזר. ‏``day_relaxations`` משתמש בו — ויתור על קורס לעולם אינו
+    מוסיף ימים, ולכן המינימום בלעדיו אינו עולה על המינימום עם כולם.
 
     Raises:
         SearchExhausted / SearchTimedOut: מכסת הצמתים או הזמן נגמרו.
@@ -1087,17 +1096,20 @@ def min_days(
     day_sets = [[frozenset(m.day for m in g.meetings) for g in s.candidates] for s in slots]
     chosen: list[Group] = []
     best: list["int | None"] = [None]
+    # ענף נגזם כשהוא מגיע ל-``bound`` ימים. בלי ``at_most`` אין חסם עד העלה
+    # הראשון; איתו — ‏``at_most + 1``, כדי שבחירה בת ``at_most`` ימים בדיוק תישאר.
+    bound: list["int | None"] = [None if at_most is None else int(at_most) + 1]
     budget = _Budget(limit)
 
     def backtrack(depth: int, days: frozenset) -> None:
         if depth == n:
             if best[0] is None or len(days) < best[0]:
-                best[0] = len(days)
+                best[0] = bound[0] = len(days)
             return
         for candidate, cand_days in zip(slots[depth].candidates, day_sets[depth]):
             budget.tick()
             joined = days | cand_days
-            if best[0] is not None and len(joined) >= best[0]:
+            if bound[0] is not None and len(joined) >= bound[0]:
                 continue  # לא יכול לרדת מתחת למה שכבר נמצא
             if any(not _pair_ok(already, candidate, kind_of, prefs) for already in chosen):
                 continue
@@ -2084,15 +2096,15 @@ class CourseDrop:
     נקודות הזכות שלה. זה גם מה שמסדר אותה נכון: חבילה של שלושה קורסים
     יקרה יותר מקורס בודד, ולכן היא תוצע אחריו.
 
-    ``min_days`` ו-``schedules`` נמדדים בפתירה אמיתית. ``None`` = לא ניתן
-    היה למדוד, ואז לא מוצג מספר — בדיוק כמו בוויתור על אילוץ.
+    ``min_days`` נמדד בחיפוש אמיתי. ``None`` = לא ניתן היה למדוד, ואז לא
+    מוצג מספר — בדיוק כמו בוויתור על אילוץ. אין כאן ספירת מערכות
+    (2026-10-23): ההצעה אומרת רק על מה מוותרים וכמה ימים זה מאפשר.
     """
 
     codes: list
     names: list
     credits: float
     min_days: "int | None" = None
-    schedules: "int | None" = None
 
     def unlocks(self, target: int) -> bool:
         return self.min_days is not None and self.min_days <= target
@@ -2158,21 +2170,53 @@ def _min_days_of(courses: list, prefs: Preferences, limit: "int | None"):
     return best, count
 
 
+def _min_days_bb(
+    courses: list, prefs: Preferences, limit: "int | None", at_most: "int | None" = None
+) -> "int | None":
+    """מינימום הימים ב-branch-and-bound (``min_days``). ``None`` = לא נמדד.
+
+    אותה מכסה כמו ``_min_days_of`` כשאין ``limit``, ואותו כלל: חיפוש שנקטע
+    — במכסה או בזמן — מחזיר "לפחות" ולא ערך, ולכן אינו מדידה.
+    ‏``at_most`` שלא מצא דבר (אמור לא לקרות — ראו ``day_relaxations``) נופל
+    לחיפוש בלי חסם, כדי שהתשובה לעולם לא תהיה תלויה בטענה הזו.
+    """
+    budget = limit if limit is not None else _node_budget(courses, prefs)
+    try:
+        found = min_days(courses, prefs, limit=budget, at_most=at_most)
+        if found is None and at_most is not None:
+            found = min_days(courses, prefs, limit=budget)
+    except SearchExhausted:
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+    return found
+
+
 def day_relaxations(
     courses: list,
     prefs: Preferences,
     target_days: int,
     *,
     limit: "int | None" = None,
+    base_min: "int | None" = None,
 ) -> DayRelaxationReport:
     """
     אילו ויתורים על קורסים יאפשרו את יעד הימים — **נמדד**.
 
-    לכל יחידת ויתור (קורס, או חבילה צמודה) פותרים מחדש בלעדיה ובודקים
-    למה יורד מינימום הימים. שום מספר כאן אינו הערכה.
+    לכל יחידת ויתור (קורס, או חבילה צמודה) מחשבים מחדש בלעדיה את מינימום
+    הימים. שום מספר כאן אינו הערכה.
 
     הסדר הוא **לפי נזק**: קודם מה שעולה פחות נקודות זכות. שני קורסים
     שפותחים את אותו יעד אינם שקולים, והמחיר הוא מה שמבדיל ביניהם.
+
+    ‏**מהירות (2026-10-23).** עד כאן כל יחידה נמדדה במנייה מלאה
+    (``_min_days_of``), שסופרת גם את כל המערכות: שבע מניות בשנה א', ‏770–820
+    אלף צמתים, ו-/api/solve נעצר במגבלת הזמן. עכשיו המינימום נמצא ב-
+    branch-and-bound (``min_days``), ואין ספירה בכלל — הממשק אינו מציג אותה.
+    ‏``base_min`` הוא המינימום עם כל הקורסים, כשהקורא כבר מדד אותו
+    (``/api/solve`` מדד); בלעדיו הוא נמדד כאן. ויתור על קורס לעולם אינו מוסיף
+    ימים — הבחירה הטובה ביותר, בלי הקבוצות של היחידה, עדיין תקינה — ולכן
+    ‏``base_min`` הוא חסם התחלתי לכל יחידה.
 
     אין כאן מושג של "קורס שסומן כחובה" — הוא אינו קיים במערכת. הדבר
     הקרוב ביותר הוא ``tied_with``, וזו קביעה של הידיעון ולא בחירה של
@@ -2180,7 +2224,8 @@ def day_relaxations(
     """
     report = DayRelaxationReport(target=int(target_days))
 
-    base_min, _ = _min_days_of(courses, prefs, limit)
+    if base_min is None:
+        base_min = _min_days_bb(courses, prefs, limit)
     if base_min is not None and base_min <= target_days:
         report.reachable_without_dropping = True
         return report
@@ -2190,7 +2235,6 @@ def day_relaxations(
         kept = [c for c in courses if c.code not in unit]
         if not kept:
             continue  # ויתור על הכול אינו הצעה
-        min_days, count = _min_days_of(kept, prefs, limit)
         report.options.append(
             CourseDrop(
                 codes=list(unit),
@@ -2199,8 +2243,7 @@ def day_relaxations(
                     sum(float(getattr(by_code.get(c), "credits", 0) or 0) for c in unit),
                     1,
                 ),
-                min_days=min_days,
-                schedules=count,
+                min_days=_min_days_bb(kept, prefs, limit, at_most=base_min),
             )
         )
 

@@ -822,14 +822,17 @@ def clean_code(value: Any, *, field: str = "code") -> str:
     return text
 
 
-def _day_relaxations_json(courses: list, prefs: Any, target_days: int) -> dict[str, Any]:
+def _day_relaxations_json(
+    courses: list, prefs: Any, target_days: int, base_min: int | None = None
+) -> dict[str, Any]:
     """אילו ויתורים על קורסים יפתחו את יעד הימים.
 
     ‏``checked`` הם אלה שנמדדו ואינם פותחים — "בדקנו את כולם" הוא מה
     שהופך "אף ויתור בודד אינו מספיק" לדיווח ולא להתחמקות.
+    ‏``base_min`` — המינימום שהבקשה כבר מדדה, כדי שלא יימדד שוב.
     """
     try:
-        report = scheduler_mod.day_relaxations(courses, prefs, target_days)
+        report = scheduler_mod.day_relaxations(courses, prefs, target_days, base_min=base_min)
     except Exception as exc:  # noqa: BLE001 - אבחון לא מפיל תשובה
         LOG.exception("day_relaxations נכשל")
         return {"items": [], "checked": [], "error": str(exc)}
@@ -841,7 +844,6 @@ def _day_relaxations_json(courses: list, prefs: Any, target_days: int) -> dict[s
             "credits": o.credits,
             # ‏None נשאר null: חיפוש שלא הסתיים אינו מספר.
             "min_days": o.min_days,
-            "schedules": o.schedules,
         }
 
     return {
@@ -5230,7 +5232,7 @@ def _solve_request():
     #      יפתח את היעד — נמדד, עם המחיר בנקודות זכות, ומסודר מהזול לנזק. ──
     if min_days is not None and not target_reachable:
         base_common["day_relaxations"] = _day_relaxations_json(
-            built, prefs, target_days
+            built, prefs, target_days, base_min=min_days
         )
 
     # ── 8. מגבלת הזמן. מה שנמצא עד כה מוחזר כפי שהוא, עם דגל; הדף אומר

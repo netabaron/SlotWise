@@ -25,9 +25,9 @@
 ``test_the_cases_are_exactly_what_the_bootstrap_offers``.
 
 ‏מה שנכשל היום מסומן ‏xfail קפדני ולא מושמט: סמסטר אחד שהחיפוש עצמו נעצר בו
-(``KNOWN_TIMEOUT``), ושתי בחירות שיעד ימים בלתי אפשרי עוצר בהן את הצעות הוויתור
-(``KNOWN_RELAXATION_TIMEOUT``). תיקון בפותר הופך כל אחד מהם לכישלון, ואז
-מודדים, מוסיפים תקציב ומסירים את הסימון.
+(``KNOWN_TIMEOUT``). תיקון בפותר הופך אותו לכישלון, ואז מודדים, מוסיפים
+תקציב ומסירים את הסימון — כפי שנעשה ב-2026-10-23 לשתי הבחירות שיעד ימים
+בלתי אפשרי עצר בהן את הצעות הוויתור (``UNREACHABLE_TARGET``).
 
 ‏**מסד ריק, לא המסד המקומי.** האפליקציה כאן רצה מול תיקיית מסד ריקה, כמו
 התמונה המתארחת (‏Dockerfile יוצר ``data/db`` ריק). המסד שה-CI זורע
@@ -328,16 +328,14 @@ CASES = [
     for case_id, expected in NODES.items()
 ]
 
-#: ‏יעד ימים שאינו אפשרי. נמדד ב-2026-10-23: המינימום של שתי הבחירות האלה הוא
-#: ‏4, המערכות עצמן מוכנות בפחות משנייה, ו-``_day_relaxations_json`` לבדו רץ
-#: עד ``SOLVE_DEADLINE_S`` — ‏19.6 ו-19.2 שניות כאן, ‏770–820 אלף צמתים בקטלוג
-#: האמיתי.
-KNOWN_RELAXATION_TIMEOUT = (
-    "‏2026-10-23: יעד של 3 ימים כשהמינימום הוא 4 — ``_day_relaxations_json`` "
-    "(איזה קורס להוריד כדי להגיע ליעד) מחפש עד ``SOLVE_DEADLINE_S``, ו-/api/solve "
-    "חוזר עם ``timed_out`` אף שחמש המערכות מוכנות ושלמות."
-)
-UNREACHABLE_TARGET = ["biotech-s1", "industrial-s1"]
+#: ‏יעד של 3 ימים כשהמינימום הוא 4: מזהה → ‏(נמדד ב-2026-10-23, תקציב), כמו
+#: ‏``NODES``. עד התיקון ``_day_relaxations_json`` מנה כל בחירה, פעם לכל קורס
+#: שאפשר לוותר עליו, ורץ עד ``SOLVE_DEADLINE_S`` — ‏742,659 ו-499,883 צמתים כאן,
+#: ‏770–820 אלף לשלב הזה לבדו בקטלוג האמיתי. עכשיו — ‏branch-and-bound בלי ספירה.
+UNREACHABLE_TARGET = {
+    "biotech-s1": (18_596, 21_000),
+    "industrial-s1": (20_840, 23_000),
+}
 
 
 # ==========================================================================
@@ -407,15 +405,19 @@ def test_the_page_default_solves_within_its_node_budget(client, bootstrap, nodes
     )
 
 
-@pytest.mark.parametrize("case_id", [
-    pytest.param(case_id, marks=pytest.mark.xfail(reason=KNOWN_RELAXATION_TIMEOUT, strict=True))
-    for case_id in UNREACHABLE_TARGET
-])
-def test_an_unreachable_day_target_answers_within_the_deadline(client, bootstrap, nodes, case_id):
-    """יעד 3 ימים לבחירה שהמינימום שלה 4: התשובה חייבת לחזור בלי ``timed_out``."""
-    codes, data, _visited = _solve_page_default(client, bootstrap, nodes, case_id, target_days=3)
+@pytest.mark.parametrize("case_id", list(UNREACHABLE_TARGET))
+def test_an_unreachable_day_target_answers_within_its_node_budget(client, bootstrap, nodes, case_id):
+    """יעד 3 ימים לבחירה שהמינימום שלה 4: בלי ``timed_out``, ובתוך התקציב."""
+    codes, data, visited = _solve_page_default(client, bootstrap, nodes, case_id, target_days=3)
     assert codes, f"{case_id}: רשימת ההמלצה התרוקנה"
     assert data["min_days"] is not None and data["min_days"] > 3, (
         f"{case_id}: המינימום הוא {data['min_days']} — היעד אפשרי, והבדיקה אינה בודקת את מה שהיא מתיימרת"
     )
     assert data["timed_out"] is False, f"{case_id}: הגיע למגבלת הזמן — כלומר לא נפתר"
+    assert data["day_relaxations"]["items"] or data["day_relaxations"]["checked"], (
+        f"{case_id}: אין אף הצעת ויתור — השלב שנמדד כאן לא רץ"
+    )
+    measured, budget = UNREACHABLE_TARGET[case_id]
+    assert visited <= budget, (
+        f"{case_id}: {visited:,} צמתים, מעל התקציב {budget:,} (נמדד {measured:,} ב-2026-10-23)"
+    )

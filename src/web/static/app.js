@@ -6528,17 +6528,9 @@
           // נ"ז 0 בידיעון אינו "בחינם" — הוא פשוט לא ידוע. לא ממציאים מחיר.
           text = Tf("app.days.relaxOptionNoCredits", { name: names, days: days });
         }
+        // ‏בלי ספירת מערכות (2026-10-23): על מה מוותרים וכמה ימים זה מאפשר.
         var li = el("li", { class: "days-relax-row" }, [
           el("span", { class: "days-relax-what", text: text }),
-          item.schedules === null || item.schedules === undefined
-            ? el("span", {
-                class: "days-relax-count is-quiet",
-                text: T("app.days.relaxUnmeasured"),
-              })
-            : el("span", {
-                class: "days-relax-count",
-                text: Tf("app.days.relaxSchedules", { n: item.schedules }),
-              }),
         ]);
         box.appendChild(li);
       });

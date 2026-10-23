@@ -23,6 +23,10 @@ scripts/solver_sweep.py — ‏/api/solve על כל מסלול × סמסטר × 
    לכל גרסה; כשנגמרו — "ref >60 s" ולא השוואה. ‏c ו-d פורשים את אותם עלים כמו
    a, ולכן כש-a חרג הם מדולגים. משווים: המערכות וסדרן, הניקוד, ``min_days``,
    ``target_reachable``, הספירה (עד המכסה) וה-viability של כל קבוצה.
+   בגרסה d, כשהיעד אינו אפשרי, גם ``day_relaxations`` (‏``items`` ו-``checked``:
+   אילו ויתורים, באיזה סדר, וכמה ימים) — מול ``day_relaxations`` כפי שהיה עד
+   2026-10-23, מנייה מלאה לכל קורס (``tests/test_day_relaxations_exact.py``),
+   עם 60 שניות משלו; כשנגמרו — ``day_relax_ref_timeout`` ולא השוואה.
 4. **בדיקה חיה** (מצב נפרד, ``live``) — **בקשה אחת** ל-``/api/solve`` לכל מסלול ×
    סמסטר (בלי התמחות), ב-https://slotwise.co.il, **ברצף, שנייה אחת בין בקשה
    לבקשה**, ועוד ‏``/api/bootstrap`` אחד. קריאה בלבד; בערך 66 בקשות. גופי
@@ -32,7 +36,7 @@ scripts/solver_sweep.py — ‏/api/solve על כל מסלול × סמסטר × 
 בידוד
 ------
 כל פתרון וכל מקור אמת רצים **בתהליך משלהם**, אחד אחרי השני: ‏60 שניות לפתרון
-ו-100 לתהליך של מקור האמת (‏60 חישוב + טעינה), ומעל 1.5 GB זיכרון התהליך
+ו-160 לתהליך של מקור האמת (‏60 חישוב, עד 60 להצעות הוויתור, וטעינה), ומעל 1.5 GB זיכרון התהליך
 נהרג. לפני כל תהליך הסקריפט מחכה לפחות ל-900 MB פנויים. האפליקציה רצה מול
 תיקיית מסד **ריקה** (``<OUTDIR>/empty-store``), כמו התמונה המתארחת: ‏``data/db``
 אינו נקרא ואינו נכתב (ראו בדיקת הקבע למה זה משנה בסמסטר ב'), ו-
@@ -79,7 +83,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SOLVE_KILL_S = 60.0
 REF_COMPUTE_S = 60.0
-REF_KILL_S = 100.0
+REF_KILL_S = 160.0
 RSS_KILL_MB = 1500
 MIN_FREE_MB = 900
 VARIANTS = ["a_default", "b_all_required", "c_ranked", "d_target3"]
@@ -238,6 +242,7 @@ def solve(catalog_dir, cases_path, idx, variant, out_path):
                   for s in data.get("schedules") or []],
         "scores": [s["score"] for s in data.get("schedules") or []],
         "viability": data.get("viability"),
+        "day_relaxations": data.get("day_relaxations"),
         "error": None if res.status_code == 200 else res.get_data(as_text=True)[:500],
     }
     Path(out_path).write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
@@ -374,6 +379,35 @@ def reference(catalog_dir, cases_path, idx, variant, solve_path, out_path):
                         if have != entry:
                             diffs.append(f"{code}/{kind}/{gid}: API {have} ref {entry}")
             mm.append(f"viability differs on {len(diffs)} groups: {diffs[:5]}")
+
+    # --- הצעות הוויתור ליעד ימים שאינו אפשרי (גרסה d): מול ``day_relaxations``
+    #     כפי שהיה עד 2026-10-23 — מנייה מלאה לכל יחידה — מ-test_day_relaxations_exact.
+    if variant == "d_target3" and got.get("target_reachable") is False and got.get("min_days") is not None:
+        import test_day_relaxations_exact as dx  # noqa: PLC0415
+
+        t1 = time.perf_counter()
+        with sch.time_budget(REF_COMPUTE_S):
+            _reach, want = dx._reference_day_relaxations(built, prefs, body["target_days"])  # noqa: SLF001
+            expired = sch.time_budget_expired()
+        out["day_relax_ref_time_s"] = round(time.perf_counter() - t1, 2)
+        if expired:
+            out["day_relax_ref_timeout"] = True
+        else:
+            target = body["target_days"]
+
+            def unlocks(o):
+                return o[3] is not None and o[3] <= target
+
+            rel = got.get("day_relaxations") or {}
+            have_items = [(i["codes"], i["min_days"]) for i in rel.get("items") or []]
+            have_checked = [(i["codes"], i["min_days"]) for i in rel.get("checked") or []]
+            want_items = [(o[0], o[3]) for o in want if unlocks(o)]
+            want_checked = [(o[0], o[3]) for o in want if o[3] is not None and not unlocks(o)]
+            if have_items != want_items:
+                mm.append(f"day_relaxations.items API {have_items} ref {want_items}")
+            if have_checked != want_checked:
+                mm.append(f"day_relaxations.checked API {have_checked} ref {want_checked}")
+            out["day_relax_compared"] = True
     out["compared"] = True
     Path(out_path).write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
 
