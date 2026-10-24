@@ -648,7 +648,11 @@ Create a service with these settings:
 | Authentication | **Allow unauthenticated** (public access) | It is a public site. |
 | Billing | **Request-based** | CPU is billed only while a request is being handled. |
 | Min instances | `0` | Scales to zero when idle — see *Cold start* below. |
-| Max instances | `2` | A ceiling on cost as much as on load. |
+| Max instances | `10` | A ceiling on cost as much as on load. Raised from `2` on 2026-10-24 after load testing. **Set in two places** — see *Max instances lives in two places* below. `10 × 2` vCPU is exactly the project's CPU quota in this region. |
+| CPU / memory | `2` vCPU, `1 GiB` per instance | Raised from `1` / `512 MiB` on 2026-10-24. |
+| Maximum concurrent requests per instance | `8` | Lowered from the default `80` on 2026-10-24 — two per sync worker at `WEB_CONCURRENCY=4`. See *Load testing → Results*. |
+| Startup CPU boost | On | Shortens the cold start below. |
+| Request timeout | `300` s | |
 | Container port | `8080` | Cloud Run injects `PORT` and `gunicorn.conf.py` binds `0.0.0.0:$PORT`, so the exact number does not matter as long as Cloud Run sets it. Do **not** also set `PORT` as an env var. |
 
 **Cold start.** With min instances `0`, the first request after an idle spell
@@ -657,11 +661,25 @@ starts a container, and that request takes a few seconds (image start plus
 free tier. Setting min instances to `1` removes it, at the price of an
 always-on instance.
 
+**Max instances lives in two places.** The service-level setting (*Scaling*
+tab, `run.googleapis.com/maxScale`) and the revision template
+(`autoscaling.knative.dev/maxScale` under `spec.template.metadata.annotations`
+in the *YAML* tab). On 2026-10-24 the service setting was raised to `10` while
+the revision template still said `3`, and every load test was silently capped
+at 3 instances. Both are now `10`. **When changing max instances, change both
+and check the YAML.**
+
+**CPU quota.** The project quota *Total CPU allocation, per project per region*
+in `europe-west1` is 20,000 mCPU — exactly 10 instances × 2 vCPU, so max
+instances cannot usefully go above `10` at this CPU size. An increase to
+40,000 mCPU was requested on 2026-10-24 and is pending. Once approved, the plan
+is max instances `20` (in both places) and a re-run of the 200-user test.
+
 ### 2. Environment variables
 
 | Name | Value | Why |
 | --- | --- | --- |
-| `WEB_CONCURRENCY` | `2` | **Set this.** The `2 × CPU + 1` default reads the CPUs the process can see, not what the service is allotted — see [Set `WEB_CONCURRENCY` in a container](#set-web_concurrency-in-a-container). |
+| `WEB_CONCURRENCY` | `4` | Raised from `2` on 2026-10-24, with the move to 2 vCPU. **Set this.** The `2 × CPU + 1` default reads the CPUs the process can see, not what the service is allotted — see [Set `WEB_CONCURRENCY` in a container](#set-web_concurrency-in-a-container). |
 
 Nothing else is needed. `SLOTWISE_CATALOG_DIR` is already set in the
 Dockerfile, and the same "do not set" list as before applies: `HOST`, `PORT`,
@@ -768,9 +786,12 @@ The comment in `wsgi.py` describes this chain (updated 2026-10-23).
 - The billing account was upgraded from the free trial to **pay-as-you-go on
   2026-10-18**. The remaining trial credit stays until it is used up or expires
   on **2027-01-17**.
-- After that, usage is expected to stay inside the Cloud Run free tier — min
-  instances `0`, max `2`, request-based billing. The 5 ILS alert is the safety
-  net if that expectation turns out wrong.
+- After that, outside the registration peaks, usage is expected to stay
+  inside the Cloud Run free tier — min instances `0`, request-based billing.
+  During peaks up to 10 instances × 2 vCPU can run (max raised from `2` on
+  2026-10-24), and that cost is not yet measured: check **Billing → Reports**
+  after the first real peak. The 5 ILS alert is the safety net if the
+  expectation turns out wrong.
 
 ### 10. Smoke test
 
@@ -876,16 +897,45 @@ problem.
 
 ### The plan
 
-1. **Baseline** with the current settings (section 1–2 above): max instances
-   `2`, default concurrency (80 requests per instance), `WEB_CONCURRENCY=2`.
-   Step up rather than jumping: 50 users, then 100, then 200, each at a quiet
-   hour, keeping each report.
+1. **Baseline** with the current settings (section 1–2 above): 2 vCPU /
+   1 GiB, `WEB_CONCURRENCY=4`, 8 concurrent requests per instance, max
+   instances `10` (in both places). Step up rather than jumping: 50 users,
+   then 100, then 200, each at a quiet hour, keeping each report.
 2. **Tune** from what the baseline shows — e.g. `WEB_CONCURRENCY`, Cloud Run
-   concurrency (with 2 sync workers, 80 requests queued per instance mostly
-   means waiting), CPU per instance, max instances. Change one thing at a time.
+   concurrency, CPU per instance, max instances. Change one thing at a time.
 3. **Run again** with the same inputs and compare the reports.
 
 Raising max instances also raises the cost ceiling; see section 9.
+
+#### Results, 2026-10-24
+
+All runs: `loadtest.yml`, `spawn_rate` 5, `5m`, against
+`https://slotwise.co.il`; thresholds `/api/solve` p95 < 3000 ms, errors < 1%.
+"Settings" lists what changed from the row above. Run IDs: 40103717179
+(attempts 1–4), 40117576158 (attempts 1–2), 40119843991.
+
+| Run | Settings | Users | Errors | `/api/solve` p95 | Requests |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 1 vCPU / 512 MiB, `WEB_CONCURRENCY` 2, concurrency 80, max 2 | 50 | 41.3% (all 429) | 11.0 s | 4,767 |
+| 2 | same, max 10 (revision still 3) | 50 | 29.1% | 11.0 s | 4,997 |
+| 3 | concurrency 4 | 50 | 3.97% | 8.4 s | 6,871 |
+| 4 | 2 vCPU / 1 GiB, `WEB_CONCURRENCY` 4, concurrency 8 | 50 | 0.49% | 3.4 s | 7,161 |
+| 5 | same | 100 | 28.5% | 11.0 s | 8,530 |
+| 6 | revision maxScale 3 → 10 | 100 | 0.00% | 3.5 s | 15,514 |
+| 7 | same | 200 | 0.61% | 6.6 s | 21,485 |
+
+- **The 429s were Cloud Run's, not the app's**: *"The request was aborted
+  because there was no available instance"* in the logs.
+- **Runs 2–5 were capped at 3 instances** by the revision-template maxScale
+  (see *Max instances lives in two places* in section 1). Run 6 is the same
+  configuration as run 5 with that cap lifted.
+- **In run 7 the instance count sat at 10**, i.e. at the CPU quota.
+
+**Decision: launch with these settings.** 100 users passes on errors with
+p95 slightly over target (3.5 s; 50 users was similar at 3.4 s); 200 users
+degrades (p95 6.6 s) but stays under 1% errors. The quota increase to
+40,000 mCPU is pending; after it, max instances `20` in both places and
+re-run the 200-user test.
 
 ---
 
