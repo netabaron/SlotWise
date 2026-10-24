@@ -728,6 +728,13 @@
         <p class="week-empty-line">{{ S.app.schedule.emptyWeek }}</p>
       </div>
 
+      <!-- ‏מועדים שעוד לא פורסמו: כל הסמסטר, או כל הקורסים שנבחרו, בלי מפגש
+           קבוע. במקום חמש מערכות ריקות — הסבר אחד. ‏app.js בוחר את הנוסח. -->
+      <div class="empty empty--info" id="schedule-no-times" role="status" hidden>
+        <h3 class="empty-title">{{ S.app.noTimes.title }}</h3>
+        <p class="empty-sub" id="schedule-no-times-sub"></p>
+      </div>
+
       <div class="empty" id="schedule-empty" hidden>
         <h3 class="empty-title">{{ S.ui.schedule.emptyTitle }}</h3>
         <p class="empty-sub">{{ S.ui.schedule.emptySub }}</p>
@@ -793,6 +800,18 @@
     </div>
   </div>
 </div>
+
+<!-- ‏סמסטר שהידיעון פתח בלי ימים ושעות (‏timed_by_term ב-/api/bootstrap).
+     ‏<dialog> מודאלי: ‏showModal() כולא את הפוקוס ומוציא את הדף מעץ הנגישות,
+     ‏ו-Esc סוגר. נפתח פעם אחת לסמסטר בכל סשן; ‏app.js ממלא את הגוף. -->
+<dialog class="notice-dialog" id="no-times-dialog"
+        aria-labelledby="no-times-title" aria-describedby="no-times-body">
+  <h2 class="notice-dialog-title" id="no-times-title">{{ S.app.noTimes.title }}</h2>
+  <p class="notice-dialog-body" id="no-times-body"></p>
+  <div class="notice-dialog-actions">
+    <button type="button" class="btn btn-primary" id="no-times-ok">{{ S.app.noTimes.ok }}</button>
+  </div>
+</dialog>
 
 <!-- ‏הסרגל התחתון (DESIGN.md, Scroll behaviour, 4): מסך צר בלבד. ‏visibility
      ‏ולא display כשהוא מוסתר, כדי שההחלקה תרוץ — וגם כך הוא יוצא מסדר

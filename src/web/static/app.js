@@ -2246,7 +2246,151 @@
   }
 
   function schedules() {
+    // ‏בלי מועדים כל "מערכת" היא שבוע ריק. המצב הריק אומר למה, ולכן אין
+    // ‏מה להציג — לא כרטיסים, לא רשת ולא "מערכת 1 מתוך 5".
+    if (noTimesCase()) return [];
     return runtime.solve ? pickList(runtime.solve, ["schedules"], null) : [];
+  }
+
+  /* --- מועדים שעוד לא פורסמו ------------------------------------------ */
+
+  /**
+   * ‏הסמסטר נפתח בידיעון — יש בו קבוצות — ואין לאף אחת מהן מפגש קבוע.
+   * ‏נקבע מ-``timed_by_term`` של ‏/api/bootstrap, ולא מאות סמסטר: כשהבנייה
+   * הלילית תביא מועדים, התשובה תשתנה מעצמה. סמסטר בלי קבוצות כלל (קיץ)
+   * אינו "מועדים שלא פורסמו" — הוא לא נפתח, וזה נאמר במקום אחר.
+   */
+  function termTimesMissing(term) {
+    var byTerm = runtime.bootstrap && runtime.bootstrap.timed_by_term;
+    var rec = byTerm && txt(term) ? byTerm[txt(term)] : null;
+    return !!rec && num(rec.groups, 0) > 0 && num(rec.timed, 0) === 0;
+  }
+
+  /**
+   * ‏יש קורסים מסומנים עם קבוצות, ולאף אחת מהן אין מועד. קורס בלי קבוצות
+   * כלל אינו מכריע לכאן או לכאן; עד שהנתונים חוזרים מ-/api/courses — לא.
+   */
+  function selectedCoursesUntimed() {
+    if (!state.codes.length || runtime.coursesBusy || runtime.coursesError) return false;
+    var picked = Object.create(null);
+    state.codes.forEach(function (code) {
+      picked[txt(code)] = true;
+    });
+    var withGroups = 0;
+    for (var i = 0; i < runtime.courses.length; i++) {
+      var course = runtime.courses[i];
+      if (!picked[course.code] || !course.groups.length) continue;
+      withGroups += 1;
+      for (var j = 0; j < course.groups.length; j++) {
+        if (course.groups[j].meetings.length) return false;
+      }
+    }
+    return withGroups > 0;
+  }
+
+  /** ‏"term" — כל הסמסטר בלי מועדים; ‏"courses" — רק הקורסים שנבחרו; או "". */
+  function noTimesCase() {
+    if (termTimesMissing(state.term)) return "term";
+    if (selectedCoursesUntimed()) return "courses";
+    return "";
+  }
+
+  function noTimesBody(which) {
+    if (which === "courses") return T("app.noTimes.bodyCourses");
+    var label = "";
+    termOptions().forEach(function (opt) {
+      if (opt.value === txt(state.term)) label = opt.label;
+    });
+    return Tf("app.noTimes.bodyTerm", { term: label || txt(state.term) });
+  }
+
+  /** ‏סמסטרים שהחלון כבר הוצג עליהם בסשן הזה. ‏sessionStorage, ואם אין — זיכרון. */
+  var NO_TIMES_SEEN_KEY = "slotwise_no_times_seen";
+  var noTimesSeen = Object.create(null);
+
+  function noTimesWasShown(term) {
+    if (noTimesSeen[term]) return true;
+    try {
+      var list = JSON.parse(window.sessionStorage.getItem(NO_TIMES_SEEN_KEY) || "[]");
+      return Array.isArray(list) && list.indexOf(term) !== -1;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function markNoTimesShown(term) {
+    noTimesSeen[term] = true;
+    try {
+      var list = JSON.parse(window.sessionStorage.getItem(NO_TIMES_SEEN_KEY) || "[]");
+      if (!Array.isArray(list)) list = [];
+      if (list.indexOf(term) === -1) list.push(term);
+      window.sessionStorage.setItem(NO_TIMES_SEEN_KEY, JSON.stringify(list));
+    } catch (e) {
+      /* בלי sessionStorage — הזיכרון של הדף מספיק */
+    }
+  }
+
+  /**
+   * ‏החלון נפתח ברגע שנבחר סמסטר בלי מועדים — פעם אחת לסמסטר בכל סשן — ונסגר
+   * מעצמו אם הסמסטר הוחלף בינתיים. נקרא בסוף כל render().
+   */
+  function syncNoTimesDialog() {
+    var dlg = ui.noTimesDialog;
+    if (!dlg || typeof dlg.showModal !== "function") return;
+    var term = txt(state.term);
+    var missing = termTimesMissing(term);
+    if (dlg.open) {
+      if (!missing || dlg.getAttribute("data-term") !== term) dlg.close();
+      return;
+    }
+    if (!missing || noTimesWasShown(term)) return;
+    markNoTimesShown(term);
+    setText(ui.noTimesBody, noTimesBody("term"));
+    dlg.setAttribute("data-term", term);
+    runtime.noTimesReturn = document.activeElement;
+    // ‏הדף שמאחור אינו נגלל כל עוד החלון פתוח (style.css, ‏html.has-modal).
+    setClass(document.documentElement, "has-modal", true);
+    dlg.showModal();
+    if (ui.noTimesOk) ui.noTimesOk.focus();
+  }
+
+  function wireNoTimesDialog() {
+    var dlg = ui.noTimesDialog;
+    if (!dlg) return;
+    if (ui.noTimesOk) {
+      ui.noTimesOk.addEventListener("click", function () {
+        dlg.close();
+      });
+    }
+    // ‏לחיצה על הרקע המעומעם סוגרת. לחיצה כזו מגיעה ל-<dialog> עצמו, וכך גם
+    // ‏לחיצה על הריפוד שלו — ולכן ההכרעה לפי המיקום, מחוץ למלבן של החלון.
+    dlg.addEventListener("click", function (ev) {
+      if (ev.target !== dlg) return;
+      var box = dlg.getBoundingClientRect();
+      var inside =
+        ev.clientX >= box.left && ev.clientX <= box.right &&
+        ev.clientY >= box.top && ev.clientY <= box.bottom;
+      if (!inside) dlg.close();
+    });
+    // ‏הפוקוס נשאר בחלון: ‏showModal() מוציא את הדף מסדר ה-Tab, אבל Tab מהפקד
+    // ‏האחרון יוצא לשורת הכתובת. בחלון יש פקד אחד, ולכן הוא נשאר עליו.
+    dlg.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Tab") return;
+      ev.preventDefault();
+      if (ui.noTimesOk) ui.noTimesOk.focus();
+    });
+    // ‏Esc סוגר מעצמו (אירוע cancel של <dialog>); בכל דרך הפוקוס חוזר למקום
+    // ‏שממנו נבחר הסמסטר.
+    dlg.addEventListener("close", function () {
+      setClass(document.documentElement, "has-modal", false);
+      var back = runtime.noTimesReturn;
+      runtime.noTimesReturn = null;
+      // ‏בלי מקום ממשי לחזור אליו (הפוקוס היה על body) — לתיבה שבה נבחר הסמסטר.
+      if (!back || back === document.body || !back.isConnected) {
+        back = usesPlanSemester() ? ui.selPlanSemester : ui.selTerm;
+      }
+      if (back && typeof back.focus === "function") back.focus();
+    });
   }
 
   function activeSchedule() {
@@ -2972,6 +3116,7 @@
     var list = schedules();
     // ‏חיפוש שנעצר במגבלת הזמן לא הוכיח ש"אין מערכת" — רק שלא הספיק.
     if (!list.length && solveTimedOut()) return T("app.banners.solveTimeout");
+    if (!list.length && noTimesCase()) return T("app.noTimes.title");
     if (!list.length) return T("ui.schedule.emptyTitle");
     var sch = list[clamp(state.activeSchedule, 0, list.length - 1)];
     var dayCount = num(sch.days_count, 0);
@@ -3266,6 +3411,11 @@
     ui.scheduleTitle = byId("step-schedule-title");
     ui.resultsStatus = byId("results-status");
     ui.empty = byId("schedule-empty");
+    ui.noTimesEmpty = byId("schedule-no-times");
+    ui.noTimesEmptySub = byId("schedule-no-times-sub");
+    ui.noTimesDialog = byId("no-times-dialog");
+    ui.noTimesBody = byId("no-times-body");
+    ui.noTimesOk = byId("no-times-ok");
     ui.placeholder = byId("schedule-placeholder");
     ui.placeholderDays = byId("schedule-placeholder-days");
     ui.reasons = byId("infeasible-reasons");
@@ -3531,6 +3681,7 @@
 
     if (ui.btnPrint) ui.btnPrint.addEventListener("click", printSheet);
     wireSheetLayer();
+    wireNoTimesDialog();
 
     // ‏המיון אינו נשמר: ‏runtime ולא state, ובלי setState — אין מה לחשב מחדש
     // ואין מה לשמור. אותה חלופה נשארת בחורה; רק הסדר משתנה.
@@ -4725,6 +4876,7 @@
     renderTechDetails();
     renderFooter();
     markMissingStrings();
+    syncNoTimesDialog();
   }
 
   /* --- כותרת: טריות, כפתורים, יומן ---------------------------------- */
@@ -8080,7 +8232,8 @@
     var s = runtime.solve;
     var list = schedules();
     var feasible = s ? num(s.feasible_count, list.length) : null;
-    var infeasible = !!s && list.length === 0 && !solveTimedOut();
+    var noTimes = noTimesCase();
+    var infeasible = !!s && list.length === 0 && !solveTimedOut() && !noTimes;
 
     // אותן תוויות משמשות את כרטיסי החלופות ואת שורת הכותרת של ההדפסה:
     // הנייר צריך לומר איזו מערכת זו באותן מילים שבהן היא נבחרה.
@@ -8180,6 +8333,13 @@
 
     // ‏השכבה פתוחה והמערכת צוירה מחדש (חישוב חי): היא מציגה את מה שנבחר עכשיו.
     if (sheetOpen()) renderSheet();
+
+    // ‏אין מועדים: הודעה אחת במקום שבועות ריקים, ולא "אין מערכת אפשרית" —
+    // ‏הבחירות תקינות, רק הידיעון עוד לא פרסם ימים ושעות.
+    if (ui.noTimesEmpty) {
+      setHidden(ui.noTimesEmpty, !noTimes);
+      setText(ui.noTimesEmptySub, noTimes ? noTimesBody(noTimes) : "");
+    }
 
     // אין פתרון
     if (ui.empty) {
@@ -9907,7 +10067,9 @@
   /** השבוע הריק שלפני הבחירה: א׳–ה׳, בלי שעות. נבנה פעם אחת. */
   function renderPlaceholderWeek() {
     if (!ui.placeholder) return;
-    setHidden(ui.placeholder, state.codes.length > 0);
+    // ‏סמסטר בלי מועדים: ההודעה שבמקום התוצאות כבר אומרת מה יקרה, ושבוע
+    // ‏ריק עם "המערכת תופיע כאן" היה מבטיח מה שאי אפשר עדיין.
+    setHidden(ui.placeholder, state.codes.length > 0 || !!noTimesCase());
     if (!ui.placeholderDays || ui.placeholderDays.childNodes.length) return;
     [1, 2, 3, 4, 5].forEach(function (d) {
       ui.placeholderDays.appendChild(
@@ -10668,6 +10830,8 @@
               index: clamp(state.activeSchedule, 0, list.length - 1) + 1,
               total: list.length,
             })
+          : noTimesCase()
+          ? T("app.noTimes.title")
           : runtime.solveBusy
           ? T("app.steps.schedule.solving")
           : T("app.steps.schedule.none"),

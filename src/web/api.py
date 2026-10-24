@@ -3657,6 +3657,29 @@ def _catalog_snapshot() -> tuple[dict[str, dict], dict[str, Any]]:
     return catalog, summary
 
 
+def _timed_by_term() -> dict[str, dict[str, int]]:
+    """לכל סמסטר: כמה קבוצות יש בו, וכמה מהן עם מפגש קבוע.
+
+    ‏``timed == 0`` כש-``groups > 0`` פירושו שהידיעון כבר פתח את הסמסטר אבל
+    עוד לא פרסם ימים ושעות — הממשק אומר את זה במקום להציג מערכות ריקות.
+    נספר מאותו ‏Store שהמנוע בונה ממנו (``_store_for``), ולכן הבנייה הלילית
+    שמביאה מועדים משנה את התשובה בלי שום שינוי כאן. קבוצה שהידיעון שייך
+    לסמסטר אחר אינה נספרת: רשומה מקומית ישנה אינה הופכת סמסטר ב' ל"מתוזמן".
+    """
+    out: dict[str, dict[str, int]] = {}
+    for term in TERM_LABELS:
+        groups = timed = 0
+        for course in _store_for(term).load_all().values():
+            for group in course.groups:
+                if (group.semester or term) != term:
+                    continue
+                groups += 1
+                if group.meetings:
+                    timed += 1
+        out[term] = {"groups": groups, "timed": timed}
+    return out
+
+
 # ===========================================================================
 # 9. ה-Blueprint
 # ===========================================================================
@@ -3785,6 +3808,9 @@ def bootstrap():
                 {"term": key, "label": label, "in_curriculum": key in {"א", "ב"}}
                 for key, label in TERM_LABELS.items()
             ],
+            # ‏{סמסטר: {groups, timed}}. ‏timed=0 עם groups>0 = המועדים עוד לא
+            # פורסמו, והממשק מסביר את זה בחלון ובמצב הריק של התוצאות.
+            "timed_by_term": _timed_by_term(),
             "years": [{"year": y, "label": label} for y, label in sorted(YEAR_LABELS.items())],
             "summer_note": (
                 "בתוכנית הלימודים אין סמסטר קיץ — אפשר לבחור קורסים מהקטלוג החי, "
