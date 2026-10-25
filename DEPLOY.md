@@ -56,6 +56,14 @@ thing that must not be configurable.
 | `PORT` | `8000` | Bind port, same two consumers. |
 | `WEB_CONCURRENCY` | `2 × CPU + 1` | Gunicorn worker count. **Set this explicitly in a container** — see the note below. |
 | `GUNICORN_LOGLEVEL` | `info` | Gunicorn log level. |
+| `SLOTWISE_RATE_LIMIT_CPU_PER_MIN` | `15` | Per-IP budget refill, in CPU seconds per minute, **per worker**. Hosted only. See [Rate limiting](#rate-limiting). |
+| `SLOTWISE_RATE_LIMIT_BURST_CPU` | `60` | Per-IP bucket size, in CPU seconds. |
+| `SLOTWISE_RATE_LIMIT_EXEMPT_CIDRS` | empty | Networks with no per-IP limit — the campus Wi-Fi egress. Comma- or space-separated, e.g. `192.0.2.0/24, 198.51.100.7`. |
+| `SLOTWISE_RATE_LIMIT_OFF_UNTIL` | empty | ISO-8601 UTC time, e.g. `2026-11-01T03:00Z`. The limit is off until then and comes back by itself. For load tests. |
+
+The four `SLOTWISE_RATE_LIMIT_*` values are parsed at startup, and a malformed
+one raises there, like `SLOTWISE_MAX_AGE_HOURS`. `python main.py` reads them
+too but ignores them: the limiter only exists in hosted mode (`wsgi.py`).
 
 ### The catalog path
 
@@ -681,6 +689,12 @@ is max instances `20` (in both places) and a re-run of the 200-user test.
 | --- | --- | --- |
 | `WEB_CONCURRENCY` | `4` | Raised from `2` on 2026-10-24, with the move to 2 vCPU. **Set this.** The `2 × CPU + 1` default reads the CPUs the process can see, not what the service is allotted — see [Set `WEB_CONCURRENCY` in a container](#set-web_concurrency-in-a-container). |
 
+The rate limit is on by default with no variable at all. Its one setting meant
+for this console is `SLOTWISE_RATE_LIMIT_EXEMPT_CIDRS`, the campus Wi-Fi egress
+address — **not set yet**: it is to be added from campus (see
+[Rate limiting](#rate-limiting)). `SLOTWISE_RATE_LIMIT_OFF_UNTIL` is set only
+for the length of a load test.
+
 Nothing else is needed. `SLOTWISE_CATALOG_DIR` is already set in the
 Dockerfile, and the same "do not set" list as before applies: `HOST`, `PORT`,
 `SLOTWISE_DB_ROOT`, `SLOTWISE_CURRICULUM_PATH`, `SLOTWISE_CURRICULA_DIR`,
@@ -778,6 +792,30 @@ exactly one.
 
 The comment in `wsgi.py` describes this chain (updated 2026-10-23).
 
+**The rate limit keys on this address**, so it matters that it cannot be
+forged. In code it cannot: Werkzeug 3.1.8's `ProxyFix` takes `values[-1]`, and
+`tests/test_wsgi_proxy.py` pins that. What the code cannot show is that the
+Google Frontend adds nothing to the *right* of the client address. Check it on
+the live service:
+
+```bash
+date -u +%Y-%m-%dT%H:%M:%SZ
+curl -s -o /dev/null -w '%{http_code}\n' -H "X-Forwarded-For: 203.0.113.7" https://slotwise.co.il/healthz
+```
+
+Find that request's gunicorn access line in the Cloud Run logs. Its first field
+(`%(h)s`, the address after `ProxyFix`) must be the address you sent from — the
+same as `httpRequest.remoteIp` on the request log entry — and **not**
+`203.0.113.7`, and not a Google-internal address. If it is the forged value,
+the limit can be dodged; if it is an internal address, every client shares one
+bucket.
+
+**Footgun: a load balancer in front adds a hop.** Putting a Google external
+Application Load Balancer (or any proxy) in front of Cloud Run appends its own
+address after the client's. With `x_for=1` unchanged, `remote_addr` would
+become the balancer, and every student would share one rate-limit bucket.
+Adding a hop means `x_for=2` and a re-run of the check above.
+
 ### 9. Cost control
 
 - **Budget alert** in Google Cloud Billing: name `SlotWise`, amount **5 ILS**,
@@ -792,6 +830,12 @@ The comment in `wsgi.py` describes this chain (updated 2026-10-23).
   2026-10-24), and that cost is not yet measured: check **Billing → Reports**
   after the first real peak. The 5 ILS alert is the safety net if the
   expectation turns out wrong.
+- **One client cannot scale the service up by itself.** The per-IP rate limit
+  caps one address at about 1 vCPU per instance, below the CPU level at which
+  Cloud Run adds instances; see [Rate limiting](#rate-limiting). A flooding
+  client alone keeps about **one instance** busy instead of driving the
+  service to max instances. It is not zero — the budget alert above is still
+  what notices it.
 
 ### 10. Smoke test
 
@@ -831,6 +875,116 @@ and confirm the access log shows **real, varying client IPs**. If every line
 shows the same Google address, `X-Forwarded-For` is not arriving the way step 8
 describes and the trust setting needs revisiting.
 
+## Rate limiting
+
+`src/rate_limit.py`, added 2026-10-25. A per-IP ceiling on how much server
+time one client may use, so that one bot, script or stuck browser tab cannot
+flood `/api/*` and scale Cloud Run up by itself. **Not a security wall**, and
+legitimate students must never hit it. It exists only in hosted mode
+(`wsgi.py`); `python main.py` and the test suite run without it.
+
+### What is limited
+
+| Limited | Not limited |
+| --- | --- |
+| Every `/api/*` route, sharing **one budget per IP** | `/`, `/static/*`, `/healthz` |
+
+### The budget is CPU seconds, not requests
+
+A solve costs anything from 73 ms to the 20 s `SOLVE_DEADLINE_S`, and a client
+can choose the worst selection on purpose, so a request count would be off by
+more than an order of magnitude. Each `/api/*` request is charged the
+`time.process_time()` it used, at least 10 ms. Under a sync worker that is
+exactly the request's own CPU; contention on a busy instance does not inflate
+it the way wall time would. `/api/solve` and `/api/courses` use nearly all of
+the budget; the cheap GETs barely touch it, but a flood of them is still capped.
+
+| Setting | Default | Why |
+| --- | --- | --- |
+| Refill | **15 CPU-s per minute** | 25% of one worker. One IP at 25% of all 4 workers is 1 vCPU — 50% of a 2-vCPU instance, below Cloud Run's 60% CPU scale-out target. So **one IP alone cannot make Cloud Run add instances.** |
+| Bucket | **60 CPU-s** | About 20 typical solves back to back on one worker. |
+| Minimum charge | 10 ms (constant) | Caps cheap floods at 1,500 requests per minute per worker. |
+| IPv6 | keyed on the /64 | The block one subscriber gets; keyed on the full address, one host could rotate addresses. |
+
+A request is admitted while the bucket is above zero and charged after it
+finishes, so one expensive request can take it negative; `Retry-After` is the
+time until it is back.
+
+### Checked against real students
+
+- **Typical heavy student: about 11 solves a minute.** Load-test run 6
+  (2026-10-24): 15,514 requests from 100 users in 300 s, and a session's
+  request mix is about 36% `/api/solve`. At under 1 s each that is under
+  11 CPU-s a minute — inside the 15 even if every request lands on one worker.
+- **Worst measured selection** (industrial year 1, ~2.4 s a solve) at the
+  locust file's fastest pace (2 s between changes): about 33 CPU-s a minute in
+  total. Over budget only if all of it lands on one worker, and even then the
+  bucket covers about three minutes of non-stop clicking. Normally it is
+  spread over four workers.
+
+### What "per worker" means
+
+The buckets are in each gunicorn worker's memory. Nothing is shared — no
+Redis, by choice. One IP can therefore get:
+
+| Scope | At most |
+| --- | --- |
+| one worker | 15 CPU-s per minute |
+| one instance (4 workers) | 60 CPU-s per minute, i.e. **1 vCPU** |
+| the service | 1 vCPU × the instances running — **10 vCPU at 10 instances**, 20 at 20 |
+
+The last row is reached only if *other* traffic has already brought those
+instances up; the IP itself keeps CPU below the scale-out level. In practice a
+flooding client alone keeps about **one instance** busy. And `Retry-After` is
+one worker's answer: the next request may reach a worker whose bucket is full.
+
+### Campus Wi-Fi: exempt by network
+
+Students on the Braude campus Wi-Fi likely share one public address. Dozens
+of students behind one NAT look exactly like one heavy client, and no per-IP
+budget admits the first without admitting the second: 200 heavy students are
+the whole fleet (load-test run 7). So the campus egress address goes in
+`SLOTWISE_RATE_LIMIT_EXEMPT_CIDRS` and gets no per-IP limit; everyone else
+gets the budget above. The address checked is `remote_addr` after `ProxyFix`
+— the one the Google Frontend appended — never anything the client sent. It
+is not a bypass header and there is none.
+
+**Status: empty.** The campus egress address is to be looked up from campus
+and added in the Cloud Run console. Until then campus traffic is limited per
+IP like everyone else.
+
+**Assumption, not measured: mobile carrier NAT.** Israeli mobile carriers put
+many subscribers behind shared addresses. The budget assumes that, outside
+campus, **at most about 5 heavy SlotWise users share one address at the same
+moment**. If the logs ever show one non-campus address throttled during
+registration, that assumption is the first thing to revisit.
+
+### What the student sees
+
+A throttled request gets a 429:
+
+```json
+{"ok": false, "error": "…", "detail": "rate limited: per-IP CPU budget exhausted on this worker",
+ "reason": "rate_limited", "retry_after": 8}
+```
+
+with `Retry-After: 8` (clamped to 1–60 s) and `Cache-Control: no-store`. The
+page shows a yellow warning, not a red error, keeps whatever timetable is
+already on screen, and retries `/api/courses` and `/api/solve` by itself after
+`Retry-After` — at most 3 times in a row; after that it waits for a click. Any
+change the student makes cancels a pending retry. A 429 from **Cloud Run
+itself** (no instance free) has no `reason` and gets the "the site is busy"
+message instead. The server logs at most one line per throttled address per
+minute: `rate limit: <address> throttled on POST /api/solve (retry in 8s)`.
+
+### Turning it off
+
+Only for a load test, and only until a time: `SLOTWISE_RATE_LIMIT_OFF_UNTIL`
+(see [Load testing](#load-testing), step 2). The startup log line
+`[slotwise] rate limit: …` always says which settings a revision is running.
+
+---
+
 ## Load testing
 
 `.github/workflows/loadtest.yml` runs Locust against a live URL. It is
@@ -843,7 +997,16 @@ because every run is real, billed traffic against production.
    answers, and they show up in the numbers as load the test did not make.
    Late night Israel time is the obvious window; check the Cloud Run
    request graph first.
-2. GitHub → **Actions** → **load test** → **Run workflow**, and fill in:
+2. **Turn the rate limit off for the run.** Every simulated student comes from
+   the one GitHub runner address, so with the limit on the test measures the
+   limiter, not the service. In the Cloud Run console set
+   `SLOTWISE_RATE_LIMIT_OFF_UNTIL` to the end of your window in UTC — e.g.
+   two hours from now, `2026-11-01T03:00Z` — and deploy. That is a new
+   revision, so wait for it, and check its startup log for
+   `[slotwise] rate limit: off until 2026-11-01T03:00Z`. The limit comes back
+   by itself at that time with no redeploy; deleting the variable afterwards
+   is tidiness, not a step you can forget.
+3. GitHub → **Actions** → **load test** → **Run workflow**, and fill in:
 
    | Input | Default | Meaning |
    | --- | --- | --- |
@@ -852,7 +1015,7 @@ because every run is real, billed traffic against production.
    | `spawn_rate` | `5` | Students started per second until `users` are up. |
    | `duration` | `5m` | Total run time (`90s`, `5m`, `1h`). |
 
-3. When it finishes, download the `loadtest-<run id>` artifact:
+4. When it finishes, download the `loadtest-<run id>` artifact:
    `report.html` (open it in a browser) and the `stats_*.csv` files.
 
 Each simulated student is one session from `scripts/loadtest/locustfile.py`:
@@ -1120,8 +1283,13 @@ Honest list of what this step does **not** settle.
    crash — the endpoint silently returns `available: false` and the electives
    section disappears. ~20 MB for a feature that silently vanishes; the comment
    in `requirements.txt` says so at the point of decision.
-3. **No per-instance rate limiting.** Nothing throttles `/api/solve`, and it is
-   the expensive endpoint. Put a rate limit in the reverse proxy.
+3. **The rate limit is per worker, not global.** Since 2026-10-25 every
+   `/api/*` request is charged against a per-IP CPU budget
+   ([Rate limiting](#rate-limiting)), but the counters live in each gunicorn
+   worker's memory, so one address can get the budget once per worker it
+   reaches. It caps a single flooding client at about one instance's worth;
+   it does not stop a client spread over many addresses, and it is not meant
+   to. The campus exemption is empty until the egress address is added.
 4. **No HTTPS, no reverse proxy config.** Gunicorn binds plain HTTP; terminate
    TLS in front of it.
 5. **Catalog updates need a restart** (see `preload_app` above).

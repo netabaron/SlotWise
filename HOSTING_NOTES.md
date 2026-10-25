@@ -102,6 +102,15 @@ already guarantees a failed rebuild leaves the previous catalog in place.
 
 1. **No server-side per-user state.** No sessions, no server-stored
    selections. New UI reads client state, not `profile.json`.
+
+   **One approved exception (2026-10-25): the per-IP rate limit**
+   (`src/rate_limit.py`, DEPLOY.md "Rate limiting"). Approved because it is
+   short-lived, in-memory state with no student data: per client address, a
+   CPU-seconds balance and two timestamps, in each worker's own memory, lost
+   on restart and dropped as soon as the bucket refills. It holds no
+   selections, no identity and nothing a student sent. It lives on
+   `app.extensions`, not in a module-level global, so rule 5 still holds.
+   This is not a precedent for any other server-side state.
 2. **Phase 6's failure states should not assume the user can watch a
    scrape.** Design them around *"the catalog is old"*, not *"your
    refresh failed"* — a hosted user has no scrape of their own. This
