@@ -28,6 +28,7 @@ sync_playwright = pytest.importorskip(
 
 from werkzeug.serving import make_server  # noqa: E402
 
+import browser_clock  # noqa: E402
 import shipped_catalog  # noqa: E402
 from src.web.api import create_app  # noqa: E402
 
@@ -59,7 +60,9 @@ def _age_catalog(monkeypatch, days: float) -> None:
        עצמו; ``data["meta"] = ...`` היה משנה אותו, ואז שחזור ההפניה
        לא היה מבטל דבר.
     """
-    stamp = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).strftime(
+    # ‏מ-PINNED_NOW ולא משעון הקיר: זה ה"עכשיו" של הדפדפן בבדיקות
+    # ‏(tests/browser_clock.py), והגיל נמדד שם.
+    stamp = (browser_clock.PINNED_NOW - dt.timedelta(days=days)).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
     )
     real = shipped_catalog.load()

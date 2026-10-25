@@ -71,6 +71,13 @@ if "shipped_catalog" in sys.modules:  # pragma: no cover - תלוי בסדר י�
     except Exception:  # noqa: BLE001
         pass
 
+# ‏הקטלוג קפוא, ולכן גם השעון של הדפדפן חייב להיות: אחרת גיל הקטלוג שהעמוד
+# מציג גדל בכל יום, ו-app.js מגיב לו (באנר "הקטלוג ישן" מ-45 יום). ראו
+# ‏tests/browser_clock.py.
+import browser_clock  # noqa: E402
+
+browser_clock.install()
+
 
 def pytest_report_header(config) -> list[str]:
     """אומר בראש כל הרצה איזה קטלוג נקרא. שקט כאן הוא בדיוק מה שהסתיר את
@@ -86,5 +93,6 @@ def pytest_report_header(config) -> list[str]:
     frozen = Path(where).resolve().is_relative_to(FIXTURE_CATALOG_DIR.resolve())
     return [
         f"catalog: {where} ({count} courses, built {stamp}) "
-        f"[{'frozen fixture' if frozen else 'NOT the fixture'}]"
+        f"[{'frozen fixture' if frozen else 'NOT the fixture'}]",
+        f"browser clock: pinned to {browser_clock.PINNED_NOW.isoformat()}",
     ]

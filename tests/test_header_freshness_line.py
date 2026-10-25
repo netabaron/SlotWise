@@ -51,6 +51,7 @@ sync_playwright = pytest.importorskip(
 
 from werkzeug.serving import make_server  # noqa: E402
 
+import browser_clock  # noqa: E402
 import shipped_catalog  # noqa: E402
 import strings as strings_mod  # noqa: E402
 from src.web.api import create_app  # noqa: E402
@@ -108,8 +109,10 @@ def _age_catalog(days: float | None):
     before_cache = shipped_catalog._CACHE
     before_stamp = shipped_catalog._STAMP
     if days is not None:
+        # ‏מ-PINNED_NOW ולא משעון הקיר: זה ה"עכשיו" של הדפדפן בבדיקות
+        # ‏(tests/browser_clock.py), והגיל נמדד שם.
         stamp = (
-            dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+            browser_clock.PINNED_NOW - dt.timedelta(days=days)
         ).strftime("%Y-%m-%dT%H:%M:%SZ")
         real = shipped_catalog.load()
         shipped_catalog._CACHE = {
