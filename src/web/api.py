@@ -94,6 +94,7 @@ import curriculum as curriculum_mod  # noqa: E402
 import discovery as discovery_mod  # noqa: E402
 import models  # noqa: E402
 import parser as parser_mod  # noqa: E402
+import rate_limit as rate_limit_mod  # noqa: E402
 import scheduler as scheduler_mod  # noqa: E402
 import store as store_mod  # noqa: E402
 import strings as strings_mod  # noqa: E402
@@ -377,6 +378,7 @@ def _http_message_he(code: int) -> str:
         404: "הכתובת המבוקשת אינה קיימת בשרת.",
         405: "שיטת הבקשה אינה נתמכת בכתובת הזו.",
         413: "גוף הבקשה גדול מדי.",
+        429: "יותר מדי בקשות בזמן קצר. אפשר לנסות שוב בעוד כמה שניות.",
         500: "אירעה תקלה בלתי צפויה בשרת.",
     }.get(int(code), "אירעה תקלה בשרת.")
 
@@ -5412,6 +5414,10 @@ def create_app(
         # ומכריע את נוסח התחתית בלבד. לא נגזר מ-``allow_network``: גם עותק
         # מקומי יכול לכבות את הרשת, והבדיקות עושות זאת כל הזמן.
         "mode": "local",
+        # ‏מגן הקצב לכל IP — ‏rate_limit.py. ארבעה ‏SLOTWISE_RATE_LIMIT_*,
+        # וערך פגום זורק כבר כאן. פעיל במצב ‏"hosted" בלבד: מקומית יש
+        # סטודנט/ית אחד/ת, והבדיקות שולחות מאות חישובים מ-127.0.0.1.
+        **rate_limit_mod.settings_from_env(),
     }
     overrides = dict(config or {})
     course_fetcher = overrides.pop("course_fetcher", None)
@@ -5475,6 +5481,53 @@ def create_app(
         pass
 
     app.register_blueprint(bp)
+
+    # ---- מגן קצב: תקרה לזמן ה-CPU שכתובת אחת מקבלת, רק באירוח ----------
+    # ‏ראו את תיעוד ‏rate_limit.py ואת ‏DEPLOY.md, "Rate limiting". נשמר על
+    # ‏app.extensions ולא כמשתנה גלובלי של המודול (‏HOSTING_NOTES §4.5); עם
+    # ‏preload_app כל worker מקבל עותק ריק משלו.
+    limiter = (
+        rate_limit_mod.RateLimiter.from_settings(settings)
+        if settings["mode"] == "hosted"
+        else None
+    )
+    app.extensions["slotwise_rate_limit"] = limiter
+
+    if limiter is not None:
+        from flask import g
+
+        @app.before_request
+        def _rate_limit_check():
+            if not request.path.startswith("/api/") or not limiter.active():
+                return None
+            key = limiter.key_for(request.remote_addr)
+            if key is None:  # רשת פטורה (הקמפוס)
+                return None
+            retry = limiter.check(key)
+            if retry is None:
+                g.rate_limit = (key, limiter.cpu_clock())
+                return None
+            if limiter.should_log(key):
+                LOG.warning("rate limit: %s throttled on %s %s (retry in %ds)",
+                            key, request.method, request.path, retry)
+            response = jsonify({
+                "ok": False,
+                "error": _http_message_he(429),
+                "detail": "rate limited: per-IP CPU budget exhausted on this worker",
+                "reason": "rate_limited",
+                "retry_after": retry,
+            })
+            response.status_code = 429
+            response.headers["Retry-After"] = str(retry)
+            return response
+
+        @app.teardown_request
+        def _rate_limit_charge(_exc):
+            # ‏teardown ולא after_request: הוא רץ גם כשבקשה נפלה בחריגה.
+            pending = g.pop("rate_limit", None)
+            if pending is not None:
+                key, started = pending
+                limiter.charge(key, limiter.cpu_clock() - started)
 
     # ---- רשת ביטחון ברמת האפליקציה: אף פעם לא דף HTML של traceback ----
     @app.errorhandler(HTTPException)

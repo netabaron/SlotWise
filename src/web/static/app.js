@@ -807,6 +807,9 @@
     solveBusy: false,
     solveAbort: null,       // ‏AbortController של החישוב הרץ
     solveCancelled: false,  // בוטל ביודעין — לא תקלה
+    // ‏429 של מגן הקצב (‏rate_limit.py): השגיאה מוצגת כאזהרה ולא כתקלה.
+    solveRateLimited: false,
+    coursesRateLimited: false,
     // גיל הקטלוג מ-/api/catalog/meta. ‏null = עוד לא נטען, או שאין קטלוג.
     catalogMeta: null,
     // ההיפוך של הוויתור האחרון — ממוקד, לא צילום מצב. ראי undoRelaxation.
@@ -981,6 +984,8 @@
             Tf("app.errors.badResponse", { status: res.status });
           var err = new Error(txt(msg));
           err.status = res.status;
+          // ‏Retry-After בשניות, או 0 כשאין. נקרא רק ב-429.
+          err.retryAfter = num(parseInt(res.headers.get("Retry-After"), 10), 0);
           err.detail = data ? data.detail : raw ? raw.slice(0, 400) : "";
           err.data = data;
           throw err;
@@ -1028,12 +1033,74 @@
     // שנסגר, ולכן ההצעה היא להריץ אותו שוב; באתר המתארח אין מה להריץ.
     if (!status) return T(isHostedPage() ? "app.errors.networkHosted" : "app.errors.network");
     if (status >= 500) return Tf("app.errors.serverFault", { status: status });
+    // ‏429 משני מקורות: מגן הקצב של האפליקציה (JSON עם ``reason``), או
+    // ‏Cloud Run עצמו כשאין מופע פנוי (בלי JSON). אף אחד מהם אינו "הבקשה
+    // נדחתה, כדאי לשנות את הבחירה" — הבחירה תקינה, צריך רק לחכות.
+    // ‏כאן בלי הבטחה לניסיון חוזר: רק ‏/api/courses ו-/api/solve מנסים שוב
+    // לבד, והם קוראים ל-``rateLimitedText`` במקום לזה.
+    if (status === 429) {
+      return isRateLimited(err)
+        ? T("app.errors.rateLimitedManual")
+        : T("app.errors.serverBusy");
+    }
     if (status >= 400) {
       return Tf("app.errors.badRequest", {
         error: txt(err.message) || T("app.errors.unknown", ""),
       });
     }
     return txt(err.message) || T("app.errors.unknown", "");
+  }
+
+  /** ‏429 ממגן הקצב של האפליקציה, ולא מ-Cloud Run. */
+  function isRateLimited(err) {
+    return (
+      !!err &&
+      num(err.status, 0) === 429 &&
+      !!err.data &&
+      err.data.reason === "rate_limited"
+    );
+  }
+
+  /**
+   * ניסיון חוזר אוטומטי אחרי 429 של מגן הקצב.
+   *
+   * ‏Retry-After הוא התשובה של worker אחד בלבד (``rate_limit.py``), ולכן
+   * ‏מחכים לו ולא מנחשים פחות. כל שינוי של הסטודנט/ית מבטל את הניסיון
+   * ‏(``syncData`` מנקה את הטיימר), ואחרי ``RATE_LIMIT_RETRIES`` ניסיונות
+   * ‏ברצף עוצרים ומחכים ללחיצה — דף שנשאר פתוח לא ידפוק על השרת לנצח.
+   */
+  var RATE_LIMIT_RETRIES = 3;
+  var RATE_LIMIT_RETRY_MIN_S = 2;
+  var RATE_LIMIT_RETRY_MAX_S = 30;
+  var rateLimitRetry = { timer: null, count: 0 };
+
+  /** ‏true = נקבע ניסיון חוזר; ‏false = נגמרו הניסיונות. */
+  function scheduleRateLimitRetry(err) {
+    if (rateLimitRetry.timer) return true; // כבר נקבע — ‏/api/courses ו-/api/solve יחד
+    if (rateLimitRetry.count >= RATE_LIMIT_RETRIES) return false;
+    rateLimitRetry.count += 1;
+    var wait = clamp(
+      num(err && err.retryAfter, 0) || RATE_LIMIT_RETRY_MIN_S,
+      RATE_LIMIT_RETRY_MIN_S,
+      RATE_LIMIT_RETRY_MAX_S
+    );
+    rateLimitRetry.timer = setTimeout(function () {
+      rateLimitRetry.timer = null;
+      syncData(false, true);
+    }, wait * 1000);
+    return true;
+  }
+
+  function cancelRateLimitRetry() {
+    if (rateLimitRetry.timer) clearTimeout(rateLimitRetry.timer);
+    rateLimitRetry.timer = null;
+  }
+
+  /** שגיאת 429 של מגן הקצב: מה לכתוב, ואם לנסות שוב לבד. */
+  function rateLimitedText(err) {
+    return scheduleRateLimitRetry(err)
+      ? T("app.errors.rateLimited")
+      : T("app.errors.rateLimitedManual");
   }
 
   /** מספרים רצים — תשובה שמגיעה אחרי בקשה חדשה יותר נזרקת. */
@@ -2713,6 +2780,7 @@
           };
         });
         runtime.coursesError = null;
+        runtime.coursesRateLimited = false;
 
         // מאיפה הגיע כל קורס: "db" (היה שמור), "fetched" (נמשך עכשיו),
         // "unavailable" (הידיעון לא נתן) או "skipped" (מכסת המשיכות נגמרה).
@@ -2800,8 +2868,14 @@
         lastSig.courses = null;
         runtime.coursesBusy = false;
         runtime.fetching = Object.create(null);
-        runtime.courses = [];
-        runtime.coursesError = errorText(err);
+        runtime.coursesRateLimited = isRateLimited(err);
+        if (runtime.coursesRateLimited) {
+          // ‏מה שכבר על המסך נכון — רק העדכון מחכה. לא מרוקנים אותו.
+          runtime.coursesError = rateLimitedText(err);
+        } else {
+          runtime.courses = [];
+          runtime.coursesError = errorText(err);
+        }
         render();
       });
   }
@@ -3074,6 +3148,7 @@
         runtime.solveBusy = false;
         runtime.solve = data;
         runtime.solveError = null;
+        runtime.solveRateLimited = false;
         if (state.activeSchedule >= schedules().length) {
           state.activeSchedule = 0;
           saveState();
@@ -3086,11 +3161,16 @@
         runtime.solveBusy = false;
         // ‏"מעדכן…" אינו נשאר תלוי; הבאנר או ההודעה אומרים מה קרה.
         announceResults("");
+        runtime.solveRateLimited = false;
         if (err && err.name === "AbortError") {
           // ביטול אינו תקלה: אין באנר אדום, רק הודעה שקטה.
           runtime.solveError = null;
           runtime.solveCancelled = true;
           toast(T("app.schedule.solvingCancelled"), "ok");
+        } else if (isRateLimited(err)) {
+          // ‏מגן הקצב: המערכת הקודמת נשארת על המסך, והחישוב ינוסה שוב.
+          runtime.solveRateLimited = true;
+          runtime.solveError = rateLimitedText(err);
         } else {
           runtime.solveError = errorText(err);
         }
@@ -3131,6 +3211,8 @@
 
   /** עוצר חישוב שרץ. הבחירות נשמרות — רק החישוב מפסיק. */
   function cancelSolve() {
+    // ‏גם ניסיון חוזר שממתין אחרי 429 — "עצירה" שמתחילה שוב לבד אינה עצירה.
+    cancelRateLimitRetry();
     if (solveTimer) {
       clearTimeout(solveTimer);
       solveTimer = null;
@@ -3160,8 +3242,12 @@
   /** מה כבר נמשך — כדי לא למשוך שוב סתם. */
   var lastSig = { semester: null, courses: null, program: null };
 
-  function syncData(force) {
+  function syncData(force, rateLimitRetrying) {
     if (!runtime.ready) return;
+    // כל סנכרון מייתר ניסיון חוזר שממתין אחרי 429. רק שינוי של הסטודנט/ית
+    // (ולא הניסיון החוזר עצמו) מאפס את מונה הניסיונות.
+    cancelRateLimitRetry();
+    if (!rateLimitRetrying) rateLimitRetry.count = 0;
     // ‏בלי זהות אין למי לבנות. ‏/api/courses ו-/api/solve שולחים את
     // ``state.term`` כ-``semester``, ובקשה עם סמסטר ריק היא בקשה על
     // כלום — היא הייתה חוזרת ריקה ומציגה "לא נמצאה מערכת", כלומר תקלה
@@ -4511,19 +4597,33 @@
         text: Tf("app.banners.bootstrapError", { error: runtime.bootstrapError }),
       });
     }
-    if (runtime.coursesError) {
-      wanted.push({
-        key: "courses-error",
-        kind: "error",
-        text: Tf("app.banners.coursesError", { error: runtime.coursesError }),
-      });
+    // ‏429 של מגן הקצב הוא אזהרה ולא תקלה, ובאנר אחד מספיק: כשגם הקורסים
+    // ‏וגם החישוב ממתינים, הנוסח זהה ונשאר רק של החישוב.
+    if (runtime.coursesError && !(runtime.coursesRateLimited && runtime.solveRateLimited)) {
+      wanted.push(
+        runtime.coursesRateLimited
+          ? { key: "courses-rate-limited", kind: "warn", text: runtime.coursesError }
+          : {
+              key: "courses-error",
+              kind: "error",
+              text: Tf("app.banners.coursesError", { error: runtime.coursesError }),
+            }
+      );
     }
     if (runtime.solveError) {
-      wanted.push({
-        key: "solve-error",
-        kind: "error",
-        text: Tf("app.banners.solveError", { error: runtime.solveError }),
-      });
+      wanted.push(
+        runtime.solveRateLimited
+          ? {
+              key: "solve-rate-limited",
+              kind: "warn",
+              text: Tf("app.banners.solveRateLimited", { error: runtime.solveError }),
+            }
+          : {
+              key: "solve-error",
+              kind: "error",
+              text: Tf("app.banners.solveError", { error: runtime.solveError }),
+            }
+      );
     }
     if (runtime.semesterError) {
       wanted.push({
@@ -8401,6 +8501,9 @@
         note = T("app.schedule.noteNoCourses");
       } else if (runtime.solveBusy && !s) {
         note = T("app.schedule.noteSolving");
+      } else if (runtime.solveRateLimited) {
+        // ‏לא "החישוב נכשל": הוא ממתין, והנוסח אומר זאת בעצמו.
+        note = runtime.solveError;
       } else if (runtime.solveError) {
         note = Tf("app.schedule.noteFailed", { error: runtime.solveError });
       }
@@ -8434,6 +8537,7 @@
               on: {
                 click: function () {
                   runtime.solveError = null;
+                  runtime.solveRateLimited = false;
                   scheduleSolve(0);
                 },
               },

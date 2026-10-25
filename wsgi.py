@@ -49,6 +49,10 @@ They are read in ``src/web/api.create_app``; see DEPLOY.md for the full table.
     SLOTWISE_MAX_AGE_HOURS           24.0
     SLOTWISE_DETAILS_MAX_AGE_HOURS   168.0
     SLOTWISE_CATALOG_DIR             data/catalog
+    SLOTWISE_RATE_LIMIT_CPU_PER_MIN  15          (hosted only; src/rate_limit.py)
+    SLOTWISE_RATE_LIMIT_BURST_CPU    60
+    SLOTWISE_RATE_LIMIT_EXEMPT_CIDRS (none)
+    SLOTWISE_RATE_LIMIT_OFF_UNTIL    (unset)
     HOST                             0.0.0.0     (python wsgi.py only)
     PORT                             8000        (python wsgi.py only)
 
@@ -122,8 +126,8 @@ def build_app():
     # (Cloudflare is DNS only, not a proxy). Without this, request.remote_addr
     # is the Google Frontend's address on
     # every request and request.scheme is http even though the student is on
-    # https — so access logs record one IP for everybody, and any rate limit
-    # added later would throttle the proxy rather than an abuser.
+    # https — so access logs record one IP for everybody, and the rate limit
+    # (src/rate_limit.py) would throttle the proxy rather than an abuser.
     #
     # x_for=1 / x_proto=1, not more. Each unit of trust says "one hop I
     # control appends a value I can believe". Trusting two would let a client
@@ -162,6 +166,14 @@ def build_app():
             )
     except Exception as exc:  # noqa: BLE001 - reporting must never break startup
         print(f"[slotwise] could not report the catalog: {exc}", flush=True)
+
+    # Same reasoning for the rate limit: SLOTWISE_RATE_LIMIT_OFF_UNTIL left
+    # from a load test, or a mistyped exempt network, is otherwise invisible.
+    # `is not None`, not truthiness: RateLimiter has __len__, so an empty
+    # one — every limiter at startup — is falsy.
+    limiter = app.extensions.get("slotwise_rate_limit")
+    state = limiter.describe() if limiter is not None else "off (not hosted)"
+    print(f"[slotwise] rate limit: {state}", flush=True)
 
     return app
 
