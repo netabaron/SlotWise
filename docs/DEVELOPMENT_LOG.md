@@ -15,7 +15,7 @@ reconnaissance and from the first contact with real Braude data.
 The student described the goal: build a semester timetable from real course data, choosing
 preferred lecturers, targeting a number of days on campus.
 
-**Inputs provided:** `rec.pdf` (the department chapter of the שנתון) and `Screenshot.png` (the
+**Inputs provided:** `rec.pdf` (the department chapter of the שנתון) and `Screenshot.png` (now `docs/yedion-search.png`; the
 yedion course-search page).
 
 Established before asking anything:

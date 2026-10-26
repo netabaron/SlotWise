@@ -71,7 +71,7 @@ SPEC.md is the original specification and is left as written; this entry records
 that its formula no longer describes the engine.
 
 ### A protected test will break at the next fixture refresh — **found 2026-10-03, needs permission then**
-**Where:** `tests/test_attendance.py` (protected; `SPEC_WEB.md:230`, CLAUDE.md).
+**Where:** `tests/test_attendance.py` (protected; `docs/SPEC_WEB.md:214`, CLAUDE.md).
 * Its brute-force check `legal_combinations` is at :142-158.
 * The assertions that require the engine to match it are at :318, :372 and :680.
 
@@ -134,7 +134,7 @@ already says "קבוצה מלאה". Doing it would also take:
 ### Tests that start a server read the real `data/db` — four fail on a store written by `webapp.py`
 **Where:** `tests/test_hosted_missing_groups.py` (4 of its 7 tests); more generally,
 any test that calls `create_app()` without pointing `SLOTWISE_DB_ROOT` elsewhere.
-**Owner:** unassigned. The file is protected (`SPEC_WEB.md:230`: do not modify existing
+**Owner:** unassigned. The file is protected (`docs/SPEC_WEB.md:214`: do not modify existing
 tests), so this is recorded, not changed.
 **What:** `create_app()` reads `data/db` when it exists. `conftest.py` freezes the
 catalog (`SLOTWISE_CATALOG_DIR` = `tests/fixtures/catalog`) but not the store, so a

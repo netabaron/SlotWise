@@ -3,7 +3,7 @@
 **This document supersedes SPEC.md section 4 wherever they disagree.** It was produced by
 reconnaissance against a *publicly reachable* instance of the exact same product that Braude runs
 (the Yedion / מידע-נט system by yedion.co.il), namely the Tel-Aviv Yaffo Academic College instance
-at `https://mtamn.mta.ac.il/yedion/`. Braude's `Enter_Search` page (see `Screenshot.png`) is visually
+at `https://mtamn.mta.ac.il/yedion/`. Braude's `Enter_Search` page (see `yedion-search.png`) is visually
 identical panel-for-panel, so the templates are the same family.
 
 **Caveat that must stay in the code:** the samples in `tests/fixtures/real_yedion/` are from MTA,
@@ -171,7 +171,7 @@ The parser must parse all five without warnings other than genuinely-empty optio
 
 ## 8. Academic-year switching — VERIFIED end-to-end
 
-Your `Screenshot.png` shows Braude defaulting to **תשפ"ו** while the year `<select>` offers
+Your `yedion-search.png` shows Braude defaulting to **תשפ"ו** while the year `<select>` offers
 **2027 - תשפ"ז**. So the scraper *must* switch the year before scraping, or it will silently
 return last year's timetable. This was verified against the live MTA instance:
 

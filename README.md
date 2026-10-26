@@ -1,8 +1,11 @@
 # SlotWise
 
-**A local web app that reads Braude College's course catalogue (the *yedion*) and builds the best possible semester timetable — for any department, on your own machine, without ever seeing your password.**
+**Reads Braude College's course catalogue (the *yedion*) and builds the best possible semester timetable — for any department, without ever seeing your password.**
 
-<!-- TODO: screenshot of the timetable grid goes here -->
+- **Use it online: [slotwise.co.il](https://slotwise.co.il).** Nothing to install, no account.
+- **Or run it on your own machine** — see [Quick start](#quick-start).
+
+![SlotWise: a weekly timetable built from the recommended courses](docs/slotwise-timetable.png)
 
 ```mermaid
 flowchart LR
@@ -12,7 +15,7 @@ flowchart LR
     D["Parse<br/>groups · lecturers · days · rooms"]
     E["Local JSON database<br/>data/db/"]
     F["Solve<br/>enumerate · score · rank"]
-    G["Browser UI<br/>127.0.0.1"]
+    G["Browser UI<br/>slotwise.co.il or 127.0.0.1"]
     H["Change report<br/>lecturer / time / group moved"]
 
     A -->|one GET per course code| B --> C --> D --> E --> F --> G
@@ -44,21 +47,23 @@ watching, so a lecturer or time that changes after you registered is noticed.
 3. **Solve.** Backtracking enumeration walks every legal selection with pruning,
    scores each one, keeps the best. Exhaustive rather than heuristic — only a full
    count can say "no timetable satisfies this" or "these really are the top five".
-4. **Show.** A Flask server bound to `127.0.0.1` serves a five-step Hebrew RTL
-   interface: program and semester → courses → target days → lecturers → the
-   grid. Every change re-solves immediately. Plain HTML, CSS and JS — no
-   framework, no build step, no CDN.
+4. **Show.** A Flask app serves a five-step Hebrew RTL interface: program and
+   semester → courses → target days → lecturers → the grid. Every change
+   re-solves immediately. Plain HTML, CSS and JS — no framework, no build step,
+   no CDN.
 
-A catalog of all **572 courses** the college opens this year ships in the repo,
-so a fresh clone has data on the first run. All eight Braude degree programs are
+A catalog of every course the college opens this year ships in the repo, so a
+fresh clone has data on the first run. All eight Braude degree programs are
 listed, and seven also ship a parsed curriculum, so the course list for a given
 semester comes pre-filled rather than typed.
 
-`data/catalog/` is rebuilt nightly and committed, and the app serves it
-directly: **`git pull` is how a local install gets fresh course data.** A record
-you scraped yourself only keeps winning while it is newer than the catalog's
-build date, so the date in the header is the catalog's, not a stale timestamp
-left in `data/db`. To rebuild `data/db` itself from the catalog you just pulled:
+`data/catalog/` is rebuilt nightly by a GitHub Actions workflow and committed,
+and the app serves it directly. The hosted site serves the catalog its image was
+built with and never fetches from the yedion per request. **`git pull` is how a
+local install gets fresh course data.** A record you scraped yourself only keeps
+winning while it is newer than the catalog's build date, so the date in the
+header is the catalog's, not a stale timestamp left in `data/db`. To rebuild
+`data/db` itself from the catalog you just pulled:
 `python scripts/seed_dev_data.py --force`. See DEPLOY.md, "Where the freshness
 date comes from".
 
@@ -101,30 +106,59 @@ group, which day and hour collide — plus suggested relaxations.
 
 ## Quick start
 
+The easiest way is the hosted site: **[slotwise.co.il](https://slotwise.co.il)**.
+
+To run it locally instead:
+
 ```bash
 # Python 3.10+
 git clone https://github.com/netabaron/SlotWise.git
 cd SlotWise
-python -m pip install flask beautifulsoup4 lxml pytest
+python -m pip install -r requirements.txt
 python main.py
 ```
 
 That starts the local server and opens the app. There is nothing to configure —
 pick a program and semester in step 1 and go. Copying `data/profile.example.json`
-to `data/profile.json` pre-fills those choices, but it is optional; `playwright`
-is needed only for the fallback browser fetcher and the browser tests.
+to `data/profile.json` pre-fills those choices, but it is optional.
+
+The other requirements files are for other jobs:
+
+| File | For |
+| --- | --- |
+| `requirements.txt` | the app itself, local or hosted |
+| `requirements-dev.txt` | the test suite (pytest, pytest-xdist) |
+| `requirements-scraper.txt` | Playwright: the `--browser` fetch fallback and the browser tests (then `python -m playwright install chromium`) |
+| `requirements-loadtest.txt` | Locust, for the load test only |
 
 The terminal flow, the scheduled refresh job and offline re-parsing are
-documented in **[docs/CLI.md](docs/CLI.md)**.
+documented in **[docs/CLI.md](docs/CLI.md)**. Hosting is documented in
+**[DEPLOY.md](DEPLOY.md)**.
 
 ## Privacy
 
-- **The app never handles your password.** It has no username or password field
-  anywhere, because the default fetch path is anonymous — the yedion's course
-  search answers a plain GET. The cookie jar lives in memory and is never written
-  to disk.
-- **Nothing is hosted.** The server binds to `127.0.0.1` only. Your selections
-  live in your browser's `localStorage`; there is no account and no backend.
+### The hosted site
+
+- **No accounts, no password.** There is no sign-up and no login field anywhere,
+  and the site never contacts the yedion on your behalf: it serves a catalog
+  that was built ahead of time.
+- **Your selections stay in your browser**, in `localStorage`. The server keeps
+  no record of them; each request carries what it needs to compute a timetable,
+  and the answer goes back to your browser.
+- **A per-IP rate limit** on `/api/*` stops one client from flooding the
+  server. It keeps a usage counter per IP address in server memory only, never
+  on disk. Like any web server, requests — including the IP address — appear in
+  the hosting provider's request logs.
+- **Hosted on Google Cloud Run, region `europe-west1`** (Belgium).
+
+### Running it locally
+
+- **Nothing is hosted.** The server binds to `127.0.0.1` only, and the only
+  outside traffic is the fetch from the yedion. Your selections live in your
+  browser's `localStorage`.
+- **The app never handles your password.** The default fetch path is anonymous
+  — the yedion's course search answers a plain GET. The cookie jar lives in
+  memory and is never written to disk.
 - On the optional `--browser` fallback path you sign in yourself, in a real
   browser window. Even there nothing reads, asks for or stores credentials, and a
   page that is not from `info.braude.ac.il` is **never written to disk** — not as
@@ -136,31 +170,59 @@ documented in **[docs/CLI.md](docs/CLI.md)**.
 ```
 main.py                 launcher: the browser app by default, --cli for the terminal
 webapp.py               the local Flask server (127.0.0.1)
+wsgi.py                 the hosted entry point: network off, binds 0.0.0.0
+gunicorn.conf.py        gunicorn settings for the hosted server
+Dockerfile              the image Cloud Run serves
 src/yedion_http.py      login-free fetcher — stdlib only, verified year protocol
 src/parser.py           yedion HTML -> model; models.py = Meeting / Group / Course
 src/scheduler.py        the engine: constraints, scoring, search, infeasibility diagnosis
 src/store.py            JSON database: freshness, change detection, atomic writes
 src/curriculum.py       curricula, prerequisites, tied courses; discovery.py = live catalog
+src/rate_limit.py       per-IP limit on /api/*, charged in CPU seconds (hosted only)
 src/web/                the JSON API and the interface (plain HTML/CSS/JS)
+build_catalog.py        builds data/catalog/ from the yedion
 refresh.py              the scheduled refresh job; reparse.py re-parses saved HTML offline
-data/catalog/           the shipped catalog: 572 courses, so a fresh clone has data
+data/catalog/           the shipped catalog, so a fresh clone has data
 scripts/                verify_catalog.py, seed_dev_data.py, update_test_fixture.py
-.github/workflows/      nightly catalog build, and CI
-docs/                   CLI reference, the verified yedion protocol, the specs
-tests/                  765 tests, no network; they read tests/fixtures/catalog,
-                        a frozen copy, so nightly data cannot break them
+scripts/loadtest/       the Locust load test and its pass/fail thresholds
+.github/workflows/      ci.yml (every push), build-catalog.yml (nightly),
+                        loadtest.yml (manual only)
+docs/                   CLI reference, the verified yedion protocol, the specs,
+                        the design, the development log
+tests/                  the test suite — see below
 ```
 
 ## Tests
 
 ```bash
-python -m pytest tests/ -q     # 765 tests, none of which touch the network
+python -m pip install -r requirements.txt -r requirements-dev.txt -r requirements-scraper.txt
+python -m playwright install chromium
+python -m pytest -q -n 4 --dist loadfile
 ```
 
-About 20 of them drive a local Chromium to cover interface rules that live in
-`app.js`; they skip themselves when no browser is installed.
+- **No network.** Nothing in the suite fetches from the yedion.
+- **A frozen catalog.** Tests read `tests/fixtures/catalog`, a fixed copy, so the
+  nightly catalog build cannot break them. One invariants test checks the real
+  `data/catalog/`.
+- **Browser tests.** Interface rules that live in `app.js` are tested by driving
+  a local Chromium through Playwright. They skip themselves when no browser is
+  installed.
+- **CI on every push.** `.github/workflows/ci.yml` runs the suite, then builds
+  the Docker image and checks that it serves.
+
+Keep `--dist loadfile`: several modules share one browser page across their
+tests, so each file has to stay on one worker. Without `-n` the suite runs
+serially, which works but is much slower.
 
 ## Roadmap
+
+Done:
+
+- Hosted at [slotwise.co.il](https://slotwise.co.il) — Cloud Run and gunicorn,
+  with a per-IP rate limit and a load test
+- A nightly catalog build, committed by GitHub Actions
+
+Next:
 
 - **Export to `.ics` calendar** — drop the finished timetable straight into
   Google Calendar

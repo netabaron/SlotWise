@@ -45,16 +45,12 @@ venv/
 # The college's own shnaton PDFs, ~3.2 MB. data/curricula.json is the parsed
 # product and is what the app actually reads, so the PDFs stay out.
 *.pdf
-Screenshot.png
 
 # --- docs ------------------------------------------------------------------
 # Kept out of the image, not out of the repo. DEPLOY.md is deliberately NOT in
 # this list: it is worth having next to the thing it describes.
 BRIEFING.md
-DEVELOPMENT_LOG.md
 DEFERRED.md
-SPEC_*.md
-ui-overhaul-prompt.md
 docs/
 
 # --- local artefacts -------------------------------------------------------

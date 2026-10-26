@@ -95,7 +95,7 @@ the whole list is three lines in two files:
 | `docs/SPEC.md` | 9 | `Schedule_Builder/` — the root label of the directory tree below it | update to `SlotWise/` |
 | `DEFERRED.md` | 405 | `Schedule_Builder_backup_20260906` | **leave it.** The name of a backup folder as it existed on 2026-09-06. Renaming it falsifies the record. |
 
-`DEVELOPMENT_LOG.md:4` says `~/.claude/projects/` with no directory name,
+`docs/DEVELOPMENT_LOG.md:4` says `~/.claude/projects/` with no directory name,
 so it needs nothing.
 
 **Do not sweep with a blind find-and-replace.**
@@ -184,7 +184,7 @@ the reason it was deferred. Read it before "discovering" one of them.
 
 ## Tests
 
-Do not modify existing test files (`SPEC_WEB.md:230`). Add new ones
+Do not modify existing test files (`docs/SPEC_WEB.md:214`). Add new ones
 instead.
 
 ### Running the tests
