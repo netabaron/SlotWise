@@ -59,6 +59,44 @@ def fixture_built_at() -> dt.datetime:
 PINNED_NOW = fixture_built_at() + PIN_AFTER_BUILD
 
 _installed = False
+#: ‏``Browser.new_context`` המקורי, לפני העטיפה של ``install()``.
+_real_new_context = None
+
+#: ‏רצים לפני ואחרי סקריפט השעון של Playwright, בסדר שבו נוספו.
+_KEEP_FRAMES = (
+    "window.__realRAF = window.requestAnimationFrame;"
+    " window.__realCAF = window.cancelAnimationFrame;"
+)
+_RESTORE_FRAMES = (
+    "window.requestAnimationFrame = window.__realRAF;"
+    " window.cancelAnimationFrame = window.__realCAF;"
+    " delete window.__realRAF; delete window.__realCAF;"
+)
+
+
+def new_context_with_real_frames(browser, **kwargs):
+    """הקשר עם השעון המקובע, אבל עם ``requestAnimationFrame`` של הדפדפן.
+
+    ‏השעון של Playwright מחליף גם את ‏rAF: קריאה שלו היא טיימר על גבול של
+    ‏16ms בשעון המזויף, שיורה מ-setTimeout אמיתי ולא בשלב הציור של הדפדפן.
+    ‏קוד שמתקן את העמוד בכל פריים (‏``holdDuringFold`` ב-app.js) רץ אז בין
+    ‏פריימים, ומעבר ‏CSS — שרץ על השעון האמיתי — מצויר פריים אחד בלי התיקון.
+    ‏נמדד 2026-10-25: קפיצה של ~240px בפריים מצויר בכל הרצה עם השעון,
+    ‏אפס עם ‏rAF אמיתי. ‏זה מה שהפיל לסירוגין את
+    ‏``test_step_continue_no_jump_browser.py`` מאז הקיבוע.
+
+    ‏``Date`` נשאר מקובע והטיימרים נשארים על השעון המזויף; רק ‏rAF חוזר.
+    ‏לבדיקות שמודדות תנועה פריים-פריים."""
+    real = _real_new_context
+    if real is None:  # install() לא רץ — אין עטיפה לעקוף
+        from playwright.sync_api import Browser  # noqa: PLC0415
+
+        real = Browser.new_context
+    context = real(browser, **kwargs)
+    context.add_init_script(_KEEP_FRAMES)
+    context.clock.set_system_time(PINNED_NOW)
+    context.add_init_script(_RESTORE_FRAMES)
+    return context
 
 
 def install() -> None:
@@ -66,7 +104,7 @@ def install() -> None:
     הסינכרוני. ‏הקשר שנוצר מקבל את השעון לפני שדף כלשהו נטען בו, כך שגם
     הסקריפט הראשון של העמוד רואה את ``PINNED_NOW``. ‏בלי Playwright — לא
     עושה דבר; המודולים שזקוקים לו מדלגים בעצמם."""
-    global _installed
+    global _installed, _real_new_context
     if _installed:
         return
     try:
@@ -74,7 +112,7 @@ def install() -> None:
     except ImportError:  # pragma: no cover - אין Playwright מותקן
         return
 
-    real_new_context = Browser.new_context
+    real_new_context = _real_new_context = Browser.new_context
     real_new_page = Browser.new_page
 
     def new_context(self, *args, **kwargs):

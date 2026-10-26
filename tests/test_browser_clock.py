@@ -105,6 +105,22 @@ def test_the_pinned_clock_still_runs(browser):
         page.close()
 
 
+def test_real_frames_context_is_pinned_with_native_raf(browser):
+    """‏``new_context_with_real_frames``: אותו קיבוע, ו-rAF של הדפדפן.
+    ‏אם סדר סקריפטי האתחול ישתנה ב-Playwright, זה ייכשל כאן ולא כקפיצה
+    ‏לסירוגין ב-test_step_continue_no_jump_browser.py."""
+    ctx = browser_clock.new_context_with_real_frames(browser, viewport={"width": 800, "height": 600})
+    try:
+        page = ctx.new_page()
+        assert PIN_MS <= _now_in(page) < PIN_MS + SLACK_MS
+        assert page.evaluate("String(requestAnimationFrame).includes('[native code]')")
+        assert page.evaluate("String(cancelAnimationFrame).includes('[native code]')")
+        assert page.evaluate("new Promise(r => requestAnimationFrame(t => r(t > 0)))")
+        assert page.evaluate("new Promise(r => setTimeout(() => r(true), 50))")
+    finally:
+        ctx.close()
+
+
 @pytest.fixture()
 def server(tmp_path):
     sock = socket.socket()

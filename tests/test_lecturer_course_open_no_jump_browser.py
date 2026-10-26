@@ -38,6 +38,7 @@ sync_playwright = pytest.importorskip(
 
 from werkzeug.serving import make_server  # noqa: E402
 
+import browser_clock  # noqa: E402
 from src.web.api import create_app  # noqa: E402
 
 DESKTOP = (1440, 900)
@@ -150,7 +151,10 @@ def _next(pg, key, wait=1500):
 
 def _to_lecturers(browser, server, size, reduced_motion="no-preference"):
     """הנדסת תוכנה, שנה 3, סמסטר א, הקורסים המומלצים, ו"המשך" עד המרצים."""
-    ctx = browser.new_context(
+    # ‏rAF של הדפדפן ולא של השעון המזויף: הגלישה והדגימה צריכות לרוץ בשלב
+    # ‏הציור, כמו אצל סטודנט (tests/browser_clock.py).
+    ctx = browser_clock.new_context_with_real_frames(
+        browser,
         viewport={"width": size[0], "height": size[1]},
         color_scheme="light",
         reduced_motion=reduced_motion,
@@ -159,6 +163,9 @@ def _to_lecturers(browser, server, size, reduced_motion="no-preference"):
     errors = []
     pg.on("pageerror", lambda e: errors.append(str(e)))
     pg.goto(server)
+    assert pg.evaluate("String(requestAnimationFrame).includes('[native code]')"), (
+        "requestAnimationFrame של השעון המזויף — הדגימה לא תהיה בשלב הציור"
+    )
     pg.wait_for_timeout(3000)
     pg.select_option("#select-program", "הנדסת תוכנה")
     pg.select_option("#select-year", "3")

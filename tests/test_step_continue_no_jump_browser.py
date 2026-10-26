@@ -32,6 +32,7 @@ sync_playwright = pytest.importorskip(
 
 from werkzeug.serving import make_server  # noqa: E402
 
+import browser_clock  # noqa: E402
 from src.web.api import create_app  # noqa: E402
 
 PHONE = (390, 844)
@@ -103,7 +104,10 @@ def browser():
 
 
 def _page(browser, server, *, reduced):
-    ctx = browser.new_context(
+    # ‏rAF של הדפדפן ולא של השעון המזויף: ‏holdDuringFold והדגימה צריכים
+    # ‏לרוץ בשלב הציור, כמו אצל סטודנט (tests/browser_clock.py).
+    ctx = browser_clock.new_context_with_real_frames(
+        browser,
         viewport={"width": PHONE[0], "height": PHONE[1]},
         color_scheme="light",
         reduced_motion="reduce" if reduced else "no-preference",
@@ -113,6 +117,9 @@ def _page(browser, server, *, reduced):
     pg.errors = []  # type: ignore[attr-defined]
     pg.on("pageerror", lambda e: pg.errors.append(str(e)))  # type: ignore[attr-defined]
     pg.goto(server)
+    assert pg.evaluate("String(requestAnimationFrame).includes('[native code]')"), (
+        "requestAnimationFrame של השעון המזויף — הדגימה לא תהיה בשלב הציור"
+    )
     pg.wait_for_timeout(3000)
     return ctx, pg
 
