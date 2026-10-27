@@ -1075,6 +1075,7 @@ def min_days(
     *,
     limit: int = DEFAULT_NODE_LIMIT,
     at_most: "int | None" = None,
+    fixed: "dict[str, dict[str, Any]] | None" = None,
 ) -> "int | None":
     """מינימום ימי הלימוד על פני כל הבחירות, או ``None`` כשאין אף בחירה.
 
@@ -1087,13 +1088,45 @@ def min_days(
     עדיין מוחזר. ‏``day_relaxations`` משתמש בו — ויתור על קורס לעולם אינו
     מוסיף ימים, ולכן המינימום בלעדיו אינו עולה על המינימום עם כולם.
 
+    ‏``fixed`` (2026-10-27): רק בחירות שבהן כל ‏(קורס, סוג) שב-``fixed`` הוא
+    אחת מהקבוצות שצוינו — ``{קוד: {סוג רכיב: מזהה קבוצה או אוסף מזהים}}``.
+    כמו ב-``has_selection_with``: הסלוט מצומצם, ‏``kind_of`` נבנה מהקורסים
+    **המלאים** (``linked_to`` נאכף בדיוק), וסוג שאין לו סלוט, או שאף מזהה
+    שלו אינו בין המועמדים, פירושו ``None``. ‏``api._first_choices_days``
+    משתמש בו: הימים המעטים ביותר של מערכת שבה כל סוג מדורג מקבל את המרצה
+    הראשון שלו. בלי ``fixed`` החיפוש זהה לחלוטין לקודם.
+
     Raises:
         SearchExhausted / SearchTimedOut: מכסת הצמתים או הזמן נגמרו.
     """
     slots = _build_slots(courses, prefs)
     kind_of = _kind_index(courses)
     n = len(slots)
-    day_sets = [[frozenset(m.day for m in g.meetings) for g in s.candidates] for s in slots]
+    candidates = [s.candidates for s in slots]
+    if fixed:
+        wanted = {
+            (code, kind): {str(ids)} if isinstance(ids, str) else {str(i) for i in ids}
+            for code, by_kind in fixed.items()
+            for kind, ids in (by_kind or {}).items()
+        }
+        found: set[tuple[str, str]] = set()
+        for i, slot in enumerate(slots):
+            ids = wanted.get((slot.course.code, slot.kind))
+            if ids is None:
+                continue
+            found.add((slot.course.code, slot.kind))
+            candidates[i] = [g for g in slot.candidates if str(g.group_id) in ids]
+            if not candidates[i]:
+                return None  # אף קבוצה מהמבוקשות אינה אפשרית
+        if set(wanted) - found:
+            return None  # אין סלוט כזה — אף בחירה אינה מכילה אותו
+        # ‏הסלוטים המצומצמים ראשונים (והשאר בסדרם): הצמצום גוזם מהשורש. בלי זה
+        # ‏N לקח עד 3.3 שניות בביוטכנולוגיה s1 (נמדד 2026-10-27). המינימום אינו
+        # ‏תלוי בסדר, ובלי ``fixed`` הסדר אינו משתנה.
+        restricted = [i for i, s in enumerate(slots) if (s.course.code, s.kind) in wanted]
+        rest = [i for i in range(n) if (slots[i].course.code, slots[i].kind) not in wanted]
+        candidates = [candidates[i] for i in restricted + rest]
+    day_sets = [[frozenset(m.day for m in g.meetings) for g in c] for c in candidates]
     chosen: list[Group] = []
     best: list["int | None"] = [None]
     # ענף נגזם כשהוא מגיע ל-``bound`` ימים. בלי ``at_most`` אין חסם עד העלה
@@ -1106,7 +1139,7 @@ def min_days(
             if best[0] is None or len(days) < best[0]:
                 best[0] = bound[0] = len(days)
             return
-        for candidate, cand_days in zip(slots[depth].candidates, day_sets[depth]):
+        for candidate, cand_days in zip(candidates[depth], day_sets[depth]):
             budget.tick()
             joined = days | cand_days
             if bound[0] is not None and len(joined) >= bound[0]:
