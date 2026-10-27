@@ -10,6 +10,24 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
+### "0 מתוך 1 מרצים מועדפים" reads wrong at a total of 1 — **deferred 2026-10-27**
+**Where:** the lecturers pill in the results (`app.schedule.lecturersHits`,
+`buildStats()` in `app.js`).
+**Owner:** the next change allowed to touch protected tests.
+**What:** with one ranked lecturer the pill says "0 מתוך 1 מרצים מועדפים" or
+"1 מתוך 1 מרצים מועדפים" — a plural noun after "1". A singular form was drafted
+during the "+יום" chip work ("המרצה המועדף לא נכנס" / "המרצה המועדף נכנס"),
+keeping the current string from 2 up.
+**Why not changed:** four protected tests, in two files, pin the exact text at
+a total of 1 through `fill(lecturersHits, …)`. In
+`tests/test_missing_lecturers_browser.py`, via `_assert_consistent` (line 177):
+`::test_a_preferred_lecturer_in_a_group_without_meetings_is_not_missing` (1/1),
+`::test_a_second_choice_in_the_schedule_still_leaves_the_first_missing` (0/1)
+and `::test_names_are_compared_like_the_server_compares_them` (1/1). And
+`tests/test_results_page_browser.py::test_the_lecturer_count_is_a_visible_pill_when_preferences_exist`
+(line 398, one ranked lecturer). Existing tests may not be modified
+(`docs/SPEC_WEB.md:214`).
+
 ### `scheduler.py` keeps its own yedion attendance rule — **noted 2026-10-10**
 **Where:** `scheduler.note_requires_attendance`, `seed_attendance_defaults`,
 `seed_attendance_from_notes`.

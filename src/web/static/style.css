@@ -2720,6 +2720,57 @@ html.has-modal { overflow: hidden; }
   cursor: help;
 }
 
+/* ‏"בלי X (הרצאה) · צריך יום לימוד נוסף [הוספת יום] ⓘ" (2026-10-27): שורה
+   משלה מתחת לשבבי הנתונים, בלי מסגרת ובלי רקע. השמות ב-‎--ink‎, הסיבה
+   ב-‎--sec‎. הכפתור הוא גלולה במתאר ‎--ink‎, כמו "חובה בהתמחות"; ריחוף ופוקוס
+   הופכים אותה, כמו מצב נבחר. הכפתור וה-ⓘ לא נפרדים בשבירת שורה. בטלפון אזור
+   הלחיצה 32px לפחות. */
+.fit-day {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.fit-day-why { color: var(--sec); }
+.day-add-wrap { white-space: nowrap; margin-inline-start: 8px; }
+.day-add {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  block-size: 22px;
+  padding: 0 10px;
+  margin-inline-end: 2px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: middle;
+  color: var(--ink);
+  background: none;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.day-add:hover,
+.day-add:focus-visible { background: var(--ink); color: var(--sf); }
+.day-add:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (pointer: coarse) {
+  .day-add::after { content: ""; position: absolute; inset: -5px -4px; }
+}
+.day-why-btn { vertical-align: middle; }
+.day-why { margin-block-start: 6px; }
+.day-why p { margin: 0; }
+.fit-undo { margin: 0; font-size: 13px; }
+
+/* ‏הגלולה "N מתוך N מרצים מועדפים" כשהמרצים חזרו, והכפתור כשהוא מופיע לראשונה:
+   אותה קפיצה כמו עיגול הדירוג. */
+.stat-pill.is-pop,
+.day-add.is-pop { animation: rank-pop 250ms ease-out; }
+
+@media print {
+  .day-add-wrap, .day-why, .fit-undo { display: none !important; }
+}
+
 /* ---- תמרור "קבוצה מלאה", בכל מקום שאומר שקבוצה מלאה (app.js, warnSign) ----
    ‏בגובה הטקסט, על קו הבסיס שלו, והמרווח בצד שפונה אל הטקסט (inline-end, כלומר
    ‏משמאל ב-RTL). ‏overflow: visible — קו המתאר לא נחתך בקצה ה-viewBox. */

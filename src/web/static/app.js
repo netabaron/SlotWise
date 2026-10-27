@@ -814,6 +814,15 @@
     catalogMeta: null,
     // ההיפוך של הוויתור האחרון — ממוקד, לא צילום מצב. ראי undoRelaxation.
     lastRelax: null,
+    // ‏"הוספת יום" (השורה שמתחת לשבבי הנתונים): האם ה-ⓘ פתוח, הביטול
+    // ‏{old, to, key}, מה שהיה על הרשת לפני הלחיצה {from, before, hits}, ומתי
+    // ‏הגלולה קפצה.
+    dayWhyOpen: false,
+    // ‏מתי הופיע הכפתור לראשונה בעמוד הזה (לקפיצה היחידה), או 0.
+    dayAddSeen: 0,
+    dayUndo: null,
+    dayMotion: null,
+    hitsPop: null,
     colors: Object.create(null),
     dismissed: Object.create(null),
     // ‏האם המשתמש/ת כבר נגעו במשהו בעמוד. הקיפול האוטומטי פועל רק לפני
@@ -7017,7 +7026,9 @@
 
     if (ui.lectNote) {
       var bits = [];
-      if (rankedCount()) bits.push(Tf("app.lecturers.note.ranked", { count: rankedCount() }));
+      var count = rankedCount();
+      if (count === 1) bits.push(T("app.lecturers.note.rankedOne"));
+      else if (count) bits.push(Tf("app.lecturers.note.ranked", { count: count }));
       setText(
         ui.lectNote,
         bits.length
@@ -8032,9 +8043,11 @@
    * ‏המלבן ואינו מחוויר דבר — הוא רק מסתיר את מה שעוד לא נחשף.
    * ‏prefers-reduced-motion: בלי נחיתה — הבלוקים פשוט במקומם.
    */
-  function playLanding(root) {
+  function playLanding(root, only) {
     if (!root || reducedMotion()) return;
     var blocks = Array.prototype.slice.call(root.querySelectorAll(".ev"));
+    // ‏‎only‎: רק הבלוקים החדשים נוחתים (אחרי "הוספת יום"); השאר זזים.
+    if (only) blocks = blocks.filter(only);
     var at = function (b, prop) {
       return parseInt(b.style[prop], 10) || 0;
     };
@@ -8349,6 +8362,15 @@
     var soft = sch ? softConflictInfo(sch) : null;
     renderSoftConflicts(soft);
 
+    // ‏התשובה שאחרי "הוספת יום" (או אחרי הביטול שלו) הגיעה: הגלולה של המרצים
+    // ‏קופצת כשהם חזרו, והרשת זזה למטה (dayBefore).
+    var dayMove = runtime.dayMotion;
+    var dayArrived = !!dayMove && !!s && s !== dayMove.from && !runtime.solveBusy;
+    if (dayArrived) {
+      runtime.dayMotion = null;
+      if (sch && num(sch.lecturer_hits, 0) > dayMove.hits) runtime.hitsPop = { at: Date.now() };
+    }
+
     // ‏שבבי הנתונים, ומתחתם מה פחות טוב במערכת (DESIGN.md, "Results page", 4).
     if (ui.summary) {
       rebuild(ui.summary, function (box) {
@@ -8382,8 +8404,15 @@
     // ‏מתחת ל-1000px הרשת אינה על המסך, ורשימת הימים מתחלפת בלי תנועה:
     // ‏התנועה והנחיתה שייכות לרשת בלבד (DESIGN.md, "Results page", 5).
     var listMode = isListMode();
+    // ‏התשובה שאחרי "הוספת יום" (או אחרי הביטול שלו): גם היא זזה, כמו החלפת חלופה,
+    // ‏והבלוק החדש — שאין לו "לפני" — נוחת לבדו. מתחת ל-1000px רק הגלולה קופצת.
+    var dayBefore = dayArrived && !listMode && sch ? dayMove.before : null;
     var switching =
       !listMode && !!sch && runtime.gridShown.solve === s && runtime.gridShown.idx !== shownIdx;
+    if (dayBefore) {
+      cancelLanding(ui.grid);
+      cancelMoves(ui.grid);
+    }
     // ‏נחיתה שעוד רצה מסתיימת מיד: בלוק חשוף למחצה אינו נקודת מוצא לתנועה.
     if (switching) cancelLanding(ui.grid);
     var before = switching ? blockRects(ui.grid) : null;
@@ -8412,6 +8441,12 @@
       // והגובה שנגזר מהתוכן יכול להשתנות בין חלופות.
       sizeGrids();
       playMoves(ui.grid, before);
+    } else if (dayBefore) {
+      sizeGrids();
+      playMoves(ui.grid, dayBefore);
+      playLanding(ui.grid, function (b) {
+        return !dayBefore.has(b);
+      });
     }
     // ‏גובה השעה נמדד אחרי הפריסה, לא כאן. ראו sizeGrid().
     requestGridSizing();
@@ -8653,7 +8688,17 @@
     ]);
     // ‏6. כמה מהמרצים המועדפים נכנסו — רק כשיש העדפות, ותמיד גלוי: בטלפון
     // אין תווית הצפה, ו-"3 מתוך 3" הוא מידע גם כששום דבר לא חסר.
-    if (num(sch.lecturer_total, 0) > 0) add("lecturers", [el("span", { text: hits })]);
+    if (num(sch.lecturer_total, 0) > 0) {
+      add("lecturers", [el("span", { text: hits })]);
+      // ‏אחרי "הוספת יום" המרצים חזרו: אותה קפיצה כמו דירוג שזה עתה ניתן. ציור
+      // ‏חוזר באמצע ממשיך אותה מאיפה שהייתה, כמו בעיגול הדירוג.
+      var pop = runtime.hitsPop;
+      var age = pop ? Date.now() - pop.at : Infinity;
+      if (age < 250) {
+        pills.lastChild.classList.add("is-pop");
+        pills.lastChild.style.animationDelay = -age + "ms";
+      }
+    }
     box.appendChild(pills);
 
     // ---- מה פחות טוב במערכת הזו: משפט אחד, בסדר העדיפויות ----
@@ -8674,7 +8719,10 @@
       });
     }
     // ‏המרצים המועדפים שלא נכנסו, בשמם ובסוג: לפי השם מחליטים אם לוותר.
-    if (missing.length) {
+    // ‏כשידוע למה (יום נוסף, או דירוג מת) הם נאמרים בשורה משלהם מעל, עם
+    // ‏"הוספת יום" — ולא כאן, כדי שלא ייאמרו פעמיים (2026-10-27).
+    var dayLine = missing.length ? dayLineFor(sch) : null;
+    if (missing.length && !dayLine) {
       items.push({
         key: "lecturer",
         text: Tf(missing.length === 1 ? "app.schedule.lost.lecturer" : "app.schedule.lost.lecturers", {
@@ -8705,6 +8753,8 @@
         Tf("app.schedule.topPenalty", { label: items[0].text }) +
         (items[0].title ? "\n" + items[0].title : "");
     }
+    appendDayUndo(box);
+    if (dayLine) appendDayLine(box, dayLine, missing);
     if (!items.length) {
       appendFullGroupsLine(box, sch);
       return;
@@ -8729,6 +8779,213 @@
     line.appendChild(document.createTextNode(parts[1] || ""));
     box.appendChild(line);
     appendFullGroupsLine(box, sch);
+  }
+
+  /* --- "הוספת יום": המרצה שדירגת עולה יום (2026-10-27) ------------------- */
+
+  /**
+   * ‏למה מרצה בדירוג 1 חסר במערכת הזו, ומה עושים — או null כשלא ידוע.
+   *
+   * ‏‎first_choices_days‎ (‏N) הוא מספר הימים הקטן ביותר של מערכת שבה כל סוג
+   * מדורג מקבל את המרצה הראשון שלו. ביעד N המערכת הראשונה היא כזו, מכוח הסדר
+   * עצמו (ימים מעל היעד, ואז המרצים). לכן הכפתור מוצג רק כשהחלופה הזו בפחות
+   * ימים מ-N, וכשהיעד עוד מתחת ל-N — אחרת "להעלות ל-N" לא היה משנה דבר.
+   * הלחיצה נוחתת תמיד על הראשונה.
+   *
+   * ‏בלי N ודירוג שכל קבוצותיו מתות (דירוג ישן, אחרי שנוסף קורס או נחסם
+   * חלון): השורה בלי כפתור, "לא משאיר מערכת אפשרית". בלי N מכל סיבה אחרת —
+   * ‏null, והמרצים נשארים בשורת "מה פחות טוב" כמו קודם.
+   */
+  function dayLineFor(sch) {
+    var s = runtime.solve;
+    var misses = pickList(sch || {}, ["lecturer_misses"], null);
+    if (!s || !misses.length) return null;
+    var names = uniq(
+      misses.map(function (m) {
+        return txt(m.name);
+      })
+    );
+    var N = num(s.first_choices_days, null);
+    var days = num(sch.days_count, Array.isArray(sch.days) ? sch.days.length : 0);
+    var target = num(state.targetDays, null) === null ? 6 : state.targetDays;
+    if (N !== null && N > days && N > target && N <= 6) {
+      // ‏הסיבה נאמרת רק כשהשרת מצא שהיא נכונה על המרצים שחסרים כאן עצמם —
+      // ‏לא כשאפשר היה לקבל אותם בלי יום, בוויתור על מרצה אחר בדירוג 1.
+      return {
+        type: "day", N: N, n: N - days, names: names, old: state.targetDays,
+        reason: sch.first_choices_reason_day === true,
+      };
+    }
+    if (N === null && misses.every(missIsDead)) return { type: "dead" };
+    return null;
+  }
+
+  /** ‏כל הקבוצות של המרצה הזה, בסוג הזה, מתות בתשובה הנוכחית. */
+  function missIsDead(m) {
+    var course = courseDataByCode(m.code);
+    var groups = ((course && course.groups) || []).filter(function (g) {
+      return txt(g.kind) === txt(m.kind) && normLecturer(g.lecturer) === normLecturer(m.name);
+    });
+    return (
+      groups.length > 0 &&
+      groups.every(function (g) {
+        return viabilityOf(m.code, g.kind, g.group_id).ok === false;
+      })
+    );
+  }
+
+  /** ‏"א", "א וב", "א, ב וג". */
+  function joinNames(names) {
+    if (names.length < 2) return names.join("");
+    return names.slice(0, -1).join(", ") + T("app.schedule.dayLine.and") + names[names.length - 1];
+  }
+
+  /**
+   * ‏השורה מתחת לשבבי הנתונים: "בלי X (הרצאה) · צריך יום לימוד נוסף [הוספת יום] ⓘ",
+   * ‏ובלי הסיבה כשהיא אינה נכונה על X לבדו (``first_choices_reason_day``).
+   * ‏השמות ב-‎--ink‎, הסיבה ב-‎--sec‎, בלי מסגרת ובלי רקע. הכפתור וה-ⓘ לא
+   * ‏נפרדים זה מזה בשבירת שורה; ההסבר נפתח במקום, מתחת לשורה.
+   */
+  function appendDayLine(box, info, missing) {
+    var line = el("p", { class: "fit-day" }, [
+      el("span", {
+        class: "fit-day-names",
+        text: Tf("app.schedule.dayLine.without", { names: missing.join(", ") }),
+      }),
+    ]);
+    var why =
+      info.type === "dead"
+        ? T("app.lecturers.row.deadLine")
+        : !info.reason
+        ? ""
+        : info.n === 1
+        ? T("app.schedule.dayLine.needsDay")
+        : Tf("app.schedule.dayLine.needsDays", { n: info.n });
+    if (why) line.appendChild(el("span", { class: "fit-day-why", text: " · " + why }));
+    box.appendChild(line);
+    if (info.type !== "day") return;
+
+    var label = Tf("app.schedule.dayLine.label", { N: info.N, names: joinNames(info.names) });
+    var open = runtime.dayWhyOpen === true;
+    var wrap = el("span", { class: "day-add-wrap" });
+    var button = wrap.appendChild(
+      el("button", {
+        class: "day-add",
+        attrs: { type: "button", "aria-label": label, title: label },
+        data: { fk: "day-add" },
+        text: info.n === 1 ? T("app.schedule.dayLine.add") : Tf("app.schedule.dayLine.addMany", { n: info.n }),
+        on: {
+          click: function () {
+            takeDay(info);
+          },
+        },
+      })
+    );
+    // ‏הפעם הראשונה בעמוד שבה מופיע הכפתור: אותה קפיצה כמו דירוג שזה עתה ניתן,
+    // ‏פעם אחת ולא בכל ציור. ציור חוזר בתוך 250ms ממשיך אותה מאיפה שהייתה.
+    if (!runtime.dayAddSeen) runtime.dayAddSeen = Date.now();
+    var age = Date.now() - runtime.dayAddSeen;
+    if (age < 250) {
+      button.classList.add("is-pop");
+      button.style.animationDelay = -age + "ms";
+    }
+    wrap.appendChild(
+      el("button", {
+        class: "info-btn day-why-btn",
+        attrs: {
+          type: "button",
+          "aria-expanded": open ? "true" : "false",
+          "aria-controls": "day-why",
+          "aria-label": T("app.schedule.dayLine.infoLabel"),
+          title: T("app.schedule.dayLine.infoLabel"),
+        },
+        data: { fk: "day-why" },
+        text: "ⓘ",
+        on: {
+          click: function () {
+            runtime.dayWhyOpen = !open;
+            render();
+          },
+        },
+      })
+    );
+    line.appendChild(wrap);
+
+    // ‏הכלל עצמו, ולא המקרה: הסיבה כבר בשורה, וזה נכון בכל מקרה.
+    var panel = el("div", { class: "att-info day-why", attrs: { id: "day-why" } }, [
+      el("p", { text: T("app.schedule.dayLine.why") }),
+    ]);
+    panel.hidden = !open;
+    box.appendChild(panel);
+  }
+
+  /**
+   * ‏הלחיצה: יעד הימים עולה ל-N והמערכת הראשונה נבחרת — אותה קריאה כמו
+   * ‏כפתורי הימים. מה שהיה על הרשת נמדד עכשיו, כדי שכשהתשובה תגיע הבלוקים
+   * ‏יזוזו אל מקומם החדש (renderScheduleStep).
+   */
+  function takeDay(info) {
+    var sch = activeSchedule();
+    runtime.dayWhyOpen = false;
+    armDayMotion(sch ? num(sch.lecturer_hits, 0) : 0);
+    runtime.dayUndo = { old: info.old, to: info.N, key: null };
+    setState({ targetDays: info.N, activeSchedule: 0 });
+    runtime.dayUndo.key = dayUndoKey();
+    render();
+  }
+
+  function armDayMotion(hits) {
+    runtime.dayMotion = {
+      from: runtime.solve,
+      before: isListMode() ? null : blockRects(ui.grid),
+      hits: hits,
+    };
+  }
+
+  /** ‏מה שנשלח לשרת. שינוי בכל אחד מהם הוא "שינוי הגדרות" והביטול נעלם. */
+  function dayUndoKey() {
+    return JSON.stringify(buildSolveBody());
+  }
+
+  function dayUndoValid() {
+    var u = runtime.dayUndo;
+    return (
+      !!u &&
+      u.key !== null &&
+      state.targetDays === u.to &&
+      num(state.activeSchedule, 0) === 0 &&
+      dayUndoKey() === u.key
+    );
+  }
+
+  /**
+   * ‏"חזרה ל-{old} ימים" — במקום שבו היה השבב, רק עד השינוי הבא. ביטול שמחזיר
+   * ‏מצב שכבר אינו קיים גרוע מהיעדר ביטול (כמו relaxUndoValid).
+   */
+  function appendDayUndo(box) {
+    if (!dayUndoValid()) {
+      if (runtime.dayUndo && runtime.dayUndo.key !== null) runtime.dayUndo = null;
+      return;
+    }
+    var u = runtime.dayUndo;
+    box.appendChild(
+      el("p", { class: "fit-undo" }, [
+        el("button", {
+          class: "link-btn",
+          attrs: { type: "button" },
+          data: { fk: "day-undo" },
+          text: Tf("app.schedule.dayLine.undo", { old: u.old }),
+          on: {
+            click: function () {
+              var sch = activeSchedule();
+              runtime.dayUndo = null;
+              armDayMotion(sch ? num(sch.lecturer_hits, 0) : 0);
+              setState({ targetDays: u.old, activeSchedule: 0 });
+            },
+          },
+        }),
+      ])
+    );
   }
 
   /**
