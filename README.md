@@ -72,7 +72,8 @@ date comes from".
 Hard constraints — these reject a combination outright:
 
 - **No overlaps**, as a half-open interval `[start, end)`: a class ending at
-  10:15 and one starting at 10:15 do not collide.
+  10:15 and one starting at 10:15 do not collide. The one exception: a lesson
+  you marked as not requiring attendance may overlap another lesson.
 - **Linked groups.** The yedion marks "groups related to this course" — a given
   lecture requires a given tutorial. Ignoring it would produce timetables you
   cannot actually register for.
@@ -84,25 +85,45 @@ Hard constraints — these reject a combination outright:
 - **Your availability** — earliest start, latest finish, blocked windows, and an
   optional "no Friday".
 
-Soft preferences only move the score:
+Soft preferences decide the order of the timetables that remain. They are
+compared **by priority, not summed**: each step settles the order completely,
+and the next step only breaks ties left by the one before it.
 
-```
-score = 10.0 × preferred_lecturers      (rank 0 = 1.0, rank i = 1/(i+1), unranked = 0)
-      -  8.0 × max(0, campus_days − target_days)
-      -  4.0 × billable_gap_hours       (the fixed 12:20–12:50 lunch window is free)
-      -  1.0 × total_day_span_hours
-      -  4.0 × hours_running_past_14:00
-      -  6.0 × deliberate_overlaps      (only for components you marked as no-attendance)
-```
+1. **Days over the target.** Fewer is better. Every day with a lesson counts,
+   including a day whose lessons are all marked as not requiring attendance.
+2. **Lecturer ranks.** Only components you ranked lecturers for count. The
+   timetable with more components at rank 1 wins; on a tie, the one where more
+   of those are lectures (lecture or שו"ת). Then the same for rank 2, rank 3,
+   and so on. A lecturer not on your list counts below your last rank.
+3. **Intentional overlaps.** Fewer is better. An overlap can only involve a
+   lesson you marked as not requiring attendance.
+4. **Gaps, late finish and day length** — the only step that adds up points:
 
-Lecturer preference is weighted by component: a lecture counts full, a tutorial
-or lab 0.4 — you can compromise on a tutor to shorten a day, not on who gives the
-lecture. Every day with a lesson counts toward the day target, including a day
-whose lessons are all marked as not requiring attendance. The day target is
-**soft**: if four days is impossible you get the best five-day timetable with a
-penalty, not a failure. If nothing is
-feasible, the solver raises with a concrete explanation — which course, which
-group, which day and hour collide — plus suggested relaxations.
+   ```
+   score = − 4 × gap_hours           (the fixed 12:20–12:50 lunch window is free)
+           − 4 × hours_past_14:00    (each day, from 14:00 to its last class)
+           − 1 × day_span_hours      (each day, first class to last, summed)
+   ```
+
+   Higher is better. Only the part of a gap inside the lunch window is free; a
+   class that runs straight through it earns nothing. The breakdown also shows
+   −6 per intentional overlap, but by this step every timetable being compared
+   has the same number of them, so it never changes the order.
+5. **Tie-breakers:** fewer campus days, fewer total gap minutes, shorter total
+   day span, then a fixed key built from the group ids, so the order is
+   identical on every run.
+
+So a lecturer at rank 1 is never traded for gap hours. Say the target is four
+days. Timetable A has four days, your rank-1 lecturer and three hours of gaps;
+B has four days, your rank-2 lecturer and no gaps. A wins at step 2 and the
+gaps never come into it. A five-day timetable with every lecturer at rank 1
+and no gaps loses to both at step 1.
+
+The day target is **soft**: if four days is impossible you get the best
+timetables among those that use the fewest possible days, with your lecturer
+ranks honoured inside that set, not a failure. If nothing is feasible, the
+solver raises with a concrete explanation — which course, which group, which
+day and hour collide — plus suggested relaxations.
 
 ## Quick start
 
