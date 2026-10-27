@@ -2517,6 +2517,118 @@ def _count_and_min_days(
     return count, min_days, False, False
 
 
+def _first_choice_groups(
+    courses: list[models.Course],
+    prefs: scheduler_mod.Preferences,
+) -> dict[str, dict[str, set[str]]] | None:
+    """‏``{קוד: {סוג: מזהי הקבוצות של המרצה הראשון בדירוג}}`` — ה-``fixed`` של N.
+
+    נספרים רק סוגים שיש להם קבוצה בקורסים — בדיוק מה ש-``lecturer_total``
+    סופר. ‏``None`` כשלמרצה הראשון אין אף קבוצה בסוג שדורג בו: אז אין מערכת
+    שבה הוא מלמד. ‏``prefs.preferred_lecturers`` כבר עבר ``rankings_by_kind``.
+    """
+    fixed: dict[str, dict[str, set[str]]] = {}
+    by_code = {c.code: c for c in courses}
+    for code, by_kind in (prefs.preferred_lecturers or {}).items():
+        course = by_code.get(code)
+        if course is None or not isinstance(by_kind, dict):
+            continue
+        for kind, names in by_kind.items():
+            groups = course.groups_of(kind)
+            if not names or not groups:
+                continue  # סוג שאין לו קבוצה אינו נספר, גם לא ב-lecturer_total
+            first = scheduler_mod._norm_name(names[0])  # noqa: SLF001
+            ids = {str(g.group_id) for g in groups if scheduler_mod._norm_name(g.lecturer) == first}  # noqa: SLF001
+            if not ids:
+                return None
+            fixed.setdefault(code, {})[kind] = ids
+    return fixed
+
+
+def _forced_min_days(
+    courses: list[models.Course],
+    prefs: scheduler_mod.Preferences,
+    fixed: dict[str, dict[str, set[str]]],
+) -> int | None:
+    """‏``min_days(fixed=)`` בתוך מגבלת הזמן. ``None`` = אין מערכת, או שלא נמדד."""
+    if not fixed or scheduler_mod.time_budget_expired():
+        return None
+    try:
+        return scheduler_mod.min_days(
+            courses, prefs, limit=_node_budget(courses, prefs), fixed=fixed
+        )
+    except scheduler_mod.SearchExhausted:
+        return None
+
+
+def _first_choices_days(
+    courses: list[models.Course],
+    prefs: scheduler_mod.Preferences,
+) -> int | None:
+    """הימים המעטים ביותר של מערכת שבה **כל** סוג מדורג מלמד המרצה הראשון שלו.
+
+    ‏זה ה-N של "הוספת יום" (2026-10-27): ביעד N, מערכות כאלה הן 0 ימים מעל
+    היעד, ואין מערכת עם יותר סוגים בדירוג 1 — ולכן הראשונה בסדר היא אחת
+    מהן, מכוח הסדר עצמו (``scheduler._sort_key``: ימים מעל היעד, ואז
+    המרצים).
+
+    ``None``: אין דירוג; למרצה הראשון אין קבוצה בסוג שדורג בו; אין מערכת
+    כזו (דירוג ישן שנשאר בלי מערכת); או שהמכסה או מגבלת הזמן נגמרו.
+    """
+    fixed = _first_choice_groups(courses, prefs)
+    return _forced_min_days(courses, prefs, fixed) if fixed else None
+
+
+def _first_choices_reasons(
+    courses: list[models.Course],
+    prefs: scheduler_mod.Preferences,
+    found: list,
+    n_days: int | None,
+    target_days: int,
+) -> list[bool | None]:
+    """לכל מערכת: האם "צריך יום לימוד נוסף" נכון **על המרצים שחסרים בה עצמם**.
+
+    ‏N מבטיח את כל המרצים בדירוג 1 יחד. אבל מרצה שחסר יכול לפעמים להיכנס בלי
+    יום נוסף, אם מוותרים על מרצה אחר בדירוג 1 (נמדד 2026-10-27, ~5% מהשורות):
+    אז הסיבה אינה נאמרת. ‏``True`` כשכל מרצה שחסר, לבדו, צריך יותר ימים ממה
+    שיש במערכת הזו — וכולם יחד צריכים N, כך ש"עוד n ימי לימוד" מדויק.
+    ‏``False`` כשלא. ‏``None`` כשהשורה לא תוצג (אין N, אין החטאה, או ש-N אינו
+    מעל ימי המערכת והיעד), או כשמגבלת הזמן נגמרה — ואז אין סיבה.
+
+    חיפוש אחד לכל מרצה שחסר ולכל צירוף של חסרים, משותף לכל המערכות בבקשה.
+    """
+    out: list[bool | None] = [None] * len(found)
+    if n_days is None:
+        return out
+    fixed_all = _first_choice_groups(courses, prefs) or {}
+    cache: dict[frozenset, int | None] = {}
+
+    def need(keys: frozenset) -> int | None:
+        if keys not in cache:
+            fixed = {}
+            for code, kind in keys:
+                ids = fixed_all.get(code, {}).get(kind)
+                if ids is None:
+                    cache[keys] = None
+                    return None
+                fixed.setdefault(code, {})[kind] = ids
+            cache[keys] = _forced_min_days(courses, prefs, fixed)
+        return cache[keys]
+
+    for i, sched in enumerate(found):
+        misses = scheduler_mod.lecturer_misses_of(sched)
+        days = sched.days_count
+        if not misses or not (n_days > days and n_days > target_days):
+            continue
+        keys = [(m["code"], m["kind"]) for m in misses]
+        alone = [need(frozenset([k])) for k in keys]
+        together = need(frozenset(keys))
+        if any(d is None for d in alone) or together is None:
+            continue  # לא נמדד (זמן) — בלי סיבה
+        out[i] = all(d > days for d in alone) and together >= n_days
+    return out
+
+
 def _has_solution(
     courses: list[models.Course],
     prefs: scheduler_mod.Preferences,
@@ -5124,6 +5236,8 @@ def _solve_request():
         "viability": {},
         "feasible_count": 0,
         "min_days": None,
+        # ‏N של "הוספת יום" (שלב 5א למטה).
+        "first_choices_days": None,
         "target_reachable": False,
         "reasons": [],
         "suggestions": [],
@@ -5245,6 +5359,14 @@ def _solve_request():
         # הספירה נקטעה לפני שמצאה את מה ש-solve מצא אחריה.
         base_common["feasible_count"] = max(feasible_count, len(found))
 
+    # ── 5א. "הוספת יום": כמה ימים צריך כדי שכל מרצה בדירוג 1 ייכנס, ולכל
+    #       מערכת — האם "צריך יום לימוד נוסף" נכון על המרצים שחסרים בה. פעם
+    #       אחת לבקשה, בתוך אותה מגבלת זמן; ‏null כשאין, או כשהזמן נגמר. ──
+    base_common["first_choices_days"] = _first_choices_days(built, prefs) if found else None
+    reasons_day = _first_choices_reasons(
+        built, prefs, found, base_common["first_choices_days"], target_days
+    )
+
     # ── 6. viability — לכל קבוצה, האם היא משאירה פתרון ──
     #      **אותן ``prefs`` בדיוק** שהפתרון עצמו רץ איתן. אחרת קבוצה שאפשרית
     #      רק בזכות חפיפה מכוונת הייתה מסומנת כמבוי סתום ולהפך — כלומר
@@ -5301,6 +5423,9 @@ def _solve_request():
         return _ok(base_common)
 
     base_common["schedules"] = [schedule_to_json(s, built, prefs) for s in found]
+    # ‏"· צריך יום לימוד נוסף" רק כשזה נכון על המרצים שחסרים במערכת הזו (5א).
+    for sched_json, reason in zip(base_common["schedules"], reasons_day):
+        sched_json["first_choices_reason_day"] = reason
     base_common["top_n"] = top_n
     if not target_reachable and min_days is not None:
         base_common["suggestions"] = [
