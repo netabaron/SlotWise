@@ -656,7 +656,7 @@ Create a service with these settings:
 | Authentication | **Allow unauthenticated** (public access) | It is a public site. |
 | Billing | **Request-based** | CPU is billed only while a request is being handled. |
 | Min instances | `0` | Scales to zero when idle — see *Cold start* below. |
-| Max instances | `10` | A ceiling on cost as much as on load. Raised from `2` on 2026-10-24 after load testing. **Set in two places** — see *Max instances lives in two places* below. `10 × 2` vCPU is exactly the project's CPU quota in this region. |
+| Max instances | `20` | A ceiling on cost as much as on load. Raised from `2` to `10` on 2026-10-24 after load testing, and to `20` on 2026-10-28 after the quota increase. **Set in two places** — see *Max instances lives in two places* below. `20 × 2` vCPU is exactly the project's CPU quota in this region. |
 | CPU / memory | `2` vCPU, `1 GiB` per instance | Raised from `1` / `512 MiB` on 2026-10-24. |
 | Maximum concurrent requests per instance | `8` | Lowered from the default `80` on 2026-10-24 — two per sync worker at `WEB_CONCURRENCY=4`. See *Load testing → Results*. |
 | Startup CPU boost | On | Shortens the cold start below. |
@@ -674,14 +674,14 @@ tab, `run.googleapis.com/maxScale`) and the revision template
 (`autoscaling.knative.dev/maxScale` under `spec.template.metadata.annotations`
 in the *YAML* tab). On 2026-10-24 the service setting was raised to `10` while
 the revision template still said `3`, and every load test was silently capped
-at 3 instances. Both are now `10`. **When changing max instances, change both
+at 3 instances. Both are now `20` (raised from `10` on 2026-10-28, both checked
+in the YAML). **When changing max instances, change both
 and check the YAML.**
 
 **CPU quota.** The project quota *Total CPU allocation, per project per region*
-in `europe-west1` is 20,000 mCPU — exactly 10 instances × 2 vCPU, so max
-instances cannot usefully go above `10` at this CPU size. An increase to
-40,000 mCPU was requested on 2026-10-24 and is pending. Once approved, the plan
-is max instances `20` (in both places) and a re-run of the 200-user test.
+in `europe-west1` is 40,000 mCPU since 2026-10-28 (20,000 mCPU until then) —
+exactly 20 instances × 2 vCPU, so max instances cannot usefully go above `20` at
+this CPU size without another quota request.
 
 ### 2. Environment variables
 
@@ -1070,12 +1070,12 @@ problem.
 
 Raising max instances also raises the cost ceiling; see section 9.
 
-#### Results, 2026-10-24
+#### Results, 2026-10-24 and 2026-10-28
 
 All runs: `loadtest.yml`, `spawn_rate` 5, `5m`, against
 `https://slotwise.co.il`; thresholds `/api/solve` p95 < 3000 ms, errors < 1%.
 "Settings" lists what changed from the row above. Run IDs: 40103717179
-(attempts 1–4), 40117576158 (attempts 1–2), 40119843991.
+(attempts 1–4), 40117576158 (attempts 1–2), 40119843991, 40711968448.
 
 | Run | Settings | Users | Errors | `/api/solve` p95 | Requests |
 | --- | --- | --- | --- | --- | --- |
@@ -1086,6 +1086,7 @@ All runs: `loadtest.yml`, `spawn_rate` 5, `5m`, against
 | 5 | same | 100 | 28.5% | 11.0 s | 8,530 |
 | 6 | revision maxScale 3 → 10 | 100 | 0.00% | 3.5 s | 15,514 |
 | 7 | same | 200 | 0.61% | 6.6 s | 21,485 |
+| 8 | quota 40,000 mCPU, max 20 (both places), rate limit off | 200 | 0.00% | 4.3 s | 27,476 |
 
 - **The 429s were Cloud Run's, not the app's**: *"The request was aborted
   because there was no available instance"* in the logs.
@@ -1093,12 +1094,16 @@ All runs: `loadtest.yml`, `spawn_rate` 5, `5m`, against
   (see *Max instances lives in two places* in section 1). Run 6 is the same
   configuration as run 5 with that cap lifted.
 - **In run 7 the instance count sat at 10**, i.e. at the CPU quota.
+- **In run 8 the instance count sat at 20**, the new max and the new CPU quota.
+- **Run 8's tail is the search deadline**: median `/api/solve` 0.33 s, but the
+  98th and 99th percentiles are 20 s, about 2% of solves running to
+  `SOLVE_DEADLINE_S`. Not investigated yet.
 
 **Decision: launch with these settings.** 100 users passes on errors with
 p95 slightly over target (3.5 s; 50 users was similar at 3.4 s); 200 users
-degrades (p95 6.6 s) but stays under 1% errors. The quota increase to
-40,000 mCPU is pending; after it, max instances `20` in both places and
-re-run the 200-user test.
+degrades (p95 6.6 s) but stays under 1% errors. On 2026-10-28 the quota was
+raised to 40,000 mCPU and max instances to `20`: 200 users then ran with no
+errors and p95 4.3 s, still over the 3 s target. **Decision: keep max `20`.**
 
 ---
 
