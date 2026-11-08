@@ -10,6 +10,35 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
+### Two browser tests fail locally only: the local `data/db` leaks past the frozen catalog — **noted 2026-11-09**
+**Where:** `tests/test_lecturers_step.py::test_dead_row_is_dimmed_without_opacity[light|dark]`
+and `tests/test_phase9c_a11y_browser.py::test_the_step_marks_regions_and_headings`.
+Mechanism in `tests/conftest.py` (freezes `SLOTWISE_CATALOG_DIR` only) and
+`Store._load_sections_db(prefer_newer_catalog=True)`.
+**Owner:** the next change allowed to touch `tests/conftest.py`.
+**What:** `conftest.py` points the shipped catalog at the frozen
+`tests/fixtures/catalog/` (built `2026-09-09T22:35:44Z`), but the browser tests'
+`create_app()` still reads the default `SLOTWISE_DB_ROOT`, i.e. the gitignored
+`data/db/`. On the machine that found this, `data/db/sections.json` holds 572
+courses — 565 fetched on 2026-09-29, 6 on 2026-09-30, 1 on 2026-09-06 — and
+**571 of them are newer than the frozen catalog**, so the newest-first merge (closed entry *Local `sections.json` shadows
+the shipped catalog*, below) serves the local scrape instead of the fixture. The
+local copy of `11069` has a third group, `271060310/3`, that the fixture lacks:
+with the test's blocked window two rows come out dead, and
+`locator(".lect-course.is-open tbody tr.is-dead").click()` fails Playwright's
+strict mode on two matches. The a11y test gets an empty `#days-relax-title` from
+the same shifted data.
+**Measured 2026-11-09:** all three fail identically on a clean `main` (`19541cb`),
+and all three pass with `SLOTWISE_DB_ROOT` set to an empty directory, which is
+what CI has. Nothing in the UI code is involved.
+**Workaround meanwhile:** run the suite locally with `SLOTWISE_DB_ROOT` pointing
+at an empty directory.
+**What would fix it:** `conftest.py` also pinning `SLOTWISE_DB_ROOT` to an empty
+temporary directory, so a local test run sees exactly what CI sees.
+**Why not now:** `tests/conftest.py` sits under the rule that existing test files
+are not modified (`docs/SPEC_WEB.md:214`), and the session that found it was
+doing UI work.
+
 ### "0 מתוך 1 מרצים מועדפים" reads wrong at a total of 1 — **deferred 2026-10-27**
 **Where:** the lecturers pill in the results (`app.schedule.lecturersHits`,
 `buildStats()` in `app.js`).
