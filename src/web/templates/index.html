@@ -538,8 +538,8 @@
       <!-- ‏כל ההגדרות שאינן יעד הימים. סגור כברירת מחדל; כשהוא סגור,
            ‏#advanced-values אומר בשורה אחת מה שונה מברירת המחדל (שישי,
            שעות, חלונות חסומים), כדי שהגדרה פעילה לא תסתתר מאחורי קיפול.
-           ‏"לאפשר חפיפות" אינה כאן: אין לה פקד — ‏allowSoftConflicts תמיד
-           ‏true, וחובת הנוכחות בשלב 4 היא הפקד היחיד (‏app.js, defaultState). -->
+           ‏"לאפשר חפיפות" אינה כאן: היא שאלה אחת מתחת לתיבת החפיפות
+           ‏בתוצאות, ‎#overlap-ask‎ (‏app.js, state.overlaps). -->
       <details class="advanced" id="advanced-prefs">
         <summary class="advanced-summary">{{ S.ui.fields.advancedSummary }}<span class="advanced-values" id="advanced-values"></span></summary>
         <div class="advanced-body">
@@ -678,6 +678,23 @@
         <p class="empty-sub" id="soft-conflicts-sub"></p>
         <ul class="reasons" id="soft-conflicts-list"></ul>
       </section>
+
+      <!-- ‏"האם לאפשר חפיפה?" — הפקד היחיד לשאלה הזו (‏app.js, state.overlaps).
+           מוצג כשהמערכת שנבנתה חופפת, או כשהשאלה כבר נענתה — כדי שתמיד אפשר
+           יהיה לשנות. בשורה ולא בחלון: חלון שחוסם את "בנה מערכות" שובר את
+           הגלילה המיידית אל התוצאה. שני הכפתורים משניים עד שעונים; הנבחר
+           הופך ראשי, עם ✓ ו-‎aria-pressed="true"‎ (‏renderOverlapAsk). -->
+      <div class="overlap-ask" id="overlap-ask" role="group" aria-labelledby="overlap-ask-title"
+           aria-describedby="overlap-ask-sub" hidden>
+        <h3 class="overlap-ask-title" id="overlap-ask-title">{{ S.ui.overlaps.title }}</h3>
+        <p class="overlap-ask-sub" id="overlap-ask-sub">{{ S.ui.overlaps.explain }}</p>
+        <div class="overlap-ask-actions">
+          <button type="button" class="btn overlap-choice" id="btn-overlaps-allow" data-choice="allow"
+                  aria-pressed="false"><span class="overlap-check" aria-hidden="true" hidden>{{ S.ui.overlaps.chosenMark }}</span>{{ S.ui.overlaps.allow }}</button>
+          <button type="button" class="btn overlap-choice" id="btn-overlaps-none" data-choice="none"
+                  aria-pressed="false"><span class="overlap-check" aria-hidden="true" hidden>{{ S.ui.overlaps.chosenMark }}</span>{{ S.ui.overlaps.none }}</button>
+        </div>
+      </div>
 
       <!-- ‏שבבי הנתונים של המערכת שנבחרה, ומתחתם שורה אחת: מה הוריד
            מההתאמה. ‏DESIGN.md, "Results page", פריט 4. -->

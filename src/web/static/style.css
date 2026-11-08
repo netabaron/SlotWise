@@ -1407,7 +1407,6 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
   .prefs-hours .field-check { align-self: start; padding-block-end: 0; }
 }
 
-
 /* ‏"הגדרות נוספות" סגור: שורה אחת עם מה שאינו ברירת מחדל. פתוח: הפקדים
    עצמם אומרים את זה, והשורה נעלמת. */
 .advanced-values {
@@ -2001,6 +2000,65 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .att-switch input:checked + .att-switch-track { background: var(--ink); }
 .att-switch input:checked + .att-switch-track::after { inset-inline-start: 16px; }
 .att-switch input:focus-visible + .att-switch-track { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ‏"בלי חפיפות בכלל" דלוק: מתגי חובת הנוכחות מושבתים ונראים כך. צבע ולא
+   ‏opacity (test_no_opacity_on_text): הטקסט ב-‎--muted‎, המסילה ב-‎--bd‎ והכפתור
+   שלה ב-‎--sec‎ — אחרת כפתור ב-‎--sf‎ על ‎--bd‎ נעלם במצב כהה. */
+.att-switch.is-disabled,
+.att-switch.is-disabled input { color: var(--muted); cursor: not-allowed; }
+.att-switch.is-disabled .att-switch-track,
+.att-switch.is-disabled input:checked + .att-switch-track { background: var(--bd); }
+.att-switch.is-disabled .att-switch-track::after { background: var(--sec); }
+
+/* ---- "האם לאפשר חפיפה?" מתחת לתיבת החפיפות (או במקומה) ----
+   ‏מסגרת מקווקות ולא צהוב: הצהוב שייך לתיבת החפיפות עצמה. צבעים מאסימונים
+   בלבד, ולכן מצב כהה עובד בלי ערך נוסף. */
+.overlap-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 2px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+.overlap-ask[hidden] { display: none; }
+.overlap-ask-title { margin: 0; font-size: 15px; font-weight: 700; color: var(--ink); }
+.overlap-ask-sub { margin: 0; font-size: 13px; color: var(--muted); }
+/* ‏ברחב: ברוחב התוכן, זה לצד זה, צמודים להתחלה (ימין) — לא מתוחים. */
+.overlap-ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-block-start: 4px;
+}
+.overlap-check { margin-inline-end: 6px; }
+/* ‏בטלפון: שניהם באותה שורה, ברוחב שווה; טקסט ארוך נשבר בתוך הכפתור. */
+@media (max-width: 640px) {
+  .overlap-ask-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overlap-choice { inline-size: 100%; min-inline-size: 0; }
+}
+/* ‏בפריסה הרחבה (שתי עמודות) השאלה יושבת מעל הרשת, בעמודה בגובה קבוע: כל
+   פיקסל שלה נלקח מהרשת. לכן שורה אחת — הכותרת וההסבר זה לצד זה בהתחלה
+   (ימין), הכפתורים בסוף (שמאל), ריפוד אנכי קטן וכפתורים נמוכים יותר.
+   כשהשורה אינה נכנסת היא נשברת; ב-1440px היא נכנסת. */
+@media screen and (min-width: 1200px) {
+  .overlap-ask {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 6px;
+    padding-block: 8px;
+  }
+  .overlap-ask-actions {
+    margin-block-start: 0;
+    margin-inline-start: auto;
+    flex-wrap: nowrap;
+  }
+  .overlap-choice { padding-block: 6px; white-space: nowrap; }
+}
 
 .info-btn {
   font: inherit;
@@ -3268,6 +3326,7 @@ html.has-modal { overflow: hidden; }
 }
 
 @media print { .days-relax { display: none !important; } }
+@media print { .overlap-ask { display: none !important; } }
 /* ‏החלון "מועדי השיעורים עוד לא פורסמו" שייך למסך; הנייר מקבל את המערכת.
    ‏אחרי גוש ההדפסה הראשי ולא לידו: test_theme_tokens קורא את ‎@media print‎
    ‏הראשון בגיליון כגוש ההדפסה. */

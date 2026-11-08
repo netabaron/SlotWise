@@ -688,9 +688,15 @@
       // {code: {kind: האם יש חובת נוכחות}} — מפתח חסר פירושו חובה, בדיוק כמו בשרת.
       attendance: {},
       // מתג כללי: לאפשר חפיפה כשלפחות צד אחד בלי חובת נוכחות. כבוי כברירת מחדל.
-      // תמיד true: סימון חובת הנוכחות הוא הפקד היחיד. אין עוד מתג נפרד
-      // שאפשר לשכוח להדליק, וזו בדיוק התקלה שדווחה.
+      // תמיד true: אין מתג נפרד "לאפשר חפיפות" שאפשר לשכוח להדליק, וזו
+      // בדיוק התקלה שדווחה. מי שלא רוצה חפיפות עונה ``overlaps: "none"``
+      // למטה, ו-buildSolveBody שולח false בלי לגעת בשדה הזה.
       allowSoftConflicts: true,
+      // ‏"האם לאפשר חפיפה?" — תשובה אחת לכל הקורסים. ‏null = טרם נענתה,
+      // ‏"allow" = כן (ומתגי חובת הנוכחות קובעים, כמו תמיד), ‏"none" = לא:
+      // ‏allow_soft_conflicts נשלח false, ומתגי חובת הנוכחות בשלב 4 מושבתים.
+      // הפקד היחיד הוא ‎#overlap-ask‎ מתחת לתיבת החפיפות (renderOverlapAsk).
+      overlaps: null,
       // המסלול שנבחר בשלב 1. ‏rec.pdf הוא פרק הנדסת תוכנה בלבד, ולכן רשימת
       // הקורסים של שלב 2 רלוונטית רק למי שלומד/ת אותו. לכל השאר — הקטלוג.
       program: "",
@@ -918,6 +924,7 @@
     if (!base.attendance || typeof base.attendance !== "object") base.attendance = {};
     if (!base.completed || typeof base.completed !== "object") base.completed = {};
     base.allowSoftConflicts = true;  // גם מצב ישן שנשמר ב-localStorage מיושר
+    if (base.overlaps !== "allow" && base.overlaps !== "none") base.overlaps = null;
     if (!Array.isArray(base.blocked)) base.blocked = [];
     base.targetDays =
       base.targetDays === null || base.targetDays === undefined
@@ -3087,6 +3094,11 @@
     browseCatalog(ui.search ? txt(ui.search.value) : "");
   }
 
+  /** ‏הסטודנט/ית בחרו "בלי חפיפות בכלל". */
+  function noOverlaps() {
+    return state.overlaps === "none";
+  }
+
   function buildSolveBody() {
     var body = {
       codes: state.codes.slice(),
@@ -3106,7 +3118,8 @@
       forbid_friday: state.forbidFriday === true,
       top_n: state.topN,
       // ‏SPEC_V2 §2. שולחים תמיד: false = ההתנהגות הישנה בדיוק, כל חפיפה נפסלת.
-      allow_soft_conflicts: state.allowSoftConflicts === true,
+      // ‏"בלי חפיפות בכלל" גובר על מתגי חובת הנוכחות: כל חפיפה נפסלת.
+      allow_soft_conflicts: noOverlaps() ? false : state.allowSoftConflicts === true,
     };
     var attendance = attendanceBody();
     // נשלח רק כשיש מה לומר. בשרת מפתח חסר = חובת נוכחות.
@@ -3541,6 +3554,10 @@
     ui.techDetails = byId("tech-details");
     ui.techFacts = byId("tech-facts");
     ui.attendanceOff = byId("attendance-off");
+    ui.overlapAsk = byId("overlap-ask");
+    ui.overlapChoices = ui.overlapAsk
+      ? Array.prototype.slice.call(ui.overlapAsk.querySelectorAll(".overlap-choice"))
+      : [];
 
     ui.appHeader = byId("app-header");
     ui.headerSpacer = byId("app-header-spacer");
@@ -3766,6 +3783,12 @@
         });
       });
     }
+
+    ui.overlapChoices.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        chooseOverlaps(btn.getAttribute("data-choice"));
+      });
+    });
 
     if (ui.btnClearRanking) {
       ui.btnClearRanking.addEventListener("click", function () {
@@ -7047,7 +7070,8 @@
   function renderAttendanceNote() {
     if (!ui.attendanceOff) return;
     var rows = [];
-    runtime.courses.forEach(function (course) {
+    // ‏"בלי חפיפות בכלל": שום רכיב אינו משובץ במקביל, ולכן אין מה למנות.
+    if (!noOverlaps()) runtime.courses.forEach(function (course) {
       optionalKindsOf(course).forEach(function (kind) {
         rows.push(
           Tf("app.lecturers.attendance.offRow", {
@@ -7358,8 +7382,11 @@
         },
       });
       input.checked = attendanceRequired(code, kind);
+      // ‏"בלי חפיפות בכלל" הופך את המתגים לחסרי משמעות — הם נשארים במצבם
+      // השמור (כדי שחזרה ל"החפיפות בסדר" תשחזר אותם) אבל מושבתים.
+      input.disabled = noOverlaps();
       row.appendChild(
-        el("label", { class: "att-switch" }, [
+        el("label", { class: "att-switch" + (input.disabled ? " is-disabled" : "") }, [
           input,
           el("span", { class: "att-switch-track", attrs: { "aria-hidden": "true" } }),
           el("span", { text: Tf("app.lecturers.attendance.label", { kind: kind }) }),
@@ -8361,6 +8388,7 @@
     // ומסומנת גם בתוך הרשת עצמה.
     var soft = sch ? softConflictInfo(sch) : null;
     renderSoftConflicts(soft);
+    renderOverlapAsk(soft);
 
     // ‏התשובה שאחרי "הוספת יום" (או אחרי הביטול שלו) הגיעה: הגלולה של המרצים
     // ‏קופצת כשהם חזרו, והרשת זזה למטה (dayBefore).
@@ -9350,6 +9378,39 @@
       lines: lines,
       minutes: num(sch.soft_conflict_minutes, minutes),
     };
+  }
+
+  /**
+   * ‏"האם לאפשר חפיפה?" — מוצג כשהמערכת המוצגת חופפת (אותו תנאי שבו תיבת
+   * החפיפות מוצגת), או כשהשאלה כבר נענתה: אחרי "לא" אין עוד חפיפה שתציג
+   * אותה, והתשובה חייבת להישאר ניתנת לשינוי. לפני תשובה שני הכפתורים
+   * משניים; אחריה הנבחר ראשי, עם ✓ ו-‎aria-pressed="true"‎.
+   */
+  function renderOverlapAsk(info) {
+    if (!ui.overlapAsk) return;
+    var overlapping = !!info && info.count > 0 && info.lines.length > 0;
+    var answered = state.overlaps === "allow" || state.overlaps === "none";
+    setHidden(ui.overlapAsk, !(overlapping || (answered && identityChosen())));
+    ui.overlapChoices.forEach(function (btn) {
+      var chosen = btn.getAttribute("data-choice") === state.overlaps;
+      btn.setAttribute("aria-pressed", chosen ? "true" : "false");
+      setClass(btn, "btn-primary", chosen);
+      var mark = btn.querySelector(".overlap-check");
+      if (mark) setHidden(mark, !chosen);
+    });
+  }
+
+  /**
+   * תשובה לשאלה. פתירה מחדש רק כשגוף הבקשה משתנה — כלומר כשעוברים אל
+   * "לא" או ממנו. "כן" מתוך "טרם נענתה" שולח בדיוק את מה שכבר נשלח.
+   */
+  function chooseOverlaps(value) {
+    if (value !== "allow" && value !== "none") return;
+    if (state.overlaps === value) return;
+    var resolve = (state.overlaps === "none") !== (value === "none");
+    var patch = { overlaps: value };
+    if (resolve) patch.activeSchedule = 0;
+    setState(patch, { solve: resolve });
   }
 
   /** הדיווח מעל הרשת. לעולם לא בפינה, ולעולם לא מקופל. */
