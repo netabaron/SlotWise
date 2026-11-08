@@ -1366,6 +1366,48 @@ input[type="time"] { direction: ltr; unicode-bidi: isolate; text-align: start; }
 
 .advanced-body { padding-block: 6px 12px; display: flex; flex-direction: column; gap: 10px; }
 
+/* ‏"לא להתחיל לפני" / "לא לסיים אחרי" ו"בלי יום שישי". בטלפון (Safari של
+   ‏iOS) השדות עלו זה על זה ועל תיבת הסימון; בכרומיום זה לא משתחזר, והחשד
+   הוא ש-‎input type=time‎ מעוצב טבעית מתעלם מ-‎inline-size‎ וגולש מהעמודה.
+   כדי לא להישען על החשד הזה לבדו: עד 640px הכול בטור — כל שדה ברוחב מלא
+   ובשורה משלו, ו"בלי יום שישי" מתחתיהם — כך ששום דבר אינו עומד ליד שום
+   דבר, ואין מה שיעלה על מה. ברחב שתי השעות זו לצד זו, ברשת של שתי עמודות
+   שוות (‎minmax(0, 1fr)‎, כדי שאף אחת לא תתרחב לפי התוכן). ההקשחה שעל
+   השדות עצמם חלה בכל רוחב. */
+.prefs-hours {
+  display: grid;
+  grid-template-columns: minmax(0, 20rem) auto;
+  gap: var(--gap);
+  align-items: end;
+  justify-content: start;
+}
+.prefs-times {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap);
+  min-inline-size: 0;
+}
+.prefs-hours .field-check { align-self: end; }
+.prefs-times input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  inline-size: 100%;
+  min-inline-size: 0;
+  /* ‏ריק, ‏input type=time ב-iOS מתכווץ לגובה אפס. ‏2.6rem = הגובה של ‎.input‎
+     ‏(41px) בכרומיום, כמו ה-select שבשלב 1. */
+  min-block-size: 2.6rem;
+  box-sizing: border-box;
+}
+/* ‏ב-iOS הערך יושב בתוך הפסאודו-אלמנט הזה, ממורכז כברירת מחדל. */
+.prefs-times input[type="time"]::-webkit-date-and-time-value { text-align: start; }
+
+@media (max-width: 640px) {
+  .prefs-hours,
+  .prefs-times { grid-template-columns: minmax(0, 1fr); }
+  .prefs-hours .field-check { align-self: start; padding-block-end: 0; }
+}
+
+
 /* ‏"הגדרות נוספות" סגור: שורה אחת עם מה שאינו ברירת מחדל. פתוח: הפקדים
    עצמם אומרים את זה, והשורה נעלמת. */
 .advanced-values {

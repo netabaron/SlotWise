@@ -543,14 +543,19 @@
       <details class="advanced" id="advanced-prefs">
         <summary class="advanced-summary">{{ S.ui.fields.advancedSummary }}<span class="advanced-values" id="advanced-values"></span></summary>
         <div class="advanced-body">
-          <div class="field-row">
-            <div class="field">
-              <label class="label" for="input-earliest">{{ S.ui.fields.earliest }}</label>
-              <input type="time" class="input" id="input-earliest" step="900">
-            </div>
-            <div class="field">
-              <label class="label" for="input-latest">{{ S.ui.fields.latest }}</label>
-              <input type="time" class="input" id="input-latest" step="900">
+          <!-- ‏עד 640px הכול בטור: כל שעה ברוחב מלא ובשורה משלה, ו"בלי יום
+               שישי" מתחתיהן — בטלפון שום פקד אינו עומד ליד אחר, ולכן אין מה
+               שיעלה על מה. ברחב שתי השעות זו לצד זו. ‏style.css, ‎.prefs-hours‎. -->
+          <div class="prefs-hours">
+            <div class="prefs-times">
+              <div class="field">
+                <label class="label" for="input-earliest">{{ S.ui.fields.earliest }}</label>
+                <input type="time" class="input" id="input-earliest" step="900">
+              </div>
+              <div class="field">
+                <label class="label" for="input-latest">{{ S.ui.fields.latest }}</label>
+                <input type="time" class="input" id="input-latest" step="900">
+              </div>
             </div>
             <div class="field field-check">
               <input type="checkbox" id="chk-forbid-friday">
