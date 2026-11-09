@@ -1641,10 +1641,17 @@ def _curriculum_notes(program: Any = None, intake: Any = None) -> list[str]:
 
 
 def _profile() -> dict:
-    """‏data/profile.json — התשובות האמיתיות של הסטודנט/ית. חסר = ``{}``."""
+    """‏data/profile.json — התשובות האמיתיות של הסטודנט/ית. חסר = ``{}``.
+
+    ‏במצב ‏"hosted" תמיד ``{}``, בלי לקרוא את הקובץ. הוא הבחירה של מי
+    שמריץ/ה את השרת המקומי, ו-‏/api/bootstrap מחזיר אותו לכל מבקר/ת. עד
+    ‏2026-11-09 רק ‏.dockerignore ו-‏.gitignore הרחיקו אותו מהאתר הציבורי.
+    """
     from flask import current_app
 
     cache = current_app.extensions.setdefault("slotwise", {})
+    if "profile" not in cache and _config().get("mode") == "hosted":
+        cache["profile"] = {}
     if "profile" not in cache:
         path = Path(_config()["profile_path"])
         data: dict = {}
