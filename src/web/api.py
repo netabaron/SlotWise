@@ -5635,8 +5635,10 @@ def create_app(
                 g.rate_limit = (key, limiter.cpu_clock())
                 return None
             if limiter.should_log(key):
-                LOG.warning("rate limit: %s throttled on %s %s (retry in %ds)",
-                            key, request.method, request.path, retry)
+                # ‏בלי הכתובת: היא מזהה את מי ששלח/ה, ונשארת בזיכרון של
+                # ‏המגן בלבד. עדיין שורה אחת בדקה לכל כתובת, בכל worker.
+                LOG.warning("rate limit: a client was throttled on %s %s (retry in %ds)",
+                            request.method, request.path, retry)
             response = jsonify({
                 "ok": False,
                 "error": _http_message_he(429),

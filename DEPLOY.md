@@ -956,8 +956,11 @@ IP like everyone else.
 **Assumption, not measured: mobile carrier NAT.** Israeli mobile carriers put
 many subscribers behind shared addresses. The budget assumes that, outside
 campus, **at most about 5 heavy SlotWise users share one address at the same
-moment**. If the logs ever show one non-campus address throttled during
-registration, that assumption is the first thing to revisit.
+moment**. If throttle lines show up during registration, that assumption is
+the first thing to revisit. The line does not name the address (2026-11-09),
+so it cannot tell campus from a carrier NAT, or one address from several. It
+shows how often throttling happens and on which path. Once the campus address
+is exempt, any throttle line is off-campus traffic.
 
 ### What the student sees
 
@@ -975,7 +978,9 @@ already on screen, and retries `/api/courses` and `/api/solve` by itself after
 change the student makes cancels a pending retry. A 429 from **Cloud Run
 itself** (no instance free) has no `reason` and gets the "the site is busy"
 message instead. The server logs at most one line per throttled address per
-minute: `rate limit: <address> throttled on POST /api/solve (retry in 8s)`.
+minute, per worker, without the address:
+`rate limit: a client was throttled on POST /api/solve (retry in 8s)`. The
+address stays in the limiter's memory and is never written.
 
 ### Turning it off
 

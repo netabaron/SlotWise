@@ -365,7 +365,7 @@ def test_a_throttled_address_is_logged_once_a_minute(caplog):
             client.get("/api/catalog/meta")
     lines = [r for r in caplog.records if "rate limit" in r.getMessage()]
     assert len(lines) == 1, [r.getMessage() for r in lines]
-    assert "127.0.0.1" in lines[0].getMessage()
+    assert "127.0.0.1" not in lines[0].getMessage()
 
 
 # ==========================================================================
