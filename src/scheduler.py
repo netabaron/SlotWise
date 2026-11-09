@@ -35,6 +35,7 @@ import bisect
 import contextlib
 import contextvars
 import functools
+import itertools
 import json
 import logging
 import math
@@ -2234,6 +2235,12 @@ class CourseDrop:
     names: list
     credits: float
     min_days: "int | None" = None
+    #: ‏יחידות הוויתור שבתוכו, כל אחת רשימת קודים (2026-11-09). ויתור בודד הוא
+    #: יחידה אחת; שילוב (``DayRelaxationReport.combos``) הוא שתיים או שלוש.
+    units: list = field(default_factory=list)
+    #: ‏נ"ז 0 בידיעון אינו "בחינם" — הוא לא ידוע. בשילוב, סכום שחסר בו קורס
+    #: אחד אינו סכום, ולכן הממשק לא מציג אותו כשזה ``False``.
+    credits_known: bool = True
 
     def unlocks(self, target: int) -> bool:
         return self.min_days is not None and self.min_days <= target
@@ -2241,11 +2248,23 @@ class CourseDrop:
 
 @dataclass
 class DayRelaxationReport:
-    """כל האפשרויות שנמדדו ליעד ימים אחד."""
+    """כל האפשרויות שנמדדו ליעד ימים אחד.
+
+    ‏``options`` הם הוויתורים הבודדים, כמו תמיד. כשאף אחד מהם אינו פותח את
+    היעד (2026-11-09):
+      * ‏``combos`` — שילובים של שתיים–שלוש יחידות שכן פותחים אותו, הזולים
+        ביותר, עד ``COMBO_WANT``;
+      * ‏``closest`` — כשגם שילוב אינו פותח: הוויתורים שמורידים הכי הרבה ימים;
+      * ‏``combos_complete`` — ‏``True`` אם כל שילוב שנדרש נמדד עד הסוף (או
+        שנמצאו מספיק), ‏``False`` אם הזמן או המכסה קטעו, ‏``None`` אם לא חיפשו.
+    """
 
     target: int = 0
     options: list = field(default_factory=list)
     reachable_without_dropping: bool = False
+    combos: list = field(default_factory=list)
+    closest: list = field(default_factory=list)
+    combos_complete: "bool | None" = None
 
     def helpful(self) -> list:
         return [o for o in self.options if o.unlocks(self.target)]
@@ -2321,6 +2340,159 @@ def _min_days_bb(
     return found
 
 
+#: ‏שילוב של עד כמה יחידות ויתור נבדק כשוויתור בודד אינו מספיק (2026-11-09).
+COMBO_MAX_UNITS = 3
+#: ‏כמה שילובים, או צעדים "הכי קרובים", מוצעים לכל היותר.
+COMBO_WANT = 3
+#: ‏כמה שניות מותר לחיפוש השילובים, בתוך מגבלת הזמן של הבקשה ולא מעבר לה.
+#: ‏זו עצה ולא המערכת עצמה: חיפוש שנקטע כאן אינו הופך את הבקשה ל-``timed_out``.
+COMBO_SECONDS = 3.0
+
+
+@contextlib.contextmanager
+def _advisory_budget(seconds: float):
+    """מועד קצר יותר לחיפוש מייעץ, עם דגל עצירה משלו.
+
+    כמו ``time_budget`` הוא לעולם אינו מאריך מועד חיצוני. ההבדל הוא הדגל:
+    ‏``time_budget`` מקונן חולק את הדגל של החיצוני, ולכן עצירה בפנים הייתה
+    מסמנת את ‏/api/solve כולו "נעצר במגבלת הזמן" — גם כשכל המערכות כבר
+    נמצאו, ורק העצה על שילובי ויתורים לא הספיקה. כאן עצירה במגבלה **שלו**
+    נשארת בפנים; עצירה במועד החיצוני מסומנת גם בחוץ, כי אז הבקשה כולה
+    באמת נגמרה. מחזיר את הדגל הפנימי (‏``[bool]``).
+    """
+    outer = _DEADLINE.get()
+    mine = time.monotonic() + float(seconds)
+    if outer is not None and outer < mine:
+        mine = outer
+    outer_flag = _EXPIRED.get()
+    flag = [False]
+    token = _DEADLINE.set(mine)
+    flag_token = _EXPIRED.set(flag)
+    try:
+        yield flag
+    finally:
+        _EXPIRED.reset(flag_token)
+        _DEADLINE.reset(token)
+        if flag[0] and outer_flag is not None and outer is not None and time.monotonic() > outer:
+            outer_flag[0] = True
+
+
+def _drop_of(units: list, by_code: dict, min_days: "int | None" = None) -> CourseDrop:
+    """‏``CourseDrop`` לוויתור על כל היחידות ב-``units`` יחד."""
+    codes = [code for unit in units for code in unit]
+    each = [float(getattr(by_code.get(c), "credits", 0) or 0) for c in codes]
+    return CourseDrop(
+        codes=codes,
+        names=[str(getattr(by_code.get(c), "name", "") or c) for c in codes],
+        credits=round(sum(each), 1),
+        min_days=min_days,
+        units=[list(u) for u in units],
+        credits_known=all(x > 0 for x in each),
+    )
+
+
+def _in_plan(drop: CourseDrop, plan: "set | None") -> int:
+    """כמה מהקורסים שבוויתור הם בתוכנית של הסטודנט/ית — ‏0 בלי תוכנית."""
+    return sum(1 for c in drop.codes if c in plan) if plan else 0
+
+
+def _combo_cost(drop: CourseDrop, plan: "set | None") -> tuple:
+    """סדר הנזק של שילוב: נ"ז, אחר כך כמה מהם בתוכנית, אחר כך כמה קורסים.
+
+    ‏"בתוכנית" לפני מספר הקורסים: בנ"ז שוות, לוותר על קורס שאינו בתוכנית
+    (סטודנט/ית שבחרו פיזיקה של מחלקה אחרת) אינו מעכב את התואר.
+
+    שילוב שחסרות בו נ"ז (‏``credits_known``) בא אחרי כל מי שיש לו מחיר, ובלי
+    הסכום החלקי: נ"ז 0 בידיעון אינו "בחינם". בלי זה, בקטלוג המשלוח
+    (ביוטכנולוגיה סמסטר 5) שלושה קורסים בלי נ"ז קודמו לשניים שלאחד מהם יש
+    ‏0.5 — רק כי המחיר שלהם לא ידוע.
+    """
+    priced = drop.credits_known
+    return (
+        0 if priced else 1,
+        drop.credits if priced else 0.0,
+        _in_plan(drop, plan),
+        len(drop.codes),
+    )
+
+
+def _combo_drops(
+    courses: list,
+    prefs: Preferences,
+    target_days: int,
+    singles: list,
+    base_min: "int | None",
+    limit: "int | None",
+    plan: "set | None",
+) -> "tuple[list, list, bool]":
+    """שילובים של 2..``COMBO_MAX_UNITS`` יחידות שפותחים את היעד — **נמדד**.
+
+    זוגות קודם, ושלישיות רק אם אין עדיין ``COMBO_WANT`` שילובים. בכל גודל
+    השילובים נמדדים מהזול לנזק (``_combo_cost``), ולכן הראשונים שנמצאו הם
+    הזולים ביותר בגודל הזה, ואפשר לעצור בהם.
+
+    החסם לכל שילוב הוא המינימום שכבר נמדד לתת-שילוב שלו (ויתור נוסף לעולם
+    אינו מוסיף ימים — אותו טיעון כמו ``base_min`` ב-``day_relaxations``),
+    ולכן ``_min_days_bb`` מחזיר מינימום מדויק ולא "לפחות". שילוב שמכיל
+    שילוב שכבר פותח את היעד אינו נמדד: אותו יעד, במחיר גבוה יותר.
+
+    מחזיר (פותחים, נמדדו ואינם פותחים, האם הכול נמדד).
+    """
+    by_code = {c.code: c for c in courses}
+    units = [o.units[0] for o in singles]
+    known: dict = {
+        frozenset([i]): o.min_days for i, o in enumerate(singles) if o.min_days is not None
+    }
+    hits: list = []
+    misses: list = []
+    hit_keys: list = []
+    complete = True
+    with _advisory_budget(COMBO_SECONDS) as expired:
+        for size in range(2, COMBO_MAX_UNITS + 1):
+            if len(hits) >= COMBO_WANT or size > len(units) or expired[0]:
+                break
+            candidates = []
+            for idx in itertools.combinations(range(len(units)), size):
+                key = frozenset(idx)
+                if any(hit <= key for hit in hit_keys):
+                    continue
+                drop = _drop_of([units[i] for i in idx], by_code)
+                if len(drop.codes) >= len(courses):
+                    continue  # ויתור על הכול אינו הצעה
+                candidates.append((key, drop))
+            candidates.sort(key=lambda kd: (*_combo_cost(kd[1], plan), kd[1].codes))
+            for key, drop in candidates:
+                if len(hits) >= COMBO_WANT:
+                    break
+                if expired[0]:
+                    complete = False
+                    break
+                subs = [
+                    frozenset(sub)
+                    for r in range(1, size)
+                    for sub in itertools.combinations(sorted(key), r)
+                ]
+                measured = [known[s] for s in subs if s in known]
+                bounds = measured + ([base_min] if base_min is not None else [])
+                kept = [c for c in courses if c.code not in set(drop.codes)]
+                found = _min_days_bb(
+                    kept, prefs, limit, at_most=min(bounds) if bounds else None
+                )
+                if found is None:
+                    complete = False  # נקטע — לא מספר, ולא "אינו פותח"
+                    continue
+                known[key] = drop.min_days = found
+                if drop.unlocks(target_days):
+                    hits.append(drop)
+                    hit_keys.append(key)
+                elif not measured or found < min(measured):
+                    # ‏שילוב שאינו טוב מתת-שילוב שלו אינו "צעד": אותם ימים,
+                    # ‏בקורס נוסף. הוא לא יוצע גם כ"הכי קרוב".
+                    misses.append(drop)
+    hits.sort(key=lambda o: (*_combo_cost(o, plan), o.min_days, o.codes))
+    return hits, misses, complete
+
+
 def day_relaxations(
     courses: list,
     prefs: Preferences,
@@ -2328,6 +2500,7 @@ def day_relaxations(
     *,
     limit: "int | None" = None,
     base_min: "int | None" = None,
+    plan: "set | None" = None,
 ) -> DayRelaxationReport:
     """
     אילו ויתורים על קורסים יאפשרו את יעד הימים — **נמדד**.
@@ -2347,6 +2520,12 @@ def day_relaxations(
     ימים — הבחירה הטובה ביותר, בלי הקבוצות של היחידה, עדיין תקינה — ולכן
     ‏``base_min`` הוא חסם התחלתי לכל יחידה.
 
+    ‏**כשאף ויתור בודד אינו מספיק (2026-11-09)** — ‏``_combo_drops``: השילוב
+    הזול ביותר של עד ``COMBO_MAX_UNITS`` יחידות שפותח את היעד; ואם אין כזה,
+    ‏``closest`` — מה שמוריד הכי הרבה ימים. ‏``options`` עצמו אינו משתנה.
+    ‏``plan`` (קודי התוכנית של הסטודנט/ית) מקדים, בנ"ז שוות, ויתור על קורס
+    שאינו בתוכנית; בלעדיו הסדר זהה לקודם.
+
     אין כאן מושג של "קורס שסומן כחובה" — הוא אינו קיים במערכת. הדבר
     הקרוב ביותר הוא ``tied_with``, וזו קביעה של הידיעון ולא בחירה של
     הסטודנט/ית.
@@ -2365,27 +2544,49 @@ def day_relaxations(
         if not kept:
             continue  # ויתור על הכול אינו הצעה
         report.options.append(
-            CourseDrop(
-                codes=list(unit),
-                names=[str(getattr(by_code.get(c), "name", "") or c) for c in unit],
-                credits=round(
-                    sum(float(getattr(by_code.get(c), "credits", 0) or 0) for c in unit),
-                    1,
-                ),
-                min_days=_min_days_bb(kept, prefs, limit, at_most=base_min),
-            )
+            _drop_of([unit], by_code, _min_days_bb(kept, prefs, limit, at_most=base_min))
         )
 
-    # פחות נזק קודם: מי שעולה פחות נקודות זכות. ואז לפי כמה ימים נחסכו,
-    # ואז לפי הקוד — כדי שהסדר יהיה יציב בין ריצות.
+    # פחות נזק קודם: מי שעולה פחות נקודות זכות. בנ"ז שוות — מי שאינו בתוכנית
+    # של הסטודנט/ית (‏``plan``; בלעדיה הסדר זהה לקודם). ואז לפי כמה ימים
+    # נחסכו, ואז לפי הקוד — כדי שהסדר יהיה יציב בין ריצות.
     report.options.sort(
         key=lambda o: (
             not o.unlocks(target_days),
             o.credits,
+            _in_plan(o, plan),
             o.min_days if o.min_days is not None else 99,
             o.codes,
         )
     )
+    if report.helpful():
+        return report
+
+    # ‏אף ויתור בודד אינו מספיק (2026-11-09). עד כאן התשובה הייתה שורה אחת,
+    # גם כשוויתור על שניים כן פותח את היעד. עכשיו: השילוב הזול ביותר; ואם אין
+    # כזה, הצעד שמקרב הכי הרבה. כל מספר נמדד — כמו בוויתור הבודד.
+    misses: list = []
+    if time_budget_expired():
+        report.combos_complete = False  # הבקשה כבר נעצרה — אין זמן למדוד
+    else:
+        report.combos, misses, report.combos_complete = _combo_drops(
+            courses, prefs, target_days, report.options, base_min, limit, plan
+        )
+    if report.combos or base_min is None:
+        return report
+
+    def closer(pool: list) -> list:
+        return [o for o in pool if o.min_days is not None and o.min_days < base_min]
+
+    # ‏הוויתורים הבודדים קודם — הצעד הקטן ביותר. שילוב רק כשאף ויתור בודד אינו
+    # מוריד ולו יום אחד, כדי ש-"אי אפשר" ייאמר רק כששום דבר שנמדד אינו מקרב.
+    pool = closer(report.options) or closer(misses)
+    if pool:
+        best = min(o.min_days for o in pool)
+        report.closest = sorted(
+            (o for o in pool if o.min_days == best),
+            key=lambda o: (*_combo_cost(o, plan), o.codes),
+        )[:COMBO_WANT]
     return report
 
 

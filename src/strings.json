@@ -205,6 +205,12 @@
       "relaxOptionNoCredits": "ויתור על {name} יאפשר {days} ימים",
       "relaxPackage": "ויתור על {names} — חבילה אחת ({credits} נ\"ז) — יאפשר {days} ימים",
       "relaxUnreachable": "אי אפשר להגיע ל-{days} ימים, גם בוויתור על קורס אחד.",
+      "relaxComboIntro": "ויתור על קורס אחד לא מספיק.",
+      "relaxCombo": "לוותר על {names} (סה״כ {credits} נ״ז) ← {days} ימים",
+      "relaxComboNoCredits": "לוותר על {names} ← {days} ימים",
+      "relaxClosestTitle": "הכי קרוב ל-{days} ימים",
+      "relaxClosestIntro": "אי אפשר להגיע ל-{days} ימים גם בוויתור על עד {n} קורסים.",
+      "relaxClosestIntroPartial": "לא מצאנו ויתור שמגיע ל-{days} ימים.",
       "relaxNoRequiredInfo": "לא בדקנו אילו מהקורסים חובה לתואר שלך.",
       "minTag": "מינימום",
       "extras": {

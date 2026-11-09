@@ -6937,6 +6937,29 @@
   }
 
   /* --- שלב 3: ימי לימוד ---------------------------------------------- */
+  /** שורה אחת ברשימה: ויתור בודד (קורס או חבילה), או שילוב של כמה. */
+  function relaxRowText(item) {
+    var credits = num(item.credits, 0);
+    var days = item.min_days;
+    // ‏``units`` מגיע רק בשילובים וב"הכי קרוב"; ויתור בודד הוא יחידה אחת.
+    if (Array.isArray(item.units) && item.units.length > 1) {
+      var all = (item.names || []).join(" + ");
+      // סכום שחסר בו קורס אחד אינו סכום — לא ממציאים מחיר.
+      return item.credits_known === false || credits <= 0
+        ? Tf("app.days.relaxComboNoCredits", { names: all, days: days })
+        : Tf("app.days.relaxCombo", { names: all, credits: credits, days: days });
+    }
+    var names = (item.names || []).join(", ");
+    if (item.codes && item.codes.length > 1) {
+      return Tf("app.days.relaxPackage", { names: names, credits: credits, days: days });
+    }
+    if (credits > 0) {
+      return Tf("app.days.relaxOption", { name: names, credits: credits, days: days });
+    }
+    // נ"ז 0 בידיעון אינו "בחינם" — הוא פשוט לא ידוע. לא ממציאים מחיר.
+    return Tf("app.days.relaxOptionNoCredits", { name: names, days: days });
+  }
+
   /**
    * מה יאפשר את יעד הימים — נמדד, ולא מנוחש.
    *
@@ -6949,21 +6972,40 @@
     var data = (s && s.day_relaxations) || {};
     var items = pickList(data, ["items"], null);
     var checked = pickList(data, ["checked"], null);
+    var combos = pickList(data, ["combos"], null);
+    var closest = pickList(data, ["closest"], null);
     var target = num(data.target, state.targetDays);
-    var show = s && s.target_reachable === false && (items.length || checked.length);
+    var show =
+      s && s.target_reachable === false &&
+      (items.length || checked.length || combos.length || closest.length);
     setHidden(ui.daysRelax, !show);
     if (!show) return;
 
-    // ‏אין ויתור בודד שמגיע ליעד: שורה אחת, וזהו. לא כותרת, לא רשימת מה
-    // שנבדק ולא הסתייגות על קורסי חובה — כשאין מה להציע אומרים את זה
-    // (docs/DESIGN.md, עיקרון 5).
-    var none = !items.length;
+    // ‏ארבעה מצבים, לפי הסדר (2026-11-09): ויתור בודד שמספיק; שילוב של שניים–
+    // ‏שלושה שמספיק; מה שמקרב הכי הרבה; ורק כששום דבר לא מקרב — שורה אחת, בלי
+    // כותרת ובלי הסתייגות (docs/DESIGN.md, עיקרון 5).
+    var rows = items;
+    var title = Tf("app.days.relaxTitle", { days: target });
+    var intro = "";
+    if (!items.length && combos.length) {
+      rows = combos;
+      intro = T("app.days.relaxComboIntro");
+    } else if (!items.length && closest.length) {
+      rows = closest;
+      title = Tf("app.days.relaxClosestTitle", { days: target });
+      // ‏"אי אפשר" רק כשכל שילוב נמדד עד הסוף; אחרת — "לא מצאנו".
+      intro = data.combos_complete === true
+        ? Tf("app.days.relaxClosestIntro", { days: target, n: num(data.combo_max_units, 3) })
+        : Tf("app.days.relaxClosestIntroPartial", { days: target });
+    }
+    var none = !rows.length;
+    if (none) intro = Tf("app.days.relaxUnreachable", { days: target });
     setHidden(ui.daysRelaxTitle, none);
     setHidden(ui.daysRelaxList, none);
     setHidden(ui.daysRelaxNote, none);
-    setHidden(ui.daysRelaxIntro, !none);
-    setText(ui.daysRelaxTitle, none ? "" : Tf("app.days.relaxTitle", { days: target }));
-    setText(ui.daysRelaxIntro, none ? Tf("app.days.relaxUnreachable", { days: target }) : "");
+    setHidden(ui.daysRelaxIntro, !intro);
+    setText(ui.daysRelaxTitle, none ? "" : title);
+    setText(ui.daysRelaxIntro, intro);
     if (none) {
       rebuild(ui.daysRelaxList, function () {});
       setText(ui.daysRelaxNote, "");
@@ -6971,26 +7013,10 @@
     }
 
     rebuild(ui.daysRelaxList, function (box) {
-      items.forEach(function (item) {
-        var names = (item.names || []).join(", ");
-        var credits = num(item.credits, 0);
-        var days = item.min_days;
-        var text;
-        if (item.codes && item.codes.length > 1) {
-          text = Tf("app.days.relaxPackage", {
-            names: names, credits: credits, days: days,
-          });
-        } else if (credits > 0) {
-          text = Tf("app.days.relaxOption", {
-            name: names, credits: credits, days: days,
-          });
-        } else {
-          // נ"ז 0 בידיעון אינו "בחינם" — הוא פשוט לא ידוע. לא ממציאים מחיר.
-          text = Tf("app.days.relaxOptionNoCredits", { name: names, days: days });
-        }
+      rows.forEach(function (item) {
         // ‏בלי ספירת מערכות (2026-10-23): על מה מוותרים וכמה ימים זה מאפשר.
         var li = el("li", { class: "days-relax-row" }, [
-          el("span", { class: "days-relax-what", text: text }),
+          el("span", { class: "days-relax-what", text: relaxRowText(item) }),
         ]);
         box.appendChild(li);
       });

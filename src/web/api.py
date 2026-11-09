@@ -827,16 +827,27 @@ def clean_code(value: Any, *, field: str = "code") -> str:
 
 
 def _day_relaxations_json(
-    courses: list, prefs: Any, target_days: int, base_min: int | None = None
+    courses: list,
+    prefs: Any,
+    target_days: int,
+    base_min: int | None = None,
+    plan: set[str] | None = None,
 ) -> dict[str, Any]:
     """אילו ויתורים על קורסים יפתחו את יעד הימים.
 
     ‏``checked`` הם אלה שנמדדו ואינם פותחים — "בדקנו את כולם" הוא מה
     שהופך "אף ויתור בודד אינו מספיק" לדיווח ולא להתחמקות.
     ‏``base_min`` — המינימום שהבקשה כבר מדדה, כדי שלא יימדד שוב.
+
+    ‏``items`` ו-``checked`` הם הוויתורים הבודדים, בדיוק כמו קודם. כשאין
+    ‏``items`` (2026-11-09): ‏``combos`` — שילובים שפותחים את היעד, ו-
+    ‏``closest`` — כשגם שילוב אינו פותח, מה שמקרב הכי הרבה. ‏``plan`` הם קודי
+    התוכנית של הסטודנט/ית: בנ"ז שוות, ויתור על קורס שאינו בה קודם.
     """
     try:
-        report = scheduler_mod.day_relaxations(courses, prefs, target_days, base_min=base_min)
+        report = scheduler_mod.day_relaxations(
+            courses, prefs, target_days, base_min=base_min, plan=plan
+        )
     except Exception as exc:  # noqa: BLE001 - אבחון לא מפיל תשובה
         LOG.exception("day_relaxations נכשל")
         return {"items": [], "checked": [], "error": str(exc)}
@@ -850,9 +861,22 @@ def _day_relaxations_json(
             "min_days": o.min_days,
         }
 
+    def step(o: Any) -> dict[str, Any]:
+        # ‏``units``: הממשק מצייר שילוב ("לוותר על A + B") אחרת מוויתור בודד.
+        return {
+            **one(o),
+            "units": [list(u) for u in o.units],
+            "credits_known": bool(o.credits_known),
+        }
+
     return {
         "items": [one(o) for o in report.helpful()],
         "checked": [one(o) for o in report.measured_useless()],
+        "combos": [step(o) for o in report.combos],
+        "closest": [step(o) for o in report.closest],
+        "combos_complete": report.combos_complete,
+        # ‏"גם בוויתור על עד N קורסים" — מה שנבדק בפועל, ולא מספר בנוסח.
+        "combo_max_units": scheduler_mod.COMBO_MAX_UNITS,
         "target": report.target,
     }
 
@@ -5670,8 +5694,15 @@ def _solve_request():
     # ── 7. יעד ימים שאינו אפשרי: לא רק לקרוא לקיר בשמו. איזה ויתור על קורס
     #      יפתח את היעד — נמדד, עם המחיר בנקודות זכות, ומסודר מהזול לנזק. ──
     if min_days is not None and not target_reachable:
+        # ‏"בתוכנית" מול התוכנית **שלו/ה**, כמו ``_plan_swaps``: בלי מסלול, או
+        # ‏במסלול "אחר", אין מול מה להשוות — והסדר זהה לקודם.
+        plan = (
+            _plan_codes(_curriculum(program, intake))
+            if program and program.casefold() != OTHER_PROGRAM
+            else set()
+        )
         base_common["day_relaxations"] = _day_relaxations_json(
-            built, prefs, target_days, base_min=min_days
+            built, prefs, target_days, base_min=min_days, plan=plan
         )
 
     # ── 8. מגבלת הזמן. מה שנמצא עד כה מוחזר כפי שהוא, עם דגל; הדף אומר
