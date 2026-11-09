@@ -351,7 +351,9 @@ def _endpoint(view: Callable) -> Callable:
         try:
             return view(*args, **kwargs)
         except ApiError as exc:
-            LOG.warning("API %s %s -> %d: %s", request.method, request.path, exc.status, exc.detail or exc.message)
+            # ‏בלי ‏detail ובלי ‏message: הם מצטטים את הבקשה (קודי קורס, שעות,
+            # ‏מילות חיפוש) והולכים ממילא לדפדפן ששלח אותה. ביומן — רק מה קרה.
+            LOG.warning("API %s %s -> %d", request.method, request.path, exc.status)
             return _fail(exc.status, exc.message, exc.detail)
         except HTTPException as exc:  # 404 / 405 / 413 וכו'
             return _fail(
