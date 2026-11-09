@@ -107,8 +107,18 @@ already guarantees a failed rebuild leaves the previous catalog in place.
    (`src/rate_limit.py`, DEPLOY.md "Rate limiting"). Approved because it is
    short-lived, in-memory state with no student data: per client address, a
    CPU-seconds balance and two timestamps, in each worker's own memory, lost
-   on restart and dropped as soon as the bucket refills. It holds no
-   selections, no identity and nothing a student sent. It lives on
+   on restart and dropped once the bucket has refilled. It holds no
+   selections, no identity and nothing a student sent. The address itself is
+   the one personal datum in it, and it is never written or logged.
+
+   **Corrected 2026-11-09:** "dropped as soon as the bucket refills" was not
+   what the code did. A refilled bucket was dropped only at a sweep, and
+   sweeps ran every 1,000 requests per worker, which at low traffic could
+   take days. Since 2026-11-09 a sweep also runs at the first request at
+   least 60 s after the previous one (`SWEEP_INTERVAL_S`). With the defaults,
+   a worker that keeps serving forgets an address within about seven minutes
+   of its last request. A worker that serves nothing more keeps it until its
+   next request, or until Cloud Run stops the instance. It lives on
    `app.extensions`, not in a module-level global, so rule 5 still holds.
    This is not a precedent for any other server-side state.
 2. **Phase 6's failure states should not assume the user can watch a

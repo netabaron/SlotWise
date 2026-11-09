@@ -45,10 +45,17 @@ limiter off until an ISO-8601 UTC timestamp and it comes back by itself, so a
 load test that forgets to unset it leaves nothing behind. There is no bypass
 header.
 
-State is short-lived, in memory, and holds no student data — an address, a
-number and two timestamps per bucket. HOSTING_NOTES.md §4.1 records this as an
-approved exception to "no server-side per-user state". It is kept on
-``app.extensions``, not in a module-level global (§4.5).
+State is in memory only — never written, never logged — and short-lived. A
+bucket holds an address, a number and two timestamps, and nothing the student
+sent. It is dropped once it has refilled, at the first check at least
+``SWEEP_INTERVAL_S`` after the previous sweep (or on every ``SWEEP_EVERY``-th
+check, whichever comes first). With the defaults, a worker that keeps serving
+forgets an address within about seven minutes of its last request: up to six
+for a bucket 30 CPU-s in debt to refill, plus up to one for the next sweep. A
+worker that serves nothing more keeps it until its next request or until the
+process exits. HOSTING_NOTES.md §4.1 records this as an approved exception to
+"no server-side per-user state". It is kept on ``app.extensions``, not in a
+module-level global (§4.5).
 """
 
 from __future__ import annotations
@@ -79,6 +86,10 @@ RETRY_AFTER_MAX_S = 60
 MAX_ENTRIES = 20_000
 #: A sweep also runs every this many checks, to drop buckets that refilled.
 SWEEP_EVERY = 1_000
+#: ...and at the first check this many seconds after the previous sweep, so a
+#: quiet worker forgets an address minutes after its last request rather than
+#: after another SWEEP_EVERY checks, which at low traffic could be days.
+SWEEP_INTERVAL_S = 60.0
 #: At most one log line per throttled IP per this many seconds.
 LOG_EVERY_S = 60.0
 
@@ -188,6 +199,9 @@ class RateLimiter:
         # key -> [tokens, last refill (clock), last log line (clock)]
         self._buckets: dict[str, list[float]] = {}
         self._checks = 0
+        # Set at the first check, not here: tests replace ``clock`` after
+        # construction, and a time from the real clock would never compare.
+        self._last_sweep: float | None = None
         # Gunicorn's sync workers never run two requests at once, but
         # `python wsgi.py` (werkzeug, threaded) does.
         self._lock = threading.Lock()
@@ -234,7 +248,13 @@ class RateLimiter:
         with self._lock:
             now = self.clock()
             self._checks += 1
-            if self._checks % SWEEP_EVERY == 0 or len(self._buckets) > self.max_entries:
+            if self._last_sweep is None:
+                self._last_sweep = now
+            if (
+                self._checks % SWEEP_EVERY == 0
+                or len(self._buckets) > self.max_entries
+                or now - self._last_sweep >= SWEEP_INTERVAL_S
+            ):
                 self._sweep(now)
             entry = self._buckets.get(key)
             if entry is None:
@@ -276,6 +296,7 @@ class RateLimiter:
         If that still leaves more than ``max_entries`` (a flood from many
         addresses), drop the least recently used until half the cap is left.
         """
+        self._last_sweep = now
         full = [k for k, e in self._buckets.items() if self._refilled(e, now) >= self.burst_cpu]
         for k in full:
             del self._buckets[k]
