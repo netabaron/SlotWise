@@ -444,7 +444,12 @@
         "inPlan": "[בתוכנית]",
         "inPlanSemester": "[בתוכנית-סמסטר {semester}]",
         "outOfPlan": "[מחוץ לתוכנית]"
-      }
+      },
+      "programs": "· {programs}",
+      "programsMore": "· {programs} +{more}",
+      "programsTitle": "בתוכנית הלימודים של: {programs}",
+      "yourPlan": "בתוכנית שלך: {list}",
+      "yourPlanItem": "{name} ({code})"
     },
     "catalog": {
       "browsePlaceholder": "שם, קוד או תחילית קוד — למשל 110 או חדו\"א",

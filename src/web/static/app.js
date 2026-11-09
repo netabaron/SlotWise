@@ -804,6 +804,7 @@
     browseError: null,
     browseBusy: false,
     browseLoaded: false,
+    browseFor: "", // ‏"מסלול|מועד" שהעיון האחרון נטען בשבילו (planKey)
     courses: [],
     notOffered: [],
     coursesError: null,
@@ -2992,7 +2993,9 @@
     var my = ++seq.catalog;
     runtime.catalogBusy = true;
     renderSearchResults();
-    return getJSON("/api/catalog/search?q=" + encodeURIComponent(q) + "&limit=25")
+    return getJSON(
+      "/api/catalog/search?q=" + encodeURIComponent(q) + "&limit=25" + planParams()
+    )
       .then(function (data) {
         if (my !== seq.catalog) return;
         runtime.catalogBusy = false;
@@ -3011,6 +3014,7 @@
                 ? rec.curriculum_semester
                 : rec.semester
             ),
+            programs: ownerList(rec),
           };
         });
         runtime.catalogError = null;
@@ -3040,9 +3044,12 @@
     runtime.browseError = null;
     var my = ++seq.browse;
     runtime.browseBusy = true;
+    // ‏"בתוכנית" ושמות המסלולים נקבעים מול המסלול הזה — החלפת מסלול
+    // מחייבת טעינה מחדש (ensureCatalogBrowse).
+    runtime.browseFor = planKey();
     renderCatalogBrowse();
 
-    var params = "limit=" + BROWSE_LIMIT;
+    var params = "limit=" + BROWSE_LIMIT + planParams();
     // ספרות בלבד = תחילית קוד (כך סטודנטים חושבים על זה). כל השאר = שם.
     // עד 7 ספרות בלבד: זו המגבלה של /api/catalog/browse, ורצף ארוך יותר
     // (הדבקה או טעות הקלדה) צריך להחזיר "לא נמצא" — לא שגיאת 400.
@@ -3067,6 +3074,7 @@
               in_curriculum: rec.in_curriculum === true,
               has_data: rec.has_data === true,
               offered: rec.offered !== false,
+              programs: ownerList(rec),
             };
           })
           .filter(function (rec) {
@@ -3090,8 +3098,159 @@
     if (runtime.browseBusy) return;
     // כשהניסיון הקודם נכשל — לנסות שוב. ``browseLoaded`` לבדו היה אומר
     // "כבר ניסינו" גם על ניסיון שהסתיים בשגיאה, והופך תקלה חולפת לקבועה.
-    if (runtime.browseLoaded && !runtime.browseError) return;
+    // ‏וגם כשהמסלול התחלף: התגיות ושמות המסלולים נקבעו מול המסלול הקודם.
+    if (runtime.browseLoaded && !runtime.browseError && runtime.browseFor === planKey()) {
+      return;
+    }
     browseCatalog(ui.search ? txt(ui.search.value) : "");
+  }
+
+  /* --- למי שייך קורס: המסלול של הסטודנט/ית ושמות המסלולים בחיפוש ------- */
+
+  /**
+   * ‏``program`` ו-``intake`` לחיפוש ולעיון בקטלוג — בדיוק כמו
+   * ‏/api/semester/<n>/courses. בלעדיהם השרת סימן "בתוכנית" מול הנדסת
+   * תוכנה לכל אחד/ת, ופיזיקה 2 של תעשייה וניהול הופיעה "מחוץ לתוכנית".
+   */
+  function planParams() {
+    return (
+      "&program=" + encodeURIComponent(txt(state.program)) +
+      "&intake=" + encodeURIComponent(txt(state.intake))
+    );
+  }
+
+  function planKey() {
+    return txt(state.program) + "|" + txt(state.intake);
+  }
+
+  /** ‏``programs`` מהשרת: שמות המסלולים שתוכנית הלימודים שלהם כוללת את הקורס. */
+  function ownerList(rec) {
+    return Array.isArray(rec && rec.programs)
+      ? rec.programs.map(txt).filter(Boolean)
+      : [];
+  }
+
+  //: ‏"הנדסת תעשייה וניהול" ⇐ "תעשייה וניהול" בתווית הקצרה שליד שם הקורס.
+  //: ‏השם המלא נשאר ב-title. ‏"הנדסה אזרחית" אינו מתחיל ב"הנדסת" ולכן נשאר.
+  var OWNER_SHORT_PREFIX = /^הנדסת\s+/;
+
+  //: כמה מסלולים מוצגים בשמם לפני "+N".
+  var OWNER_SHOWN = 2;
+
+  /**
+   * התווית השקטה שליד שם הקורס: "· תעשייה וניהול", או "· א, ב +3".
+   * המסלול של הסטודנט/ית ראשון, כדי שלעולם לא ייבלע ב-"+N".
+   * ‏null כשאף תוכנית אינה כוללת את הקורס — אין מה לומר.
+   */
+  function ownerLabel(programs) {
+    var list = (programs || []).slice();
+    if (!list.length) return null;
+    var mine = programEntry();
+    var myLabel = mine ? txt(mine.label) : "";
+    var at = myLabel ? list.indexOf(myLabel) : -1;
+    if (at > 0) list.unshift(list.splice(at, 1)[0]);
+    var shown = list.slice(0, OWNER_SHOWN).map(function (name) {
+      return name.replace(OWNER_SHORT_PREFIX, "");
+    });
+    var more = list.length - shown.length;
+    return el("span", {
+      class: "course-programs",
+      attrs: { title: Tf("app.search.programsTitle", { programs: list.join(", ") }) },
+      text: more > 0
+        ? Tf("app.search.programsMore", { programs: shown.join(", "), more: more })
+        : Tf("app.search.programs", { programs: shown.join(", ") }),
+    });
+  }
+
+  /**
+   * ‏"השם הבסיסי" של קורס — מה שנשאר כשמורידים את סימון המחלקה.
+   * ‏"פיזיקה 2ב", "פיזיקה 2 IE", "פיזיקה 2 מכ'" ו"פיזיקה 2 אז'" הם כולם
+   * ‏"פיזיקה 2": עם מספר — עד סוף המספר הראשון. בלי מספר — בלי מילים
+   * אחרונות שהן תג מחלקה (‏"ל'", ‏"IE"). ‏"א'"..."ט'" אינם תג אלא חלק:
+   * ‏"פרויקט שלב א'" ו"…שלב ב'" הם שני קורסים, לא שתי גרסאות של אחד.
+   */
+  function baseCourseName(name) {
+    var s = txt(name)
+      .replace(/[׳’‘]/g, "'")
+      .replace(/[״“”]/g, '"')
+      .replace(/\s+/g, " ")
+      .trim();
+    var numbered = /^\D*?\d+/.exec(s);
+    if (numbered) return numbered[0].trim();
+    var words = s.split(" ");
+    while (words.length > 1) {
+      var last = words[words.length - 1];
+      var tag = /^[A-Z]{1,3}$/.test(last) || (/'$/.test(last) && !/^[א-ט]'$/.test(last));
+      if (!tag) break;
+      words.pop();
+    }
+    return words.join(" ");
+  }
+
+  /**
+   * הקורסים מהתוכנית שיש להם "תאומים" בתוצאות — אותו שם בסיסי, קורס אחר.
+   * בדיוק המקרה של "פיזיקה 2": חמש תוצאות, ורק אחת מהן של הסטודנט/ית.
+   * רשימה ריקה כשאין מסלול, כשאין תאומים, או כשכל התאומים בתוכנית.
+   */
+  function planTwins(results) {
+    var program = txt(state.program);
+    if (!program || program === "other") return [];
+    var groups = Object.create(null);
+    var order = [];
+    (results || []).forEach(function (rec) {
+      var key = baseCourseName(rec.name);
+      if (!key) return;
+      if (!groups[key]) {
+        groups[key] = [];
+        order.push(key);
+      }
+      groups[key].push(rec);
+    });
+    var out = [];
+    order.forEach(function (key) {
+      var group = groups[key];
+      var mine = group.filter(function (rec) {
+        return rec.in_curriculum === true;
+      });
+      if (group.length > 1 && mine.length && mine.length < group.length) {
+        out.push.apply(out, mine);
+      }
+    });
+    return out;
+  }
+
+  /** ממלא תבנית מ-strings.json, שבה כל ``{key}`` מוחלף בצומת DOM. */
+  function fillNodes(node, template, parts) {
+    String(template).split(/\{(\w+)\}/).forEach(function (piece, i) {
+      if (i % 2) {
+        if (parts[piece]) node.appendChild(parts[piece]);
+      } else if (piece) {
+        node.appendChild(document.createTextNode(piece));
+      }
+    });
+    return node;
+  }
+
+  /**
+   * ‏"בתוכנית שלך: פיזיקה 2 IE (11210)" — שורה אחת מעל הרשימה.
+   * השם בתוך ‎<bdi>‎ והקוד ב-ltrCode: "IE" לטיני בתוך עברית, ובלי בידוד
+   * הסוגריים מתהפכים.
+   */
+  function renderPlanHint(node, results) {
+    if (!node) return;
+    var twins = planTwins(results);
+    clear(node);
+    setHidden(node, !twins.length);
+    if (!twins.length) return;
+    var list = document.createDocumentFragment();
+    twins.forEach(function (rec, i) {
+      if (i) list.appendChild(document.createTextNode(", "));
+      fillNodes(list, T("app.search.yourPlanItem"), {
+        name: el("bdi", { class: "plan-hint-name", text: rec.name }),
+        code: ltrCode(rec.code),
+      });
+    });
+    fillNodes(node, T("app.search.yourPlan"), { list: list });
   }
 
   /** ‏הסטודנט/ית בחרו "בלי חפיפות בכלל". */
@@ -3448,6 +3607,7 @@
 
     ui.search = byId("course-search");
     ui.searchResults = byId("course-search-results");
+    ui.searchHint = byId("course-search-hint");
     ui.courseList = byId("course-list");
     ui.creditsTotal = byId("credits-total");
     ui.creditsUnknown = byId("credits-unknown");
@@ -3464,6 +3624,7 @@
     ui.searchPlaceholder = ui.search ? txt(ui.search.getAttribute("placeholder")) : "";
     ui.browseBox = byId("catalog-browse");
     ui.browseNote = byId("catalog-browse-note");
+    ui.browseHint = byId("catalog-browse-hint");
     ui.browseList = byId("catalog-results");
     ui.browseState = byId("catalog-browse-state");
 
@@ -5926,6 +6087,8 @@
     var main = el("div", { class: "course-main" }, [
       el("span", { class: "course-title" }, [
         el("span", { class: "course-name", text: txt(rec.name) }),
+        // ‏רק בשורות הקטלוג: ברשימת הסמסטר כל קורס הוא ממילא מהתוכנית.
+        rec.fromCatalog ? ownerLabel(rec.programs) : null,
         el("span", { class: "course-code", text: code }),
       ]),
     ]);
@@ -6110,11 +6273,18 @@
     if (browseDrivesSearchBox()) {
       clear(ui.searchResults);
       setHidden(ui.searchResults, true);
+      renderPlanHint(ui.searchHint, []);
       return; // תפקיד התיבה מתעדכן ב-renderCatalogBrowse
     }
     var results = runtime.catalogResults;
     // הרשימה נפתחת בזמן שיש חיפוש פעיל — גם כדי להראות "מחפש…" או "לא נמצאו".
     var show = !!runtime.catalogQuery;
+    // ‏מחוץ ל-listbox: שם מותרות רק אפשרויות, ובדיקות שלוחצות על ה-li
+    // הראשון מצפות לתוצאה.
+    renderPlanHint(
+      ui.searchHint,
+      show && !runtime.catalogBusy && !runtime.catalogError ? results : []
+    );
 
     rebuild(ui.searchResults, function (box) {
       if (!runtime.catalogQuery) return;
@@ -6169,6 +6339,7 @@
           [
             el("span", { class: "course-code", text: rec.code }),
             el("span", { class: "course-name", text: txt(rec.name) }),
+            ownerLabel(rec.programs),
             el("span", {
               class: "tag " + (rec.in_curriculum ? "tag--in-plan" : "tag--out-plan"),
               text: tag,
@@ -6686,6 +6857,10 @@
     var note = FALLBACK_NOTE[reason] || FALLBACK_NOTE["empty-semester"];
     if (catalogBrowseBroken()) note += " " + T("app.catalog.browseUnavailable");
     setText(ui.browseNote, note);
+    renderPlanHint(
+      ui.browseHint,
+      runtime.browseBusy || runtime.browseError ? [] : runtime.browseResults
+    );
 
     if (ui.browseList) {
       rebuild(ui.browseList, function (list) {
@@ -6747,6 +6922,7 @@
         has_data: rec.has_data === true,
         fromCatalog: true,
         in_curriculum: rec.in_curriculum === true,
+        programs: rec.programs || [],
       },
       checked,
       false,

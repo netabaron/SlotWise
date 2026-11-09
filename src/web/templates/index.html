@@ -146,6 +146,9 @@
   2 קורסים       #semester-note  פתק הזהב: התוכנית משבצת כאן בחירה / קורס כללי
                   #semester-info  שורה שקטה: מה שהתוכנית אומרת "בכל סמסטר"
                   #course-search #course-search-results #course-list
+                  #course-search-hint  "בתוכנית שלך: …" מעל הרשימה הנפתחת, כשכמה
+                                  תוצאות נושאות אותו שם ואחת מהן בתוכנית;
+                                  מחוץ ל-listbox בכוונה. hidden אחרת.
                   #recommended-row  "מומלצים לסמסטר X" (#recommended-title)
                                   ו"סמנו הכל" (#btn-restore-recommended)
                   #recommended-note  רק הסתייגות על סכום הנ"ז; hidden אחרת
@@ -163,6 +166,7 @@
                   מצב קטלוג (אין תוכנית לימודים טעונה):
                   #catalog-browse       העטיפה. hidden כשיש תוכנית.
                   #catalog-browse-note  שורת ההסבר האחת
+                  #catalog-browse-hint  אותה שורת "בתוכנית שלך" — hidden אחרת
                   #catalog-results      שורות הקטלוג, אותם כרטיסי .course-item
                   #catalog-browse-state כמה מוצג מתוך כמה (aria-live)
                   באותו מצב תיבת #course-search מזינה את #catalog-results
@@ -446,6 +450,7 @@
           <span class="credits-label" id="credits-unknown" hidden></span>
         </div>
       </div>
+      <p class="search-plan-hint" id="course-search-hint" hidden></p>
       <ul class="search-results" id="course-search-results" role="listbox" aria-label="{{ S.ui.fields.searchResultsLabel }}" hidden></ul>
 
       <!-- ‏"מומלצים לסמסטר X": כותרת, "לפי תכנית הלימודים", ו"סמנו הכל".
@@ -467,6 +472,7 @@
            ‏class="step-body" כאן הוא פריסה בלבד (עמודה עם רווחים). -->
       <div class="step-body catalog-browse" id="catalog-browse" hidden>
         <p class="note" id="catalog-browse-note"></p>
+        <p class="search-plan-hint" id="catalog-browse-hint" hidden></p>
         <div class="course-list" id="catalog-results"></div>
         <p class="note" id="catalog-browse-state" role="status" aria-live="polite"></p>
       </div>

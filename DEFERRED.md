@@ -76,8 +76,27 @@ fixture has none.
 **Measured 2026-11-09:** with `SLOTWISE_DB_ROOT` pointing at an empty
 directory, 15 of the 17 pass, so they have the same cause as the entry above.
 The two in `test_recommended_defaults_browser.py` still fail: a 30 s timeout
-clicking `#step-year-next`. Their cause is not known. The file's docstrings
-mention `data/profile.json`, which CI also lacks, but that was not tested.
+clicking `#step-year-next`. Their cause is not fully known; what blocks the
+click is, below. The file's docstrings mention `data/profile.json`, which CI
+also lacks, but that was not tested.
+
+**What blocks the click, measured 2026-11-09:** in both failures Playwright's
+call log says `<dialog open data-term="ב" id="no-times-dialog">` intercepts
+pointer events on `#step-year-next`. Both tests choose semester ב
+(`choose(page, 2, "ב")`, and `choose(page, 4, "ב")` in the JavaScript-errors
+test), and `choose()` → `_continue()` clicks "המשך" without closing the dialog.
+The dialog opens once per semester per session when `/api/bootstrap` reports
+groups in that semester and none with a meeting (`termTimesMissing()` and
+`syncNoTimesDialog()` in `app.js`).
+**Still open: why CI passes.** `timed_by_term` gives ב zero timed groups with
+the local `data/db` (961 groups) **and** with an empty `SLOTWISE_DB_ROOT` (988,
+as on CI), both against the frozen fixture catalog — so the data alone does not
+explain the difference, and CI run `42652802007` (2,338 passed) lists neither
+test as skipped. `data/profile.json` is the untested suspect.
+`tests/test_course_programs_label_browser.py` (added 2026-11-09) hit the same
+dialog and avoids it by choosing semester א and closing the dialog if it opens.
+Doing the same in `_continue()` would mean editing an existing test file, which
+needs the user's word (`docs/SPEC_WEB.md:214`).
 
 **Also intermittent:** `test_header_freshness_line.py` (5 tests) failed once in
 the full parallel run and passed on every rerun.

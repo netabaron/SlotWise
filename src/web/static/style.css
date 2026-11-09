@@ -1568,6 +1568,7 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   color: var(--ev-fg, inherit);
 }
 .course-item.is-selected .course-code,
+.course-item.is-selected .course-programs,
 .course-item.is-selected .course-meta,
 .course-item.is-selected .course-credits { color: var(--ev-fg, var(--muted)); }
 
@@ -1582,6 +1583,12 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
 .course-title { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
 .course-name { font-weight: 600; }
 .course-code { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* ‏"· תעשייה וניהול" — של איזה מסלול הקורס. ליד השם, שקט כמו הקוד. */
+.course-programs { font-size: 13px; color: var(--muted); }
+/* ‏"בתוכנית שלך: פיזיקה 2 IE (11210)" — מעל הרשימה, כשכמה תוצאות נושאות
+   אותו שם. בצבע הטקסט ולא מושתק: זו התשובה שחיפשו. */
+.search-plan-hint { margin: 0; font-size: 13.5px; }
+.search-plan-hint .plan-hint-name { font-weight: 600; }
 .course-meta { font-size: 13px; color: var(--muted); }
 .course-credits {
   flex: none;
