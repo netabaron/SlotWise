@@ -109,8 +109,40 @@ def panels(server):
     return out
 
 
-def test_nothing_reaches_it_is_one_line(panels):
-    p = panels[2]
+def test_nothing_reaches_it_is_one_line(server):
+    """שום ויתור ושום שילוב אינם מורידים את המינימום — שורה אחת, וזהו.
+
+    ‏(נערך 2026-11-09, באישור מפורש.) יעד 2 בהנדסת תוכנה שנה ג׳ היה כאן המקרה
+    של "אין ויתור בודד", ומאז הוא מציע שילוב של שני קורסים. ‏41262 ו-65002:
+    כל אחד מהם לבדו דורש 3 ימים, ולכן ויתור על אחד אינו מוריד יום, וויתור על
+    שניהם הוא ויתור על הכול. בשום תוכנית לימודים אין יעד 2–6 כזה.
+    """
+    with sync_playwright() as pw:
+        try:
+            b = pw.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"אין דפדפן ל-Playwright: {exc}")
+        try:
+            pg = b.new_page()
+            pg.goto(server)
+            pg.wait_for_timeout(3500)
+            pg.evaluate(
+                "(a) => localStorage.setItem(a.key, JSON.stringify(a.state))",
+                {"key": STORAGE_KEY, "state": {
+                    "schema": 1, "program": "הנדסת תוכנה", "studyYear": 3, "term": "א",
+                    "semester": "5", "codes": ["41262", "65002"],
+                    "manualCodes": ["41262", "65002"], "provenanceReady": True,
+                    "targetDays": 2, "completed": {"year": True, "courses": True},
+                }},
+            )
+            pg.reload()
+            pg.wait_for_function(
+                "() => !document.getElementById('days-relax').hidden", timeout=30000
+            )
+            pg.wait_for_timeout(500)
+            p = pg.evaluate(PANEL)
+        finally:
+            b.close()
     assert p["shown"], p
     assert p["visible"] == ["days-relax-intro"], f"רק השורה האחת: {p}"
     assert p["text"] == "אי אפשר להגיע ל-2 ימים, גם בוויתור על קורס אחד.", p["text"]
