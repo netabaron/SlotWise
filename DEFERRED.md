@@ -39,6 +39,55 @@ temporary directory, so a local test run sees exactly what CI sees.
 are not modified (`docs/SPEC_WEB.md:214`), and the session that found it was
 doing UI work.
 
+### Seventeen more tests fail locally only; fifteen pass with an empty `data/db` — **noted 2026-11-09**
+**Where:** these fail on the machine that found them. CI stays green: every
+run on `main`, the latest on `3344ef0`.
+* `tests/test_solver_performance.py`, 7 tests:
+  * `test_first_year_page_defaults_stay_within_their_node_budget[biotech|electrical|mechanical|industrial]`
+  * `test_first_year_with_every_component_required_stays_within_budget[industrial|mechanical]`
+  * `test_the_node_count_is_deterministic`
+* `tests/test_hosted_missing_groups.py`, 4 tests:
+  * `test_the_blanket_skip_reason_does_not_erase_the_real_one`
+  * `test_a_course_that_does_have_groups_is_untouched`
+  * `test_step_four_is_not_locked_on_courses_that_will_never_have_groups`
+  * `test_the_explanation_is_plain_and_mentions_no_fetching`
+* `tests/test_wide_fit_browser.py::test_step_three_drops_whole_lines_and_keeps_hour_labels_readable[1536x864|1440x900]`,
+  2 tests. They fail only when the whole file runs; on their own they pass.
+* `tests/test_step_flow_browser.py::test_next_does_not_move_a_step_that_is_already_in_view[390-844]`
+* `tests/test_lecturers_ranking_browser.py::test_with_a_days_target_the_page_follows_the_priority_order`
+* `tests/test_recommended_defaults_browser.py::test_neither_physics_track_is_recommended`
+  and `::test_the_page_raises_no_javascript_errors`
+
+**Owner:** for the fifteen, the same as the entry above. For the two in
+`test_recommended_defaults_browser.py`, nobody yet.
+
+**What:** found by a full local run on 2026-11-09, during the privacy fixes:
+2,388 tests, 2,336 passed, 25 failed. Of the 25:
+* 3 are the tests in the entry above;
+* 5 are in `test_header_freshness_line.py` and passed on every rerun;
+* 17 are these.
+
+All 17 fail the same way with `src/` at `3344ef0`, so they predate those
+changes. The failures look like a different catalog: solver node counts far
+over budget (biotech 281,511 against 20,000; the determinism test 1,034,424
+against 734,227), and courses `201009` and `201015` with groups where the
+fixture has none.
+
+**Measured 2026-11-09:** with `SLOTWISE_DB_ROOT` pointing at an empty
+directory, 15 of the 17 pass, so they have the same cause as the entry above.
+The two in `test_recommended_defaults_browser.py` still fail: a 30 s timeout
+clicking `#step-year-next`. Their cause is not known. The file's docstrings
+mention `data/profile.json`, which CI also lacks, but that was not tested.
+
+**Also intermittent:** `test_header_freshness_line.py` (5 tests) failed once in
+the full parallel run and passed on every rerun.
+`test_recommended_defaults_browser.py::test_placement_courses_are_shown_unchecked_with_a_reason`
+failed once on a rerun and passed otherwise.
+
+**Why not now:** the fifteen need the `conftest.py` change described above,
+which falls under the protected-tests rule. The two need their own
+investigation, outside the privacy work that found them.
+
 ### "0 מתוך 1 מרצים מועדפים" reads wrong at a total of 1 — **deferred 2026-10-27**
 **Where:** the lecturers pill in the results (`app.schedule.lecturersHits`,
 `buildStats()` in `app.js`).
