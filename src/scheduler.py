@@ -36,6 +36,7 @@ import contextlib
 import contextvars
 import functools
 import json
+import logging
 import math
 import re
 import sys
@@ -47,6 +48,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+import strings as strings_mod
 from models import (
     DAY_LETTERS_HE,
     DAY_NAMES_HE,
@@ -68,6 +70,8 @@ from models import (
 # ==========================================================================
 # קבועים
 # ==========================================================================
+
+LOG = logging.getLogger(__name__)
 
 #: דקות ביממה — ברירת המחדל של prefs.latest.
 MINUTES_IN_DAY: int = 24 * 60
@@ -2402,16 +2406,19 @@ def diagnose_infeasibility(courses: list[Course], prefs: Preferences) -> list[st
 
     Returns:
         רשימת מחרוזות. אף פעם לא זורקת.
+
+    ‏**הנוסח מוצג לסטודנט/ית כמו שהוא**, ולכן הוא כולו ב-``strings.json``
+    (``server.infeasible.*``) — בלי שמות משתנים ובלי אנגלית (2026-11-09).
+    התיאור הטכני באנגלית, שהיה צמוד לכל משפט בסוגריים, עבר ליומן (``LOG``).
     """
     reasons: list[str] = []
 
     # --- שלב 0: קורס בלי שום קבוצה --------------------------------------
     for course in courses:
         if not course.groups:
+            LOG.debug("diagnose: %s has no groups; it may not be offered", course.code)
             reasons.append(
-                f"לקורס {course.code} ({course.name}) אין אף קבוצה במאגר — "
-                f"ייתכן שהקורס לא נפתח בסמסטר הזה "
-                f"(no groups found; the course may not be offered)."
+                _copy("noGroups", code=course.code, name=course.name)
             )
 
     # --- שלב 1: אילוץ יחידני שמוחק סוג רכיב שלם -------------------------
@@ -2426,22 +2433,32 @@ def diagnose_infeasibility(courses: list[Course], prefs: Preferences) -> list[st
 
             # כל הקבוצות מהסוג הזה נפסלו. מי האשם?
             kinds_hit = {ctype for _g, probs in eliminated for ctype, _txt in probs}
-            head = (
-                f"כל קבוצות ה{kind} בקורס {course.code} ({course.name}) נפסלו "
-                f"({len(eliminated)} קבוצות)"
+            LOG.debug(
+                "diagnose: every %s group of %s was eliminated by %s",
+                kind, course.code, sorted(kinds_hit),
+            )
+            head = _copy(
+                "wipedHead", kind=kind, code=course.code, name=course.name,
+                n=len(eliminated),
             )
 
             if len(kinds_hit) == 1:
                 # כל הקבוצות נפלו מאותו אילוץ — אפשר לנסח משפט אחד וברור.
                 only = next(iter(kinds_hit))
-                reasons.append(f"{head} — {_constraint_sentence(only, prefs)}.")
+                reasons.append(
+                    _copy("wipedOne", head=head, why=_constraint_sentence(only, prefs))
+                )
             else:
                 # תערובת אילוצים — מפרטים לכל היותר שלוש דוגמאות.
                 sample = "; ".join(
-                    f"קב' {g.group_id} {probs[0][1]}" for g, probs in eliminated[:3]
+                    _copy("wipedSample", group=g.group_id, problem=probs[0][1])
+                    for g, probs in eliminated[:3]
                 )
-                more = "" if len(eliminated) <= 3 else f"; ועוד {len(eliminated) - 3}"
-                reasons.append(f"{head}: {sample}{more}.")
+                more = (
+                    "" if len(eliminated) <= 3
+                    else _copy("wipedMore", n=len(eliminated) - 3)
+                )
+                reasons.append(_copy("wipedMixed", head=head, sample=sample, more=more))
 
     # --- שלב 2: זוג סלוטים שכל הצירופים ביניהם נפסלים -------------------
     # prefs עובר פנימה כדי שהאבחון ידבר על אותם כללים שהחיפוש עבד לפיהם:
@@ -2457,37 +2474,40 @@ def diagnose_infeasibility(courses: list[Course], prefs: Preferences) -> list[st
         total_space = 1
         for s in live_slots:
             total_space *= max(1, len(s.candidates))
-        reasons.append(
-            f"אף אילוץ בודד ואף זוג קורסים אינם חוסמים לבדם, אבל שום צירוף מלא "
-            f"מתוך {total_space:,} האפשרויות אינו עומד בכל האילוצים יחד. "
-            f"אפשר לוותר על קורס אחד, להרחיב את חלון השעות, או לבטל חלון חסום "
-            f"(combinatorial exhaustion — no single pair is at fault)."
+        LOG.debug(
+            "diagnose: combinatorial exhaustion over %d combinations; "
+            "no single constraint or pair is at fault", total_space,
         )
+        # ‏בלי עצה בסוף המשפט: ההצעות עצמן (``relax_advice``) אומרות מה לעשות,
+        # והסיבה היא הסבר בלבד.
+        reasons.append(_copy("combinatorial", n=f"{total_space:,}"))
 
     return reasons
+
+
+def _copy(key: str, **params: Any) -> str:
+    """נוסח מ-``server.infeasible`` ב-``strings.json``."""
+    return strings_mod.fmt(f"server.infeasible.{key}", **params)
 
 
 def _constraint_sentence(constraint: str, prefs: Preferences) -> str:
     """משפט הסבר לאילוץ יחידני שמחק סוג רכיב שלם."""
     if constraint == CONSTRAINT_EARLIEST:
-        return (
-            f"כולן מתחילות לפני {fmt_time(prefs.earliest)}, והכלל "
-            f"'אין שיעור לפני {fmt_time(prefs.earliest)}' חוסם את כולן"
-        )
+        return _copy("ruleEarliest", time=fmt_time(prefs.earliest))
     if constraint == CONSTRAINT_LATEST:
-        return (
-            f"כולן מסתיימות אחרי {fmt_time(prefs.latest)}, והכלל "
-            f"'אין שיעור אחרי {fmt_time(prefs.latest)}' חוסם את כולן"
-        )
+        return _copy("ruleLatest", time=fmt_time(prefs.latest))
     if constraint == CONSTRAINT_FRIDAY:
-        return "כולן מתקיימות ביום שישי, ולימודי שישי נאסרו"
+        return _copy("ruleFriday")
     if constraint == CONSTRAINT_BLOCKED:
         windows = ", ".join(
-            f"יום {DAY_NAMES_HE.get(d, d)} {fmt_time(s)}-{fmt_time(e)}"
+            _copy(
+                "ruleBlockedWindow", day=DAY_NAMES_HE.get(d, d),
+                **{"from": fmt_time(s), "to": fmt_time(e)},
+            )
             for d, s, e in prefs.blocked_windows
         )
-        return f"כולן חופפות לחלונות החסומים ({windows})"
-    return "אילוץ אישי חוסם את כולן"
+        return _copy("ruleBlocked", windows=windows)
+    return _copy("ruleOther")
 
 
 def _all_pairs_blocked_example(
@@ -2513,78 +2533,81 @@ def _all_pairs_blocked_example(
 
             if example is None:
                 overlap = _first_overlap(a, b)
+                names = {
+                    "a": a.course_code, "ga": a.group_id, "ka": a.kind,
+                    "b": b.course_code, "gb": b.group_id, "kb": b.kind,
+                }
                 if overlap is not None:
                     day, ov_s, ov_e = overlap
-                    example = (
-                        f"קורס {a.course_code} קבוצה {a.group_id} ({a.kind}) מתנגש עם "
-                        f"{b.course_code} קבוצה {b.group_id} ({b.kind}) — "
-                        f"{_fmt_overlap(day, ov_s, ov_e)}"
+                    example = _copy(
+                        "pairClash", when=_fmt_overlap(day, ov_s, ov_e), **names
                     )
                 else:
                     # לא התנגשות זמנים אלא הפרת linked_to.
-                    example = (
-                        f"קורס {a.course_code} קבוצה {a.group_id} ({a.kind}) אינה מותרת "
-                        f"יחד עם קבוצה {b.group_id} ({b.kind}) לפי כלל הקבוצות הצמודות "
-                        f"(linked_to)"
-                    )
+                    example = _copy("pairLinked", **names)
 
     same = slot_a.course.code == slot_b.course.code
     scope = (
-        f"בתוך קורס {slot_a.course.code}: כל שילוב של {slot_a.kind} עם {slot_b.kind} נפסל"
+        _copy("pairScopeSame", code=slot_a.course.code, ka=slot_a.kind, kb=slot_b.kind)
         if same
-        else (
-            f"בין {slot_a.course.code} ({slot_a.kind}) לבין "
-            f"{slot_b.course.code} ({slot_b.kind}): כל צירוף אפשרי של קבוצות נפסל"
+        else _copy(
+            "pairScope",
+            a=slot_a.course.code, ka=slot_a.kind, b=slot_b.course.code, kb=slot_b.kind,
         )
     )
-    return f"{scope}. לדוגמה: {example} (every group pair is blocked)."
+    return _copy("pairBlocked", scope=scope, example=example)
 
 
 # ==========================================================================
-# 6. relax_suggestions — מה לעשות עכשיו
+# 6. relax_advice / relax_suggestions — מה לעשות עכשיו
 # ==========================================================================
 def relax_suggestions(courses: list[Course], prefs: Preferences) -> list[str]:
+    """הנוסח בלבד של ``relax_advice`` — לשורת הפקודה ולכל מי שצריך מחרוזות."""
+    return [tip["text"] for tip in relax_advice(courses, prefs)]
+
+
+def relax_advice(courses: list[Course], prefs: Preferences) -> list[dict[str, Any]]:
     """
-    צעדים מעשיים בעברית להרפיית האילוצים, כשאין פתרון (או שהפתרון גרוע).
+    צעדים מעשיים להרפיית האילוצים, כשאין פתרון. לכל צעד: ``kind`` (מזהה
+    באנגלית, ליומן ולסידור), ``text`` (הנוסח, מ-``strings.json``), ``codes``
+    (הקורסים שהצעד מדבר עליהם), ולצעד "ויתור על קורס" גם ``blocked_with``
+    (הקורסים שכל צירוף איתם חסום) ו-``wiped`` (רכיב שלם שלו נפסל לבדו).
 
-    מציעה, לפי סדר "כמה זה כואב":
-        1. להעלות את יעד הימים (הכי זול — זו העדפה רכה בלבד).
-        2. להרחיב את חלון השעות בדיוק עד מה שהנתונים דורשים.
-        3. לבטל חלון חסום שמוחק הרבה קבוצות.
-        4. לאפשר יום שישי.
-        5. לאפשר חפיפה מכוונת ברכיב שאין בו חובת נוכחות (SPEC_V2 §2) —
-           מוצע רק כשזה באמת פותח זוג קורסים שחסום כרגע.
-        6. לוותר על קורס — כולל אזהרה שקורס צמוד גורר את כל החבילה.
+    לפי סדר "כמה זה כואב":
+        1. להרחיב את חלון השעות בדיוק עד מה שהנתונים דורשים.   ‏earliest/latest
+        2. לבטל חלון חסום שמוחק הרבה קבוצות.                    ‏blocked
+        3. לאפשר יום שישי.                                         ‏friday
+        4. לאפשר חפיפה מכוונת ברכיב שאין בו חובת נוכחות (SPEC_V2 §2) —
+           מוצע רק כשזה באמת פותח זוג קורסים שחסום כרגע.          ‏overlap
+        5. לוותר על קורס — כולל אזהרה שקורס צמוד גורר את כל החבילה. ‏drop/drop_tied
+
+    ‏**אין כאן "להעלות את יעד הימים"** (2026-11-09). היעד הוא העדפה רכה:
+    הוא משנה רק את הניקוד, ולכן לעולם אינו הסיבה שאין מערכת — ההצעה הזו
+    שלחה סטודנטים לשנות דבר שאינו קשור. כשיש מערכות והיעד אינו בהישג יד,
+    ‏``/api/solve`` אומר זאת בהודעה משלו.
     """
-    tips: list[str] = []
+    tips: list[dict[str, Any]] = []
 
-    # --- 1. יעד ימים -----------------------------------------------------
-    if prefs.target_days < 6:
-        tips.append(
-            f"העלי את target_days מ-{prefs.target_days} ל-{prefs.target_days + 1} "
-            f"(ואם צריך עד 5): יעד הימים הוא העדפה רכה — הוא רק מוריד ניקוד ואינו "
-            f"פוסל מערכות, אבל הוא עלול לדחוק מערכות טובות למטה ברשימה "
-            f"(raise target_days to {prefs.target_days + 1})."
-        )
+    def tip(kind: str, text: str, codes: list[str] | None = None, **extra: Any) -> None:
+        tips.append({"kind": kind, "text": text, "codes": list(codes or []), **extra})
 
-    # --- 2. חלון השעות ---------------------------------------------------
+    # --- 1. חלון השעות ---------------------------------------------------
     all_meetings = [m for c in courses for g in c.groups for m in g.meetings]
     if all_meetings:
         min_start = min(m.start for m in all_meetings)
         max_end = max(m.end for m in all_meetings)
         if prefs.earliest > min_start:
-            tips.append(
-                f"הקדימי את earliest מ-{fmt_time(prefs.earliest)} ל-{fmt_time(min_start)} — "
-                f"יש שיעורים שמתחילים בשעה הזו ואין דרך לעקוף אותם "
-                f"(widen the window: earliest -> {fmt_time(min_start)})."
-            )
+            tip("earliest", _copy(
+                "tipEarliest",
+                **{"from": fmt_time(prefs.earliest), "to": fmt_time(min_start)},
+            ))
         if prefs.latest < max_end:
-            tips.append(
-                f"אחרי את latest מ-{fmt_time(prefs.latest)} ל-{fmt_time(max_end)} "
-                f"(widen the window: latest -> {fmt_time(max_end)})."
-            )
+            tip("latest", _copy(
+                "tipLatest",
+                **{"from": fmt_time(prefs.latest), "to": fmt_time(max_end)},
+            ))
 
-    # --- 3. חלונות חסומים ------------------------------------------------
+    # --- 2. חלונות חסומים ------------------------------------------------
     for day, w_start, w_end in prefs.blocked_windows:
         blocked_count = sum(
             1
@@ -2593,54 +2616,58 @@ def relax_suggestions(courses: list[Course], prefs: Preferences) -> list[str]:
             if any(_window_overlaps(m, day, w_start, w_end) for m in g.meetings)
         )
         if blocked_count:
-            tips.append(
-                f"בטלי או כווצי את החלון החסום ביום {DAY_NAMES_HE.get(day, day)} "
-                f"{fmt_time(w_start)}-{fmt_time(w_end)} — הוא מוחק {blocked_count} קבוצות "
-                f"(drop this blocked window)."
-            )
+            tip("blocked", _copy(
+                "tipBlocked", day=DAY_NAMES_HE.get(day, day), n=blocked_count,
+                **{"from": fmt_time(w_start), "to": fmt_time(w_end)},
+            ))
 
-    # --- 4. יום שישי -----------------------------------------------------
+    # --- 3. יום שישי -----------------------------------------------------
     if prefs.forbid_friday:
         friday_groups = sum(
             1 for c in courses for g in c.groups if FRIDAY in g.days()
         )
         if friday_groups:
-            tips.append(
-                f"אפשרי לימודים ביום שישי (forbid_friday=False) — {friday_groups} קבוצות "
-                f"נחסמות כרגע בגללו (allow Friday)."
-            )
+            tip("friday", _copy("tipFriday", n=friday_groups))
 
-    # --- 5. חפיפה מכוונת ברכיב בלי חובת נוכחות ---------------------------
+    # --- 4. חפיפה מכוונת ברכיב בלי חובת נוכחות ---------------------------
     for slot_a, slot_b in _soft_conflict_opportunities(courses, prefs)[:2]:
-        tips.append(
-            f"‏{slot_a.course.code} ({slot_a.kind}) ו-{slot_b.course.code} "
-            f"({slot_b.kind}) חוסמים זה את זה רק בגלל חפיפה בשעות. אם באחד מהם "
-            f"אין חובת נוכחות — אפשר לסמן אותו ככזה ולאפשר חפיפות מכוונות "
-            f"(allow_soft_conflicts), ואז המערכת תיבנה עם החפיפה הזו, תדווח "
-            f"עליה במפורש, ותקבל קנס ניקוד "
-            f"(mark a component attendance-optional and allow soft conflicts)."
+        tip(
+            "overlap",
+            _copy(
+                "tipOverlap",
+                a=slot_a.course.code, ka=slot_a.kind,
+                b=slot_b.course.code, kb=slot_b.kind,
+            ),
+            [slot_a.course.code, slot_b.course.code],
         )
 
-    # --- 6. ויתור על קורס ------------------------------------------------
-    for course in _most_problematic_courses(courses, prefs)[:2]:
+    # --- 5. ויתור על קורס ------------------------------------------------
+    table = _trouble_table(courses, prefs)
+    _trouble, partners, wiped = table
+    for course in _most_problematic_courses(courses, prefs, table)[:2]:
+        facts = {
+            "blocked_with": sorted(partners.get(course.code, ())),
+            "wiped": course.code in wiped,
+        }
         if course.tied_with:
             block = ", ".join([course.code, *course.tied_with])
-            tips.append(
-                f"ויתור על {course.code} ({course.name}) מחייב ויתור על כל החבילה "
-                f"הצמודה [{block}] — זו החלטה כבדה, שקלי אותה אחרונה "
-                f"(dropping a tied course drops the whole block)."
+            tip(
+                "drop_tied",
+                _copy("tipDropTied", code=course.code, name=course.name, block=block),
+                [course.code, *course.tied_with],
+                **facts,
             )
         else:
-            tips.append(
-                f"שקלי לוותר על {course.code} ({course.name}) ולדחות אותו לסמסטר הבא — "
-                f"זה הקורס הכי בעייתי לשיבוץ כרגע (drop course {course.code})."
+            tip(
+                "drop",
+                _copy("tipDrop", code=course.code, name=course.name),
+                [course.code],
+                **facts,
             )
 
     if not tips:
-        tips.append(
-            "כל האילוצים כבר רפויים; הבעיה היא שילוב הקורסים עצמו. "
-            "הדרך היחידה היא לוותר על קורס (only dropping a course will help)."
-        )
+        tip("only_drop", _copy("tipOnlyDrop"))
+    LOG.debug("relax_advice: %s", [t["kind"] for t in tips])
     return tips
 
 
@@ -2681,29 +2708,54 @@ def _soft_conflict_opportunities(
     return opportunities
 
 
-def _most_problematic_courses(courses: list[Course], prefs: Preferences) -> list[Course]:
-    """
-    מדרגת קורסים לפי "כמה הם מפריעים": סלוטים שנמחקו לגמרי + מספר הזוגות
-    שבהם כל הצירופים חסומים. משמש רק להצעות — לא משפיע על החיפוש.
+def _trouble_table(
+    courses: list[Course], prefs: Preferences
+) -> tuple[dict[str, int], dict[str, set[str]], set[str]]:
+    """הניקוד של ``_most_problematic_courses``, ומה שמאחוריו.
+
+    ‏(trouble, partners, wiped): ‏``partners[c]`` — הקורסים *האחרים* שכל צירוף
+    של קבוצות איתם חסום; ‏``wiped`` — קורסים שרכיב שלם שלהם נפסל לבדו (או
+    שאין להם קבוצות כלל). ‏``/api/solve`` צריך את זה כדי לא להציע ויתור על
+    קורס מהתוכנית כשכל הבעיה שלו היא קורס מחוץ לתוכנית שיש לו תחליף.
     """
     trouble: dict[str, int] = {c.code: 0 for c in courses}
+    partners: dict[str, set[str]] = {c.code: set() for c in courses}
+    wiped: set[str] = set()
 
     live_slots: list[_Slot] = []
     for course in courses:
         if not course.groups:
             trouble[course.code] += 10
+            wiped.add(course.code)
         for kind in course.kinds():
             survivors, _ = _filter_groups(course.groups_of(kind), prefs)
             if survivors:
                 live_slots.append(_Slot(course, kind, survivors))
             else:
                 trouble[course.code] += 5
+                wiped.add(course.code)
 
     for i, a in enumerate(live_slots):
         for b in live_slots[i + 1 :]:
             if _all_pairs_blocked_example(a, b, prefs) is not None:
                 trouble[a.course.code] += 1
                 trouble[b.course.code] += 1
+                if a.course.code != b.course.code:
+                    partners[a.course.code].add(b.course.code)
+                    partners[b.course.code].add(a.course.code)
+    return trouble, partners, wiped
+
+
+def _most_problematic_courses(
+    courses: list[Course],
+    prefs: Preferences,
+    table: tuple[dict[str, int], dict[str, set[str]], set[str]] | None = None,
+) -> list[Course]:
+    """
+    מדרגת קורסים לפי "כמה הם מפריעים": סלוטים שנמחקו לגמרי + מספר הזוגות
+    שבהם כל הצירופים חסומים. משמש רק להצעות — לא משפיע על החיפוש.
+    """
+    trouble, _partners, _wiped = table or _trouble_table(courses, prefs)
 
     ranked = sorted(
         courses,

@@ -4455,6 +4455,174 @@ def _plan_codes(curr: dict | None) -> set[str]:
     return codes
 
 
+#: ‏הספרה הראשונה, ומה שלפניה — ‏``/^\D*?\d+/`` של ``baseCourseName`` ב-app.js.
+#: ‏``\d`` של JS הוא 0–9 בלבד, ולכן ‏[0-9] ולא ‏``\d`` של פייתון.
+_BASE_NUMBERED = re.compile(r"[^0-9]*?[0-9]+")
+_BASE_DEPT_TAG = re.compile(r"[A-Z]{1,3}")
+_BASE_STAGE = re.compile(r"[א-ט]'")
+
+
+def base_course_name(name: Any) -> str:
+    """השם הבסיסי של קורס — עותק מדויק של ``baseCourseName`` ב-app.js.
+
+    ‏"פיזיקה 2ב", "פיזיקה 2 IE", "פיזיקה 2 מכ'" ו"פיזיקה 2 אז'" הם כולם
+    ‏"פיזיקה 2": עם מספר — עד סוף המספר הראשון. בלי מספר — בלי מילים אחרונות
+    שהן תג מחלקה (‏"ל'", ‏"IE"); ‏"א'"..."ט'" אינם תג אלא חלק מהשם.
+
+    ‏**שני העותקים חייבים להישאר זהים**: הממשק אומר "בתוכנית שלך: …" בחיפוש
+    לפי הכלל ב-JS, ו-``/api/solve`` מציע החלפה לפי הכלל הזה.
+    ‏``tests/test_base_course_name_parity.py`` מריץ את שניהם על אותם שמות.
+    """
+    s = str(name) if name is not None else ""
+    s = re.sub(r"[׳’‘]", "'", s)
+    s = re.sub(r"[״“”]", '"', s)
+    s = re.sub(r"\s+", " ", s).strip()
+    numbered = _BASE_NUMBERED.match(s)
+    if numbered:
+        return numbered.group(0).strip()
+    words = s.split(" ")
+    while len(words) > 1:
+        last = words[-1]
+        tag = bool(_BASE_DEPT_TAG.fullmatch(last)) or (
+            last.endswith("'") and not _BASE_STAGE.fullmatch(last)
+        )
+        if not tag:
+            break
+        words.pop()
+    return " ".join(words)
+
+
+#: ‏"הנדסת ביוטכנולוגיה" ⇐ "ביוטכנולוגיה" — ‏``OWNER_SHORT_PREFIX`` ב-app.js.
+_OWNER_SHORT_PREFIX = re.compile(r"^הנדסת\s+")
+
+#: ‏"אין מערכת": כמה הצעות לכל היותר. הקופסה היא שורת כותרת ועד שלוש שורות.
+MAX_INFEASIBLE_ADVICE = 3
+
+
+def _plan_swaps(
+    built: list, program: str, intake: str
+) -> tuple[list[dict[str, Any]], set[str]]:
+    """קורסים שנבחרו מחוץ לתוכנית, כשבתוכנית יש קורס באותו שם בסיסי.
+
+    המקרה (2026-11-09): סטודנט/ית מתעשייה וניהול בחרו ‏11026 ‏פיזיקה 2ב — של
+    ביוטכנולוגיה — במקום ‏11210 ‏פיזיקה 2 IE שלהם. ההרצאה היחידה של ‏11026
+    חופפת להרצאה היחידה של ‏51132, ולכן לא נמצאה מערכת; ההסבר נקב בזוג
+    המתנגש, אבל לא אמר שהקורס בכלל אינו שלהם.
+
+    ‏"בתוכנית" הוא ``_plan_codes`` (כמו תג "בתוכנית" בחיפוש), והבעלים הם
+    ‏``_course_programs`` — כך ההחלפה אינה סותרת את מה שהחיפוש הראה. בלי
+    מסלול, או במסלול "אחר", אין מול מה להשוות.
+
+    מחזירה (החלפות, קודי התוכנית).
+    """
+    if not program or program.casefold() == OTHER_PROGRAM:
+        return [], set()
+    curr = _curriculum(program, intake)
+    plan = _plan_codes(curr)
+    if not plan:
+        return [], plan
+
+    twins: dict[str, list[dict[str, Any]]] = {}
+    seen: set[str] = set()
+    for _source, entry in curriculum_mod.iter_all_courses(curr):
+        code = curriculum_mod._norm_code(entry.get("code"))  # noqa: SLF001
+        name = str(entry.get("name") or "").strip()
+        if not code or not name or code in seen:
+            continue
+        seen.add(code)
+        twins.setdefault(base_course_name(name), []).append(
+            {"code": code, "name": name, "credits": entry.get("credits")}
+        )
+
+    selected = {c.code for c in built}
+    mine = _program_label(program)
+    swaps: list[dict[str, Any]] = []
+    for course in built:
+        if course.code in plan:
+            continue
+        base = base_course_name(course.name)
+        options = [t for t in twins.get(base, ()) if t["code"] not in selected]
+        if not base or not options:
+            continue
+        target = options[0]
+        owners = [
+            _OWNER_SHORT_PREFIX.sub("", label)
+            for label in _course_programs().get(course.code, ())
+            if label != mine
+        ]
+        params = {
+            "code": course.code,
+            "name": course.name,
+            "toName": target["name"],
+            "to": target["code"],
+        }
+        text = (
+            strings_mod.fmt("server.infeasible.swap", owners=", ".join(owners), **params)
+            if owners
+            else strings_mod.fmt("server.infeasible.swapNoOwner", **params)
+        )
+        swaps.append(
+            {
+                "from": course.code,
+                "from_name": course.name,
+                "from_credits": course.credits,
+                "from_programs": owners,
+                "to": target["code"],
+                "to_name": target["name"],
+                "to_credits": target["credits"],
+                "text": text,
+            }
+        )
+    return swaps, plan
+
+
+def _infeasible_advice(
+    built: list, prefs: Any, program: str, intake: str
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """ההצעות של "אין מערכת": לכל היותר שלוש, המעשית ביותר ראשונה.
+
+    הסדר:
+        1. החלפה לקורס מהתוכנית (``_plan_swaps``) — קודם לכול: זו טעות בבחירה,
+           לא אילוץ שצריך לוותר עליו.
+        2. הרחבת חלון השעות, חלון חסום, יום שישי — כמו ב-``relax_advice``.
+        3. ויתור על קורס. **לא** על קורס מהתוכנית שכל מה שחוסם אותו הוא קורס
+           מחוץ לתוכנית שיש לו תחליף: ההחלפה פותרת את זה בלי לוותר על כלום.
+           ויתור על הקורס שמחוץ לתוכנית נשאר, כאפשרות משנית.
+        4. חפיפה מכוונת — אחרונה: הסטודנט/ית בחרו שלא לאפשר חפיפות.
+
+    ‏מחזירה (נוסחים, החלפות). ‏``kind`` של כל הצעה נכתב ליומן בלבד.
+    """
+    advice = scheduler_mod.relax_advice(built, prefs)
+    swaps, plan = _plan_swaps(built, program, intake)
+    swappable = {s["from"] for s in swaps}
+
+    def solved_by_swap(tip: dict[str, Any]) -> bool:
+        blockers = set(tip.get("blocked_with") or ())
+        return bool(
+            swappable
+            and tip["kind"] in ("drop", "drop_tied")
+            and set(tip.get("codes") or ()) <= plan
+            and not tip.get("wiped")
+            and blockers
+            and blockers <= swappable
+        )
+
+    drops = ("drop", "drop_tied", "only_drop")
+    ordered = (
+        [{"kind": "swap", "text": s["text"]} for s in swaps]
+        + [t for t in advice if t["kind"] not in drops and t["kind"] != "overlap"]
+        + [t for t in advice if t["kind"] in drops and not solved_by_swap(t)]
+        + [t for t in advice if t["kind"] == "overlap"]
+    )[:MAX_INFEASIBLE_ADVICE]
+    LOG.info(
+        "/api/solve: no schedule — advice %s, swaps %s, held back %s",
+        [t["kind"] for t in ordered],
+        [f"{s['from']}->{s['to']}" for s in swaps],
+        [t["codes"] for t in advice if solved_by_swap(t)],
+    )
+    return [t["text"] for t in ordered], swaps
+
+
 @bp.get("/catalog/search")
 @_endpoint
 def catalog_search():
@@ -5324,12 +5492,14 @@ def _solve_request():
         allow_soft_conflicts = False
 
     # ── 1. הקורסים: deepcopy, tied_with, נ"ז ──
+    program = str(body.get("program") or "").strip()
+    intake = str(body.get("intake") or "").strip()
     built, problems, _metas = _build_courses(
         codes,
         semester=semester,
         year=year,
-        program=str(body.get("program") or "").strip(),
-        intake=str(body.get("intake") or "").strip(),
+        program=program,
+        intake=intake,
     )
     # רק נ"ז ידועות נסכמות, וכמה לא ידועות נאמר במפורש (SPEC_MULTIFACULTY §3).
     # נספרים **כל** הקודים שנבחרו, גם אלה שאין להם נתונים שמורים: אחרת בחירה
@@ -5355,6 +5525,9 @@ def _solve_request():
         "target_reachable": False,
         "reasons": [],
         "suggestions": [],
+        # ‏"אין מערכת" עם קורס מחוץ לתוכנית שיש לו תאום בתוכנית: לכל אחד —
+        # ‏from/to, השמות, הנ"ז והנוסח. הממשק מצייר מהן כפתור "להחליף".
+        "swaps": [],
         "credits_total": solve_credits["total"],
         "credits_summary": solve_credits,
         "credits_unknown": solve_credits["unknown"],
@@ -5464,7 +5637,9 @@ def _solve_request():
             if not (getattr(exc, "truncated", False) or counts_truncated):  # pragma: no cover
                 # נתפס כבר בשלב 4: ספירה שלמה שמצאה צירופים, ו-solve שלא מצא.
                 base_common["reasons"] = list(exc.reasons)
-                base_common["suggestions"] = scheduler_mod.relax_suggestions(built, prefs)
+                base_common["suggestions"], base_common["swaps"] = _infeasible_advice(
+                    built, prefs, program, intake
+                )
                 base_common["feasible_count"] = 0
                 base_common["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
                 return _ok(base_common)
@@ -5523,12 +5698,13 @@ def _solve_request():
             LOG.exception("diagnose_infeasibility נכשל")
             reasons = [f"לא ניתן לאבחן את הסיבה ({type(exc).__name__})."]
         try:
-            suggestions = scheduler_mod.relax_suggestions(diag, prefs)
+            suggestions, swaps = _infeasible_advice(diag, prefs, program, intake)
         except Exception as exc:  # noqa: BLE001
-            LOG.exception("relax_suggestions נכשל")
-            suggestions = []
+            LOG.exception("_infeasible_advice נכשל")
+            suggestions, swaps = [], []
         base_common["reasons"] = reasons
         base_common["suggestions"] = suggestions
+        base_common["swaps"] = swaps
         # ויתורים **נמדדים**: לכל אילוץ שהוגדר בפועל, כמה מערכות ייפתחו אם
         # נרפה אותו, ומה זה גובה. הפותר רץ במילישניות, ולכן אין שום סיבה
         # להציע ויתור בלי לבדוק אם הוא בכלל עוזר.
