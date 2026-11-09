@@ -796,25 +796,52 @@ The comment in `wsgi.py` describes this chain (updated 2026-10-23).
 forged. In code it cannot: Werkzeug 3.1.8's `ProxyFix` takes `values[-1]`, and
 `tests/test_wsgi_proxy.py` pins that. What the code cannot show is that the
 Google Frontend adds nothing to the *right* of the client address. Check it on
-the live service:
+the live chain.
+
+The production access line no longer carries the address (`gunicorn.conf.py`,
+2026-11-09), and Cloud Run's request log is excluded (§11), so the check runs
+on a **throwaway private service** built from the same image. Only your own
+requests reach it, so only your own address is logged. `GUNICORN_CMD_ARGS`
+overrides the config file (gunicorn 23.0.0, `app/base.py` `load_config`). The
+value below has no spaces and no commas, so neither gunicorn's `shlex.split`
+nor `--set-env-vars` splits it.
 
 ```bash
-date -u +%Y-%m-%dT%H:%M:%SZ
-curl -s -o /dev/null -w '%{http_code}\n' -H "X-Forwarded-For: 203.0.113.7" https://slotwise.co.il/healthz
+IMAGE=$(gcloud run services describe slotwise --region europe-west1 \
+  --format='value(spec.template.spec.containers[0].image)')
+gcloud run deploy slotwise-proxycheck --region europe-west1 --image "$IMAGE" \
+  --no-allow-unauthenticated --max-instances 1 \
+  --set-env-vars 'GUNICORN_CMD_ARGS=--access-logformat=%(h)s|%(m)s|%(U)s|%(s)s'
+URL=$(gcloud run services describe slotwise-proxycheck --region europe-west1 \
+  --format='value(status.url)')
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  -H "X-Forwarded-For: 203.0.113.7" "$URL/healthz"
+curl -s https://checkip.amazonaws.com    # your own public address
+gcloud logging read 'resource.type="cloud_run_revision"
+  AND resource.labels.service_name="slotwise-proxycheck"
+  AND textPayload:"/healthz"' --limit 5 --format='value(textPayload)'
+gcloud run services delete slotwise-proxycheck --region europe-west1 --quiet
 ```
 
-Find that request's gunicorn access line in the Cloud Run logs. Its first field
-(`%(h)s`, the address after `ProxyFix`) must be the address you sent from — the
-same as `httpRequest.remoteIp` on the request log entry — and **not**
-`203.0.113.7`, and not a Google-internal address. If it is the forged value,
-the limit can be dodged; if it is an internal address, every client shares one
-bucket.
+The first field of the `/healthz` line (`%(h)s`, the address after `ProxyFix`)
+must be your own public address — **not** `203.0.113.7`, and not a
+Google-internal address. If it is the forged value, the limit can be dodged; if
+it is an internal address, every client shares one bucket.
+
+The throwaway service is reached through its `run.app` URL, which goes through
+the same single hop as `slotwise.co.il` while Cloudflare stays DNS only. **If
+anything is ever put in front of the production service, this check no longer
+tests the production chain.** Run it on `slotwise` itself, with the same
+variable on a new revision, and remove the variable straight away: while it is
+set, every visitor's address is logged.
 
 **Footgun: a load balancer in front adds a hop.** Putting a Google external
 Application Load Balancer (or any proxy) in front of Cloud Run appends its own
 address after the client's. With `x_for=1` unchanged, `remote_addr` would
 become the balancer, and every student would share one rate-limit bucket.
-Adding a hop means `x_for=2` and a re-run of the check above.
+Adding a hop means `x_for=2` and a re-run of the check above, on the
+production service.
 
 ### 9. Cost control
 
@@ -871,9 +898,44 @@ naming the catalog the process loaded:
 [slotwise] catalog: /app/data/catalog/catalog.jsonl (572 courses, built 2026-09-09T22:35:44Z)
 ```
 
-and confirm the access log shows **real, varying client IPs**. If every line
-shows the same Google address, `X-Forwarded-For` is not arriving the way step 8
-describes and the trust setting needs revisiting.
+and confirm that the access lines carry no address, no User-Agent and no query
+string — `"GET /api/catalog/search" 200 1234 0.012345s` and nothing more. The
+access log cannot show whether `ProxyFix` sees the real client address any
+more; that is the §8 check.
+
+### 11. Logs: what they hold
+
+Two sources write to Cloud Logging, and only the first is under the code's
+control:
+
+* **The container's stdout and stderr.** These hold gunicorn's access line
+  (`gunicorn.conf.py`: method, path without its query string, status, size,
+  time) and its error log, the startup lines, and the app's warnings. None of
+  them carries the client address or the User-Agent. Three kinds of entry
+  can still contain something the student sent:
+  * The path: `/api/semester/<n>/courses` names a semester.
+  * A traceback from an unexpected error can quote a value, such as a course
+    code, in its exception message.
+  * The `Error handling request …` line that gunicorn writes when a worker
+    times out prints the URI with its query string. In practice that is
+    `/api/solve`, which has no query string.
+* **Cloud Run's own request log** (`run.googleapis.com/requests`), written by
+  the platform for every request whatever the app does. It carries the client
+  address, the User-Agent, the referer, and the full URL including the query
+  string, which holds the student's programme, intake, specialisation and
+  catalog search text. **It is excluded** with an exclusion filter on the
+  `_Default` sink (Logging → Log Router):
+
+  ```
+  log_id("run.googleapis.com/requests")
+  ```
+
+  An excluded entry is never stored, so it cannot be read later either.
+
+**Status: in place since 2026-11-09.** Check
+that it is still there after any change to the project's logging. The privacy
+line in the footer (`app.footer` in `src/strings.json`) is only true while it
+is.
 
 ## Rate limiting
 

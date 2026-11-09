@@ -108,7 +108,22 @@ accesslog = "-"
 errorlog = "-"
 loglevel = os.environ.get("GUNICORN_LOGLEVEL", "info")
 
+#: The access line says what was asked and how it went, never who asked:
+#: method, path, status, size, response time.
+#:
+#: * No %(h)s and no %(a)s — the client address (after ProxyFix) and the
+#:   User-Agent.
+#: * %(U)s, the path without its query string, instead of %(r)s. The query is
+#:   where app.js puts the student's programme, intake, specialisation and
+#:   catalog search text.
+#:
+#: The path itself stays, so /api/semester/<n>/courses still names a semester,
+#: with nothing beside it that says whose. tests/test_access_log_privacy.py
+#: holds the format to an allowlist; DEPLOY.md §8 checks ProxyFix without the
+#: address, and §11 covers Cloud Run's own request log, which this file does
+#: not control.
+#:
 #: Response time (%(L)s) is in the access line on purpose: /api/solve timing is
 #: the number worth watching, and it is the first thing to look at if requests
 #: start hitting the 30 s timeout.
-access_log_format = '%(h)s "%(r)s" %(s)s %(b)s %(L)ss "%(a)s"'
+access_log_format = '"%(m)s %(U)s" %(s)s %(b)s %(L)ss'
