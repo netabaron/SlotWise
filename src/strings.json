@@ -155,14 +155,14 @@
   },
   "app": {
     "footer": {
-      "local": "SlotWise · שרת מקומי על 127.0.0.1 בלבד · הנתונים נשמרים במחשב הזה; נתוני הקורסים שבחרת נשלפים מהידיעון לפי קוד הקורס.",
+      "local": "SlotWise · שרת מקומי על 127.0.0.1 בלבד · הנתונים נשמרים במחשב הזה ואינם נשלחים לשום מקום.",
       "hosted": {
         "brand": "SlotWise",
-        "builtBy": "נבנה על ידי {author}",
+        "builtBy": "Built by {author}",
         "author": "Neta Baron",
         "authorUrl": "https://www.linkedin.com/in/neta-baron",
-        "privacy": "הבחירות שלך נשמרות בדפדפן שלך",
-        "report": "דיווח על תקלה",
+        "privacy": "Your data stays in your browser",
+        "report": "Report an issue",
         "reportUrl": "https://forms.gle/vbfne2rP9eSFuw179"
       }
     },

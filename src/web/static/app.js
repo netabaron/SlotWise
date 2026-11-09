@@ -4440,7 +4440,7 @@
   /**
    * שורת התחתית, לפי ``mode`` של ‏/api/bootstrap.
    *
-   * ‏``"hosted"``: שורה עם שני קישורים (‏LinkedIn וטופס דיווח), שניהם
+   * ‏``"hosted"``: שורה באנגלית עם שני קישורים (‏LinkedIn וטופס דיווח), שניהם
    * בלשונית חדשה. כל ערך אחר: המשפט המקומי. לפני ה-bootstrap, או כשהוא
    * נכשל, השורה נשארת ריקה — המשפט המקומי ("127.0.0.1 בלבד") שקרי בשרת
    * ציבורי, והמשפט המאורח מיותר במחשב של הסטודנט/ית.
@@ -4453,14 +4453,16 @@
     if (mode === footerMode) return;
     footerMode = mode;
     clear(line);
-    // ‏שתי השורות בעברית, בכיוון של הדף. עד 2026-11-09 השורה המאורחת הייתה
-    // ‏באנגלית ונשאה ‏dir="ltr" lang="en" משלה.
-    line.removeAttribute("dir");
-    line.removeAttribute("lang");
     if (mode === "local") {
+      line.removeAttribute("dir");
+      line.removeAttribute("lang");
       setText(line, T("app.footer.local"));
       return;
     }
+    // הנוסח המאורח הוא אנגלית בתוך דף ‏RTL. ‏dir/lang על השורה עצמה שומרים
+    // על סדר הקטעים ועל ההגייה בקורא מסך.
+    line.setAttribute("dir", "ltr");
+    line.setAttribute("lang", "en");
     var link = function (text, href) {
       return el("a", {
         text: text,
@@ -4470,7 +4472,7 @@
     var sep = function () {
       return document.createTextNode(" · ");
     };
-    // ‏"נבנה על ידי {author}": המשפט נשמר שלם ב-JSON, והשם מוחלף כאן בקישור.
+    // ‏"Built by {author}": המשפט נשמר שלם ב-JSON, והשם מוחלף כאן בקישור.
     var builtBy = String(T("app.footer.hosted.builtBy")).split("{author}");
     line.appendChild(document.createTextNode(T("app.footer.hosted.brand")));
     line.appendChild(sep());
