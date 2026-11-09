@@ -2487,8 +2487,16 @@ html.has-modal { overflow: hidden; }
   position: relative;
 }
 
-.reasons > li::before { content: "\2716"; position: absolute; inset-inline-start: 0; }
+/* ‏נקודה ולא ‎\2716‎: האיקס קרא את הקופסה כקריסה. זו אזהרה — הבחירות
+   תקינות, רק אינן מסתדרות יחד (2026-11-09). */
+.reasons > li::before { content: "\2022"; position: absolute; inset-inline-start: 0; }
 .suggestions > li::before { content: "\2192"; position: absolute; inset-inline-start: 0; }
+
+/* ‏"להחליף" מיד אחרי המשפט, בזרימה של השורה — לא flex, שהיה מרחיק את
+   הכפתור לקצה. השוליים השליליים (‏5px ריפוד + 1px מסגרת) משאירים את גובה
+   השורה של הטקסט, אחרת הכפתור מגביה אותה והחץ של ה-li נשאר למעלה. */
+.suggestions > .suggestion-swap { padding-block: 4px; }
+.suggestion-swap .swap-apply { margin-block: -6px; margin-inline-start: 10px; }
 
 /* ==========================================================================
    12. תחתית
@@ -3284,8 +3292,9 @@ html.has-modal { overflow: hidden; }
 .relax-cost { font-size: 13px; color: var(--muted); }
 .relax-checked { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
 
-/* הסיבות שמתקפלות: הראשונה גלויה, השאר בגילוי. */
-.reasons-more-wrap { list-style: none; margin-inline-start: -1em; }
+/* ‏הסיבות כולן מאחורי "פרטים", סגור; הפעולה — ההצעות — מעליהן. */
+.reasons > .reasons-more-wrap { list-style: none; padding-inline-start: 0; }
+.reasons > .reasons-more-wrap::before { content: none; }
 .reasons-more summary {
   cursor: pointer;
   font-size: 13px;
@@ -3309,7 +3318,7 @@ html.has-modal { overflow: hidden; }
 .relax-undo-text { color: var(--ink); }
 
 @media print {
-  .relax, .relax-undo { display: none !important; }
+  .relax, .relax-undo, .swap-apply { display: none !important; }
 }
 
 

@@ -109,8 +109,7 @@
       "btnFull": "צפייה במערכת המלאה",
       "softTitle": "חפיפות מכוונות במערכת הזו",
       "gridLabel": "מערכת שבועית",
-      "emptyTitle": "אין מערכת אפשרית עם הבחירות האלה",
-      "emptySub": "להלן מה שחוסם, ומה אפשר לשחרר כדי לפתוח פתרון:"
+      "emptyTitle": "אין מערכת אפשרית עם הבחירות האלה"
     },
     "fallbackPage": {
       "title": "SlotWise",
@@ -403,8 +402,14 @@
       "topPenalty": "{label} — הגורם המשפיע ביותר",
       "lecturersHits": "{hits} מתוך {total} מרצים מועדפים",
       "duration": "{span} שעות",
-      "moreReasons": "עוד {n} סיבות",
-      "moreReasonsOne": "עוד סיבה אחת",
+      "details": "פרטים",
+      "swap": "{from} שייך לתוכנית של {owners}. בתוכנית שלך: {to}",
+      "swapNoOwner": "{from} אינו בתוכנית שלך. בתוכנית שלך: {to}",
+      "swapFrom": "{code} {name}",
+      "swapTo": "{name} ({code})",
+      "swapCourse": "{code} {name}",
+      "swapApply": "להחליף",
+      "swapApplyTitle": "מחליף את {from} ב-{to} ומחשב מחדש. אפשר להחזיר בלחיצה אחת.",
       "solvingCancel": "ביטול",
       "solvingCancelTitle": "עוצר את החישוב. הבחירות שלך נשמרות.",
       "solvingCancelled": "החישוב בוטל. אפשר להפעיל אותו שוב.",
@@ -888,11 +893,15 @@
         "friday": "את חסימת יום שישי",
         "earliest": "את השעה המוקדמת ביותר ({time})",
         "latest": "את השעה המאוחרת ביותר ({time})",
-        "blocked": "את החלון החסום ביום {day} {from}–{to}"
+        "blocked": "את החלון החסום ביום {day} {from}–{to}",
+        "swap": "את {course}"
       },
       "undoStale": "שינית הגדרות מאז, ולכן אי אפשר להחזיר את המצב הקודם בלחיצה אחת בלי לדרוס את מה ששינית.",
       "pairBoth": "שני אלה יחד",
-      "undoNotice": "ויתרת על {what}."
+      "undoNotice": "ויתרת על {what}.",
+      "swapped": "{from} הוחלף ב-{to}.",
+      "swapNotice": "החלפת את {from} ב-{to}.",
+      "swapUndone": "{from} חזר במקום {to}."
     }
   }
 }

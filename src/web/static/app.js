@@ -8692,25 +8692,19 @@
                 el("li", { text: T("app.schedule.noReasons") })
               );
             }
-            // הסיבות מסבירות את העבר; שורות הוויתור הן מה שעושים.
-            // לכן הראשונה גלויה והשאר מתקפלות — ולא להפך.
+            // ‏הסיבות מסבירות את העבר; ההצעות שמעליהן הן מה שעושים. לכן
+            // כולן מאחורי "פרטים", סגור — הזוג החוסם ושעות החפיפה זמינים
+            // למי שרוצה, ולא דוחקים את הפעולה (2026-11-09).
             var texts = reasons.map(function (r) {
               return txt(typeof r === "object" ? r.text || r.reason : r);
             });
-            if (texts.length) box.appendChild(el("li", { text: texts[0] }));
-            if (texts.length > 1) {
-              var rest = texts.slice(1);
+            if (texts.length) {
               var more = el("details", { class: "reasons-more" }, [
-                el("summary", {
-                  text:
-                    rest.length === 1
-                      ? T("app.schedule.moreReasonsOne")
-                      : Tf("app.schedule.moreReasons", { n: rest.length }),
-                }),
+                el("summary", { text: T("app.schedule.details") }),
                 el(
                   "ul",
                   { class: "reasons" },
-                  rest.map(function (t) {
+                  texts.map(function (t) {
                     return el("li", { text: t });
                   })
                 ),
@@ -8723,10 +8717,15 @@
         renderRelaxUndo();
         if (ui.suggestions) {
           rebuild(ui.suggestions, function (box) {
+            var swaps = pickList(s, ["swaps"], null);
             pickList(s, ["suggestions"], null).forEach(function (r) {
-              box.appendChild(
-                el("li", { text: txt(typeof r === "object" ? r.text || r.tip : r) })
-              );
+              var text = txt(typeof r === "object" ? r.text || r.tip : r);
+              // ‏הצעת החלפה מגיעה גם כמחרוזת (לשורת הפקודה) וגם כרשומה ב-
+              // ‏``swaps``; כאן היא מצוירת מהרשומה, עם כפתור.
+              var swap = swaps.filter(function (sw) {
+                return txt(sw && sw.text) === text;
+              })[0];
+              box.appendChild(swap ? swapSuggestion(swap) : el("li", { text: text }));
             });
           });
         }
@@ -10983,6 +10982,8 @@
   function relaxRestoreName(kind, detail) {
     var d = detail || {};
     if (kind === "friday") return T("app.relax.restoreName.friday");
+    if (kind === "swap")
+      return Tf("app.relax.restoreName.swap", { course: courseRefText(d.from, d.fromName) });
     if (kind === "earliest")
       return Tf("app.relax.restoreName.earliest", { time: fmtTime(num(d.was, 0)) });
     if (kind === "latest")
@@ -11078,6 +11079,106 @@
     );
   }
 
+  /** ‏"11026 פיזיקה 2ב" — לטוסט ולהודעת הביטול, שהם טקסט רציף. */
+  function courseRefText(code, name) {
+    return Tf("app.schedule.swapCourse", { code: txt(code), name: txt(name) });
+  }
+
+  /**
+   * ‏"11026 פיזיקה 2ב שייך לתוכנית של ביוטכנולוגיה. בתוכנית שלך: פיזיקה 2 IE
+   * ‏(11210)" וכפתור "להחליף". השם ב-‎<bdi>‎ והקוד ב-ltrCode, כמו ב"בתוכנית
+   * ‏שלך" של החיפוש: "IE" לטיני בתוך עברית, ובלי בידוד הסוגריים מתהפכים.
+   */
+  function swapSuggestion(sw) {
+    var owners = (sw.from_programs || []).map(txt).filter(Boolean);
+    var line = el("span", { class: "swap-text" });
+    fillNodes(line, owners.length ? T("app.schedule.swap") : T("app.schedule.swapNoOwner"), {
+      from: fillNodes(document.createDocumentFragment(), T("app.schedule.swapFrom"), {
+        code: ltrCode(sw.from),
+        name: el("bdi", { text: txt(sw.from_name) }),
+      }),
+      owners: document.createTextNode(owners.join(", ")),
+      to: fillNodes(document.createDocumentFragment(), T("app.schedule.swapTo"), {
+        code: ltrCode(sw.to),
+        name: el("bdi", { text: txt(sw.to_name) }),
+      }),
+    });
+    return el("li", { class: "suggestion-swap" }, [
+      line,
+      el("button", {
+        class: "btn btn-outline btn-sm swap-apply",
+        attrs: {
+          type: "button",
+          title: Tf("app.schedule.swapApplyTitle", {
+            from: courseRefText(sw.from, sw.from_name),
+            to: courseRefText(sw.to, sw.to_name),
+          }),
+        },
+        data: { fk: "swap-" + txt(sw.from) },
+        text: T("app.schedule.swapApply"),
+        on: { click: function () { applySwap(sw); } },
+      }),
+    ]);
+  }
+
+  /**
+   * ‏החלפה בלחיצה: מוריד את הקורס שמחוץ לתוכנית ומוסיף את התאום שלו —
+   * ‏``toggleCourse`` ו-``addCourse``, אותן פעולות כמו ביד. נזכרת ב-
+   * ‏``runtime.lastRelax`` כמו ויתור, ולכן מקבלת את אותה הודעת ביטול.
+   * ‏הדירוג של המרצים בקורס שירד נשמר בצד, כדי שהביטול יחזיר גם אותו.
+   */
+  function applySwap(sw) {
+    var from = txt(sw.from);
+    var to = txt(sw.to);
+    if (!from || !to || state.codes.indexOf(from) === -1) return;
+    runtime.lastRelax = {
+      restores: [
+        {
+          kind: "swap",
+          detail: {
+            from: from,
+            fromName: txt(sw.from_name),
+            to: to,
+            toName: txt(sw.to_name),
+            ranked: state.ranked[from] ? deepCopy(state.ranked[from]) : null,
+          },
+        },
+      ],
+      applied: { swap: { from: from, to: to } },
+    };
+    toggleCourse(from, false);
+    addCourse(to, sw.to_name, sw.to_credits, { keepQuery: true });
+    toast(
+      Tf("app.relax.swapped", {
+        from: courseRefText(from, sw.from_name),
+        to: courseRefText(to, sw.to_name),
+      }),
+      "ok"
+    );
+  }
+
+  /** מחזיר את הקורס שהוחלף, ואת הדירוג שהיה לו. */
+  function undoSwap(last) {
+    var d = last.restores[0].detail;
+    runtime.lastRelax = null;
+    toggleCourse(d.to, false);
+    // ‏בלי נ"ז: ``state.known`` עדיין זוכר את מה שהיה לקורס לפני ההחלפה.
+    addCourse(d.from, d.fromName, null, { keepQuery: true });
+    if (d.ranked) {
+      setState(function (st) {
+        st.ranked = Object.assign({}, st.ranked);
+        st.ranked[d.from] = d.ranked;
+      });
+    }
+    toast(
+      Tf("app.relax.swapUndone", {
+        from: courseRefText(d.from, d.fromName),
+        to: courseRefText(d.to, d.toName),
+      }),
+      "ok"
+    );
+  }
+
   /** מה היה לפני הוויתור — ערך יחיד, לא מצב שלם. */
   function relaxSnapshot(delta) {
     var was = {};
@@ -11101,6 +11202,11 @@
     var last = runtime.lastRelax;
     if (!last) return false;
     var patch = last.applied || {};
+    if (patch.swap) {
+      // ‏תקף כל עוד הקורס החדש בבחירה והישן לא — כלומר לא שינית את זה ביד.
+      var codes = state.codes || [];
+      return codes.indexOf(patch.swap.to) !== -1 && codes.indexOf(patch.swap.from) === -1;
+    }
     var keys = Object.keys(patch);
     for (var i = 0; i < keys.length; i++) {
       var k = keys[i];
@@ -11117,6 +11223,10 @@
   function undoRelaxation() {
     var last = runtime.lastRelax;
     if (!last || !relaxUndoValid()) return;
+    if (last.applied && last.applied.swap) {
+      undoSwap(last);
+      return;
+    }
     var patch = {};
     var names = [];
     last.restores.forEach(function (r) {
@@ -11145,14 +11255,22 @@
     var ok = relaxUndoValid();
     setHidden(ui.relaxUndo, !ok);
     if (!ok) return;
-    var names = (runtime.lastRelax.restores || []).map(function (r) {
+    var restores = runtime.lastRelax.restores || [];
+    var names = restores.map(function (r) {
       return relaxRestoreName(r.kind, r.detail);
     });
+    // ‏החלפה אינה ויתור, ולכן משפט משלה: "החלפת את … ב-…".
+    var swapped = restores.length === 1 && restores[0].kind === "swap" ? restores[0].detail : null;
     rebuild(ui.relaxUndo, function (box) {
       box.appendChild(
         el("span", {
           class: "relax-undo-text",
-          text: Tf("app.relax.undoNotice", { what: names.join(" ו") }),
+          text: swapped
+            ? Tf("app.relax.swapNotice", {
+                from: courseRefText(swapped.from, swapped.fromName),
+                to: courseRefText(swapped.to, swapped.toName),
+              })
+            : Tf("app.relax.undoNotice", { what: names.join(" ו") }),
         })
       );
       box.appendChild(

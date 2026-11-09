@@ -214,7 +214,9 @@
                   #schedule-summary
                   #grid-scroll > #schedule-grid
                   .grid-tools > #schedule-legend #schedule-unscheduled #meeting-detail
-                  #schedule-empty (hidden) > #infeasible-reasons #infeasible-suggestions
+                  #schedule-empty (hidden) > .empty-title #infeasible-suggestions
+                                 #relax #infeasible-reasons  — כותרת בשורה אחת, עד
+                                 שלוש הצעות, הוויתורים, והסיבות מאחורי "פרטים".
                   #relax (hidden) > #relax-title #relax-intro #relax-list #relax-checked
                   #relax-undo (hidden)  — הודעת הביטול, מוצגת כשיש תוצאות
                   #btn-print #schedule-note
@@ -763,10 +765,11 @@
         <p class="empty-sub" id="schedule-no-times-sub"></p>
       </div>
 
+      <!-- ‏אזהרה, לא שגיאה: הבחירות תקינות, רק אינן מסתדרות יחד. כותרת בשורה
+           אחת, ומיד אחריה מה עושים — עד שלוש הצעות, המעשית ראשונה. ההסבר
+           הטכני (איזה זוג חוסם ולמה) מאחורי "פרטים", סגור (2026-11-09). -->
       <div class="empty" id="schedule-empty" hidden>
         <h3 class="empty-title">{{ S.ui.schedule.emptyTitle }}</h3>
-        <p class="empty-sub">{{ S.ui.schedule.emptySub }}</p>
-        <ul class="reasons" id="infeasible-reasons"></ul>
         <ul class="suggestions" id="infeasible-suggestions"></ul>
 
         <!-- ‏ויתורים נמדדים. כל מספר כאן הוא תוצאה של פתירה מחדש, ולא
@@ -777,6 +780,8 @@
           <div class="relax-list" id="relax-list"></div>
           <p class="relax-checked" id="relax-checked"></p>
         </div>
+
+        <ul class="reasons" id="infeasible-reasons"></ul>
       </div>
 
       <p class="note" id="schedule-note"></p>
