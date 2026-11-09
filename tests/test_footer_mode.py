@@ -32,7 +32,7 @@ STRINGS = json.loads((ROOT / "src" / "strings.json").read_text(encoding="utf-8")
 FOOTER = STRINGS["app"]["footer"]
 
 HOSTED_TEXT = (
-    "SlotWise · Built by Neta Baron · Your data stays in your browser · Report an issue"
+    "SlotWise · נבנה על ידי Neta Baron · הבחירות שלך נשמרות בדפדפן שלך · דיווח על תקלה"
 )
 LINKEDIN = "https://www.linkedin.com/in/neta-baron"
 REPORT = "https://forms.gle/vbfne2rP9eSFuw179"
@@ -145,10 +145,10 @@ def test_hosted_footer_has_the_public_line_and_links(browser):
     info = _footer(browser, {"allow_network": False, "mode": "hosted"})
     assert not info["errors"], info["errors"]
     assert info["text"] == HOSTED_TEXT
-    assert info["dir"] == "ltr" and info["lang"] == "en"
+    assert info["dir"] is None and info["lang"] is None
     assert info["links"] == [
         {"text": "Neta Baron", "href": LINKEDIN, "target": "_blank", "rel": "noopener"},
-        {"text": "Report an issue", "href": REPORT, "target": "_blank", "rel": "noopener"},
+        {"text": "דיווח על תקלה", "href": REPORT, "target": "_blank", "rel": "noopener"},
     ]
     # קטנה ובשורה אחת, ברוחב שולחני רגיל.
     assert info["lineCount"] == 1, info
