@@ -1533,6 +1533,57 @@ def _program_label(program: Any) -> str:
     return str(program or "").strip()
 
 
+def _course_programs() -> dict[str, tuple[str, ...]]:
+    """אינדקס הפוך: קוד קורס ⇐ שמות המסלולים שתוכנית הלימודים שלהם כוללת אותו.
+
+    ‏חיפוש "פיזיקה 2" מחזיר חמישה קורסים כמעט זהים — ‏11026, ‏11210, ‏11212,
+    ‏11232, ‏421209 — וכל אחד מהם שייך למסלול אחר. בלי האינדקס הזה הדרך
+    היחידה לדעת איזה מהם שלך היא לפתוח את השנתון.
+
+    ‏"כולל" פירושו בדיוק מה ש-``annotate_with_curriculum`` מחשיב "בתוכנית":
+    סמסטרים ואשכולות בחירה (``iter_all_courses``). כך המסלול שמוצג ליד הקורס
+    ותג "בתוכנית" לעולם אינם סותרים זה את זה.
+
+    ‏המסלולים לפי מועד כניסה נספרים גם הם, פעם אחת: לשני הקבצים של מתמטיקה
+    שימושית יש אותה תווית, והיא מופיעה פעם אחת. השמות הם ``_program_label``
+    — מה שהסטודנט/ית רואים בשלב 1 — ממוינים, כדי שהסדר יהיה יציב.
+
+    ‏נבנה פעם אחת לכל מצב של קובצי התוכנית (אותה חותמת כמו ב-
+    ``_curricula_split``), ונשמר גם למשך הבקשה, כדי שעמוד עיון של ‏200 שורות
+    לא יבדוק את חותמות הקבצים פעם לכל שורה.
+    """
+    per_request = _request_cache()
+    table = per_request.get("course_programs")
+    if table is not None:
+        return table
+
+    from flask import current_app
+
+    cache = current_app.extensions.setdefault("slotwise", {})
+    single, by_intake = _curricula_split()
+    stamp = cache.get("curricula_stamp")
+    if cache.get("course_programs_stamp") != stamp or "course_programs" not in cache:
+        owners: dict[str, set[str]] = {}
+        sources = list(single.values())
+        for files in by_intake.values():
+            sources.extend(files.values())
+        for data in sources:
+            label = _program_label(data.get("program") or data.get("program_en"))
+            if not label:
+                continue
+            for _source, entry in curriculum_mod.iter_all_courses(data):
+                code = curriculum_mod._norm_code(entry.get("code"))  # noqa: SLF001
+                if code:
+                    owners.setdefault(code, set()).add(label)
+        cache["course_programs"] = {
+            code: tuple(sorted(labels)) for code, labels in owners.items()
+        }
+        cache["course_programs_stamp"] = stamp
+    table = cache["course_programs"]
+    per_request["course_programs"] = table
+    return table
+
+
 def _restored_name(code: Any, name: Any) -> str:
     """שם הידיעון, או השם המלא שלו כשהידיעון קטע אותו.
 
@@ -4350,8 +4401,16 @@ def _catalog_entry_json(
     info = info or {}
     facts = course_facts(code, details=details)
     in_curriculum = bool(info.get("in_curriculum", facts["in_curriculum"]))
-    semester = info.get("curriculum_semester", facts["curriculum_semester"])
-    cluster = info.get("cluster", facts["cluster"])
+    if "in_curriculum" in info:
+        # ‏השורה סומנה מול התוכנית של הסטודנט/ית. הסמסטר והאשכול באים
+        # ממנה בלבד: ``course_facts`` קורא את תוכנית ברירת המחדל, ולכן
+        # קורס שאינו בתוכנית של תעשייה וניהול היה מקבל ממנו "סמסטר 3" של
+        # הנדסת תוכנה.
+        semester = info.get("curriculum_semester")
+        cluster = info.get("cluster")
+    else:
+        semester = facts["curriculum_semester"]
+        cluster = facts["cluster"]
     return {
         "code": code,
         "name": _restored_name(code, name) or facts["name"],
@@ -4370,22 +4429,65 @@ def _catalog_entry_json(
         "has_data": code in (have_data or set()),
         "offered": (code in offered) if offered is not None else None,
         "tag": _catalog_tag(in_curriculum, semester, cluster),
+        # ‏המסלולים שתוכנית הלימודים שלהם כוללת את הקורס, בשמות של שלב 1.
+        # ריק = אף תוכנית שיש לנו אינה כוללת אותו.
+        "programs": list(_course_programs().get(code, ())),
     }
+
+
+def _plan_args() -> tuple[str, str]:
+    """‏``program`` ו-``intake`` מהבקשה — אותם פרמטרים ש-``/api/semester`` מקבל."""
+    return (
+        str(request.args.get("program", "") or "").strip(),
+        str(request.args.get("intake", "") or "").strip(),
+    )
+
+
+def _plan_codes(curr: dict | None) -> set[str]:
+    """כל הקודים שהתוכנית מחשיבה "בתוכנית" — בדיוק כמו ``annotate_with_curriculum``."""
+    if not curr:
+        return set()
+    codes = {
+        curriculum_mod._norm_code(entry.get("code"))  # noqa: SLF001
+        for _source, entry in curriculum_mod.iter_all_courses(curr)
+    }
+    codes.discard("")
+    return codes
 
 
 @bp.get("/catalog/search")
 @_endpoint
 def catalog_search():
-    """חיפוש בקטלוג החי — כך מוסיפים קורס חוזר או קורס מחוץ לתוכנית."""
+    """חיפוש בקטלוג החי — כך מוסיפים קורס חוזר או קורס מחוץ לתוכנית.
+
+    ‏``program`` ו-``intake`` הם המסלול של הסטודנט/ית. "בתוכנית" נקבע מול
+    התוכנית **שלו/ה**: בלעדיהם כל חיפוש סומן מול תוכנית ברירת המחדל (הנדסת
+    תוכנה), וסטודנט/ית מתעשייה וניהול ראו את ‏11210 — הפיזיקה שלהם — כ"מחוץ
+    לתוכנית". בלי ``program`` ההתנהגות הקודמת נשמרת בדיוק, כולל הסדר.
+
+    ‏עם ``program``, קורסים מהתוכנית עולים לראש — אחרי התאמה מדויקת לקוד,
+    שתמיד ראשונה — וזה קורה **לפני** החיתוך ל-``limit``: אחרת קורס מהתוכנית
+    שדורג במקום ה-26 היה נחתך בדיוק כשהוא התשובה.
+    """
     query = str(request.args.get("q", "") or "").strip()
     limit = _as_int(request.args.get("limit"), field="limit", default=20, low=1, high=200)
+    program, intake = _plan_args()
 
     store = _store()
-    hits = store.search_catalog(query, limit=limit)
+    curr = _curriculum(program, intake)
+    if program:
+        mine = _plan_codes(curr)
+        exact = query.replace(" ", "")
+        # ‏מיון יציב: בתוך כל קבוצה נשמר הדירוג של ``search_catalog``.
+        hits = sorted(
+            store.search_catalog(query, limit=0),
+            key=lambda hit: (hit[0] != exact, hit[0] not in mine),
+        )[:limit]
+    else:
+        hits = store.search_catalog(query, limit=limit)
     if not hits:
         return _ok({"query": query, "limit": limit, "results": [], "count": 0})
 
-    curr = _curriculum()
     have_data = set(store.codes())
     raw = {code: {"name": name} for code, name in hits}
     annotated = discovery_mod.annotate_with_curriculum(raw, curr)
@@ -4459,7 +4561,10 @@ def catalog_browse():
 
     catalog, catalog_summary = _catalog_snapshot()
     store = _store()
-    curr = _curriculum()
+    # ‏"בתוכנית" מול המסלול של הסטודנט/ית, כמו ב-``/api/catalog/search``.
+    # הסדר כאן נשאר לפי קוד: זה עיון בטווח קודים, ודפדוף לפי ``offset``
+    # נשען על סדר קבוע.
+    curr = _curriculum(*_plan_args())
     needle = _norm_browse(query)
     needle_nospace = needle.replace(" ", "")
 
