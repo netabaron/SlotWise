@@ -887,8 +887,8 @@
       "apply": "החלה",
       "applyTitle": "מחיל את הוויתור ומחשב מחדש. אפשר להחזיר בלחיצה אחת.",
       "undo": "החזר {what}",
-      "undone": "{what} הוחזר.",
-      "applied": "{what} בוטל. {n} מערכות נמצאו.",
+      "undone": "החזרת {what}.",
+      "applied": "ביטלת {what}. {n} מערכות נמצאו.",
       "restoreName": {
         "friday": "את חסימת יום שישי",
         "earliest": "את השעה המוקדמת ביותר ({time})",
@@ -898,7 +898,7 @@
       },
       "undoStale": "שינית הגדרות מאז, ולכן אי אפשר להחזיר את המצב הקודם בלחיצה אחת בלי לדרוס את מה ששינית.",
       "pairBoth": "שני אלה יחד",
-      "undoNotice": "ויתרת על {what}.",
+      "undoNotice": "ביטלת {what}.",
       "swapped": "{from} הוחלף ב-{to}.",
       "swapNotice": "החלפת את {from} ב-{to}.",
       "swapUndone": "{from} חזר במקום {to}."

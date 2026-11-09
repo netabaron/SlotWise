@@ -10,6 +10,8 @@ Format: what it is · where · which phase should own it · why it was not done 
 
 ## Open
 
+### `src/cli.py:2616` still offers "להעלות את מספר הימים בקמפוס" when there is no schedule — the days target only changes the score, and the web stopped offering it (`relax_advice`, 2026-11-09) — **noted 2026-11-09**
+
 ### Two browser tests fail locally only: the local `data/db` leaks past the frozen catalog — **noted 2026-11-09**
 **Where:** `tests/test_lecturers_step.py::test_dead_row_is_dimmed_without_opacity[light|dark]`
 and `tests/test_phase9c_a11y_browser.py::test_the_step_marks_regions_and_headings`.
