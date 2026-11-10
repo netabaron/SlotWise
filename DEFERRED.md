@@ -940,6 +940,22 @@ settled-page signal the entry above proposes.
 **Why not now:** the user asked for it to be recorded, not fixed. It is a
 protected test file.
 
+### `test_the_bottom_bar_goes_away_when_the_window_widens` failed once in CI, then passed — **noted 2026-11-10, not fixed**
+**Where:** `tests/test_wide_layout_browser.py:419`, the focus check.
+**Seen:** once, in CI run 42772098310, attempt 1 (`9e10250`):
+`{'hidden': True, 'padded': False, 'focus': 'BODY'}` — the bar hid, but focus
+fell to `<body>`. Re-running the failed job passed, and run alone locally it
+passed 5/5 on that branch and 5/5 on `main` (`78141fa`). That commit changed
+only the swap row's CSS.
+**Likely cause, not verified:** a race in the app, not the test's 600 ms wait.
+`renderBottomBar()` moves focus and removes `is-visible` in one call, so a late
+sample cannot see one without the other. But at ≥1200px CSS also hides the bar
+on its own (`display: none !important`); if Chrome drops focus from the hidden
+button before the `WIDE_QUERY` handler runs, `bar.contains(document.activeElement)`
+is already false and the move is skipped.
+**Owner:** the next change to the bottom bar's focus handling.
+**Why not now:** the user asked for it to be recorded, not fixed.
+
 ## Closed
 
 ### The pinned no-solution diagnosis reads links on a trimmed copy — **closed 2026-10-09, pinning removed**
