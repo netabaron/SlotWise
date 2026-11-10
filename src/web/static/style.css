@@ -2493,10 +2493,15 @@ html.has-modal { overflow: hidden; }
 .suggestions > li::before { content: "\2192"; position: absolute; inset-inline-start: 0; }
 
 /* ‏"להחליף" מיד אחרי המשפט, בזרימה של השורה — לא flex, שהיה מרחיק את
-   הכפתור לקצה. השוליים השליליים (‏5px ריפוד + 1px מסגרת) משאירים את גובה
-   השורה של הטקסט, אחרת הכפתור מגביה אותה והחץ של ה-li נשאר למעלה. */
+   הכפתור לקצה. בלי שוליים שליליים: ‎-6px‎ שמרו על גובה השורה, אבל כשהמשפט
+   נשבר (טלפון, ‏390px) הם משכו את הכפתור אל מעל השורה שלפניו (2026-11-10).
+   הכפתור מגביה עכשיו את השורה שלו, ולכן החץ של השורה הזאת אינו ‎absolute‎:
+   ‎absolute‎ נצמד לראש השורה, וכשהכפתור בשורה הראשונה (מסך רחב) הוא צף ‏6px
+   מעל הטקסט. כ-‎inline-block‎ שתלוי בריפוד (‎-1.1em‎, הריפוד של ה-li) הוא
+   יושב על קו הבסיס של השורה הראשונה, בכל רוחב. */
 .suggestions > .suggestion-swap { padding-block: 4px; }
-.suggestion-swap .swap-apply { margin-block: -6px; margin-inline-start: 10px; }
+.suggestions > li.suggestion-swap::before { position: static; display: inline-block; inline-size: 1.1em; margin-inline-start: -1.1em; }
+.suggestion-swap .swap-apply { margin-block: 0; margin-inline-start: 10px; }
 
 /* ==========================================================================
    12. תחתית
