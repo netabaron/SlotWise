@@ -3180,6 +3180,51 @@ html.has-modal { overflow: hidden; }
 .input--required { border-color: var(--ink); }
 .track-deadline { margin-block-start: 6px; }
 
+/* ---- קישור לתוכנית הלימודים באתר המכללה (SPEC_LINKS.md, פיצ'ר 1) ----
+   ‏מתחת לתיבת המסלול, בתוך אותו ‎.field‎. צורת הכפתור מ-‎.btn .btn-outline
+   .btn-sm‎ — כקו טקסט הוא נבלע בטופס. הצבע מגוון המידע (‎--info-*‎, שיש
+   לו מיפוי כהה): גוון כחול שבולט, אבל לא מילוי מלא — ‏‎.btn-primary‎ היה
+   זהה ל"המשך" ומתחרה בו (באישור המשתמשת, 2026-11-16). ‏align-self כדי
+   שלא יימתח לרוחב השדה, רווח מהתיבה שמעליו, ‏32px גובה לחיצה לטלפון,
+   ושני אייקונים — מסמך בהתחלה ו"לשונית חדשה" בסוף. טוקנים בלבד. */
+.plan-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 32px;
+  margin-block-start: 10px;
+  text-decoration: none;
+  background: var(--info-bg);
+  border-color: var(--info-line);
+  color: var(--info-ink);
+}
+
+/* ‏גובר על ‎.btn-outline:hover‎ (אותה סגוליות, מאוחר יותר), כדי שהריחוף
+   לא יחזיר אותו לאפור. */
+.plan-link:hover:not(:disabled) {
+  background: var(--info-bg);
+  border-color: var(--info-ink);
+}
+
+.plan-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.plan-link-icon {
+  flex: none;
+  inline-size: 14px;
+  block-size: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.plan-link-icon--ext { inline-size: 12px; block-size: 12px; }
+
 /* ==========================================================================
    22. תיקוני שלב 4 — סוג השיעור בבלוק, וחפיפה כשני חצאים
    ========================================================================== */
@@ -3897,4 +3942,9 @@ html.has-sheet { overflow: hidden; }
 
 @media print {
   .day-list { display: none !important; }
+}
+
+/* ‏קישור לאתר המכללה אינו חלק מהמערכת המודפסת. */
+@media print {
+  .plan-link { display: none !important; }
 }

@@ -3579,6 +3579,7 @@
     ui.tplToast = byId("tpl-toast");
 
     ui.selProgram = byId("select-program");
+    ui.programPlanLink = byId("program-plan-link");
     ui.selIntake = byId("select-intake");
     ui.trackRow = byId("track-row");
     ui.fieldSpecialization = byId("field-specialization");
@@ -5360,6 +5361,7 @@
     if (!opts.length) {
       // אין רשימה מהשרת (גרסה ישנה) — מסתירים את הפקד ולא מחליטים במקומו.
       ui.selProgram.parentNode.hidden = true;
+      renderProgramPlanLink();
       return;
     }
     ui.selProgram.parentNode.hidden = false;
@@ -5376,9 +5378,31 @@
     }
     // ‏אין ברירת מחדל למסלול. עד שבוחרים, התיבה מציגה הזמנה לבחור.
     selectOrPlaceholder(ui.selProgram, txt(state.program));
+    renderProgramPlanLink();
   }
 
   var programOptionsSig = null;
+
+  /**
+   * הקישור לתוכנית הלימודים של המסלול באתר המכללה, מתחת לתיבת המסלול.
+   *
+   * ‏מוצג רק כשנבחר מסלול **וגם** השרת שלח לו ``plan_url`` — אחרת הוא
+   * מוסתר ו-href מוסר, כדי שלא יהיה קישור מת גם לא לקורא מסך. מועדי
+   * הכניסה של מתמטיקה הם מסלול אחד ברשימה, ולכן אותו קישור לשניהם.
+   */
+  function renderProgramPlanLink() {
+    var link = ui.programPlanLink;
+    if (!link) return;
+    var entry = programEntry();
+    var href = entry ? txt(entry.plan_url).trim() : "";
+    if (!/^https?:\/\//i.test(href)) href = "";
+    if (href) {
+      if (link.getAttribute("href") !== href) link.setAttribute("href", href);
+    } else {
+      link.removeAttribute("href");
+    }
+    setHidden(link, !href);
+  }
 
   /**
    * תיבת מועד הכניסה. מוצגת **רק** למסלול שיש לו ``intakes``, ומוסתרת

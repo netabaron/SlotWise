@@ -361,6 +361,18 @@
         <div class="field field--lg">
           <label class="label" for="select-program">{{ S.ui.fields.program }}</label>
           <select class="input" id="select-program"></select>
+          <!-- ‏קישור לתוכנית הלימודים של המסלול באתר המכללה (SPEC_LINKS.md,
+               פיצ'ר 1). ‏hidden ובלי href כברירת מחדל: ``renderProgramPlanLink``
+               ב-app.js נותן לו href ומציג אותו רק כשהמסלול שנבחר נושא
+               ‏``plan_url`` — לעולם לא קישור מת. "נפתח בלשונית חדשה" נקרא
+               לקוראי מסך; שני האייקונים (מסמך, לשונית חדשה) ‏aria-hidden. -->
+          <a class="btn btn-outline btn-sm plan-link" id="program-plan-link" target="_blank" rel="noopener noreferrer" hidden><svg
+             class="plan-link-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"
+             focusable="false"><path d="M4 1.75h5.25L12.5 5v9.25H4z"/><path d="M9.25 1.75V5h3.25"/><path
+             d="M6 8h4.5M6 10.5h4.5"/></svg><span class="plan-link-text">{{ S.ui.program.planLink }}</span><span
+             class="visually-hidden"> {{ S.ui.program.opensInNewTab }}</span><svg
+             class="plan-link-icon plan-link-icon--ext" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"
+             focusable="false"><path d="M9.5 2.5h4v4M13.5 2.5 7.5 8.5M11.5 9.5v4h-9v-9h4"/></svg></a>
         </div>
         <!-- ‏מועד הכניסה. מוצג **רק** למסלול שהשנתון מדפיס לו תוכנית לכל
              מועד (כרגע מתמטיקה שימושית בלבד), ומוסתר לכל השאר — ראו

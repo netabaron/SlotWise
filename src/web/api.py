@@ -2198,6 +2198,12 @@ def credits_summary(values: Iterable[Any]) -> dict[str, Any]:
 OTHER_PROGRAM = "other"
 
 
+def _plan_url(value: Any) -> str:
+    """‏``plan_url`` של מסלול, או ``""`` כשאין — או כשהוא אינו כתובת http(s)."""
+    text = str(value or "").strip()
+    return text if re.match(r"https?://", text, re.IGNORECASE) else ""
+
+
 def _program_choices(
     curr: dict | None = None, program: Any = None, intake: Any = None
 ) -> list[dict]:
@@ -2255,24 +2261,31 @@ def _program_choices(
             absence = (
                 CURRICULUM_ABSENCE_NONE if has else _curriculum_absence(name, {})
             )
-        out.append(
-            {
-                "id": name,
-                "label": _program_label(name),
-                "has_curriculum": has,
-                "curriculum_absence": absence,
-                # ריק לכל מסלול רגיל, וזה מה שמסתיר את התיבה בממשק.
-                "intakes": intakes,
-                "url": entry.get("url", ""),
-                "description": entry.get("description", ""),
-                "tracks_text": entry.get("tracks_text", ""),
-                # ‏בחירת ההתמחות והמסלול בשלב 1. ‏None = אין למסלול התמחויות,
-                # והממשק אינו מציג את התיבות כלל.
-                "specialization": _specialization_public(
-                    _curriculum(name) if not intakes else {}
-                ),
-            }
-        )
+        choice = {
+            "id": name,
+            "label": _program_label(name),
+            "has_curriculum": has,
+            "curriculum_absence": absence,
+            # ריק לכל מסלול רגיל, וזה מה שמסתיר את התיבה בממשק.
+            "intakes": intakes,
+            "url": entry.get("url", ""),
+            "description": entry.get("description", ""),
+            "tracks_text": entry.get("tracks_text", ""),
+            # ‏בחירת ההתמחות והמסלול בשלב 1. ‏None = אין למסלול התמחויות,
+            # והממשק אינו מציג את התיבות כלל.
+            "specialization": _specialization_public(
+                _curriculum(name) if not intakes else {}
+            ),
+        }
+        # ‏קישור לתוכנית הלימודים באתר המכללה (SPEC_LINKS.md, פיצ'ר 1). המפתח
+        # נשלח **רק** כשיש ערך: היעדרו הוא מה שמסתיר את הקישור בממשק, ולכן
+        # אין קישור מת. מועדי הכניסה של מתמטיקה הם רשומה אחת ב-programs.json,
+        # ולכן שניהם מקבלים את אותו ``plan_url`` בלי טיפול נפרד. רק http(s):
+        # ערך אחר (‏javascript: וכדומה) אינו קישור שמותר להציג.
+        plan_url = _plan_url(entry.get("plan_url"))
+        if plan_url:
+            choice["plan_url"] = plan_url
+        out.append(choice)
     if mine and not any(p["id"] == mine for p in out):
         out.insert(0, {"id": mine, "label": mine, "has_curriculum": True,
                        "curriculum_absence": CURRICULUM_ABSENCE_NONE,
