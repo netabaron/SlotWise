@@ -21,15 +21,15 @@
       "year": 1,
       "year_term_inferred": true,
       "total": {
-        "he": 15,
+        "he": 14,
         "te": 16,
         "ma": 0,
         "pr": 0,
-        "credits": 20
+        "credits": 19
       },
-      "printed_total_credits": 20.0,
+      "printed_total_credits": 19.0,
       "reconciles": true,
-      "note": "",
+      "note": "שעות ונ\"ז של 41089 עודכנו לשנתון תשפ\"ז (1 ה, 1 ת, 1.5 נ\"ז). סכום השורות 19.0 נ\"ז שווה לשורת הסה\"כ המודפסת שם. השנתון מוסיף את 31033 יסודות הפיזיקה (2 ת, ללא נ\"ז), שאינו כאן עדיין.",
       "courses": [
         {
           "code": "11002",
@@ -109,11 +109,11 @@
         {
           "code": "41089",
           "name": "כימיה א'",
-          "he": 2,
+          "he": 1,
           "te": 1,
           "ma": 0,
           "pr": 0,
-          "credits": 2.5,
+          "credits": 1.5,
           "prereq": [],
           "placement": false,
           "physics_track": "",
