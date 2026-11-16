@@ -285,11 +285,25 @@ def test_a_trade_off_shows_the_line_without_a_reason(browser, server):
         ctx.close()
 
 
+def _without_chemistry(route):
+    """מוריד את כימיה א' (41089) מבקשת ‎/api/solve‎ לפני שהיא יוצאת.
+
+    התרחיש שלמטה נמדד כשהקובץ של חשמל עוד החזיק את הקוד הישן 41090, שאינו
+    קיים בקטלוג, ולכן כימיה מעולם לא שובצה. מאז 2026-11-16 היא נפתחת ונכנסת
+    לרשימת ההמלצה, והשעות שלה גורמות לכך שגב' זמוסטיאנו דורשת יום נוסף, כלומר
+    יש סיבה בשורה. בלי כימיה המצב הוא בדיוק המצב שהבדיקה נכתבה עליו."""
+    body = route.request.post_data_json
+    body["codes"] = [c for c in body.get("codes", []) if c != "41089"]
+    route.continue_(post_data=json.dumps(body))
+
+
 def test_the_electrical_trade_off_on_real_data(browser, server):
     """‏הנדסת חשמל שנה א׳: גב' זמוסטיאנו (31511 תרגול) נכנסת ב-3 ימים לבדה, אבל רק
-    בלי ד"ר גולדוורד (11002 הרצאה). אין סיבה בשורה; הלחיצה מחזירה את שניהם."""
+    בלי ד"ר גולדוורד (11002 הרצאה). אין סיבה בשורה; הלחיצה מחזירה את שניהם.
+    כימיה א' מוסרת מהבקשה — ראו ``_without_chemistry``."""
     ranked = {"11002": {"הרצאה": ['ד"ר גולדוורד אלכסנדר']}, "31511": {"תרגול": ["גב' זמוסטיאנו יאנה"]}}
-    ctx, pg = _open(browser, server, ranked=ranked, program=("הנדסת חשמל ואלקטרוניקה", "1"))
+    ctx, pg = _open(browser, server, ranked=ranked, route=_without_chemistry,
+                    program=("הנדסת חשמל ואלקטרוניקה", "1"))
     try:
         s = _solve(pg)
         top = s["schedules"][0]
