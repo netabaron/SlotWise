@@ -259,7 +259,8 @@ NODES: dict[str, tuple[int, int] | None] = {
     "biotech-s6": (214, 1_000),
     "biotech-s7": (175, 1_000),
     "biotech-s8": (4, 1_000),
-    "electrical-s1": (23_131, 26_000),
+    # ‏2026-11-16: כימיה א' עברה מ-41090 (לא קיים) ל-41089, ונכנסה לרשימת ההמלצה.
+    "electrical-s1": (33_428, 37_000),
     "electrical-s2": (12_747, 15_000),
     "electrical-s3": (24_640, 28_000),
     "electrical-s4": (13_837, 16_000),
@@ -267,7 +268,8 @@ NODES: dict[str, tuple[int, int] | None] = {
     "electrical-s6": (653, 1_000),
     "electrical-s7": None,
     "electrical-s8": None,
-    "mechanical-s1": (19_415, 22_000),
+    # ‏2026-11-16: כימיה עברה מ-41077 (לא קיים) ל-41076, ונכנסה לרשימת ההמלצה.
+    "mechanical-s1": (23_083, 26_000),
     "mechanical-s2": (29_306, 33_000),
     "mechanical-s3": (997, 2_000),
     "mechanical-s4": (376, 1_000),
