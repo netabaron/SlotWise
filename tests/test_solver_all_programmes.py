@@ -287,7 +287,8 @@ NODES: dict[str, tuple[int, int] | None] = {
     "infosystems-s8": (0, 0),
     "software-s1": (10_691, 12_000),
     "software-s2": (979, 2_000),
-    "software-s3": (2_634, 3_000),
+    # ‏2026-11-16: ‏62018 החליף את 61912 (שלא נפתח), ונכנס לרשימת ההמלצה.
+    "software-s3": (5_322, 6_000),
     "software-s4": (9_762, 11_000),
     "software-s5": (5_494, 7_000),
     "software-s6": (6_727, 8_000),

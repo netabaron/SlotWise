@@ -307,7 +307,8 @@ def test_changing_the_year_changes_what_is_recommended(page):
     אותם חמישה קודים בדיוק, ובלי אף קורס מהסמסטר הקודם."""
     state = choose(page, 2, "א")
     assert state["autoSemester"] == "3"
-    assert set(state["autoCodes"]) == {"11129", "61739", "61774", "61778", "61911"}
+    # ‏62018 מ-2026-11-16, במקום 61912 שבוטל ולא סומן.
+    assert set(state["autoCodes"]) == {"11129", "61739", "61774", "61778", "61911", "62018"}
     assert "61756" not in state["autoCodes"], "קורסי הסמסטר הקודם יורדים"
     assert "61756" not in state["codes"]
 

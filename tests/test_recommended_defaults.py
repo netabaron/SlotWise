@@ -199,15 +199,36 @@ def test_the_rule_keeps_tied_courses_together(client):
     assert tied <= picked or not (tied & picked)
 
 
+#: כל התוכניות שיש להן קובץ תוכנית לימודים.
+ALL_PROGRAMS = (
+    "הנדסת תוכנה", "הנדסת חשמל ואלקטרוניקה", "הנדסת מכונות", "הנדסה אזרחית",
+    "הנדסת תעשייה וניהול", "הנדסת מערכות מידע", "הנדסת ביוטכנולוגיה",
+)
+
+
 def test_a_cancelled_course_is_not_marked_when_the_catalog_knows(client):
-    """‏61912 בוטל מתשפ\"ז והוחלף ב-62018. סימון שלו היה בונה מערכת שאין לה
-    פתרון, ולכן הוא יוצא — אבל **רק** כשיש קטלוג להישען עליו."""
-    data = semester(client, "3")
-    if data["fallback"]["catalog_count"] == 0:
-        pytest.skip("אין קטלוג משוך — ל-offered אין משמעות, ואין מה לבדוק")
-    if by_code(data)["61912"]["offered"] is not False:
-        pytest.skip("הקטלוג הנוכחי כן מכיר את 61912")
-    assert "61912" not in recommended_codes(data)
+    """קורס שהקטלוג אינו מכיר (בוטל, או לא נפתח השנה) לא מסומן: סימון שלו
+    היה בונה מערכת שאין לה פתרון — אבל **רק** כשיש קטלוג להישען עליו.
+
+    עד 2026-11-16 הבדיקה נשענה על 61912 בהנדסת תוכנה, שבוטל מתשפ"ז. הוא
+    הוחלף בתוכנית ב-62018 (באישור המשתמשת), ולכן הכלל נבדק עכשיו על כל קורס
+    כזה בכל התוכניות — בקטלוג הקפוא אלה למשל 22206, 421224 ו-51957."""
+    checked: list[str] = []
+    for program in ALL_PROGRAMS:
+        for sem in range(1, 9):
+            res = client.get(f"/api/semester/{sem}/courses?program={program}")
+            if res.status_code != 200:
+                continue
+            data = res.get_json()
+            if data["fallback"]["catalog_count"] == 0:
+                pytest.skip("אין קטלוג משוך — ל-offered אין משמעות, ואין מה לבדוק")
+            picked = set(recommended_codes(data))
+            for course in data["courses"]:
+                if course.get("code") and course.get("offered") is False:
+                    assert course["code"] not in picked, (program, sem, course["code"])
+                    checked.append(course["code"])
+    if not checked:
+        pytest.skip("הקטלוג הנוכחי מכיר את כל קורסי החובה — אין מקרה לבדוק")
 
 
 def test_an_empty_catalog_does_not_empty_the_recommendation(client):
