@@ -89,6 +89,26 @@ def browser():
             instance.close()
 
 
+#: קורסים שיורדים מכל בקשת ‎/api/solve‎ בקובץ הזה.
+#: ‏62018 נכנס להנדסת תוכנה סמסטר 3 ב-2026-11-16, במקום 61912 שבוטל (באישור
+#: המשתמשת). 61912 מעולם לא נפתח בקטלוג ולכן מעולם לא שובץ, וכל התרחישים כאן
+#: — ד"ר דנטה-בירון, הימים, היעד — נמדדו על הסמסטר בלעדיו. 62018 כן נפתח,
+#: נכנס לרשימת ההמלצה ותופס משבצות, ובלעדיו המצב הוא בדיוק המצב שנבדק.
+DROPPED_CODES = frozenset({"62018"})
+
+
+def _stripped_body(route, extra=()):
+    """גוף הבקשה בלי ``DROPPED_CODES`` (ובלי ``extra``), כ-JSON."""
+    drop = DROPPED_CODES | set(extra)
+    body = route.request.post_data_json
+    body["codes"] = [c for c in body.get("codes", []) if c not in drop]
+    return json.dumps(body)
+
+
+def _without_dropped(route):
+    route.continue_(post_data=_stripped_body(route))
+
+
 def _patch(**fields):
     """מוסיף/דורס שדות בתשובת ‎/api/solve‎ האמיתית. ‏dead: כל קבוצות ההרצאה של
     61911 מתות (דירוג ישן אחרי שנחסם חלון). ‏reason: ‏first_choices_reason_day
@@ -97,7 +117,7 @@ def _patch(**fields):
     reason = fields.pop("reason", "keep")
 
     def handler(route):
-        response = route.fetch()
+        response = route.fetch(post_data=_stripped_body(route))
         data = response.json()
         if data.get("schedules"):
             data.update(fields)
@@ -124,8 +144,7 @@ def _open(browser, server, *, ranked=None, target=3, route=None, width=1440,
     page.on("pageerror", lambda e: page.errors.append(str(e)))  # type: ignore[attr-defined]
     if init:
         page.add_init_script(init)
-    if route:
-        page.route("**/api/solve", route)
+    page.route("**/api/solve", route or _without_dropped)
     page.goto(server)
     page.wait_for_timeout(2000)
     page.select_option("#select-program", program[0])
@@ -292,9 +311,7 @@ def _without_chemistry(route):
     קיים בקטלוג, ולכן כימיה מעולם לא שובצה. מאז 2026-11-16 היא נפתחת ונכנסת
     לרשימת ההמלצה, והשעות שלה גורמות לכך שגב' זמוסטיאנו דורשת יום נוסף, כלומר
     יש סיבה בשורה. בלי כימיה המצב הוא בדיוק המצב שהבדיקה נכתבה עליו."""
-    body = route.request.post_data_json
-    body["codes"] = [c for c in body.get("codes", []) if c != "41089"]
-    route.continue_(post_data=json.dumps(body))
+    route.continue_(post_data=_stripped_body(route, extra=("41089",)))
 
 
 def test_the_electrical_trade_off_on_real_data(browser, server):
