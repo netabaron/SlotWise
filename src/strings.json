@@ -154,6 +154,26 @@
       "staleWarning": "",
       "yearMismatch": "הנתונים שבקטלוג הם לשנת {stored}, ולא לשנת {wanted}."
     },
+    "syllabus": {
+      "pageTitle": "{name} ({code}) — סילבוס",
+      "codeYear": "{code} · {year}",
+      "missingNotice": "הסילבוס לשנה זו עוד לא הועלה לאתר המכללה.",
+      "noYearNotice": "לא ידוע לאיזו שנה הקטלוג הזה, ולכן אי אפשר לבנות את הקישור לסילבוס.",
+      "checkedOn": "נבדק לאחרונה: {date}",
+      "factsLabel": "פרטי הקורס",
+      "credits": "{n} נ\"ז",
+      "semesters": "סמסטר {list}",
+      "yedionLink": "לדף הקורס בידיעון",
+      "tryAnyway": "לנסות לפתוח בכל זאת",
+      "lastYear": "הסילבוס של שנה שעברה ({year})",
+      "backToApp": "חזרה ל-SlotWise",
+      "notFoundTitle": "SlotWise",
+      "notFoundHeading": "הקורס לא נמצא בקטלוג",
+      "notFoundBody": "קורס {code} אינו בקטלוג של {year}.",
+      "invalidTitle": "SlotWise",
+      "invalidHeading": "קוד קורס לא תקין",
+      "invalidBody": "קוד קורס הוא מספר בן 4 עד 7 ספרות."
+    },
     "infeasible": {
       "noGroups": "לקורס {code} ({name}) אין אף קבוצה במאגר — ייתכן שהקורס לא נפתח בסמסטר הזה.",
       "wipedHead": "כל קבוצות ה{kind} בקורס {code} ({name}) נפסלו ({n} קבוצות)",
@@ -707,6 +727,8 @@
       "notOfferedTitle": "הקורס לא נפתח בסמסטר הזה",
       "retryButton": "ניסיון חוזר",
       "retryTitle": "ניסיון נוסף למשוך את הקורס מהידיעון",
+      "syllabus": "סילבוס",
+      "syllabusTitle": "סילבוס הקורס {name} (PDF, נפתח בלשונית חדשה)",
       "hours": {
         "lecture": "הרצאה {n}",
         "tutorial": "תרגול {n}",

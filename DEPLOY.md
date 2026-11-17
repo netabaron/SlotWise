@@ -25,6 +25,18 @@ been removed outright. That is deliberate and load-bearing:
 was an open relay to Braude's server (`HOSTING_NOTES.md` §1, row 3). Rebuilding
 the catalog is now a separate job — see [Rebuilding the catalog](#rebuilding-the-catalog).
 
+**Syllabi make no request either.** The "סילבוס" button on every course card
+goes to `GET /api/syllabus/<code>`, which only reads files that ship with the
+code: `data/catalog/syllabi.json` (next to the catalog, so it follows
+`SLOTWISE_CATALOG_DIR`) says which PDFs exist on the college site
+(`docs/GROUND_TRUTH.md` §10). Found, or not checked yet → a 302 to the PDF on
+the college site; checked and not uploaded yet → a small Hebrew course page; not
+in the catalog → 404. The PDF itself never passes through the server.
+`syllabi.json` is written by `scripts/check_syllabi.py` — at most 150 paced HEAD
+requests a night inside the nightly build, and the manual
+`check-syllabi.yml` workflow for a full pass (first fill, or after a year
+rollover). A missing `syllabi.json` is safe: every code then redirects.
+
 The UI reflects this. The refresh button and the live scrape log are gone; in
 their place the header shows one line, **"מעודכן מהידיעון · לפני 19 שעות"**,
 with the exact timestamp and course count in its tooltip. It is fed by

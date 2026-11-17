@@ -1599,6 +1599,41 @@ details[open] > .advanced-summary > .advanced-values { display: none; }
   font-variant-numeric: tabular-nums;
 }
 
+/* ‏"סילבוס" — קישור בפינה העליונה בצד הסוף (שמאל ב-RTL). מילה ולא רק
+   ‏אייקון; גובה לחיצה של 32px לטלפון, והשוליים השליליים מחזירים את מה
+   ‏שהגובה הזה מוסיף, כדי שהכרטיס לא יגבה בגללו. ‏inline-flex: קו המחיקה של
+   ‏‎.is-unavailable‎ אינו עובר לתוכו. כל הצבעים מהטוקנים. */
+.course-syllabus {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-block-size: 32px;
+  margin-block: -7px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--chip);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+.course-syllabus:hover { border-color: var(--accent); background: var(--accent-soft); }
+.course-syllabus:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.course-syllabus-icon {
+  inline-size: 14px;
+  block-size: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.course-item.is-selected .course-syllabus { border-color: var(--ev-bd, var(--line-strong)); color: var(--ev-fg, var(--ink)); }
+
 .course-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-block-start: 3px; }
 
 .tag {
@@ -3397,6 +3432,8 @@ html.has-modal { overflow: hidden; }
    ‏אחרי גוש ההדפסה הראשי ולא לידו: test_theme_tokens קורא את ‎@media print‎
    ‏הראשון בגיליון כגוש ההדפסה. */
 @media print { .notice-dialog { display: none !important; } }
+/* ‏קישור שאי אפשר ללחוץ עליו בנייר — רק מסך. */
+@media print { .course-syllabus { display: none !important; } }
 
 .days-relax-note {
   margin: 4px 0 0;
@@ -3948,3 +3985,53 @@ html.has-sheet { overflow: hidden; }
 @media print {
   .plan-link { display: none !important; }
 }
+
+/* ==========================================================================
+   דף הסילבוס — ‎/api/syllabus/<code>‎ (templates/syllabus.html)
+   ‏דף עצמאי: נפתח בלשונית חדשה מכפתור "סילבוס" כשהסילבוס של השנה עוד לא
+   הועלה, וגם לדפי "לא בקטלוג" ו"קוד לא תקין". ‏theme.js נטען בו, ולכן כל
+   הצבעים כאן הם טוקנים שממופים בשתי הערכות — אין כאן גוש כהה.
+   ========================================================================== */
+.syllabus-page {
+  display: grid;
+  gap: 16px;
+  max-inline-size: 38rem;
+  margin-inline: auto;
+  padding: 32px 16px 48px;
+}
+.syllabus-title { margin: 0; font-size: 22px; line-height: 1.3; }
+.syllabus-sub { margin: 4px 0 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.syllabus-notice { margin: 0; }
+.syllabus-checked { display: block; margin-block-start: 4px; font-size: 13px; }
+.syllabus-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.syllabus-facts li {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--chip);
+  font-size: 14px;
+}
+.syllabus-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.syllabus-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 40px;
+  text-decoration: none;
+}
+.syllabus-try {
+  font-size: 14px;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 2px;
+}
+.syllabus-back { margin: 8px 0 0; font-size: 14px; }
+.syllabus-back a { color: var(--muted); }
+.syllabus-page a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

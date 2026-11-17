@@ -84,6 +84,7 @@ from flask import (  # noqa: E402
     Blueprint,
     Flask,
     jsonify,
+    redirect,
     render_template,
     request,
     send_from_directory,
@@ -98,6 +99,7 @@ import rate_limit as rate_limit_mod  # noqa: E402
 import scheduler as scheduler_mod  # noqa: E402
 import store as store_mod  # noqa: E402
 import strings as strings_mod  # noqa: E402
+import syllabus as syllabus_mod  # noqa: E402
 
 LOG = logging.getLogger("slotwise.web")
 
@@ -5819,6 +5821,189 @@ def catalog_meta():
         }
 
     return _ok(payload)
+
+
+# ----------------------------------------------------------------- syllabus
+#: סדר הסמסטרים בשורת העובדות. מה שאינו כאן (לא צפוי) בא אחריהם, באלפבית.
+_SYLLABUS_TERM_ORDER = ("א", "ב", "קיץ")
+
+
+def _syllabus_year() -> tuple[str, str]:
+    """‏``("2027", 'תשפ"ז')`` — שנת הקטלוג שהשרת מגיש, לועזית ועברית.
+
+    ‏אותו מקור כמו ``/api/catalog/meta``: ‏``catalog.meta.json`` של הקטלוג
+    שנשלח, ואם אין בו שנה — המטא של הקטלוג במסד. **לא קבוע בקוד**: כשהבנייה
+    הלילית עוברת לשנה הבאה, כתובות הסילבוס עוברות איתה (GROUND_TRUTH §10).
+    """
+    meta = _shipped_meta()
+    year = str(meta.get("year_gregorian") or "").strip()
+    label = str(meta.get("year") or "").strip()
+    if not year:
+        try:
+            stored = _store().load_catalog()[1] or {}
+        except Exception:  # noqa: BLE001 - אין שנה = דף בלי קישורי PDF, לא 500
+            LOG.exception("קריאת שנת הקטלוג נכשלה")
+            stored = {}
+        year = str(stored.get("year_gregorian") or "").strip()
+        label = str(stored.get("year") or "").strip()
+    if not syllabus_mod.valid_year(year):
+        return "", ""
+    return year, (label or _hebrew_year(year))
+
+
+def _hebrew_year(year: str) -> str:
+    """‏``"2026"`` → ``'תשפ"ו'``, דרך ``yedion_http.hebrew_year_label`` (פונקציה
+    טהורה, בלי רשת). ‏``""`` כשהמודול אינו זמין."""
+    module = _yedion_module()
+    try:
+        return str(module.hebrew_year_label(year)) if module is not None else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _syllabus_credits(code: str) -> float | None:
+    """הנ"ז של הקורס, כמו בכרטיסי הקורסים (``resolve_credits``) — ``None`` כשלא ידוע.
+
+    הדף אינו שייך למסלול אחד, ולכן הרשומה נחפשת בתוכניות של **כל** המסלולים
+    (ושני מועדי הכניסה של מתמטיקה) לפני שנופלים לפרטי הידיעון השמורים.
+    הכול קריאה מהדיסק בלבד.
+    """
+    entry = None
+    try:
+        from programs import load_programs
+
+        listed = load_programs(str(PROJECT_ROOT / "data" / "programs.json"))
+    except Exception:  # noqa: BLE001 — היעדר הקובץ אינו תקלה
+        listed = []
+    for program in listed:
+        name = program.get("name")
+        intakes = [i.get("id") for i in program.get("intakes") or [] if isinstance(i, dict)]
+        for intake in intakes or [None]:
+            found = curriculum_mod.find_course(_curriculum(name, intake), code)
+            if isinstance(found, dict) and _stated_credits(found.get("credits")) is not None:
+                entry = found
+                break
+        if entry is not None:
+            break
+    credits, _source = resolve_credits(code, entry=entry)
+    return credits
+
+
+def _syllabus_facts(code: str, course: Any) -> list[str]:
+    """שורת העובדות: נ"ז (רק כשידוע), סוגי השיעורים, הסמסטרים. בלי טבלת קבוצות."""
+    def say(key: str, **kw: Any) -> str:
+        return strings_mod.fmt(f"server.syllabus.{key}", **kw)
+
+    facts: list[str] = []
+    credits = _syllabus_credits(code)
+    if credits is not None:
+        facts.append(say("credits", n=f"{credits:g}"))
+    groups = list(getattr(course, "groups", None) or [])
+    kinds = {str(g.kind) for g in groups if getattr(g, "kind", "")}
+    if kinds:
+        rank = {k: i for i, k in enumerate(models.KIND_ORDER)}
+        facts.append(", ".join(sorted(kinds, key=lambda k: (rank.get(k, len(rank)), k))))
+    terms = {str(g.semester) for g in groups if getattr(g, "semester", "")}
+    if terms:
+        order = {t: i for i, t in enumerate(_SYLLABUS_TERM_ORDER)}
+        listed = ", ".join(sorted(terms, key=lambda t: (order.get(t, len(order)), t)))
+        facts.append(say("semesters", list=listed))
+    return facts
+
+
+def _syllabus_render(status: int, **page: Any):
+    """הדף הקטן — עברית, ‏RTL, ‏theme.js — לכל מה שאינו הפניה.
+
+    כל שדה של התבנית מקבל ברירת מחדל ריקה: סביבת ה-Jinja של האפליקציה
+    מחמירה (שדה חסר הוא שגיאה), ודפי 400/404 אינם ממלאים את כולם.
+    """
+    fields = dict.fromkeys(
+        ("title", "heading", "subheading", "notice", "notice_detail", "tone",
+         "facts_label", "yedion_url", "yedion_text", "try_url", "try_text",
+         "last_url", "last_text", "back_text"),
+        "",
+    )
+    fields["facts"] = []
+    fields.update(page)
+    html = render_template("syllabus.html", home_url=(request.script_root or "") + "/", **fields)
+    return html, status, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@bp.get("/syllabus/<code>")
+def syllabus(code: str):
+    """הסילבוס של הקורס: הפניה ל-PDF, או דף קורס קטן כשהוא עוד לא הועלה.
+
+    ‏docs/SPEC_LINKS.md, Feature 2. **אין כאן שום בקשה יוצאת**: השרת המתארח
+    אסור לו לפנות לבראודה בזמן בקשה. מה שידוע על הקבצים נבדק בבנייה הלילית
+    (``scripts/check_syllabi.py``) ונקרא מ-``data/catalog/syllabi.json``.
+
+    * ‏400 — קוד שאינו 4–7 ספרות. הדף אינו מצטט את הבקשה.
+    * ‏404 — קוד שאינו בקטלוג (אותו מאגר שהחיפוש בקטלוג קורא).
+    * ‏302 → ה-PDF של השנה, כשהוא ``exists`` — **וגם כשעוד לא נבדק**:
+      קוד שלא נבדק לעולם אינו מציג "אין סילבוס" (החלטת המשתמשת, 2026-11-16).
+    * ‏200 — דף הקורס, כשהבדיקה האחרונה מצאה 404 (``missing``).
+
+    כל תשובה נושאת את ``Cache-Control: no-store`` של ``/api``, כדי שדפדפן לא
+    יזכור הפניה ישנה אחרי שהמצב השתנה.
+    """
+    def say(key: str, **kw: Any) -> str:
+        return strings_mod.fmt(f"server.syllabus.{key}", **kw)
+
+    if not syllabus_mod.valid_code(code):
+        return _syllabus_render(
+            400, title=say("invalidTitle"), heading=say("invalidHeading"),
+            notice=say("invalidBody"), tone="banner--error", back_text=say("backToApp"),
+        )
+
+    year, year_label = _syllabus_year()
+    try:
+        course, _meta = _store().load_course(code)
+    except Exception:  # noqa: BLE001 - מאגר פגום = "לא בקטלוג", לא 500
+        LOG.exception("טעינת הקורס לדף הסילבוס נכשלה")
+        course = None
+    if course is None:
+        return _syllabus_render(
+            404, title=say("notFoundTitle"), heading=say("notFoundHeading"),
+            notice=say("notFoundBody", code=code, year=year_label or year),
+            tone="banner--warn", yedion_url=syllabus_mod.course_page_url(code),
+            yedion_text=say("yedionLink"), back_text=say("backToApp"),
+        )
+
+    known = (syllabus_mod.status(year, code) if year
+             else syllabus_mod.Status(syllabus_mod.UNCHECKED, ""))
+    if year and known.status in (syllabus_mod.EXISTS, syllabus_mod.UNCHECKED):
+        return redirect(syllabus_mod.pdf_url(year, code), code=302)
+
+    name = str(getattr(course, "name", "") or "").strip() or code
+    last = syllabus_mod.previous_year(year)
+    last_url = ""
+    if last and syllabus_mod.status(last, code).status == syllabus_mod.EXISTS:
+        last_url = syllabus_mod.pdf_url(last, code)
+    checked = ""
+    if known.checked:
+        try:
+            y, m, d = known.checked.split("-")
+            checked = say("checkedOn", date=f"{int(d):02d}.{int(m):02d}.{y}")
+        except ValueError:
+            checked = ""
+    return _syllabus_render(
+        200,
+        title=say("pageTitle", name=name, code=code),
+        heading=name,
+        subheading=say("codeYear", code=code, year=year_label or year),
+        notice=say("missingNotice") if year else say("noYearNotice"),
+        notice_detail=checked,
+        tone="banner--warn",
+        facts=_syllabus_facts(code, course),
+        facts_label=say("factsLabel"),
+        yedion_url=syllabus_mod.course_page_url(code),
+        yedion_text=say("yedionLink"),
+        try_url=syllabus_mod.pdf_url(year, code) if year else "",
+        try_text=say("tryAnyway"),
+        last_url=last_url,
+        last_text=say("lastYear", year=_hebrew_year(last) or last) if last_url else "",
+        back_text=say("backToApp"),
+    )
 
 
 # ===========================================================================

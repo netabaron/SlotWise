@@ -1,0 +1,112 @@
+# Syllabus check, run by hand.
+#
+# Fills data/catalog/syllabi.json in one go: which syllabus PDFs exist on the
+# college site for this year and last (docs/GROUND_TRUTH.md §10,
+# docs/SPEC_LINKS.md Feature 2). The nightly build keeps it current with at
+# most 150 checks a night; this is for the first full pass (~1,150 checks,
+# about 2 h 55 min at 9 s) and for refilling after a year rollover, so nobody
+# waits a week for the nightly budget to get through the catalog.
+#
+# The result — per year: checked, exists, missing, failed, not yet checked,
+# and the codes that failed — is on the run's summary page
+# ($GITHUB_STEP_SUMMARY, written by the script) and at the end of check.log.
+#
+# Same politeness as the nightly build: the same 9-second pace, and the same
+# concurrency group, so this never runs alongside a build and the two never
+# race on the push. Only syllabi.json is committed — no course fetch, no
+# catalog build.
+
+name: syllabus check (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: "Maximum number of HEAD requests in this run"
+        required: false
+        default: "1200"
+      pace:
+        description: "Seconds between requests. Same as the nightly build; lower it only if you know why."
+        required: false
+        default: "9"
+
+# The nightly build's group, on purpose: one job against the college site at a
+# time, and no two pushes to data/catalog/ racing each other.
+concurrency:
+  group: nightly-catalog
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    # 1,200 requests × 9 s is 180 minutes; the rest is headroom.
+    timeout-minutes: 210
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          # The branch tip when the job starts — the nightly build may have
+          # pushed a newer catalog (and its codes) while this was queued.
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # No dependency install: scripts/check_syllabi.py and src/syllabus.py
+      # use the standard library only.
+
+      - name: Check syllabi
+        id: check
+        run: |
+          set -o pipefail
+          set +e
+          python scripts/check_syllabi.py \
+            --dir data/catalog \
+            --budget "${{ github.event.inputs.budget }}" \
+            --pace "${{ github.event.inputs.pace }}" 2>&1 | tee check.log
+          rc=${PIPESTATUS[0]}
+          case "$rc" in
+            0) echo "::notice::syllabus check finished" ;;
+            1) echo "::error::no usable catalog.meta.json - nothing was checked" ;;
+            3) echo "::warning::stopped early after repeated failures - what was learned is saved and will be committed" ;;
+            *) echo "::error::syllabus check failed with exit code $rc" ;;
+          esac
+          # 3 still commits: the file was written atomically before stopping.
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then exit "$rc"; fi
+
+      - name: Commit and push if syllabi.json changed
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain -- data/catalog/syllabi.json)" ]; then
+            echo "::notice::syllabi.json unchanged - nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/catalog/syllabi.json
+          git commit -m "syllabi: check $(date -u +%Y-%m-%d)"
+          # Anything else in the tree is disposable (see build-catalog.yml).
+          git checkout -- .
+          git fetch origin "${{ github.ref_name }}"
+          if ! git rebase "origin/${{ github.ref_name }}"; then
+            git rebase --abort || true
+            echo "::error::could not rebase the syllabus commit onto origin/${{ github.ref_name }}; nothing was pushed."
+            exit 1
+          fi
+          git push
+
+      - name: Upload the check log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: syllabus-check-${{ github.run_id }}
+          path: check.log
+          if-no-files-found: warn

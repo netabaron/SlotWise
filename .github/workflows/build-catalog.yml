@@ -189,21 +189,51 @@ jobs:
           set -o pipefail
           python -m pytest tests/test_catalog_invariants.py -q -ra 2>&1 | tee -a build.log
 
+      - name: Check syllabi
+        # Which syllabus PDFs exist on the college site, for this year and last
+        # (docs/GROUND_TRUTH.md §10, docs/SPEC_LINKS.md Feature 2). The hosted
+        # server must never fetch from Braude at request time, so this is
+        # where it is learned: /api/syllabus/<code> only reads the
+        # data/catalog/syllabi.json written here.
+        #
+        # Only after a good build: a throttled or gated build (rc 3/4) means
+        # the college asked us to stop, and the PDFs live on the same host.
+        # At most 150 HEAD requests at the build's own pace — about 23 minutes
+        # at 9 s, on top of the ~90-minute build. The first full pass is the
+        # manual check-syllabi.yml workflow, not this step.
+        #
+        # continue-on-error: a syllabus check that fails or stops early must
+        # never keep a good catalog from being committed. Whatever it learned
+        # before stopping is already written (atomically) and rides along.
+        if: steps.build.outputs.rc == '0'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          python scripts/check_syllabi.py \
+            --dir data/catalog \
+            --budget 150 \
+            --pace "${{ steps.inputs.outputs.pace }}" 2>&1 | tee -a build.log
+
       - name: Commit and push if the catalog changed
         id: commit
         run: |
           set -euo pipefail
-          if git diff --quiet -- data/catalog; then
+          # status --porcelain, not diff --quiet: diff ignores untracked files,
+          # and data/catalog/syllabi.json is untracked until its first commit.
+          if [ -z "$(git status --porcelain -- data/catalog)" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "::notice::catalog unchanged - nothing to commit"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Only ever these two files. data/raw and data/db are gitignored,
+          # Only ever these three files. data/raw and data/db are gitignored,
           # and .gitignore denies everything else under data/ by default, so
-          # a stray artifact cannot ride along unnoticed.
+          # a stray artifact cannot ride along unnoticed. syllabi.json does not
+          # exist until the first syllabus check has run, so it is added only
+          # when present.
           git add data/catalog/catalog.jsonl data/catalog/catalog.meta.json
+          if [ -f data/catalog/syllabi.json ]; then git add data/catalog/syllabi.json; fi
           git commit -m "catalog: nightly build ${{ steps.inputs.outputs.date }}"
 
           # A fresh checkout of this repo is NOT clean, and rebase refuses to

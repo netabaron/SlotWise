@@ -278,3 +278,86 @@ fetched for סמסטר א' תשפ"ז and parsed:
   browser route with a manual login still works and should be selectable.
 - The year assertion stays mandatory. The failure mode this protocol has — a silently wrong year
   when the warm-up is skipped — is exactly the one the assertion catches.
+
+---
+
+## 10. COURSE SYLLABI ARE STATIC PDFs AT A PREDICTABLE URL — verified 2026-11-16
+
+The "פרטים נוספים" button on every group block of a `S_LOOK_FOR_NOSE` result opens
+`S_CourseDetails`. That screen carries one row with the syllabus link. Nothing else on the
+yedion does — the search page has the "פרשיית לימוד" text but no link.
+
+### The button is a POST, but the screen also answers a GET
+
+The button has no `onclick`. `yedion2026h.js` (`initClickButtons`) catches every
+`button[data-progname]`, copies `data-progname` / `data-arguments` into the hidden
+`PRGNAME` / `ARGUMENTS` inputs of `<form name="form" action="fireflyweb.aspx" method="post">`
+and submits it to `_self`:
+
+    POST /yedion/fireflyweb.aspx   PRGNAME=S_CourseDetails
+                                   ARGUMENTS=-N61757,-N1,-N1,-N271060310,-N
+
+The GET form from §1 returns the same page and the same link:
+
+    GET  fireflyweb.aspx?prgname=S_CourseDetails&arguments=-N61757,-N1,-N1,-N0,-N
+
+Live Braude buttons sometimes carry a value in the 5th slot (`-N61757,-N1,-N8,-N271060310,-N1`).
+The syllabus link is the same whichever button is used.
+
+### The link
+
+    <article class="row"><div class="col">סילבוס : <a href="/info/2027/0061757.pdf"
+        class="btn btn-primary rounded" target="_blank"> קישור לסילבוס הקורס ...</a>
+
+    https://info.braude.ac.il/info/<gregorian year>/<course code zero-padded to 7>.pdf
+
+| code | faculty | fetched | result |
+| --- | --- | --- | --- |
+| 61757 | software | `https://info.braude.ac.il/info/2027/0061757.pdf` | 200 `application/pdf`, `%PDF-1.7`, 146,937 B |
+| 11001 | basic sciences | `https://info.braude.ac.il/info/2027/0011001.pdf` | 200 `application/pdf`, `%PDF-1.7`, 198,253 B |
+| 421110 | civil | `https://info.braude.ac.il/info/2027/0421110.pdf` | 200 `application/pdf`, `%PDF-1.7`, 209,486 B |
+| 22305 | mechanical | `https://info.braude.ac.il/info/2027/0022305.pdf` | 200 `application/pdf`, `%PDF-1.7`, 302,571 B |
+
+57 of the 68 `data/raw/details_*.html` dumps carry the row, and all 57 links follow the same
+pattern (51 for 2027, 6 for 2026).
+
+**The padding is not optional.** `https://info.braude.ac.il/info/2027/61757.pdf` is a 404.
+
+### No login, no POST, no session
+
+The PDFs live outside `/yedion/` and are plain static files. Every one above was fetched with
+a fresh, empty cookie jar, no Referer, and no §9 warm-up. The response sets the load
+balancer's `TS0188c6f2` cookie but does not require it. There is no `Content-Disposition`,
+so the browser shows the PDF inline.
+
+### The year is in the path — and it is the session's year
+
+The year segment is the academic year the details page was rendered for, in the same
+gregorian form as `ChangeYear` (2027 = תשפ"ז). With a session switched to `ChangeYear=2026`,
+the same 61757 details page said `שנה"ל: תשפ"ו` and linked `/info/2026/0061757.pdf`.
+
+Old years stay online and are different documents: `https://info.braude.ac.il/info/2026/0061757.pdf`
+is 200, `%PDF-1.6`, 172,424 B, Last-Modified 28 Jan 2026. **Take the year from the catalog
+being shown (`year_gregorian`), never from a constant.** A stale constant silently serves
+last year's syllabus.
+
+No semester or group appears anywhere in the URL.
+
+### A course with no syllabus
+
+The details screen simply omits the `סילבוס :` row — no placeholder, no message
+(11092 ספורט 2, תשפ"ז). The built URL then returns IIS's English error page:
+`https://info.braude.ac.il/info/2027/0011092.pdf` → **404**, `text/html`, 1,245 B,
+`404 - File or directory not found.` A code that does not exist
+(`https://info.braude.ac.il/info/2027/0099999.pdf`) gives the same 404.
+
+**The set changes during the year.** The dumps of 421110, 11002, 31033 and 421310 taken on
+4–5 Sep 2026 had no row. On 2026-11-16 all four PDFs returned 200, with Last-Modified 6–7 Sep
+2026. "No syllabus" usually means "not uploaded yet", not "never".
+
+### How this was verified
+
+Plain HTTP from a standalone script (urllib + CookieJar, `yedion_http.py`'s User-Agent and
+headers). No browser, no login, 31 sequential requests about 2.5 s apart. How the button
+navigates was read from `yedion2026h.js` and replayed as the POST, not clicked. PDFs were
+confirmed by `Content-Type` and the `%PDF` magic bytes.

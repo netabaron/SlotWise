@@ -156,6 +156,21 @@
   var BROWSE_LIMIT = 60;
   var TOAST_MS = 5000;
 
+  /**
+   * ‏כפתור "סילבוס" שעל כל כרטיס קורס (docs/SPEC_LINKS.md, Feature 2). כל
+   * ‏כתובת סילבוס נבנית ב-``syllabusUrl`` בלבד, מהקבוע הזה בלבד.
+   *
+   * ‏הקישור הולך לשרת שלנו, לא ישר למכללה: ``/api/syllabus/<code>`` בונה את
+   * ‏כתובת ה-PDF משנת הקטלוג ומפנה אליה (‏302) — אלא אם הבדיקה הלילית
+   * ‏(scripts/check_syllabi.py) מצאה שהקובץ עוד לא הועלה, ואז הוא מחזיר דף
+   * ‏קורס קצר עם קישור לידיעון. השרת עצמו לא פונה למכללה. ‏src/syllabus.py.
+   */
+  var SYLLABUS_BASE_URL = "/api/syllabus/";
+
+  function syllabusUrl(code) {
+    return SYLLABUS_BASE_URL + encodeURIComponent(txt(code));
+  }
+
   /** רזולוציית הרשת השבועית: שורה לכל רבע שעה (כמו בחוזה שב-index.html). */
   var SLOT_MINUTES = 15;
   var GRID_DEFAULT_START = 8 * 60; // 08:00
@@ -6077,6 +6092,56 @@
     fetchCourses();
   }
 
+  /** ‏אייקון מסמך קטן לכפתור הסילבוס. ‏aria-hidden — המילה שלידו נושאת את המשמעות. */
+  function docIcon() {
+    var svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "course-syllabus-icon");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    [
+      "M4 1.75h5.25L12.5 5v9.25H4z",
+      "M9.25 1.75V5h3.25",
+      "M6 8h4.5M6 10.5h4.5",
+    ].forEach(function (d) {
+      var path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("d", d);
+      svg.appendChild(path);
+    });
+    return svg;
+  }
+
+  /**
+   * ‏"סילבוס" — קישור בלשונית חדשה, בפינה העליונה בצד הסוף של הכרטיס.
+   * ‏הכרטיס הוא <label>: ‏<a> הוא תוכן אינטראקטיבי, ולכן הדפדפן אינו מעביר
+   * ‏את הלחיצה לתיבת הסימון; ‏stopPropagation מוודא שגם אף מטפל של הכרטיס
+   * ‏או של הרשימה לא יראה אותה. ‏preventDefault אסור כאן — הוא היה מבטל את
+   * ‏פתיחת הקישור עצמו.
+   */
+  function syllabusLink(code, name) {
+    var label = Tf("app.courses.syllabusTitle", { name: txt(name) || txt(code) });
+    return el(
+      "a",
+      {
+        class: "course-syllabus",
+        attrs: {
+          href: syllabusUrl(code),
+          target: "_blank",
+          rel: "noopener noreferrer",
+          title: label,
+          "aria-label": label,
+        },
+        data: { fk: "syllabus-" + txt(code) },
+        on: {
+          click: function (ev) {
+            ev.stopPropagation();
+          },
+        },
+      },
+      [docIcon(), el("span", { class: "course-syllabus-text", text: T("app.courses.syllabus") })]
+    );
+  }
+
   /**
    * כרטיס קורס אחד (DESIGN.md, "Course card"): תיבת סימון, שם וקוד, נ"ז
    * בסוף; שורה אחת של מבנה השיעורים וקורסי הקדם; ושורה אופציונלית של
@@ -6280,6 +6345,7 @@
     if (unavailable) cls += " is-unavailable";
 
     // ‏<label> — לחיצה בכל מקום בכרטיס מחליפה את תיבת הסימון, בלי כפל אירועים.
+    // ‏הסילבוס אחרון: ב-RTL זה הצד השמאלי, הפינה העליונה של הכרטיס.
     return el(
       "label",
       {
@@ -6287,7 +6353,7 @@
         attrs: { title: unavailable ? T("app.courses.notOfferedTitle") : "" },
         style: { "--course-idx": String(colorOf(code)) },
       },
-      [box, main, creditsNode]
+      [box, main, creditsNode, syllabusLink(code, rec.name)]
     );
   }
 

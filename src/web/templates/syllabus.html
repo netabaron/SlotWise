@@ -1,0 +1,48 @@
+<!doctype html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+<title>{{ title }}</title>
+<link rel="icon" href="/static/brand/favicon.ico?v={{ asset_v('brand/favicon.ico') }}" sizes="any">
+<link rel="icon" href="/static/brand/favicon.svg?v={{ asset_v('brand/favicon.svg') }}" type="image/svg+xml">
+<link rel="stylesheet" href="/static/style.css?v={{ asset_v('style.css') }}">
+{# ‏כמו ב-index.html: בלי defer, לפני הציור הראשון — כך הדף עוקב אחרי
+   הערכה שנבחרה באפליקציה (localStorage, אותו מקור) ולא רק אחרי מערכת
+   ההפעלה. #}
+<script src="/static/theme.js?v={{ asset_v('theme.js') }}"></script>
+</head>
+<body>
+{# ‏/api/syllabus/<code> (src/web/api.py): דף הקורס כשהסילבוס של השנה עוד לא
+   הועלה, ואותה תבנית לדפי "לא בקטלוג" ו"קוד לא תקין". כל ערך עובר דרך
+   ההברחה של Jinja; כל הנוסח מ-strings.json (server.syllabus). #}
+<main class="syllabus-page">
+  <header class="syllabus-head">
+    <h1 class="syllabus-title">{{ heading }}</h1>
+    {% if subheading %}<p class="syllabus-sub">{{ subheading }}</p>{% endif %}
+  </header>
+
+  <p class="banner{% if tone %} {{ tone }}{% endif %} syllabus-notice">
+    <span class="banner-text">{{ notice }}{% if notice_detail %}<span class="syllabus-checked">{{ notice_detail }}</span>{% endif %}</span>
+  </p>
+
+  {% if facts %}
+  <ul class="syllabus-facts" aria-label="{{ facts_label }}">
+    {% for fact in facts %}<li>{{ fact }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if yedion_url or try_url or last_url %}
+  <div class="syllabus-actions">
+    {% if yedion_url %}<a class="btn btn-primary" href="{{ yedion_url }}" rel="noopener noreferrer">{{ yedion_text }}</a>{% endif %}
+    {% if last_url %}<a class="btn btn-outline" href="{{ last_url }}" rel="noopener noreferrer">{{ last_text }}</a>{% endif %}
+    {% if try_url %}<a class="syllabus-try" href="{{ try_url }}" rel="noopener noreferrer">{{ try_text }}</a>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if back_text %}<p class="syllabus-back"><a href="{{ home_url }}">{{ back_text }}</a></p>{% endif %}
+</main>
+</body>
+</html>
